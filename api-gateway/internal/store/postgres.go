@@ -124,6 +124,21 @@ CREATE TABLE IF NOT EXISTS feedback (
     tenant_id   TEXT NOT NULL DEFAULT 'default',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS environments (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'active',
+    tenant_id   TEXT NOT NULL DEFAULT 'default',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO environments (id, name, description, status, tenant_id)
+VALUES
+    ('production',  'Production',  'Live production workloads', 'active',   'default'),
+    ('staging',     'Staging',     'Pre-release validation',    'active',   'default'),
+    ('development', 'Development', 'Local development & CI',    'inactive', 'default')
+ON CONFLICT DO NOTHING;
 `
 
 // ─── Span writes ─────────────────────────────────────────────────────────────
@@ -309,6 +324,283 @@ func (s *PostgresStore) GetOverview(ctx context.Context, tenantID string, since 
 	}
 
 	return &stats, nil
+}
+
+// ─── Runs ─────────────────────────────────────────────────────────────────────
+
+func (s *PostgresStore) ListRuns(ctx context.Context, q models.RunQuery) (*models.Page[models.Run], error) {
+	if q.Limit <= 0 || q.Limit > 200 {
+		q.Limit = 50
+	}
+	query := `
+		SELECT run_id, trace_id, COALESCE(parent_run_id,''), framework, agent_name, model,
+		       start_time, end_time, status, total_tokens, total_cost_usd
+		FROM runs WHERE tenant_id = $1`
+	args := []interface{}{q.TenantID}
+	idx := 2
+	if q.AgentName != "" {
+		query += fmt.Sprintf(" AND agent_name = $%d", idx)
+		args = append(args, q.AgentName)
+		idx++
+	}
+	if q.TraceID != "" {
+		query += fmt.Sprintf(" AND trace_id = $%d", idx)
+		args = append(args, q.TraceID)
+		idx++
+	}
+	if q.Framework != "" {
+		query += fmt.Sprintf(" AND framework = $%d", idx)
+		args = append(args, q.Framework)
+		idx++
+	}
+	query += fmt.Sprintf(" ORDER BY start_time DESC LIMIT $%d", idx)
+	args = append(args, q.Limit)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []models.Run
+	for rows.Next() {
+		var r models.Run
+		if err := rows.Scan(
+			&r.ID, &r.TraceID, &r.ParentRunID, &r.Framework, &r.AgentName, &r.Model,
+			&r.StartTime, &r.EndTime, &r.Status, &r.TotalTokens, &r.TotalCostUSD,
+		); err != nil {
+			continue
+		}
+		runs = append(runs, r)
+	}
+	if runs == nil {
+		runs = []models.Run{}
+	}
+	return &models.Page[models.Run]{Items: runs, HasMore: len(runs) == q.Limit}, nil
+}
+
+func (s *PostgresStore) GetRun(ctx context.Context, runID, tenantID string) (*models.Run, error) {
+	var r models.Run
+	var metaJSON []byte
+	err := s.pool.QueryRow(ctx, `
+		SELECT run_id, trace_id, COALESCE(parent_run_id,''), framework, agent_name, model,
+		       start_time, end_time, status, total_tokens, total_cost_usd, metadata
+		FROM runs WHERE run_id = $1 AND tenant_id = $2`,
+		runID, tenantID,
+	).Scan(
+		&r.ID, &r.TraceID, &r.ParentRunID, &r.Framework, &r.AgentName, &r.Model,
+		&r.StartTime, &r.EndTime, &r.Status, &r.TotalTokens, &r.TotalCostUSD, &metaJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
+	json.Unmarshal(metaJSON, &r.Metadata)
+	r.TenantID = tenantID
+	return &r, nil
+}
+
+func (s *PostgresStore) GetRunChildren(ctx context.Context, runID, tenantID string) ([]models.Run, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT run_id, trace_id, COALESCE(parent_run_id,''), framework, agent_name, model,
+		       start_time, end_time, status, total_tokens, total_cost_usd
+		FROM runs WHERE parent_run_id = $1 AND tenant_id = $2
+		ORDER BY start_time ASC LIMIT 100`,
+		runID, tenantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []models.Run
+	for rows.Next() {
+		var r models.Run
+		if err := rows.Scan(
+			&r.ID, &r.TraceID, &r.ParentRunID, &r.Framework, &r.AgentName, &r.Model,
+			&r.StartTime, &r.EndTime, &r.Status, &r.TotalTokens, &r.TotalCostUSD,
+		); err != nil {
+			continue
+		}
+		runs = append(runs, r)
+	}
+	if runs == nil {
+		runs = []models.Run{}
+	}
+	return runs, nil
+}
+
+func (s *PostgresStore) InsertFeedback(ctx context.Context, runID, tenantID string, score *int16, comment string) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO feedback (run_id, score, comment, tenant_id) VALUES ($1, $2, $3, $4)`,
+		runID, score, comment, tenantID,
+	)
+	return err
+}
+
+// ─── Agents ───────────────────────────────────────────────────────────────────
+
+func (s *PostgresStore) ListAgents(ctx context.Context, tenantID string, limit int) ([]models.Agent, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+		    agent_name,
+		    MAX(framework)                                                   AS framework,
+		    MIN(start_time)                                                  AS first_seen,
+		    MAX(COALESCE(end_time, NOW()))                                   AS last_seen,
+		    COUNT(*)                                                         AS run_count,
+		    SUM(total_cost_usd)                                              AS total_cost,
+		    AVG(CASE WHEN status = 'error' THEN 1.0 ELSE 0.0 END)           AS error_rate
+		FROM runs
+		WHERE tenant_id = $1
+		GROUP BY agent_name
+		ORDER BY last_seen DESC
+		LIMIT $2`,
+		tenantID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var agents []models.Agent
+	for rows.Next() {
+		var a models.Agent
+		if err := rows.Scan(
+			&a.Name, &a.Framework, &a.FirstSeen, &a.LastSeen,
+			&a.RunCount, &a.TotalCost, &a.ErrorRate,
+		); err != nil {
+			continue
+		}
+		a.ID = a.Name
+		agents = append(agents, a)
+	}
+	if agents == nil {
+		agents = []models.Agent{}
+	}
+	return agents, nil
+}
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+type CostReportRow struct {
+	Model        string  `json:"model"`
+	Framework    string  `json:"framework"`
+	TotalCost    float64 `json:"total_cost_usd"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	TraceCount   int64   `json:"trace_count"`
+}
+
+func (s *PostgresStore) GetCostReport(ctx context.Context, tenantID string, since time.Duration) ([]CostReportRow, error) {
+	cutoff := time.Now().Add(-since).UnixNano()
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+		    COALESCE(attributes->>'gen_ai.request.model', 'unknown') AS model,
+		    framework,
+		    SUM(cost_usd)                  AS total_cost,
+		    SUM(input_tokens)              AS input_tokens,
+		    SUM(output_tokens)             AS output_tokens,
+		    COUNT(DISTINCT trace_id)       AS trace_count
+		FROM spans
+		WHERE tenant_id = $1 AND start_time_ns >= $2 AND cost_usd > 0
+		GROUP BY model, framework
+		ORDER BY total_cost DESC
+		LIMIT 100`,
+		tenantID, cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CostReportRow
+	for rows.Next() {
+		var r CostReportRow
+		if err := rows.Scan(&r.Model, &r.Framework, &r.TotalCost, &r.InputTokens, &r.OutputTokens, &r.TraceCount); err != nil {
+			continue
+		}
+		result = append(result, r)
+	}
+	if result == nil {
+		result = []CostReportRow{}
+	}
+	return result, nil
+}
+
+type ErrorReportRow struct {
+	Framework      string `json:"framework"`
+	StatusMsg      string `json:"status_msg"`
+	Count          int64  `json:"count"`
+	AffectedTraces int64  `json:"affected_traces"`
+}
+
+func (s *PostgresStore) GetErrorReport(ctx context.Context, tenantID string, since time.Duration) ([]ErrorReportRow, error) {
+	cutoff := time.Now().Add(-since).UnixNano()
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+		    framework,
+		    COALESCE(NULLIF(status_msg, ''), 'unknown error') AS status_msg,
+		    COUNT(*)                                           AS count,
+		    COUNT(DISTINCT trace_id)                          AS affected_traces
+		FROM spans
+		WHERE tenant_id = $1 AND start_time_ns >= $2 AND status_code = 2
+		GROUP BY framework, status_msg
+		ORDER BY count DESC
+		LIMIT 50`,
+		tenantID, cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ErrorReportRow
+	for rows.Next() {
+		var r ErrorReportRow
+		if err := rows.Scan(&r.Framework, &r.StatusMsg, &r.Count, &r.AffectedTraces); err != nil {
+			continue
+		}
+		result = append(result, r)
+	}
+	if result == nil {
+		result = []ErrorReportRow{}
+	}
+	return result, nil
+}
+
+// ─── Environments ─────────────────────────────────────────────────────────────
+
+type Environment struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+}
+
+func (s *PostgresStore) ListEnvironments(ctx context.Context, tenantID string) ([]Environment, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, name, description, status FROM environments WHERE tenant_id = $1 ORDER BY name`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var envs []Environment
+	for rows.Next() {
+		var e Environment
+		if err := rows.Scan(&e.ID, &e.Name, &e.Description, &e.Status); err != nil {
+			continue
+		}
+		envs = append(envs, e)
+	}
+	if envs == nil {
+		envs = []Environment{}
+	}
+	return envs, nil
 }
 
 func (s *PostgresStore) Close() {
