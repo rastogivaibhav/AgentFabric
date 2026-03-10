@@ -1,0 +1,312 @@
+# ─── Namespace ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentfabric
+  labels:
+    app.kubernetes.io/name: agentfabric
+
+---
+# ─── ConfigMap ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentfabric-config
+  namespace: agentfabric
+data:
+  collector.yaml: |
+    debug: false
+    grpc:
+      addr: ":4317"
+    http:
+      addr: ":4318"
+    auth:
+      require_auth: true
+    rate_limit:
+      spans_per_second: 100000
+      burst_size: 20000
+    processor:
+      batch_size: 512
+      batch_timeout_ms: 200
+      max_queue_size: 500000
+      workers: 8
+      max_attribute_len: 4096
+    pii:
+      enabled: true
+      redact: true
+    discovery:
+      enabled: true
+      kubernetes_mode: true
+      process_scan_seconds: 60
+
+---
+# ─── Secret ───────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: agentfabric-secrets
+  namespace: agentfabric
+type: Opaque
+stringData:
+  jwt-secret: "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
+  database-url: "postgres://fabric:REPLACE_PASSWORD@postgres-svc:5432/agentfabric?sslmode=require"
+  redis-url: "redis://:REPLACE_PASSWORD@redis-svc:6379"
+
+---
+# ─── Collector DaemonSet ──────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: agentfabric-collector
+  namespace: agentfabric
+  labels:
+    app: agentfabric-collector
+spec:
+  selector:
+    matchLabels:
+      app: agentfabric-collector
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: agentfabric-collector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: agentfabric-collector
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: collector
+          image: ghcr.io/agentfabric/collector:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4317  # gRPC OTLP
+              protocol: TCP
+            - containerPort: 4318  # HTTP OTLP
+              protocol: TCP
+            - containerPort: 9090  # Prometheus
+              protocol: TCP
+          env:
+            - name: AF_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: AF_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: jwt-secret
+            - name: AF_GATEWAY_ENDPOINT
+              value: "http://agentfabric-gateway-svc:8080"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/agentfabric
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 4318
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 4318
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: agentfabric-config
+
+---
+# ─── Collector Service ────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentfabric-collector-svc
+  namespace: agentfabric
+spec:
+  selector:
+    app: agentfabric-collector
+  type: ClusterIP
+  clusterIP: None  # headless for DaemonSet node-local access
+  ports:
+    - name: grpc-otlp
+      port: 4317
+      targetPort: 4317
+    - name: http-otlp
+      port: 4318
+      targetPort: 4318
+
+---
+# ─── API Gateway Deployment ───────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentfabric-gateway
+  namespace: agentfabric
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: agentfabric-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: agentfabric-gateway
+    spec:
+      terminationGracePeriodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: agentfabric-gateway
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: gateway
+          image: ghcr.io/agentfabric/api-gateway:1.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: redis-url
+            - name: AF_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: jwt-secret
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentfabric-gateway-svc
+  namespace: agentfabric
+spec:
+  selector:
+    app: agentfabric-gateway
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+
+---
+# ─── RBAC for collector (K8s API discovery) ───────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentfabric-collector
+  namespace: agentfabric
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentfabric-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentfabric-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentfabric-collector
+subjects:
+  - kind: ServiceAccount
+    name: agentfabric-collector
+    namespace: agentfabric
+
+---
+# ─── HorizontalPodAutoscaler ──────────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: agentfabric-gateway-hpa
+  namespace: agentfabric
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agentfabric-gateway
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

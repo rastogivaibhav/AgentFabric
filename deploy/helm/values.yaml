@@ -1,0 +1,223 @@
+global:
+  image:
+    registry: ghcr.io/agentfabric
+    pullPolicy: IfNotPresent
+  tenantId: "default"
+  environment: "production"
+
+# ─── Collector DaemonSet ─────────────────────────────────────────────────────
+collector:
+  enabled: true
+  image:
+    repository: ghcr.io/agentfabric/collector
+    tag: "1.0.0"
+
+  # RT-003: mTLS required in production
+  tls:
+    enabled: true
+    certSecretName: "agentfabric-collector-tls"
+    caSecretName: "agentfabric-ca"
+
+  # RT-001: SPIFFE/SPIRE workload identity
+  spiffe:
+    enabled: true
+    socketPath: "/run/spiffe/sockets/agent.sock"
+
+  ports:
+    otlpGRPC: 4317
+    otlpHTTP: 4318
+    metrics: 8888
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  # Security context — principle of least privilege
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+      # eBPF requires NET_ADMIN and BPF — only add if eBPF enabled
+      # add: ["NET_ADMIN", "BPF", "PERFMON"]
+
+  # RT-006: Kafka buffer for durability
+  kafka:
+    enabled: true
+    brokers: "kafka:9092"
+    topic: "af.spans"
+
+  nodeSelector: {}
+  tolerations:
+    - operator: Exists  # DaemonSet on all nodes
+
+  env:
+    AF_LOG_LEVEL: "info"
+    AF_BATCH_SIZE: "500"
+    AF_RATE_LIMIT_RPS: "10000"
+
+  envFromSecret:
+    AF_DATABASE_URL: "agentfabric-secrets"
+    AF_API_TOKENS: "agentfabric-secrets"
+
+  # NetworkPolicy — RT-003: isolate OTLP ports
+  networkPolicy:
+    enabled: true
+    ingressRules:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                agentfabric.io/allowed: "true"
+        ports:
+          - port: 4317
+          - port: 4318
+
+# ─── Processing Core (af-core) ───────────────────────────────────────────────
+afCore:
+  enabled: true
+  image:
+    repository: ghcr.io/agentfabric/af-core
+    tag: "1.0.0"
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10002
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+  # RT-004: Separate service account from collector
+  serviceAccount:
+    create: true
+    name: "agentfabric-af-core"
+
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# ─── API Gateway ─────────────────────────────────────────────────────────────
+api:
+  enabled: true
+  image:
+    repository: ghcr.io/agentfabric/api
+    tag: "1.0.0"
+  replicas: 3
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+    hosts:
+      - host: api.agentfabric.io
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: agentfabric-api-tls
+        hosts:
+          - api.agentfabric.io
+
+  cors:
+    allowedOrigins:
+      - "https://app.agentfabric.io"
+
+  # RT-010: Multi-tenancy JWT config
+  auth:
+    jwtIssuer: "https://auth.agentfabric.io"
+    jwtAudience: "agentfabric-api"
+
+# ─── Portal (React dashboard) ────────────────────────────────────────────────
+portal:
+  enabled: true
+  image:
+    repository: ghcr.io/agentfabric/portal
+    tag: "1.0.0"
+  replicas: 2
+
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: app.agentfabric.io
+
+# ─── Storage ─────────────────────────────────────────────────────────────────
+postgresql:
+  enabled: true
+  auth:
+    existingSecret: "agentfabric-pg-secret"
+  primary:
+    persistence:
+      size: 100Gi
+    resources:
+      requests:
+        memory: 1Gi
+        cpu: 500m
+    # RT-009: Enable WAL archiving for audit trail
+    extendedConfiguration: |
+      wal_level = replica
+      archive_mode = on
+      archive_command = 'test ! -f /var/lib/postgresql/archive/%f && cp %p /var/lib/postgresql/archive/%f'
+
+clickhouse:
+  enabled: true
+  persistence:
+    size: 500Gi
+  replicaCount: 3  # Replication for HA
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    existingSecret: "agentfabric-redis-secret"
+
+kafka:
+  enabled: true  # RT-006 fix
+  replicaCount: 3
+  persistence:
+    size: 50Gi
+  config:
+    offsets.topic.replication.factor: 3
+    min.insync.replicas: 2
+    log.retention.hours: 168  # 7 days
+
+# ─── Monitoring ──────────────────────────────────────────────────────────────
+monitoring:
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+  dashboards:
+    enabled: true
+    grafanaNamespace: monitoring
+
+# ─── RBAC ────────────────────────────────────────────────────────────────────
+rbac:
+  create: true
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

@@ -1,0 +1,132 @@
+package auth
+
+import (
+	"context"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+)
+
+type JWTValidator struct {
+	secret []byte
+}
+
+func NewJWTValidator(secret string) *JWTValidator {
+	return &JWTValidator{secret: []byte(secret)}
+}
+
+func (v *JWTValidator) ValidateToken(tokenStr string) error {
+	if v.secret == nil || len(v.secret) == 0 {
+		return nil // auth disabled
+	}
+	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return v.secret, nil
+	})
+	if err != nil || !token.Valid {
+		return jwt.ErrTokenInvalidClaims
+	}
+	return nil
+}
+
+func (v *JWTValidator) ValidateHTTP(r *http.Request) error {
+	if v.secret == nil || len(v.secret) == 0 {
+		return nil
+	}
+	h := r.Header.Get("Authorization")
+	if h == "" {
+		return jwt.ErrTokenNotValidYet
+	}
+	parts := strings.SplitN(h, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+		return jwt.ErrTokenMalformed
+	}
+	return v.ValidateToken(parts[1])
+}
+
+// GRPCTokenValidator returns an interceptor that validates the Authorization header.
+func GRPCTokenValidator(v *JWTValidator) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "missing metadata")
+		}
+		auths := md.Get("authorization")
+		if len(auths) == 0 {
+			return nil, status.Error(codes.Unauthenticated, "missing authorization header")
+		}
+		parts := strings.SplitN(auths[0], " ", 2)
+		if len(parts) != 2 {
+			return nil, status.Error(codes.Unauthenticated, "invalid auth format")
+		}
+		if err := v.ValidateToken(parts[1]); err != nil {
+			return nil, status.Error(codes.Unauthenticated, "invalid token")
+		}
+		return handler(ctx, req)
+	}
+}
+
+// ─── Rate Limiter ────────────────────────────────────────────────────────────
+
+type tokenBucket struct {
+	mu       sync.Mutex
+	tokens   float64
+	max      float64
+	rate     float64
+	lastTime time.Time
+}
+
+func newBucket(ratePerSec, burst int) *tokenBucket {
+	return &tokenBucket{
+		tokens:   float64(burst),
+		max:      float64(burst),
+		rate:     float64(ratePerSec),
+		lastTime: time.Now(),
+	}
+}
+
+func (b *tokenBucket) Allow(n int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	elapsed := now.Sub(b.lastTime).Seconds()
+	b.tokens = min(b.max, b.tokens+elapsed*b.rate)
+	b.lastTime = now
+	if b.tokens >= float64(n) {
+		b.tokens -= float64(n)
+		return true
+	}
+	return false
+}
+
+func min(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+var globalBucket *tokenBucket
+var bucketOnce sync.Once
+
+// GRPCRateLimiter returns an interceptor that rate-limits span ingestion.
+func GRPCRateLimiter(spansPerSecond int) grpc.UnaryServerInterceptor {
+	bucketOnce.Do(func() {
+		globalBucket = newBucket(spansPerSecond, spansPerSecond*2)
+	})
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if !globalBucket.Allow(1) {
+			return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded")
+		}
+		return handler(ctx, req)
+	}
+}

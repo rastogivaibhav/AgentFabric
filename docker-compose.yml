@@ -1,0 +1,198 @@
+version: '3.9'
+
+# AgentFabric — Full local development stack
+# Usage: docker-compose up -d
+
+networks:
+  af-net:
+    driver: bridge
+
+volumes:
+  pg_data:
+  ch_data:
+  redis_data:
+  kafka_data:
+
+services:
+
+  # ─── Storage ──────────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agentfabric
+      POSTGRES_USER: fabric
+      POSTGRES_PASSWORD: fabric_dev_only
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./deploy/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks: [af-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fabric -d agentfabric"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    environment:
+      CLICKHOUSE_DB: agentfabric
+      CLICKHOUSE_USER: fabric
+      CLICKHOUSE_PASSWORD: fabric_dev_only
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ch_data:/var/lib/clickhouse
+      - ./deploy/sql/clickhouse_init.sql:/docker-entrypoint-initdb.d/clickhouse_init.sql
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    networks: [af-net]
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes: [redis_data:/data]
+    ports: ["6379:6379"]
+    networks: [af-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks: [af-net]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports: ["9092:9092"]
+    networks: [af-net]
+    volumes: [kafka_data:/var/lib/kafka/data]
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      retries: 10
+
+  # ─── AgentFabric Services ─────────────────────────────────────────────────
+
+  collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile
+    environment:
+      AF_ENV: development
+      AF_GRPC_ADDR: ":4317"
+      AF_HTTP_ADDR: ":4318"
+      AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
+      AF_AUTH_REQUIRE_AUTH: "false"  # Dev only — enable in production
+      AF_JWT_SECRET: "dev-secret-change-in-prod"
+      AF_TLS_ENABLED: "false"       # Dev only — TLS required in production
+      AF_DEBUG: "true"
+      AF_PROCESSOR_WORKERS: "4"
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+    networks: [af-net]
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  af-core:
+    build:
+      context: ./af-core
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://fabric:fabric_dev_only@postgres:5432/agentfabric?sslmode=disable
+      CLICKHOUSE_URL: clickhouse://fabric:fabric_dev_only@clickhouse:9000/agentfabric
+      REDIS_URL: redis://redis:6379/1
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: af.spans
+      GRPC_ADDR: ":50051"
+      RUST_LOG: info
+    ports:
+      - "50051:50051"
+    networks: [af-net]
+    depends_on:
+      postgres: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    environment:
+      AF_ENV: development
+      DATABASE_URL: postgres://fabric:fabric_dev_only@postgres:5432/agentfabric?sslmode=disable
+      REDIS_URL: redis://redis:6379/2
+      AF_JWT_SECRET: "dev-secret-change-in-prod"
+      LISTEN_ADDR: ":8080"
+      AF_LOG_LEVEL: debug
+      AF_CORS_ORIGINS: "http://localhost:3000"
+      AF_AUTH_DISABLED: "true"  # Dev: no auth required
+    ports:
+      - "8080:8080"
+    networks: [af-net]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: "http://localhost:8080"
+        VITE_WS_URL: "ws://localhost:8080"
+    ports:
+      - "3000:80"
+    networks: [af-net]
+    depends_on: [api-gateway]
+
+  # ─── Observability of the Observability Platform ──────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    networks: [af-net]
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    ports: ["9091:3000"]
+    networks: [af-net]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14250:14250"  # gRPC
+    networks: [af-net]

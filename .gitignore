@@ -1,0 +1,50 @@
+# Build artifacts
+dist/
+build/
+target/
+*.o
+*.a
+*.so
+*.exe
+
+# Go
+vendor/
+*.test
+
+# Rust
+af-core/target/
+
+# Node / portal
+portal/node_modules/
+portal/dist/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+agent-sdk/dist/
+agent-sdk/*.egg-info/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Docker
+*.tar
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archives (keep zip out of git)
+*.zip
+*.docx

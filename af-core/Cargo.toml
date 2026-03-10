@@ -1,0 +1,69 @@
+[package]
+name = "af-core"
+version = "1.0.0"
+edition = "2021"
+description = "AgentFabric processing core — policy engine, trace DAG builder, storage writer"
+
+[[bin]]
+name = "af-core"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio          = { version = "1.37", features = ["full"] }
+tokio-stream   = "0.1"
+
+# gRPC / protobuf
+tonic          = { version = "0.11", features = ["tls"] }
+prost          = "0.12"
+
+# Web / HTTP
+axum           = { version = "0.7", features = ["ws"] }
+tower          = "0.4"
+tower-http     = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialization
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+
+# Storage
+sqlx           = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+clickhouse     = { version = "0.11", features = ["inserter"] }
+redis          = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
+
+# Kafka
+rdkafka        = { version = "0.36", features = ["cmake-build"] }
+
+# Graph algorithms (trace DAG)
+petgraph       = "0.6"
+
+# Crypto (hash-chain audit log)
+sha2           = "0.10"
+hex            = "0.4"
+
+# IDs
+uuid           = { version = "1.8", features = ["v4", "serde"] }
+
+# Time
+chrono         = { version = "0.4", features = ["serde"] }
+
+# Metrics
+prometheus     = { version = "0.13", features = ["process"] }
+
+# Logging / tracing
+tracing        = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Config
+config         = "0.14"
+dotenvy        = "0.15"
+
+# Errors
+anyhow         = "1"
+thiserror      = "1"
+
+[profile.release]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+panic         = "abort"
