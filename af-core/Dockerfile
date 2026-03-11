@@ -11,6 +11,7 @@ COPY Cargo.toml ./
 RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release && rm -rf src
 
 COPY src ./src
+COPY migrations ./migrations
 RUN touch src/main.rs && cargo build --release
 
 # ─── Runtime ─────────────────────────────────────────────────────────────────

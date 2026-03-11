@@ -104,8 +104,7 @@ impl ClickHouseStore {
 
         let mut inserter = self.client
             .inserter::<SpanRow>("agentfabric.spans")?
-            .with_max_entries(10_000)
-            .with_max_bytes(50 * 1024 * 1024); // 50MB max per flush
+            .with_max_entries(10_000);
 
         for span in spans {
             inserter.write(&SpanRow::from(span)).await?;
