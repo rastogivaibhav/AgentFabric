@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(SRC=\"/c/Users/vrast/Documents/Agentic Code/files/AgentFabric_Production_Code/agentfabric-src\")",
+      "Bash(DEST=\"/c/Users/vrast/Documents/Agentic Code/files\")",
+      "Bash(__NEW_LINE_7ade6cc3c6ca35e6__ mv \"$SRC/af-core\" \"$DEST/\")",
+      "Bash(__NEW_LINE_7ade6cc3c6ca35e6__ mv \"$SRC/agent-sdk\" \"$DEST/\")",
+      "Bash(__NEW_LINE_7ade6cc3c6ca35e6__ mv \"$SRC/api-gateway\" \"$DEST/\")",
+      "Bash(__NEW_LINE_7ade6cc3c6ca35e6__ mv \"$SRC/collector\" \"$DEST/\")",
+      "Bash(__NEW_LINE_7ade6cc3c6ca35e6__ mv \"$SRC/portal\" \"$DEST/\")",
+      "Bash(__NEW_LINE_7ade6cc3c6ca35e6__ mv \"$SRC/deploy\" \"$DEST/\")",
+      "Bash(__NEW_LINE_7ade6cc3c6ca35e6__ mv \"$SRC/docs\" \"$DEST/\")",
+      "Bash(__NEW_LINE_7ade6cc3c6ca35e6__ mv \"$SRC/scripts\" \"$DEST/\")",
+      "Bash(\"/c/Users/vrast/Documents/Agentic Code/files/portal/src/pages/EnvironmentsPage.tsx\":*)",
+      "Bash(git init)",
+      "Bash(\"/c/Users/vrast/Documents/Agentic Code/files/.gitignore\":*)",
+      "Bash(git add af-core/ agent-sdk/ api-gateway/ collector/ deploy/ docs/ monitoring/ portal/ scripts/ docker-compose.yml .gitignore)",
+      "Bash(git -c:*)",
+      "Bash(git add api-gateway/internal/store/postgres.go api-gateway/internal/handlers/handlers.go api-gateway/internal/ws/hub.go)",
+      "Bash(git commit:*)",
+      "Bash(gh auth status)",
+      "Bash(git --version)",
+      "Bash(git reset --soft b7f6e9d)",
+      "Bash(git add api-gateway/internal/handlers/handlers.go api-gateway/internal/store/postgres.go api-gateway/internal/ws/hub.go)",
+      "Bash(git add README.md)",
+      "Bash(git push -f origin feature/agentfabric-v1)",
+      "Bash(git add DEMO.md)",
+      "Bash(git push origin feature/agentfabric-v1)",
+      "Bash(go mod tidy)",
+      "Bash(git add -A)"
+    ]
+  }
+}
