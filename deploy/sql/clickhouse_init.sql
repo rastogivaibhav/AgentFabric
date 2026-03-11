@@ -1,6 +1,10 @@
 -- AgentFabric ClickHouse Schema
 -- High-performance time-series storage for spans and metrics
 
+-- Create fabric user with password
+CREATE USER IF NOT EXISTS fabric IDENTIFIED BY 'fabric_dev_only' HOST ANY;
+GRANT ALL ON *.* TO fabric;
+
 CREATE DATABASE IF NOT EXISTS agentfabric;
 
 USE agentfabric;
