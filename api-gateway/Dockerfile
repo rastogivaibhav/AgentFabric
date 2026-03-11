@@ -8,11 +8,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-w -s" \
     -o /agentfabric-gateway ./cmd/server
 
-FROM gcr.io/distroless/static:nonroot
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates wget
+RUN adduser -D -u 10001 appuser
 COPY --from=builder /agentfabric-gateway /agentfabric-gateway
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-USER nonroot:nonroot
+USER appuser
 EXPOSE 8080
 
 ENTRYPOINT ["/agentfabric-gateway"]
