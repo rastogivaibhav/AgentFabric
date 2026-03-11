@@ -27,7 +27,9 @@
       "Bash(git add DEMO.md)",
       "Bash(git push origin feature/agentfabric-v1)",
       "Bash(go mod tidy)",
-      "Bash(git add -A)"
+      "Bash(git add -A)",
+      "Bash(docker compose down)",
+      "Bash(docker compose up -d)"
     ]
   }
 }
