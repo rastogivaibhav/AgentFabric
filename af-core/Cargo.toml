@@ -28,7 +28,7 @@ serde_json     = "1"
 
 # Storage
 sqlx           = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
-clickhouse     = { version = "0.11", features = ["inserter"] }
+clickhouse     = { version = "0.11" }
 redis          = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 
 # Kafka
