@@ -32,7 +32,9 @@
       "Bash(docker compose up -d)",
       "Bash(git add af-core/Cargo.toml)",
       "Bash(git add af-core/Dockerfile)",
-      "Bash(git add portal/tsconfig.json)"
+      "Bash(git add portal/tsconfig.json)",
+      "Bash(git add api-gateway/Dockerfile)",
+      "Bash(docker compose down -v)"
     ]
   }
 }

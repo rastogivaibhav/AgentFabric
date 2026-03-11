@@ -15,9 +15,9 @@ COPY migrations ./migrations
 RUN touch src/main.rs && cargo build --release
 
 # ─── Runtime ─────────────────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libssl3 libsasl2-2 \
     && rm -rf /var/lib/apt/lists/*
 

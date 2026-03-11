@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     -o /agentfabric-gateway ./cmd/server
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates wget
+RUN apk add --no-cache ca-certificates wget netcat-openbsd
 RUN adduser -D -u 10001 appuser
 COPY --from=builder /agentfabric-gateway /agentfabric-gateway
 
