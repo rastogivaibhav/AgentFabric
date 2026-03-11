@@ -118,7 +118,7 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgres://fabric:fabric_dev_only@postgres:5432/agentfabric?sslmode=disable
-      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_URL: http://fabric:fabric_dev_only@clickhouse:8123
       REDIS_URL: redis://redis:6379/1
       KAFKA_BROKERS: kafka:9092
       KAFKA_TOPIC: af.spans
