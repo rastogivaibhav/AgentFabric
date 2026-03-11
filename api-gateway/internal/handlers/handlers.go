@@ -206,23 +206,136 @@ func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {
 // ─── Agents ──────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
-	// In production this would query a materialised view; returning mock structure for now
-	writeJSON(w, http.StatusOK, models.Page[models.Agent]{Items: []models.Agent{}})
+	limit := parseIntOr(r.URL.Query().Get("limit"), 50)
+	agents, err := h.pg.ListAgents(r.Context(), tenantFromCtx(r), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models.Page[models.Agent]{Items: agents, Total: int64(len(agents))})
 }
 
-func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request)        { writeJSON(w, http.StatusOK, map[string]string{"todo": "agent detail"}) }
-func (h *Handler) GetAgentRuns(w http.ResponseWriter, r *http.Request)    { writeJSON(w, http.StatusOK, map[string]string{"todo": "agent runs"}) }
-func (h *Handler) GetAgentMetrics(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]string{"todo": "agent metrics"}) }
+func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "agentId")
+	agents, err := h.pg.ListAgents(r.Context(), tenantFromCtx(r), 200)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, a := range agents {
+		if a.ID == agentID || a.Name == agentID {
+			writeJSON(w, http.StatusOK, a)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "agent not found")
+}
+
+func (h *Handler) GetAgentRuns(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "agentId")
+	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
+		TenantID:  tenantFromCtx(r),
+		AgentName: agentID,
+		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetAgentMetrics(w http.ResponseWriter, r *http.Request) {
+	since := 24 * time.Hour
+	if s := r.URL.Query().Get("since"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			since = d
+		}
+	}
+	stats, err := h.pg.GetOverview(r.Context(), tenantFromCtx(r), since)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
 func (h *Handler) GetAgentTopology(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"todo": "agent topology"})
+	agentID := chi.URLParam(r, "agentId")
+	// Fetch recent runs for this agent to get trace IDs, then build topology
+	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
+		TenantID:  tenantFromCtx(r),
+		AgentName: agentID,
+		Limit:     10,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var allSpans []models.Span
+	seen := map[string]bool{}
+	for _, run := range page.Items {
+		if seen[run.TraceID] {
+			continue
+		}
+		seen[run.TraceID] = true
+		spans, _ := h.pg.GetTraceSpans(r.Context(), run.TraceID, tenantFromCtx(r))
+		allSpans = append(allSpans, spans...)
+	}
+	writeJSON(w, http.StatusOK, buildTopologyGraph(allSpans))
 }
 
 // ─── Runs ─────────────────────────────────────────────────────────────────────
 
-func (h *Handler) ListRuns(w http.ResponseWriter, r *http.Request)        { writeJSON(w, http.StatusOK, models.Page[models.Run]{Items: []models.Run{}}) }
-func (h *Handler) GetRun(w http.ResponseWriter, r *http.Request)          { writeJSON(w, http.StatusOK, map[string]string{"todo": "run detail"}) }
-func (h *Handler) GetRunChildren(w http.ResponseWriter, r *http.Request)  { writeJSON(w, http.StatusOK, map[string]string{"todo": "run children"}) }
-func (h *Handler) PostFeedback(w http.ResponseWriter, r *http.Request)    { w.WriteHeader(http.StatusCreated) }
+func (h *Handler) ListRuns(w http.ResponseWriter, r *http.Request) {
+	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
+		TenantID:  tenantFromCtx(r),
+		TraceID:   r.URL.Query().Get("trace_id"),
+		Framework: r.URL.Query().Get("framework"),
+		AgentName: r.URL.Query().Get("agent"),
+		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetRun(w http.ResponseWriter, r *http.Request) {
+	run, err := h.pg.GetRun(r.Context(), chi.URLParam(r, "runId"), tenantFromCtx(r))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "run not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+func (h *Handler) GetRunChildren(w http.ResponseWriter, r *http.Request) {
+	children, err := h.pg.GetRunChildren(r.Context(), chi.URLParam(r, "runId"), tenantFromCtx(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, children)
+}
+
+func (h *Handler) PostFeedback(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "runId")
+	var body struct {
+		Score   *int16 `json:"score"`
+		Comment string `json:"comment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := h.pg.InsertFeedback(r.Context(), runID, tenantFromCtx(r), body.Score, body.Comment); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+}
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
@@ -256,9 +369,44 @@ func (h *Handler) GetFrameworkStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats.FrameworkCounts)
 }
 
-func (h *Handler) GetCostReport(w http.ResponseWriter, r *http.Request)     { writeJSON(w, http.StatusOK, map[string]string{"todo": "cost report"}) }
-func (h *Handler) GetErrorReport(w http.ResponseWriter, r *http.Request)    { writeJSON(w, http.StatusOK, map[string]string{"todo": "error report"}) }
-func (h *Handler) ListEnvironments(w http.ResponseWriter, r *http.Request)  { writeJSON(w, http.StatusOK, []string{"production", "staging", "development"}) }
+func (h *Handler) GetCostReport(w http.ResponseWriter, r *http.Request) {
+	since := 24 * time.Hour
+	if s := r.URL.Query().Get("since"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			since = d
+		}
+	}
+	rows, err := h.pg.GetCostReport(r.Context(), tenantFromCtx(r), since)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (h *Handler) GetErrorReport(w http.ResponseWriter, r *http.Request) {
+	since := 24 * time.Hour
+	if s := r.URL.Query().Get("since"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			since = d
+		}
+	}
+	rows, err := h.pg.GetErrorReport(r.Context(), tenantFromCtx(r), since)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+func (h *Handler) ListEnvironments(w http.ResponseWriter, r *http.Request) {
+	envs, err := h.pg.ListEnvironments(r.Context(), tenantFromCtx(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, envs)
+}
 
 // ─── Live stream ──────────────────────────────────────────────────────────────
 

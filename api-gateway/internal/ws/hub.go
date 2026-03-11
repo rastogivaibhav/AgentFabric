@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,12 +13,31 @@ import (
 	"go.uber.org/zap"
 )
 
+// allowedWSOrigins is built once at startup from AF_CORS_ORIGINS env var.
+var allowedWSOrigins = func() map[string]bool {
+	m := map[string]bool{
+		"http://localhost:3000": true,
+		"http://localhost:5173": true,
+	}
+	if v := os.Getenv("AF_CORS_ORIGINS"); v != "" {
+		for _, o := range strings.Split(v, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				m[o] = true
+			}
+		}
+	}
+	return m
+}()
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 4096,
 	CheckOrigin: func(r *http.Request) bool {
-		// Production: validate origin against allowlist
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // non-browser / same-origin clients
+		}
+		return allowedWSOrigins[origin]
 	},
 }
 
