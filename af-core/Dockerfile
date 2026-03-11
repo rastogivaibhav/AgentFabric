@@ -1,5 +1,5 @@
 # ─── Build ───────────────────────────────────────────────────────────────────
-FROM rust:nightly AS builder
+FROM rust:latest AS builder
 
 RUN apt-get update && apt-get install -y \
     pkg-config libssl-dev libsasl2-dev cmake \
