@@ -44,6 +44,12 @@ func tenantFromCtx(r *http.Request) string {
 	return "default"
 }
 
+// ─── Health ──────────────────────────────────────────────────────────────────
+
+func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // ─── Ingest (internal, called by collector) ──────────────────────────────────
 
 type ingestRequest struct {

@@ -95,8 +95,8 @@ services:
       dockerfile: Dockerfile
     environment:
       AF_ENV: development
-      AF_GRPC_ADDR: ":4317"
-      AF_HTTP_ADDR: ":4318"
+      AF_GRPC_ADDR: "0.0.0.0:4317"
+      AF_HTTP_ADDR: "0.0.0.0:4318"
       AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
       AF_AUTH_REQUIRE_AUTH: "false"  # Dev only — enable in production
       AF_JWT_SECRET: "dev-secret-change-in-prod"
@@ -118,11 +118,12 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgres://fabric:fabric_dev_only@postgres:5432/agentfabric?sslmode=disable
-      CLICKHOUSE_URL: clickhouse://fabric:fabric_dev_only@clickhouse:9000/agentfabric
+      CLICKHOUSE_URL: http://fabric:fabric_dev_only@clickhouse:8123
       REDIS_URL: redis://redis:6379/1
       KAFKA_BROKERS: kafka:9092
       KAFKA_TOPIC: af.spans
-      GRPC_ADDR: ":50051"
+      GRPC_ADDR: "0.0.0.0:50051"
+      HTTP_ADDR: "0.0.0.0:8889"
       RUST_LOG: info
     ports:
       - "50051:50051"
@@ -153,10 +154,11 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 5s
     restart: unless-stopped
 
   portal:

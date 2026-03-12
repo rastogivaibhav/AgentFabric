@@ -37,15 +37,9 @@ func NewPostgresStore(dsn string, logger *zap.Logger) (*PostgresStore, error) {
 	}
 
 	s := &PostgresStore{pool: pool, logger: logger}
-	if err := s.migrate(ctx); err != nil {
-		return nil, fmt.Errorf("migration: %w", err)
-	}
+	// Schema is initialized by deploy/sql/init.sql in docker-compose.yml
+	// No migration needed here
 	return s, nil
-}
-
-func (s *PostgresStore) migrate(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, schema)
-	return err
 }
 
 const schema = `

@@ -69,10 +69,7 @@ func main() {
 	r.Use(middleware.PrometheusMiddleware)
 
 	// ─── Health & metrics ────────────────────────────────────────────────────
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok","version":"1.0.0"}`))
-	})
+	r.Get("/healthz", h.Health)
 	r.Handle("/metrics", promhttp.Handler())
 
 	// ─── Internal ingest (collector → gateway) ───────────────────────────────

@@ -1,22 +1,23 @@
 # ─── Build ───────────────────────────────────────────────────────────────────
-FROM rust:1.78-slim AS builder
+FROM rust:latest AS builder
 
 RUN apt-get update && apt-get install -y \
     pkg-config libssl-dev libsasl2-dev cmake \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 # Cache dependencies layer
 RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release && rm -rf src
 
 COPY src ./src
+COPY migrations ./migrations
 RUN touch src/main.rs && cargo build --release
 
 # ─── Runtime ─────────────────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libssl3 libsasl2-2 \
     && rm -rf /var/lib/apt/lists/*
 
