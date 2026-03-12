@@ -95,8 +95,8 @@ services:
       dockerfile: Dockerfile
     environment:
       AF_ENV: development
-      AF_GRPC_ADDR: ":4317"
-      AF_HTTP_ADDR: ":4318"
+      AF_GRPC_ADDR: "0.0.0.0:4317"
+      AF_HTTP_ADDR: "0.0.0.0:4318"
       AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
       AF_AUTH_REQUIRE_AUTH: "false"  # Dev only — enable in production
       AF_JWT_SECRET: "dev-secret-change-in-prod"
@@ -122,7 +122,8 @@ services:
       REDIS_URL: redis://redis:6379/1
       KAFKA_BROKERS: kafka:9092
       KAFKA_TOPIC: af.spans
-      GRPC_ADDR: ":50051"
+      GRPC_ADDR: "0.0.0.0:50051"
+      HTTP_ADDR: "0.0.0.0:8889"
       RUST_LOG: info
     ports:
       - "50051:50051"

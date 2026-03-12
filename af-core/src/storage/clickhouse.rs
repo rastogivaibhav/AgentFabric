@@ -80,11 +80,61 @@ impl From<&EnrichedSpan> for SpanRow {
 
 impl ClickHouseStore {
     pub async fn connect(url: &str) -> Result<Self> {
-        let client = Client::default().with_url(url);
+        // Parse URL to extract credentials if present
+        // Format: http://user:pass@host:port or http://host:port
+        let (client_url, user, password) = Self::parse_url(url)?;
+
+        let mut client = Client::default().with_url(&client_url);
+
+        // Add credentials if present
+        if let Some(u) = user {
+            client = client.with_user(&u);
+        }
+        if let Some(p) = password {
+            client = client.with_password(&p);
+        }
+
         // Verify connection
         client.query("SELECT 1").execute().await?;
         info!("ClickHouse connected");
         Ok(Self { client })
+    }
+
+    fn parse_url(url: &str) -> Result<(String, Option<String>, Option<String>)> {
+        // Try to parse as URL with credentials
+        if url.contains("://") && url.contains("@") {
+            // Extract scheme and the rest
+            let parts: Vec<&str> = url.splitn(2, "://").collect();
+            if parts.len() != 2 {
+                return Ok((url.to_string(), None, None));
+            }
+
+            let scheme = parts[0];
+            let rest = parts[1];
+
+            // Split by @ to separate credentials from host
+            let cred_parts: Vec<&str> = rest.splitn(2, '@').collect();
+            if cred_parts.len() != 2 {
+                return Ok((url.to_string(), None, None));
+            }
+
+            let creds = cred_parts[0];
+            let host = cred_parts[1];
+
+            // Parse credentials
+            let cred_split: Vec<&str> = creds.splitn(2, ':').collect();
+            let user = Some(cred_split[0].to_string());
+            let password = if cred_split.len() > 1 {
+                Some(cred_split[1].to_string())
+            } else {
+                None
+            };
+
+            let clean_url = format!("{}://{}", scheme, host);
+            Ok((clean_url, user, password))
+        } else {
+            Ok((url.to_string(), None, None))
+        }
     }
 
     pub async fn ensure_schema(&self) -> Result<()> {
