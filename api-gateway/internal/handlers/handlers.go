@@ -268,9 +268,11 @@ func (h *Handler) GetAgentMetrics(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetAgentTopology(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "agentId")
-	// Fetch recent runs for this agent to get trace IDs, then build topology
+	tenantID := tenantFromCtx(r)
+
+	// Fetch recent runs to collect unique trace IDs
 	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
-		TenantID:  tenantFromCtx(r),
+		TenantID:  tenantID,
 		AgentName: agentID,
 		Limit:     10,
 	})
@@ -278,15 +280,21 @@ func (h *Handler) GetAgentTopology(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var allSpans []models.Span
+
+	// Deduplicate trace IDs, then fetch all spans in a single batch query (P0-2 fix)
 	seen := map[string]bool{}
+	traceIDs := make([]string, 0, len(page.Items))
 	for _, run := range page.Items {
-		if seen[run.TraceID] {
-			continue
+		if !seen[run.TraceID] {
+			seen[run.TraceID] = true
+			traceIDs = append(traceIDs, run.TraceID)
 		}
-		seen[run.TraceID] = true
-		spans, _ := h.pg.GetTraceSpans(r.Context(), run.TraceID, tenantFromCtx(r))
-		allSpans = append(allSpans, spans...)
+	}
+
+	allSpans, err := h.pg.GetSpansForTraces(r.Context(), traceIDs, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, buildTopologyGraph(allSpans))
 }
@@ -418,6 +426,46 @@ func (h *Handler) ListEnvironments(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) LiveStream(w http.ResponseWriter, r *http.Request) {
 	h.hub.ServeWS(w, r, tenantFromCtx(r))
+}
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+
+// ListAudit returns a paginated list of policy decisions for the tenant.
+// GET /api/v1/audit?limit=100&offset=0
+func (h *Handler) ListAudit(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromCtx(r)
+	limit := parseIntOr(r.URL.Query().Get("limit"), 100)
+	offset := parseIntOr(r.URL.Query().Get("offset"), 0)
+
+	entries, err := h.pg.ListAuditEntries(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query audit log")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items":  entries,
+		"limit":  limit,
+		"offset": offset,
+		"count":  len(entries),
+	})
+}
+
+// VerifyAuditChain replays the SHA-256 chain and reports any broken links.
+// GET /api/v1/audit/verify
+func (h *Handler) VerifyAuditChain(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromCtx(r)
+
+	result, err := h.pg.VerifyAuditChain(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "chain verification failed")
+		return
+	}
+
+	status := http.StatusOK
+	if !result.Valid {
+		status = http.StatusConflict // 409: data conflict — chain broken
+	}
+	writeJSON(w, status, result)
 }
 
 // ─── Build helpers ────────────────────────────────────────────────────────────

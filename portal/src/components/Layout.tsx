@@ -1,8 +1,9 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, Activity, GitBranch, Radio,
-  Bot, DollarSign, Server, Settings, Zap
+  LayoutDashboard, Activity, Radio,
+  Bot, DollarSign, Server, Zap, LogOut, User
 } from 'lucide-react'
+import { useAuth } from '../hooks/auth'
 
 const NAV = [
   { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
@@ -14,6 +15,8 @@ const NAV = [
 ]
 
 export default function Layout() {
+  const { user, logout } = useAuth()
+
   return (
     <div style={{ display:'flex', height:'100vh', background:'#080C18', color:'#E2E8F0', fontFamily:"'JetBrains Mono',monospace", overflow:'hidden' }}>
       {/* Sidebar */}
@@ -54,9 +57,29 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Footer */}
-        <div style={{ padding:'12px 16px', borderTop:'1px solid #0F1F35', fontSize:10, color:'#1E3A5F' }}>
-          v1.0.0 · © AgentFabric
+        {/* User info + logout */}
+        <div style={{ padding:'12px 16px', borderTop:'1px solid #0F1F35' }}>
+          {user ? (
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:24, height:24, background:'#1E3A5F', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <User size={12} color="#60A5FA" />
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:11, color:'#94A3B8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {user.email || user.name || user.sub}
+                </div>
+              </div>
+              <button
+                onClick={logout}
+                title="Sign out"
+                style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', color:'#475569', flexShrink:0 }}
+              >
+                <LogOut size={13} />
+              </button>
+            </div>
+          ) : (
+            <div style={{ fontSize:10, color:'#1E3A5F' }}>v1.0.0 · © AgentFabric</div>
+          )}
         </div>
       </aside>
 

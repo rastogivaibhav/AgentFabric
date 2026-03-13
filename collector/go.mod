@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.19.0
 	github.com/spf13/viper v1.18.2
+	github.com/stretchr/testify v1.9.0
 	go.opentelemetry.io/proto/otlp v1.1.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.62.0
@@ -15,6 +16,9 @@ require (
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect

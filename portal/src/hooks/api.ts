@@ -1,13 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
+import { getToken } from './auth'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
-const TOKEN = localStorage.getItem('af_token') ?? ''
 
 async function apiFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(BASE + '/api/v1' + path)
   if (params) Object.entries(params).forEach(([k, v]) => v && url.searchParams.set(k, v))
+  // Read token dynamically on every request — picks up OIDC cookie + localStorage updates
+  const token = getToken()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`
+  if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch(url.toString(), { headers })
   if (!res.ok) throw new Error(`API ${res.status}: ${path}`)
   return res.json()

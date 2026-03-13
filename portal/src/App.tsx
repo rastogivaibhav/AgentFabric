@@ -8,6 +8,8 @@ import LiveStream from './pages/LiveStream'
 import AgentsPage from './pages/AgentsPage'
 import CostPage from './pages/CostPage'
 import EnvironmentsPage from './pages/EnvironmentsPage'
+import LoginPage from './pages/LoginPage'
+import { useAuth, isAuthEnabled } from './hooks/auth'
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -19,12 +21,29 @@ const qc = new QueryClient({
   },
 })
 
+// RequireAuth: redirect to /login if not authenticated (and auth is enabled).
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth()
+  if (!isAuthEnabled()) return <>{children}</>
+  if (isLoading) return null // brief flicker guard
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <Routes>
-          <Route element={<Layout />}>
+          {/* Public routes */}
+          <Route path="login" element={<LoginPage />} />
+
+          {/* Protected routes — wrapped in RequireAuth */}
+          <Route element={
+            <RequireAuth>
+              <Layout />
+            </RequireAuth>
+          }>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="traces" element={<TracesPage />} />

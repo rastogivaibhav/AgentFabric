@@ -123,10 +123,12 @@ type EnrichedSpan struct {
 	CollectorNode string            `json:"collector_node"`
 	ReceivedNs    int64             `json:"received_ns"`
 	RunID         string            `json:"run_id"`
-	// Cost fields
-	InputTokens  int64   `json:"input_tokens,omitempty"`
-	OutputTokens int64   `json:"output_tokens,omitempty"`
-	CostUSD      float64 `json:"cost_usd,omitempty"`
+	// Cost fields — collector computes all three; downstream must not recompute
+	InputTokens    int64   `json:"input_tokens,omitempty"`
+	OutputTokens   int64   `json:"output_tokens,omitempty"`
+	InputCostUSD   float64 `json:"input_cost_usd,omitempty"`
+	OutputCostUSD  float64 `json:"output_cost_usd,omitempty"`
+	CostUSD        float64 `json:"cost_usd,omitempty"`
 }
 
 type SpanEvent struct {
@@ -300,6 +302,8 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 		RunID:         runID,
 		InputTokens:   inputTokens,
 		OutputTokens:  outputTokens,
+		InputCostUSD:  inputCost,
+		OutputCostUSD: outputCost,
 		CostUSD:       inputCost + outputCost,
 	}
 
