@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, postgres::PgPoolOptions, Row};
+use sqlx::{PgPool, postgres::PgPoolOptions, Row, QueryBuilder, Postgres};
 use tracing::{info, error};
 use uuid::Uuid;
 
@@ -128,8 +128,8 @@ impl PostgresStore {
         .bind(span.start_time_ns as i64)
         .bind(span.input_tokens)
         .bind(span.output_tokens)
-        .bind(span.cost_usd * 0.6) // approximate split
-        .bind(span.cost_usd * 0.4)
+        .bind(span.input_cost_usd)
+        .bind(span.output_cost_usd)
         .execute(&self.pool)
         .await?;
 
@@ -218,10 +218,8 @@ impl PostgresStore {
             .execute(&self.pool)
             .await?;
 
-        let fw_filter = framework.map(|f| format!("AND framework = '{}'", f)).unwrap_or_default();
-        let time_filter = since_ns.map(|t| format!("AND start_ns >= {}", t)).unwrap_or_default();
-
-        let sql = format!(r#"
+        // Build parameterized query — no string interpolation of user input (P0-3 fix)
+        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(r#"
             SELECT span_id, trace_id, parent_span_id, name,
                    framework, span_kind, model, tool_name,
                    duration_ms, status_code, input_tokens, output_tokens,
@@ -229,18 +227,22 @@ impl PostgresStore {
                    policy_decision, pii_detected,
                    to_timestamp(start_ns::bigint / 1e9) AS start_time
             FROM span_metadata
-            WHERE tenant_id = $1
-            {} {}
-            ORDER BY start_ns DESC
-            LIMIT $2 OFFSET $3
-        "#, fw_filter, time_filter);
+            WHERE tenant_id = "#);
+        builder.push_bind(tenant_id);
+        if let Some(fw) = framework {
+            builder.push(" AND framework = ");
+            builder.push_bind(fw);
+        }
+        if let Some(ts) = since_ns {
+            builder.push(" AND start_ns >= ");
+            builder.push_bind(ts);
+        }
+        builder.push(" ORDER BY start_ns DESC LIMIT ");
+        builder.push_bind(limit);
+        builder.push(" OFFSET ");
+        builder.push_bind(offset);
 
-        let rows = sqlx::query(&sql)
-            .bind(tenant_id)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = builder.build().fetch_all(&self.pool).await?;
 
         let spans: Vec<serde_json::Value> = rows.iter().map(|r| {
             serde_json::json!({

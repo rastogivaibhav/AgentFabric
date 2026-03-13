@@ -1,0 +1,294 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "feature/**"]
+  pull_request:
+    branches: [main, master]
+
+# Coverage gate: PRs blocked if any service drops below 60% (Sprint 2 target)
+# Will be raised to 80% at Sprint 3, 90% at Sprint 4.
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─── af-core (Rust) ─────────────────────────────────────────────────────────
+  af-core:
+    name: af-core (Rust)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: af-core
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fabric
+          POSTGRES_PASSWORD: fabric
+          POSTGRES_DB: agentfabric_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            af-core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('af-core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+
+      - name: Clippy (zero warnings)
+        run: cargo clippy -- -D warnings
+
+      - name: Tests + coverage
+        env:
+          DATABASE_URL: postgres://fabric:fabric@localhost:5432/agentfabric_test
+          TEST_DATABASE_URL: postgres://fabric:fabric@localhost:5432/agentfabric_test
+        run: |
+          cargo tarpaulin \
+            --out Xml \
+            --output-dir coverage \
+            --exclude-files "src/main.rs" \
+            --timeout 120
+
+      - name: Enforce coverage gate (60% Sprint 2)
+        run: |
+          COVERAGE=$(cargo tarpaulin --out Stdout 2>&1 | grep -oP '\d+\.\d+(?=% coverage)' | head -1)
+          echo "af-core coverage: ${COVERAGE}%"
+          python3 -c "
+          import sys
+          cov = float('${COVERAGE}' or '0')
+          if cov < 60.0:
+              print(f'Coverage {cov}% is below 60% gate')
+              sys.exit(1)
+          print(f'Coverage {cov}% passes 60% gate')
+          "
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: af-core/coverage/cobertura.xml
+          flags: af-core
+          fail_ci_if_error: false
+
+  # ─── collector (Go) ─────────────────────────────────────────────────────────
+  collector:
+    name: collector (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: collector/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Tests + coverage
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out | tee coverage_report.txt
+
+      - name: Enforce coverage gate (40%)
+        run: |
+          TOTAL=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
+          echo "collector coverage: ${TOTAL}%"
+          python3 -c "
+          import sys
+          cov = float('${TOTAL}' or '0')
+          if cov < 60.0:
+              print(f'Coverage {cov}% is below 60% gate')
+              sys.exit(1)
+          print(f'Coverage {cov}% passes 60% gate')
+          "
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: collector/coverage.out
+          flags: collector
+          fail_ci_if_error: false
+
+  # ─── api-gateway (Go) ───────────────────────────────────────────────────────
+  api-gateway:
+    name: api-gateway (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api-gateway
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fabric
+          POSTGRES_PASSWORD: fabric
+          POSTGRES_DB: agentfabric_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: api-gateway/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Tests + coverage
+        env:
+          DATABASE_URL: postgres://fabric:fabric@localhost:5432/agentfabric_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out | tee coverage_report.txt
+
+      - name: Enforce coverage gate (40%)
+        run: |
+          TOTAL=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
+          echo "api-gateway coverage: ${TOTAL}%"
+          python3 -c "
+          import sys
+          cov = float('${TOTAL}' or '0')
+          if cov < 60.0:
+              print(f'Coverage {cov}% is below 60% gate')
+              sys.exit(1)
+          print(f'Coverage {cov}% passes 60% gate')
+          "
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: api-gateway/coverage.out
+          flags: api-gateway
+          fail_ci_if_error: false
+
+  # ─── portal (TypeScript/React) ──────────────────────────────────────────────
+  portal:
+    name: portal (TypeScript)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Tests + coverage
+        run: npx vitest run --coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: portal/coverage/coverage-final.json
+          flags: portal
+          fail_ci_if_error: false
+
+  # ─── agent-sdk (Python) ─────────────────────────────────────────────────────
+  agent-sdk:
+    name: agent-sdk (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install pytest-cov
+
+      - name: Tests + coverage
+        run: |
+          pytest --cov=agentfabric \
+                 --cov-report=xml:coverage.xml \
+                 --cov-report=term-missing \
+                 -v
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: agent-sdk/coverage.xml
+          flags: agent-sdk
+          fail_ci_if_error: false
+
+  # ─── PR gate: all jobs must pass ────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    needs: [af-core, collector, api-gateway, portal, agent-sdk]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        env:
+          AF_CORE_RESULT: ${{ needs.af-core.result }}
+          COLLECTOR_RESULT: ${{ needs.collector.result }}
+          GATEWAY_RESULT: ${{ needs.api-gateway.result }}
+          PORTAL_RESULT: ${{ needs.portal.result }}
+          SDK_RESULT: ${{ needs.agent-sdk.result }}
+        run: |
+          FAILED=0
+          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT"; do
+            if [ "$JOB" != "success" ]; then
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" = "1" ]; then
+            echo "One or more CI jobs failed. Merge blocked."
+            exit 1
+          fi
+          echo "All CI jobs passed. Merge allowed."

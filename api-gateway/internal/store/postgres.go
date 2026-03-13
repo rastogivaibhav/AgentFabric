@@ -256,6 +256,47 @@ func (s *PostgresStore) GetTraceSpans(ctx context.Context, traceID, tenantID str
 		LIMIT 5000`,
 		traceID, tenantID,
 	)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var spans []models.Span
+	for rows.Next() {
+		var sp models.Span
+		var attrsJSON, eventsJSON []byte
+		if err := rows.Scan(
+			&sp.ID, &sp.TraceID, &sp.ParentID, &sp.RunID, &sp.Name, &sp.Framework,
+			&sp.StartTimeNs, &sp.DurationNs, &sp.StatusCode, &sp.StatusMsg,
+			&attrsJSON, &eventsJSON, &sp.InputTokens, &sp.OutputTokens, &sp.CostUSD,
+			&sp.ReceivedAt,
+		); err != nil {
+			continue
+		}
+		json.Unmarshal(attrsJSON, &sp.Attributes)
+		json.Unmarshal(eventsJSON, &sp.Events)
+		spans = append(spans, sp)
+	}
+	return spans, nil
+}
+
+// GetSpansForTraces fetches spans for multiple trace IDs in a single query (P0-2 fix).
+// Use this instead of calling GetTraceSpans in a loop.
+func (s *PostgresStore) GetSpansForTraces(ctx context.Context, traceIDs []string, tenantID string) ([]models.Span, error) {
+	if len(traceIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT span_id, trace_id, COALESCE(parent_span_id,''), run_id, name, framework,
+		       start_time_ns, duration_ns, status_code, COALESCE(status_msg,''),
+		       attributes, events, input_tokens, output_tokens, cost_usd, received_at
+		FROM spans
+		WHERE trace_id = ANY($1) AND tenant_id = $2
+		ORDER BY start_time_ns ASC
+		LIMIT 50000`,
+		traceIDs, tenantID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -595,6 +636,143 @@ func (s *PostgresStore) ListEnvironments(ctx context.Context, tenantID string) (
 		envs = []Environment{}
 	}
 	return envs, nil
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+// AuditEntry is the api-gateway view of a policy_audit_log row.
+type AuditEntry struct {
+	ID           int64     `json:"id"`
+	DecisionID   string    `json:"decision_id"`
+	TraceID      string    `json:"trace_id"`
+	SpanID       string    `json:"span_id"`
+	PolicyName   string    `json:"policy_name"`
+	Result       string    `json:"result"`
+	Reason       string    `json:"reason"`
+	TenantID     string    `json:"tenant_id"`
+	EvaluatedAt  time.Time `json:"evaluated_at"`
+	PreviousHash string    `json:"previous_hash"`
+	EntryHash    string    `json:"entry_hash"`
+}
+
+// ChainVerification is the result of replaying the hash chain.
+type ChainVerification struct {
+	Valid          bool   `json:"valid"`
+	EntriesChecked int    `json:"entries_checked"`
+	FirstBrokenAt  *int   `json:"first_broken_at,omitempty"`
+	Message        string `json:"message"`
+}
+
+// ListAuditEntries returns paginated audit log entries for a tenant, oldest first.
+func (s *PostgresStore) ListAuditEntries(ctx context.Context, tenantID string, limit, offset int) ([]AuditEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, decision_id, trace_id, span_id,
+		       policy_name, result, reason, tenant_id, evaluated_at,
+		       COALESCE(previous_hash,''), COALESCE(entry_hash,'')
+		FROM policy_audit_log
+		WHERE tenant_id = $1
+		ORDER BY id ASC
+		LIMIT $2 OFFSET $3`,
+		tenantID, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		if err := rows.Scan(
+			&e.ID, &e.DecisionID, &e.TraceID, &e.SpanID,
+			&e.PolicyName, &e.Result, &e.Reason, &e.TenantID, &e.EvaluatedAt,
+			&e.PreviousHash, &e.EntryHash,
+		); err != nil {
+			continue
+		}
+		entries = append(entries, e)
+	}
+	if entries == nil {
+		entries = []AuditEntry{}
+	}
+	return entries, nil
+}
+
+// VerifyAuditChain replays the SHA-256 hash chain for a tenant and reports
+// the first broken link, if any. This is the Go equivalent of af-core's
+// AuditWriter.verify_chain().
+func (s *PostgresStore) VerifyAuditChain(ctx context.Context, tenantID string) (*ChainVerification, error) {
+	// Load all entries in insertion order — limit to 100k for safety
+	rows, err := s.pool.Query(ctx, `
+		SELECT decision_id, trace_id, policy_name, result,
+		       EXTRACT(EPOCH FROM evaluated_at)::BIGINT * 1000000000 AS evaluated_ns,
+		       previous_hash, entry_hash
+		FROM policy_audit_log
+		WHERE tenant_id = $1
+		ORDER BY id ASC
+		LIMIT 100000`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type chainRow struct {
+		decisionID   string
+		traceID      string
+		policyName   string
+		result       string
+		evaluatedNs  int64
+		previousHash string
+		entryHash    string
+	}
+
+	var chain []chainRow
+	for rows.Next() {
+		var r chainRow
+		if err := rows.Scan(
+			&r.decisionID, &r.traceID, &r.policyName, &r.result,
+			&r.evaluatedNs, &r.previousHash, &r.entryHash,
+		); err != nil {
+			continue
+		}
+		chain = append(chain, r)
+	}
+
+	if len(chain) == 0 {
+		return &ChainVerification{Valid: true, EntriesChecked: 0, Message: "no audit entries"}, nil
+	}
+
+	prevHash := "genesis"
+	for i, r := range chain {
+		// Replicate the exact payload format from af-core/src/policy/audit.rs
+		payload := fmt.Sprintf("%s:%s:%s:%s:%d:%s",
+			r.decisionID, r.traceID, r.policyName, r.result, r.evaluatedNs, prevHash)
+
+		h := sha256.Sum256([]byte(payload))
+		expected := fmt.Sprintf("%x", h)
+
+		if r.entryHash != "" && expected != r.entryHash {
+			idx := i
+			return &ChainVerification{
+				Valid:          false,
+				EntriesChecked: i + 1,
+				FirstBrokenAt:  &idx,
+				Message:        fmt.Sprintf("chain broken at entry %d (decision_id=%s)", i, r.decisionID),
+			}, nil
+		}
+		prevHash = r.entryHash
+	}
+
+	return &ChainVerification{
+		Valid:          true,
+		EntriesChecked: len(chain),
+		Message:        "chain intact",
+	}, nil
 }
 
 func (s *PostgresStore) Close() {
