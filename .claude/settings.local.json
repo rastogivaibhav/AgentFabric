@@ -96,7 +96,10 @@
       "Bash(python -c \"import urllib.request,json; r=urllib.request.urlopen\\(''http://localhost:8080/healthz''\\); print\\(json.loads\\(r.read\\(\\)\\)\\)\")",
       "Bash(python -c \"import urllib.request,json; r=urllib.request.urlopen\\(''http://localhost:8080/api/v1/traces?limit=3''\\); data=json.loads\\(r.read\\(\\)\\); print\\(''keys:'',list\\(data.keys\\(\\)\\)\\); print\\(''total:'',data[''total'']\\); print\\(''has_more:'',data[''has_more'']\\); print\\(''items[0]:'',json.dumps\\({k:v for k,v in data[''items''][0].items\\(\\) if k!=''spans''},indent=2\\)\\)\")",
       "Skill(commit-commands:commit-push-pr)",
-      "Skill(commit-commands:commit-push-pr:*)"
+      "Skill(commit-commands:commit-push-pr:*)",
+      "Bash(gh pr:*)",
+      "Bash(powershell -Command \"git remote get-url origin\")",
+      "mcp__plugin_playwright_playwright__browser_navigate"
     ]
   }
 }
