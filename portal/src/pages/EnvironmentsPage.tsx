@@ -8,8 +8,14 @@ const ENV_COLORS: Record<string, string> = {
   development: '#10B981',
 }
 
+interface EnvRecord {
+  name: string
+  status: string
+  span_count: number
+}
+
 export default function EnvironmentsPage() {
-  const { data: envs, isLoading } = useQuery<string[]>({
+  const { data: rawEnvs, isLoading } = useQuery<EnvRecord[] | string[]>({
     queryKey: ['environments'],
     queryFn: async () => {
       const res = await fetch(`${BASE}/api/v1/environments`)
@@ -18,6 +24,11 @@ export default function EnvironmentsPage() {
     },
     refetchInterval: 30_000,
   })
+
+  // Normalise — API may return objects {name,status,span_count} or plain strings
+  const envs: EnvRecord[] = (rawEnvs ?? []).map((e) =>
+    typeof e === 'string' ? { name: e, status: 'active', span_count: 0 } : e
+  )
 
   return (
     <div style={{ padding: 32 }}>
@@ -74,23 +85,24 @@ curl -X POST http://localhost:4318/v1/traces \
           {isLoading && (
             <div style={{ color: '#334155', fontSize: 12 }}>Loading…</div>
           )}
-          {(envs ?? []).map((env) => {
-            const color = ENV_COLORS[env] ?? '#475569'
+          {envs.map((env) => {
+            const color = ENV_COLORS[env.name] ?? '#475569'
             return (
-              <div key={env} style={{
+              <div key={env.name} style={{
                 background: '#060A14', border: `1px solid ${color}30`,
                 borderLeft: `3px solid ${color}`, borderRadius: 8, padding: 20
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#F0F9FF' }}>
-                    {env.charAt(0).toUpperCase() + env.slice(1)}
+                    {env.name.charAt(0).toUpperCase() + env.name.slice(1)}
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.8 }}>
-                  <div>Collector: <span style={{ color: '#94A3B8' }}>DaemonSet</span></div>
-                  <div>Auth: <span style={{ color: env === 'production' ? '#EF4444' : '#10B981' }}>
-                    {env === 'production' ? 'mTLS enabled' : 'dev mode'}
+                  <div>Spans: <span style={{ color: '#94A3B8' }}>{env.span_count.toLocaleString()}</span></div>
+                  <div>Status: <span style={{ color: env.status === 'active' ? '#10B981' : '#475569' }}>{env.status}</span></div>
+                  <div>Auth: <span style={{ color: env.name === 'production' ? '#EF4444' : '#10B981' }}>
+                    {env.name === 'production' ? 'mTLS enabled' : 'dev mode'}
                   </span></div>
                 </div>
               </div>

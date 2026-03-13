@@ -1,0 +1,79 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "portal",
+      "description": "React 18 + Vite frontend — Dashboard, Traces, LiveStream, Cost, Agents pages (proxies /api → :8080)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm run dev"],
+      "cwd": "portal",
+      "port": 3000
+    },
+    {
+      "name": "mock-gateway",
+      "description": "Python mock API gateway — accepts collector spans, serves all portal endpoints + WebSocket. No Docker needed.",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "python mock_gateway.py"],
+      "port": 8080
+    },
+    {
+      "name": "api-gateway",
+      "description": "Go Chi REST API + WebSocket hub :8080 — requires infra running first",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "go run ./cmd/server"],
+      "cwd": "api-gateway",
+      "port": 8080
+    },
+    {
+      "name": "collector",
+      "description": "Go OTLP collector — gRPC :4317, HTTP :4318, Prometheus metrics :9090 — requires api-gateway",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set AF_GRPC_ADDR=0.0.0.0:4317 && set AF_HTTP_ADDR=0.0.0.0:4318 && set AF_AUTH_REQUIRE_AUTH=false && set AF_JWT_SECRET=dev-secret && set AF_GATEWAY_ENDPOINT=http://localhost:8080 && set AF_DEBUG=true && set AF_PII_ENABLED=true && collector-dev.exe"],
+      "cwd": "collector",
+      "port": 4318
+    },
+    {
+      "name": "af-core",
+      "description": "Rust policy engine + Kafka consumer — gRPC :50051, HTTP :8889 — requires infra running first",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cargo run"],
+      "cwd": "af-core",
+      "port": 8889
+    },
+    {
+      "name": "full-stack",
+      "description": "All 13 services via Docker Compose — Postgres, ClickHouse, Redis, Kafka, collector, af-core, api-gateway, portal, Prometheus, Grafana, Jaeger",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "docker compose up --build"],
+      "port": 3000
+    },
+    {
+      "name": "infra",
+      "description": "Infrastructure only — Postgres :5432, ClickHouse :8123/:9000, Redis :6379, Kafka :9092. Start this before running Go/Rust services natively.",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "docker compose up postgres clickhouse redis zookeeper kafka"],
+      "port": 5432
+    },
+    {
+      "name": "prometheus",
+      "description": "Prometheus metrics scraper — UI at :9090, scrapes collector + api-gateway",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "docker compose up prometheus"],
+      "port": 9090
+    },
+    {
+      "name": "grafana",
+      "description": "Grafana dashboards — UI at :9091 (container :3000), default admin/admin",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "docker compose up grafana"],
+      "port": 9091
+    },
+    {
+      "name": "jaeger",
+      "description": "Jaeger distributed tracing UI — :16686, gRPC collector :14250",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "docker compose up jaeger"],
+      "port": 16686
+    }
+  ]
+}
