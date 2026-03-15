@@ -101,7 +101,8 @@
       "Bash(powershell -Command \"git remote get-url origin\")",
       "mcp__plugin_playwright_playwright__browser_navigate",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" pr list --head feature/agentfabric-v1)",
-      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)"
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
+      "Bash(find '/c/Users/vrast/Documents/Agentic Code/files/portal/src' -name LoginPage* -o -name login*)"
     ]
   }
 }

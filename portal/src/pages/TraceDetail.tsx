@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom'
-import { useTrace, useTraceGraph, Span } from '../hooks/api'
+import { useTrace, Span } from '../hooks/api'
 import { useState } from 'react'
+import TopologyGraph from '../components/TopologyGraph'
 
 const FW_COLORS: Record<string, string> = {
   crewai:'#FF6B35', langgraph:'#4ECDC4', google_adk:'#4285F4',
@@ -185,9 +186,14 @@ export default function TraceDetail() {
         )}
 
         {tab === 'graph' && (
-          <div style={{ background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:8, padding:32, textAlign:'center', color:'#475569' }}>
-            Topology graph renders using D3 force-directed layout — see portal/src/components/TopologyGraph.tsx
-          </div>
+          <TopologyGraph
+            spans={spans}
+            selectedSpanId={selected?.id}
+            onSelectSpan={(spanId) => {
+              const span = spans.find(s => s.id === spanId) ?? null
+              setSelected(prev => prev?.id === spanId ? null : span)
+            }}
+          />
         )}
       </div>
 

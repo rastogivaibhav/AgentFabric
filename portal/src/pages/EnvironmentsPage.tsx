@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useCollectors, CollectorInfo } from '../hooks/api'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -8,14 +10,152 @@ const ENV_COLORS: Record<string, string> = {
   development: '#10B981',
 }
 
+// Collector status color
+const COLLECTOR_STATUS_COLORS: Record<string, string> = {
+  healthy: '#10B981',
+  degraded: '#F59E0B',
+  unreachable: '#EF4444',
+}
+
 interface EnvRecord {
   name: string
   status: string
   span_count: number
 }
 
+// Static fallback collector cards shown when the API returns no data
+const STATIC_COLLECTORS: CollectorInfo[] = [
+  {
+    id: 'grpc',
+    name: 'gRPC OTLP Receiver',
+    endpoint_grpc: 'localhost:4317',
+    endpoint_http: '',
+    status: 'healthy',
+    version: 'v1',
+  },
+  {
+    id: 'http',
+    name: 'HTTP OTLP Receiver',
+    endpoint_grpc: '',
+    endpoint_http: 'localhost:4318',
+    status: 'healthy',
+    version: 'v1',
+  },
+  {
+    id: 'gateway',
+    name: 'API Gateway',
+    endpoint_grpc: '',
+    endpoint_http: 'localhost:8080',
+    status: 'healthy',
+    version: 'v1',
+  },
+]
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      // clipboard may not be available in all contexts — fail silently
+    }
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copy to clipboard"
+      style={{
+        background: 'none',
+        border: '1px solid #1E3A5F',
+        borderRadius: 4,
+        padding: '2px 7px',
+        cursor: 'pointer',
+        fontSize: 9,
+        color: copied ? '#10B981' : '#475569',
+        fontFamily: "'JetBrains Mono', monospace",
+        transition: 'color 0.2s',
+        flexShrink: 0,
+      }}
+    >
+      {copied ? 'copied' : 'copy'}
+    </button>
+  )
+}
+
+function CollectorCard({ collector }: { collector: CollectorInfo }) {
+  const statusColor = COLLECTOR_STATUS_COLORS[collector.status] ?? '#475569'
+  const hasGrpc = !!collector.endpoint_grpc
+  const hasHttp = !!collector.endpoint_http
+
+  return (
+    <div style={{
+      background: '#060A14',
+      border: `1px solid ${statusColor}30`,
+      borderLeft: `3px solid ${statusColor}`,
+      borderRadius: 8,
+      padding: 16,
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: statusColor,
+          boxShadow: `0 0 6px ${statusColor}`,
+          flexShrink: 0,
+        }} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#F0F9FF', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {collector.name}
+        </span>
+        <span style={{ fontSize: 9, color: statusColor, padding: '1px 5px', borderRadius: 3, border: `1px solid ${statusColor}40`, flexShrink: 0 }}>
+          {collector.status}
+        </span>
+      </div>
+
+      {/* Endpoints */}
+      {hasGrpc && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 9, color: '#334155', letterSpacing: '0.1em', marginBottom: 3 }}>gRPC</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <code style={{ fontSize: 12, fontWeight: 700, color: '#3B82F6', fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {collector.endpoint_grpc}
+            </code>
+            <CopyButton text={collector.endpoint_grpc} />
+          </div>
+        </div>
+      )}
+      {hasHttp && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 9, color: '#334155', letterSpacing: '0.1em', marginBottom: 3 }}>HTTP</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <code style={{ fontSize: 12, fontWeight: 700, color: '#10B981', fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {collector.endpoint_http}
+            </code>
+            <CopyButton text={collector.endpoint_http} />
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingTop: 8, borderTop: '1px solid #0F1F35' }}>
+        <span style={{ fontSize: 9, color: '#334155' }}>
+          {collector.version ? `v${collector.version.replace(/^v/, '')}` : ''}
+        </span>
+        {collector.last_checked && (
+          <span style={{ fontSize: 9, color: '#334155' }}>
+            Checked {new Date(collector.last_checked).toLocaleTimeString()}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function EnvironmentsPage() {
-  const { data: rawEnvs, isLoading } = useQuery<EnvRecord[] | string[]>({
+  const { data: rawEnvs, isLoading: envsLoading } = useQuery<EnvRecord[] | string[]>({
     queryKey: ['environments'],
     queryFn: async () => {
       const res = await fetch(`${BASE}/api/v1/environments`)
@@ -25,10 +165,19 @@ export default function EnvironmentsPage() {
     refetchInterval: 30_000,
   })
 
-  // Normalise — API may return objects {name,status,span_count} or plain strings
+  const { data: collectorsData, isLoading: collectorsLoading, isError: collectorsError } = useCollectors()
+
+  // Normalise environments — API may return objects or plain strings
   const envs: EnvRecord[] = (rawEnvs ?? []).map((e) =>
-    typeof e === 'string' ? { name: e, status: 'active', span_count: 0 } : e
+    typeof e === 'string' ? { name: e, status: 'active', span_count: 0 } : e as EnvRecord
   )
+
+  // Decide which collector cards to show: dynamic if data returned, otherwise static fallback
+  const collectors: CollectorInfo[] = (collectorsData && collectorsData.length > 0)
+    ? collectorsData
+    : STATIC_COLLECTORS
+
+  const usedFallback = !collectorsLoading && (collectorsError || !collectorsData || collectorsData.length === 0)
 
   return (
     <div style={{ padding: 32 }}>
@@ -37,22 +186,29 @@ export default function EnvironmentsPage() {
         <p style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>Collector fleet and environment status</p>
       </div>
 
-      {/* OTLP endpoints info */}
+      {/* Collector endpoints */}
       <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24, marginBottom: 24 }}>
-        <div style={{ fontSize: 12, color: '#475569', marginBottom: 16, letterSpacing: '0.1em' }}>COLLECTOR ENDPOINTS</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-          {[
-            { label: 'gRPC OTLP', addr: 'localhost:4317', proto: 'grpc', color: '#3B82F6' },
-            { label: 'HTTP OTLP', addr: 'localhost:4318', proto: 'http', color: '#10B981' },
-            { label: 'API Gateway', addr: 'localhost:8080', proto: 'http', color: '#8B5CF6' },
-          ].map(({ label, addr, proto, color }) => (
-            <div key={label} style={{ background: '#060A14', border: `1px solid ${color}30`, borderRadius: 8, padding: 16 }}>
-              <div style={{ fontSize: 10, color: '#475569', letterSpacing: '0.1em', marginBottom: 8 }}>{label}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color, fontFamily: 'monospace' }}>{addr}</div>
-              <div style={{ fontSize: 10, color: '#334155', marginTop: 4 }}>{proto.toUpperCase()}</div>
-            </div>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: '#475569', letterSpacing: '0.1em' }}>COLLECTOR ENDPOINTS</div>
+          {usedFallback && (
+            <span style={{ fontSize: 9, color: '#334155', padding: '2px 6px', border: '1px solid #1E3A5F', borderRadius: 3 }}>
+              static config — live API not available
+            </span>
+          )}
+          {collectorsLoading && (
+            <span style={{ fontSize: 9, color: '#334155' }}>Checking collectors…</span>
+          )}
         </div>
+
+        {collectorsLoading ? (
+          <div style={{ color: '#334155', fontSize: 12, padding: 16, textAlign: 'center' }}>Loading collectors…</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+            {collectors.map((c) => (
+              <CollectorCard key={c.id} collector={c} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Quick start */}
@@ -71,8 +227,8 @@ instrument(endpoint="http://localhost:4317", service_name="my-agent")
 # Your existing CrewAI / LangGraph / OpenAI / Claude code is now traced
 
 # Or send a raw OTLP span via HTTP:
-curl -X POST http://localhost:4318/v1/traces \
-  -H "Content-Type: application/json" \
+curl -X POST http://localhost:4318/v1/traces \\
+  -H "Content-Type: application/json" \\
   -d '{"resourceSpans":[]}'`}</pre>
       </div>
 
@@ -82,7 +238,7 @@ curl -X POST http://localhost:4318/v1/traces \
           CONFIGURED ENVIRONMENTS
         </div>
         <div style={{ padding: 24, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-          {isLoading && (
+          {envsLoading && (
             <div style={{ color: '#334155', fontSize: 12 }}>Loading…</div>
           )}
           {envs.map((env) => {
@@ -108,6 +264,11 @@ curl -X POST http://localhost:4318/v1/traces \
               </div>
             )
           })}
+          {!envsLoading && envs.length === 0 && (
+            <div style={{ color: '#334155', fontSize: 12, gridColumn: '1/-1', textAlign: 'center', padding: 32 }}>
+              No environments found. Send spans to register an environment.
+            </div>
+          )}
         </div>
       </div>
     </div>

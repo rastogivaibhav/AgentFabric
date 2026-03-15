@@ -6,8 +6,8 @@ on:
   pull_request:
     branches: [main, master]
 
-# Coverage gate: PRs blocked if any service drops below 60% (Sprint 2 target)
-# Will be raised to 80% at Sprint 3, 90% at Sprint 4.
+# Coverage gate: PRs blocked if any service drops below 80% (Sprint 3 gate — all services)
+# Will be raised to 90% at Sprint 4.
 
 env:
   RUST_BACKTRACE: 1
@@ -71,17 +71,17 @@ jobs:
             --exclude-files "src/main.rs" \
             --timeout 120
 
-      - name: Enforce coverage gate (60% Sprint 2)
+      - name: Enforce coverage gate (80% Sprint 3)
         run: |
           COVERAGE=$(cargo tarpaulin --out Stdout 2>&1 | grep -oP '\d+\.\d+(?=% coverage)' | head -1)
           echo "af-core coverage: ${COVERAGE}%"
           python3 -c "
           import sys
           cov = float('${COVERAGE}' or '0')
-          if cov < 60.0:
-              print(f'Coverage {cov}% is below 60% gate')
+          if cov < 80.0:
+              print(f'Coverage {cov}% is below 80% gate')
               sys.exit(1)
-          print(f'Coverage {cov}% passes 60% gate')
+          print(f'Coverage {cov}% passes 80% gate')
           "
 
       - name: Upload coverage
@@ -115,17 +115,17 @@ jobs:
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -func=coverage.out | tee coverage_report.txt
 
-      - name: Enforce coverage gate (40%)
+      - name: Enforce coverage gate (80% Sprint 3)
         run: |
           TOTAL=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "collector coverage: ${TOTAL}%"
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
-          if cov < 60.0:
-              print(f'Coverage {cov}% is below 60% gate')
+          if cov < 80.0:
+              print(f'Coverage {cov}% is below 80% gate')
               sys.exit(1)
-          print(f'Coverage {cov}% passes 60% gate')
+          print(f'Coverage {cov}% passes 80% gate')
           "
 
       - name: Upload coverage
@@ -179,17 +179,17 @@ jobs:
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -func=coverage.out | tee coverage_report.txt
 
-      - name: Enforce coverage gate (40%)
+      - name: Enforce coverage gate (80% Sprint 3)
         run: |
           TOTAL=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "api-gateway coverage: ${TOTAL}%"
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
-          if cov < 60.0:
-              print(f'Coverage {cov}% is below 60% gate')
+          if cov < 80.0:
+              print(f'Coverage {cov}% is below 80% gate')
               sys.exit(1)
-          print(f'Coverage {cov}% passes 60% gate')
+          print(f'Coverage {cov}% passes 80% gate')
           "
 
       - name: Upload coverage
@@ -224,6 +224,24 @@ jobs:
 
       - name: Tests + coverage
         run: npx vitest run --coverage
+
+      - name: Enforce coverage gate (80% Sprint 3)
+        run: |
+          TOTAL=$(node -e "
+            const fs = require('fs');
+            const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
+            const lines = summary.total.lines.pct;
+            console.log(lines);
+          ")
+          echo "portal coverage: ${TOTAL}%"
+          python3 -c "
+          import sys
+          cov = float('${TOTAL}' or '0')
+          if cov < 80.0:
+              print(f'Coverage {cov}% is below 80% gate')
+              sys.exit(1)
+          print(f'Coverage {cov}% passes 80% gate')
+          "
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

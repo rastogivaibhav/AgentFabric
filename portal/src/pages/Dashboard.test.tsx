@@ -127,8 +127,8 @@ describe('Dashboard', () => {
 
     render(<Dashboard />)
 
-    // Should not crash and should show 0 values
-    expect(screen.getByText('0')).toBeInTheDocument()
+    // Should not crash and should show 0 values (multiple zeros expected)
+    expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders stat card labels', () => {

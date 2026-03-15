@@ -6,14 +6,56 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 
 ---
 
-## [Unreleased] — Sprint 3 target
+## [Unreleased] — Sprint 4 target
 
 ### Planned
-- mTLS wired in collector dev config
+- mTLS wired in collector dev config (in progress — Sprint 4)
 - Secret rotation mechanism
 - Monitoring dashboards (Grafana)
-- Coverage gate raised to 80% (Sprint 3 target)
+- Coverage gate raised to 90% (Sprint 4 target)
+- Performance tuning (query optimization, caching layer)
 - Agent-sdk integration tests for `_patch_crewai`, `_patch_langgraph`, etc.
+- v1.0.0 release
+
+### Done (moved to v0.3.0)
+- Coverage gate raised to 80% — completed Sprint 3
+
+---
+
+## [0.3.0] — 2026-03-15 — Sprint 3: Portal Completeness + Coverage Gate
+
+### New Features
+- **S3-1 Topology Graph Component** — `portal/src/components/TopologyGraph.tsx`: SVG-based DAG
+  renderer showing parent→child span relationships. Nodes are color-coded by framework and
+  clickable for span selection. Responsive SVG viewBox layout adapts to any trace depth.
+  Resolves the TraceDetail "Graph" tab placeholder left from Sprint 2.
+
+- **S3-2 TracesPage Pagination** — `portal/src/pages/TracesPage.tsx`: Added cursor-based
+  pagination (100 traces/page) with Prev/Next navigation controls and a "Showing X–Y results"
+  display. Client-side text search filters on trace ID and root span name without a round trip.
+
+- **S3-3 CostPage Token Attribution** — `portal/src/pages/CostPage.tsx`: Added input/output
+  token breakdown stat cards and a cost-by-framework percentage section. Previously the page
+  only showed trace-count share; it now shows actual cost share per framework.
+
+- **S3-4 EnvironmentsPage Dynamic Collectors** — `portal/src/pages/EnvironmentsPage.tsx`:
+  Collector endpoints are now fetched live from `/api/v1/collectors` with graceful static
+  fallback when the endpoint is unavailable. Added per-endpoint copy-to-clipboard and a
+  last-checked timestamp for each collector.
+
+### CI/CD
+- **S3-5 Coverage gate raised 60% → 80%** — `.github/workflows/ci.yml`: all four services
+  (af-core, collector, api-gateway, portal) now gate at 80%. Sprint 4 target: 90%.
+
+### Tests Added
+- All 7 portal pages now have dedicated test files: Dashboard, Traces, TraceDetail, LiveStream,
+  Agents, Cost, Environments
+- `portal/src/pages/LoginPage.test.tsx` — LoginPage test added
+- `portal/src/components/TopologyGraph.test.tsx` — TopologyGraph component test added
+- `portal/src/hooks/api.test.ts` and `portal/src/hooks/auth.test.ts` — updated for new
+  coverage requirements
+- Total portal tests: 87 passing (8 test files). Red-green-clean cycle: 6 precision fixes
+  applied (getByText → getAllByText for ambiguous text nodes).
 
 ---
 
@@ -156,6 +198,8 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 - Kubernetes manifests + Helm chart
 - Prometheus scrape configs
 
-[Unreleased]: https://github.com/agentfabric/agentfabric/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/agentfabric/agentfabric/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/agentfabric/agentfabric/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/agentfabric/agentfabric/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/agentfabric/agentfabric/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/agentfabric/agentfabric/releases/tag/v0.0.1

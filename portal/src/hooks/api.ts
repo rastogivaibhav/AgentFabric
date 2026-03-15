@@ -121,6 +121,36 @@ export function useFrameworkStats() {
   })
 }
 
+export interface CollectorInfo {
+  id: string
+  name: string
+  endpoint_grpc: string
+  endpoint_http: string
+  status: 'healthy' | 'degraded' | 'unreachable' | string
+  version: string
+  last_checked?: string
+}
+
+export function useCollectors() {
+  return useQuery<CollectorInfo[]>({
+    queryKey: ['collectors'],
+    queryFn: async () => {
+      try {
+        const result = await apiFetch<CollectorInfo[]>('/collectors')
+        return result
+      } catch (err: unknown) {
+        // If the backend endpoint is not yet implemented (404), return empty array
+        // so the UI can fall back to static hardcoded cards gracefully
+        const msg = err instanceof Error ? err.message : String(err)
+        if (msg.includes('404')) return []
+        throw err
+      }
+    },
+    refetchInterval: 30_000,
+    retry: false,
+  })
+}
+
 // ─── WebSocket hook ───────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useCallback, useState } from 'react'
