@@ -6,7 +6,11 @@ serves all portal API endpoints + WebSocket live stream.
 Run: python mock_gateway.py
      (or: uvicorn mock_gateway:app --port 8080 --reload)
 """
+import base64
+import hashlib
+import hmac
 import json
+import os
 import time
 import uuid
 import asyncio
@@ -19,6 +23,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
+
+# ─── Basic-auth credentials (override via env for staging/prod) ───────────────
+ADMIN_USER     = os.environ.get("AF_ADMIN_USER",     "admin")
+ADMIN_PASSWORD = os.environ.get("AF_ADMIN_PASSWORD", "admin")
+JWT_SECRET     = os.environ.get("AF_JWT_SECRET",     "dev-secret-changeme")
 
 app = FastAPI(title="AgentFabric Mock Gateway")
 
@@ -388,11 +397,75 @@ async def live_stream(ws: WebSocket):
         print(f"[WS] client disconnected (total: {len(ws_clients)})")
 
 
+# ─── Auth helpers ─────────────────────────────────────────────────────────────
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+def _make_jwt(sub: str, email: str, tenant_id: str = "tenant-default") -> str:
+    """Issue a minimal HS256 JWT valid for 8 hours."""
+    header  = _b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    payload = _b64url(json.dumps({
+        "sub": sub,
+        "email": email,
+        "tenant_id": tenant_id,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 28800,  # 8 h
+    }).encode())
+    sig_input = f"{header}.{payload}".encode()
+    sig = _b64url(hmac.new(JWT_SECRET.encode(), sig_input, hashlib.sha256).digest())
+    return f"{header}.{payload}.{sig}"
+
+
+@app.post("/auth/login")
+async def basic_login(request: Request):
+    """Username/password login — returns AF session JWT."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON"}, status_code=400)
+
+    username = (body.get("username") or "").strip()
+    password = (body.get("password") or "").strip()
+
+    if username == ADMIN_USER and password == ADMIN_PASSWORD:
+        token = _make_jwt(sub=username, email=f"{username}@agentfabric.local")
+        return JSONResponse({"token": token, "user": {"sub": username, "email": f"{username}@agentfabric.local"}})
+
+    return JSONResponse({"error": "invalid credentials"}, status_code=401)
+
+
+@app.get("/auth/me")
+async def auth_me(request: Request):
+    """Return current user info from Authorization bearer token."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return JSONResponse({"error": "unauthenticated"}, status_code=401)
+    # Decode payload (no signature verification in mock)
+    try:
+        parts   = auth[7:].split(".")
+        padding = 4 - len(parts[1]) % 4
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * padding))
+        if payload.get("exp", 0) < time.time():
+            return JSONResponse({"error": "token expired"}, status_code=401)
+        return JSONResponse({"sub": payload["sub"], "email": payload["email"], "tenant_id": payload.get("tenant_id", "")})
+    except Exception:
+        return JSONResponse({"error": "invalid token"}, status_code=401)
+
+
+@app.get("/auth/logout")
+async def auth_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie("af_token")
+    return resp
+
+
 # ─── Startup banner ──────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
     print("\n" + "="*55)
     print("  AgentFabric Mock Gateway  |  :8080")
+    print("  Auth login        -> POST /auth/login  (admin/admin)")
+    print("  Auth me           -> GET  /auth/me")
     print("  Collector ingest  -> POST /internal/ingest")
     print("  Portal API        -> GET  /api/v1/*")
     print("  Live stream       -> WS   /api/v1/stream/live")
