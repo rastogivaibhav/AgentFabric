@@ -98,11 +98,11 @@ describe('TraceDetail', () => {
   it('renders trace header stats: framework, duration, spans', () => {
     mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
     render(<TraceDetail />)
-    expect(screen.getByText('crewai')).toBeInTheDocument()
-    // span count shown as string
-    expect(screen.getByText('2')).toBeInTheDocument()
-    // duration in seconds (1.2s)
-    expect(screen.getByText('1.20s')).toBeInTheDocument()
+    expect(screen.getAllByText('crewai').length).toBeGreaterThanOrEqual(1)
+    // span count shown as string (may appear in multiple places)
+    expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(1)
+    // duration appears in header stats and waterfall rows
+    expect(screen.getAllByText('1.20s').length).toBeGreaterThanOrEqual(1)
   })
 
   it('waterfall tab is active by default and renders span rows', () => {
@@ -120,8 +120,9 @@ describe('TraceDetail', () => {
     fireEvent.click(spansTab)
     expect(screen.getByText('Span ID')).toBeInTheDocument()
     expect(screen.getByText('Name')).toBeInTheDocument()
-    expect(screen.getByText('Framework')).toBeInTheDocument()
-    expect(screen.getByText('Duration')).toBeInTheDocument()
+    // 'Framework' appears in header stat label and table column header
+    expect(screen.getAllByText('Framework').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Duration').length).toBeGreaterThanOrEqual(1)
   })
 
   it('graph tab renders TopologyGraph component with spans prop', () => {

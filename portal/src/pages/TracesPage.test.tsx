@@ -74,8 +74,9 @@ describe('TracesPage', () => {
     render(<TracesPage />)
     expect(screen.getByText('run_crew')).toBeInTheDocument()
     expect(screen.getByText('execute_graph')).toBeInTheDocument()
-    expect(screen.getByText('crewai')).toBeInTheDocument()
-    expect(screen.getByText('langgraph')).toBeInTheDocument()
+    // framework values appear in both dropdown options and table badges
+    expect(screen.getAllByText('crewai').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('langgraph').length).toBeGreaterThanOrEqual(1)
   })
 
   it('clicking a row navigates to /traces/:id', () => {

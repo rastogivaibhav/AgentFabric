@@ -22,7 +22,7 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 
 ---
 
-## [0.3.0] — 2026-03-14 — Sprint 3: Portal Completeness + Coverage Gate
+## [0.3.0] — 2026-03-15 — Sprint 3: Portal Completeness + Coverage Gate
 
 ### New Features
 - **S3-1 Topology Graph Component** — `portal/src/components/TopologyGraph.tsx`: SVG-based DAG
@@ -44,9 +44,8 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
   last-checked timestamp for each collector.
 
 ### CI/CD
-- **S3-5 Coverage gate raised 60% → 80%** — `.github/workflows/ci.yml`: Go/Rust coverage
-  gates for af-core, collector, and api-gateway raised from 60% to 80%. Portal coverage gate
-  added at 70% (Sprint 3 baseline; Sprint 4 target: 90%).
+- **S3-5 Coverage gate raised 60% → 80%** — `.github/workflows/ci.yml`: all four services
+  (af-core, collector, api-gateway, portal) now gate at 80%. Sprint 4 target: 90%.
 
 ### Tests Added
 - All 7 portal pages now have dedicated test files: Dashboard, Traces, TraceDetail, LiveStream,
@@ -55,7 +54,8 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 - `portal/src/components/TopologyGraph.test.tsx` — TopologyGraph component test added
 - `portal/src/hooks/api.test.ts` and `portal/src/hooks/auth.test.ts` — updated for new
   coverage requirements
-- Total portal line coverage: ~80%
+- Total portal tests: 87 passing (8 test files). Red-green-clean cycle: 6 precision fixes
+  applied (getByText → getAllByText for ambiguous text nodes).
 
 ---
 

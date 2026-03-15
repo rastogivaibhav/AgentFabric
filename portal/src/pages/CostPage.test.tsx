@@ -111,7 +111,8 @@ describe('CostPage', () => {
     mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_NO_COST, isLoading: false } as any)
     mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
     render(<CostPage />)
-    expect(screen.getByText('N/A')).toBeInTheDocument()
+    // Both Input and Output Tokens show N/A when no cost data is available
+    expect(screen.getAllByText('N/A').length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders framework cost bar chart container', () => {

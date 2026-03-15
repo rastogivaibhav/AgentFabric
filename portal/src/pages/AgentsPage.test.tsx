@@ -71,11 +71,12 @@ describe('AgentsPage', () => {
     mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
     mockUseQuery.mockReturnValue({ data: { items: MOCK_TRACES_ITEMS }, isLoading: false } as any)
     render(<AgentsPage />)
-    expect(screen.getByText(/crewai/i)).toBeInTheDocument()
-    expect(screen.getByText(/langgraph/i)).toBeInTheDocument()
-    expect(screen.getByText(/google adk/i)).toBeInTheDocument()
-    expect(screen.getByText(/openai agents/i)).toBeInTheDocument()
-    expect(screen.getByText(/claude agents/i)).toBeInTheDocument()
+    // Framework names appear in cards and possibly in activity table rows
+    expect(screen.getAllByText(/crewai/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/langgraph/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText(/google.adk/i)).toBeInTheDocument()
+    expect(screen.getByText(/openai.agents/i)).toBeInTheDocument()
+    expect(screen.getByText(/claude.agents/i)).toBeInTheDocument()
   })
 
   it('framework card shows trace count from mocked useOverview data', () => {

@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main, master]
 
-# Coverage gate: PRs blocked if any service drops below 80% (Sprint 3 current gate)
+# Coverage gate: PRs blocked if any service drops below 80% (Sprint 3 gate — all services)
 # Will be raised to 90% at Sprint 4.
 
 env:
@@ -225,7 +225,7 @@ jobs:
       - name: Tests + coverage
         run: npx vitest run --coverage
 
-      - name: Enforce coverage gate (70% Sprint 3)
+      - name: Enforce coverage gate (80% Sprint 3)
         run: |
           TOTAL=$(node -e "
             const fs = require('fs');
@@ -237,10 +237,10 @@ jobs:
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
-          if cov < 70.0:
-              print(f'Coverage {cov}% is below 70% gate')
+          if cov < 80.0:
+              print(f'Coverage {cov}% is below 80% gate')
               sys.exit(1)
-          print(f'Coverage {cov}% passes 70% gate')
+          print(f'Coverage {cov}% passes 80% gate')
           "
 
       - name: Upload coverage

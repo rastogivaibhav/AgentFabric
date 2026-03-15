@@ -87,6 +87,7 @@ export default function CostPage() {
   const totalAggregatedCost = Object.values(fwCostMap).reduce((a, b) => a + b, 0)
 
   const costDataLoading = !fwHasCost ? tracesLoading : fwLoading
+  const traceCountTotal = Object.values(frameworkCounts).reduce((a, b) => a + b, 0)
 
   return (
     <div style={{ padding: 32 }}>
@@ -167,8 +168,7 @@ export default function CostPage() {
           <div style={{ fontSize: 12, color: '#475569', marginBottom: 16, letterSpacing: '0.1em' }}>FRAMEWORK SHARE — BY TRACE COUNT</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {Object.entries(frameworkCounts).map(([fw, count]) => {
-              const totalCount = Object.values(frameworkCounts).reduce((a, b) => a + b, 0)
-              const pct = totalCount > 0 ? Math.round((count / totalCount) * 100) : 0
+              const pct = traceCountTotal > 0 ? Math.round((count / traceCountTotal) * 100) : 0
               const color = FRAMEWORK_COLORS[fw] ?? '#475569'
               return (
                 <div key={fw}>
