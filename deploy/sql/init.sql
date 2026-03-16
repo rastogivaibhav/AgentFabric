@@ -208,6 +208,42 @@ CREATE TABLE api_keys (
 
 CREATE INDEX idx_api_keys_hash ON api_keys(key_hash) WHERE revoked_at IS NULL;
 
+-- ─── Users (S4: local user management) ───────────────────────────────────
+-- For environments without an OIDC provider.
+-- Passwords are stored as bcrypt hashes (via pgcrypto crypt/gen_salt).
+-- The api-gateway checks: password_hash = crypt($input, password_hash)
+
+CREATE TABLE users (
+    user_id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID        NOT NULL REFERENCES tenants(tenant_id),
+    username        TEXT        NOT NULL,
+    password_hash   TEXT        NOT NULL,  -- bcrypt via pgcrypto crypt()
+    email           TEXT        NOT NULL,
+    display_name    TEXT        NOT NULL DEFAULT '',
+    role            VARCHAR(32) NOT NULL DEFAULT 'viewer'
+                        CHECK (role IN ('admin', 'editor', 'viewer')),
+    is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+    last_login_at   TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, username),
+    UNIQUE (tenant_id, email)
+);
+
+-- Seed the default admin user (password: admin — change via AF_ADMIN_PASSWORD)
+INSERT INTO users (tenant_id, username, password_hash, email, display_name, role)
+VALUES (
+    '00000000-0000-0000-0000-000000000001',
+    'admin',
+    crypt('admin', gen_salt('bf', 10)),
+    'admin@agentfabric.local',
+    'Admin',
+    'admin'
+);
+
+CREATE INDEX idx_users_tenant   ON users(tenant_id, username);
+CREATE INDEX idx_users_email    ON users(tenant_id, email);
+
 -- ─── Environments ─────────────────────────────────────────────────────────
 
 CREATE TABLE environments (

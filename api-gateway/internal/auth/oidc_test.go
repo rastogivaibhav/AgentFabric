@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -375,5 +376,143 @@ func TestNewOIDCHandler_DefaultSessionMaxAge(t *testing.T) {
 	h := NewOIDCHandler(OIDCConfig{JWTSecret: "s"}, zap.NewNop())
 	if h.cfg.SessionMaxAge == 0 {
 		t.Error("default session max age should be non-zero")
+	}
+}
+
+// ─── PasswordLogin (S4) ───────────────────────────────────────────────────────
+
+func passwordLoginHandler() *OIDCHandler {
+	return NewOIDCHandler(OIDCConfig{
+		JWTSecret:     "test-jwt-secret-32-chars-long-ok",
+		SessionMaxAge: 8 * time.Hour,
+		AdminUser:     "admin",
+		AdminPassword: "admin",
+	}, zap.NewNop())
+}
+
+func doPasswordLogin(h *OIDCHandler, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/auth/login",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.PasswordLogin(rr, req)
+	return rr
+}
+
+func TestPasswordLogin_ValidCredentials_Returns200(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{"username":"admin","password":"admin"}`)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d — body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPasswordLogin_ValidCredentials_ReturnsToken(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{"username":"admin","password":"admin"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d", rr.Code)
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["token"] == "" {
+		t.Error("response should contain a non-empty 'token' field")
+	}
+}
+
+func TestPasswordLogin_TokenIsValidJWT(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{"username":"admin","password":"admin"}`)
+	var resp map[string]string
+	json.NewDecoder(rr.Body).Decode(&resp)
+
+	claims := &afClaims{}
+	_, err := jwt.ParseWithClaims(resp["token"], claims, func(tok *jwt.Token) (interface{}, error) {
+		return []byte("test-jwt-secret-32-chars-long-ok"), nil
+	}, jwt.WithAudience("agentfabric-portal"))
+	if err != nil {
+		t.Fatalf("issued token should be a valid AF JWT: %v", err)
+	}
+	if claims.Subject != "admin" {
+		t.Errorf("subject should be 'admin', got %q", claims.Subject)
+	}
+	if claims.Email != "admin@agentfabric.local" {
+		t.Errorf("email should be 'admin@agentfabric.local', got %q", claims.Email)
+	}
+}
+
+func TestPasswordLogin_WrongPassword_Returns401(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{"username":"admin","password":"wrongpassword"}`)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestPasswordLogin_WrongUsername_Returns401(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{"username":"hacker","password":"admin"}`)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestPasswordLogin_EmptyUsername_Returns400(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{"username":"","password":"admin"}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestPasswordLogin_EmptyPassword_Returns400(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{"username":"admin","password":""}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestPasswordLogin_InvalidJSON_Returns400(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{not valid json}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid JSON, got %d", rr.Code)
+	}
+}
+
+func TestPasswordLogin_CustomCredentials_ValidLogin(t *testing.T) {
+	h := NewOIDCHandler(OIDCConfig{
+		JWTSecret:     "test-jwt-secret-32-chars-long-ok",
+		SessionMaxAge: 8 * time.Hour,
+		AdminUser:     "ops",
+		AdminPassword: "s3cur3p@ss",
+	}, zap.NewNop())
+	rr := doPasswordLogin(h, `{"username":"ops","password":"s3cur3p@ss"}`)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 with custom credentials, got %d", rr.Code)
+	}
+}
+
+func TestPasswordLogin_DefaultCredentialsFallback(t *testing.T) {
+	// When AdminUser/AdminPassword are empty, must fall back to "admin"/"admin"
+	h := NewOIDCHandler(OIDCConfig{
+		JWTSecret:     "test-jwt-secret-32-chars-long-ok",
+		SessionMaxAge: 8 * time.Hour,
+	}, zap.NewNop())
+	rr := doPasswordLogin(h, `{"username":"admin","password":"admin"}`)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 with default fallback credentials, got %d — body: %s",
+			rr.Code, rr.Body.String())
+	}
+}
+
+func TestPasswordLogin_WhitespaceTrimmingUsername(t *testing.T) {
+	h := passwordLoginHandler()
+	rr := doPasswordLogin(h, `{"username":" admin ","password":"admin"}`)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 after trimming whitespace, got %d", rr.Code)
 	}
 }

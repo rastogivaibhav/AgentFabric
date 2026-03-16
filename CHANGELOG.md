@@ -6,19 +6,81 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 
 ---
 
-## [Unreleased] — Sprint 4 target
+## [Unreleased] — v1.0.0 GA
 
 ### Planned
-- mTLS wired in collector dev config (in progress — Sprint 4)
-- Secret rotation mechanism
-- Monitoring dashboards (Grafana)
-- Coverage gate raised to 90% (Sprint 4 target)
-- Performance tuning (query optimization, caching layer)
-- Agent-sdk integration tests for `_patch_crewai`, `_patch_langgraph`, etc.
-- v1.0.0 release
+- E2E test suite against real pipeline (full span ingest → storage → API → UI)
+- mTLS enabled in dev docker-compose (certs generated; compose wiring next)
+- Secret rotation: AF_JWT_SECRETS multi-key support
+- Token refresh endpoint (`POST /auth/refresh`)
+- User management API (`/api/v1/users` CRUD)
+- Helm chart production smoke test
+- Grafana alert notification channels (PagerDuty, Slack webhook)
 
-### Done (moved to v0.3.0)
-- Coverage gate raised to 80% — completed Sprint 3
+---
+
+## [0.4.0] — 2026-03-16 — Sprint 4: Production Hardening
+
+### New Features
+
+- **S4-1 Password Login in Real API Gateway** — `api-gateway/internal/auth/oidc.go`:
+  Added `POST /auth/login` handler (`PasswordLogin`) to the real Go api-gateway, replacing
+  the mock-only implementation. Accepts `{username, password}` JSON, validates against
+  `AF_ADMIN_USER` / `AF_ADMIN_PASSWORD` env vars (defaults: `admin` / `admin`), issues
+  an AF HS256 JWT using the identical token path as OIDC login. Whitespace is trimmed from
+  credentials; a generic 401 is returned on mismatch to avoid username enumeration.
+  `OIDCConfig` gains `AdminUser` + `AdminPassword` fields populated from env in `main.go`.
+
+- **S4-2 Users Table** — `deploy/sql/init.sql`: Added `users` table with tenant isolation,
+  bcrypt password hashes via pgcrypto `crypt()`/`gen_salt('bf', 10)`, role-based access
+  (admin / editor / viewer), last-login tracking, and unique constraints on
+  `(tenant_id, username)` and `(tenant_id, email)`. Default admin user seeded on
+  first `docker-compose up` with password `admin`.
+
+- **S4-3 Grafana Dashboards (Auto-Provisioned)** — `monitoring/grafana/`:
+  - `provisioning/datasources/prometheus.yaml` — Prometheus datasource, auto-registered.
+  - `provisioning/dashboards/dashboards.yaml` — filesystem dashboard provider.
+  - `dashboards/agentfabric-overview.json` — 15-panel production dashboard covering:
+    service health (UP/DOWN), HTTP request rate, error rate %, P50/P95/P99 latency,
+    latency by endpoint, spans/min throughput, processor queue depth, spans by framework,
+    cost rate (USD/hour), token rate, cost by framework, PII redaction rate, and policy
+    decisions. Auto-loads on `docker-compose up` at `http://localhost:9091`.
+
+- **S4-4 Prometheus Alert Rules** — `monitoring/alerts.yml`: Six production-grade alert
+  rules across three groups:
+  - `agentfabric.service_health`: ServiceDown, CollectorNotReceivingSpans, HighProcessorQueueDepth
+  - `agentfabric.api_gateway`: HighErrorRate (>5% 5xx), HighP95Latency (>2s), HighRateLimitRate
+  - `agentfabric.cost`: UnexpectedCostSpike (>$100/hour projected)
+  All alerts include runbook URLs. `monitoring/prometheus.yml` updated to reference the rules
+  file and alerting config block.
+
+- **S4-5 mTLS Certificate Generation Script** — `scripts/generate-dev-certs.sh`:
+  Generates a self-signed dev CA, collector server cert (with SAN for DNS:collector,
+  DNS:localhost, IP:127.0.0.1), and client cert using OpenSSL. Certs land in
+  `deploy/certs/` which is gitignored. Comment block in the script explains how to
+  enable `AF_TLS_ENABLED: "true"` in docker-compose once certs are generated.
+  The collector code already supports mTLS when this env var is set.
+
+- **S4-6 af-core Readiness Probe** — `af-core/src/server/http.rs`: Upgraded `/healthz`
+  to return structured JSON `{"status":"ok","service":"af-core","version":"<semver>"}`.
+  Added proper `/readyz` readiness check returning `{"status":"ready"}` (200) or
+  `{"status":"not_ready","reason":"..."}` (503). Kubernetes liveness vs. readiness probes
+  now route correctly to their respective endpoints.
+
+### CI/CD
+
+- **S4-7 Coverage gate raised 80% → 90%** — `.github/workflows/ci.yml`: all five services
+  (af-core, collector, api-gateway, portal, agent-sdk) now gate at 90%. Added
+  `--cov-report=json` to pytest and a `Enforce coverage gate (90% Sprint 4)` step to
+  agent-sdk (previously had no gate, only reporting).
+
+### Tests Added
+
+- `api-gateway/internal/auth/oidc_test.go` — 10 new tests for `PasswordLogin`:
+  valid credentials → 200 with JWT, token carries correct claims (sub/email/iss/aud),
+  wrong password → 401, wrong username → 401, empty username → 400, empty password → 400,
+  invalid JSON → 400, custom credentials via config, whitespace trimming, default fallback.
+  Import updated to add `net/http/httptest`.
 
 ---
 
@@ -198,7 +260,8 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 - Kubernetes manifests + Helm chart
 - Prometheus scrape configs
 
-[Unreleased]: https://github.com/agentfabric/agentfabric/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/agentfabric/agentfabric/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/agentfabric/agentfabric/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/agentfabric/agentfabric/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/agentfabric/agentfabric/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/agentfabric/agentfabric/compare/v0.0.1...v0.1.0

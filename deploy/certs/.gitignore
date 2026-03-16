@@ -1,0 +1,9 @@
+# Never commit TLS private keys or certificates — generate locally via:
+#   ./scripts/generate-dev-certs.sh
+*.key
+*.crt
+*.csr
+*.srl
+*.pem
+*.p12
+*.pfx

@@ -52,14 +52,16 @@ func main() {
 	hub := ws.NewHub(logger)
 	go hub.Run(context.Background())
 
-	// OIDC handler (P0-4: enterprise SSO)
+	// OIDC handler (P0-4: enterprise SSO + S4: password login fallback)
 	oidcHandler := auth.NewOIDCHandler(auth.OIDCConfig{
-		Issuer:       envOr("AF_OIDC_ISSUER", ""),
-		ClientID:     envOr("AF_OIDC_CLIENT_ID", ""),
-		ClientSecret: envOr("AF_OIDC_CLIENT_SECRET", ""),
-		RedirectURI:  envOr("AF_OIDC_REDIRECT_URI", "http://localhost:8080/auth/callback"),
-		JWTSecret:    jwtSecret,
-		LogoutURL:    envOr("AF_OIDC_LOGOUT_URL", ""),
+		Issuer:        envOr("AF_OIDC_ISSUER", ""),
+		ClientID:      envOr("AF_OIDC_CLIENT_ID", ""),
+		ClientSecret:  envOr("AF_OIDC_CLIENT_SECRET", ""),
+		RedirectURI:   envOr("AF_OIDC_REDIRECT_URI", "http://localhost:8080/auth/callback"),
+		JWTSecret:     jwtSecret,
+		LogoutURL:     envOr("AF_OIDC_LOGOUT_URL", ""),
+		AdminUser:     envOr("AF_ADMIN_USER", "admin"),
+		AdminPassword: envOr("AF_ADMIN_PASSWORD", "admin"),
 	}, logger)
 
 	// Wire handlers
@@ -85,7 +87,10 @@ func main() {
 	r.Get("/healthz", h.Health)
 	r.Handle("/metrics", promhttp.Handler())
 
-	// ─── OIDC SSO endpoints (P0-4) ───────────────────────────────────────────
+	// ─── Auth endpoints ───────────────────────────────────────────────────────
+	// Password login (default, no OIDC required): POST /auth/login {username, password}
+	r.Post("/auth/login", oidcHandler.PasswordLogin)
+	// OIDC SSO (P0-4, opt-in via AF_OIDC_ISSUER): GET /auth/login redirects to provider
 	r.Get("/auth/login", oidcHandler.Login)
 	r.Get("/auth/callback", oidcHandler.Callback)
 	r.Get("/auth/logout", oidcHandler.Logout)

@@ -39,6 +39,10 @@ type OIDCConfig struct {
 	SessionMaxAge time.Duration
 	// Optional: provider-specific logout endpoint override
 	LogoutURL string
+	// Local password login (non-OIDC). Defaults: admin / admin.
+	// Override via AF_ADMIN_USER + AF_ADMIN_PASSWORD environment variables.
+	AdminUser     string
+	AdminPassword string
 }
 
 // pkceState holds the PKCE verifier + nonce between /login and /callback.
@@ -709,4 +713,67 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// ─── POST /auth/login ─────────────────────────────────────────────────────────
+//
+// Username + password login for environments without an OIDC provider.
+// Default credentials: admin / admin
+// Override via AF_ADMIN_USER + AF_ADMIN_PASSWORD environment variables.
+//
+// On success: returns {"token":"<JWT>"} with Content-Type: application/json
+// The portal stores the token in localStorage and includes it as Bearer on all API calls.
+
+type passwordLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
+	var req passwordLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	req.Username = strings.TrimSpace(req.Username)
+	req.Password = strings.TrimSpace(req.Password)
+
+	if req.Username == "" || req.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username and password are required"})
+		return
+	}
+
+	// Resolve admin credentials — defaults protect against empty env vars
+	wantUser := h.cfg.AdminUser
+	if wantUser == "" {
+		wantUser = "admin"
+	}
+	wantPass := h.cfg.AdminPassword
+	if wantPass == "" {
+		wantPass = "admin"
+	}
+
+	if req.Username != wantUser || req.Password != wantPass {
+		h.logger.Warn("password login: invalid credentials", zap.String("username", req.Username))
+		// Use 401 with a generic message — don't reveal which field was wrong
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+		return
+	}
+
+	// Build ID-token–shaped claims and reuse the existing issueAFToken path
+	// so the token format is identical whether the user came from OIDC or password login.
+	idClaims := &idTokenClaims{
+		Subject: wantUser,
+		Email:   wantUser + "@agentfabric.local",
+		Name:    "Admin",
+	}
+	token, err := h.issueAFToken(idClaims)
+	if err != nil {
+		h.logger.Error("password login: token issuance failed", zap.Error(err))
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	h.logger.Info("password login successful", zap.String("username", wantUser))
+	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }
