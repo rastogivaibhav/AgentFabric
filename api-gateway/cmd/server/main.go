@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -32,6 +33,12 @@ func main() {
 	listenAddr := envOr("LISTEN_ADDR", ":8080")
 	authDisabled := os.Getenv("AF_AUTH_DISABLED") == "true"
 	rateLimitRPM := int64(parseIntEnv("AF_RATE_LIMIT_RPM", 1000))
+
+	// TLS configuration — fail-secure: if AF_TLS_ENABLED=true the server will
+	// refuse to start as plain HTTP when cert/key paths are absent.
+	tlsEnabled  := os.Getenv("AF_TLS_ENABLED") == "true"
+	tlsCertFile := os.Getenv("AF_TLS_CERT_FILE")
+	tlsKeyFile  := os.Getenv("AF_TLS_KEY_FILE")
 
 	// AF_JWT_SECRETS: comma-separated list for zero-downtime key rotation.
 	// First entry = active signing key. All entries accepted for verification.
@@ -196,8 +203,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		logger.Info("API Gateway listening", zap.String("addr", listenAddr))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := serve(srv, tlsEnabled, tlsCertFile, tlsKeyFile, logger); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("server error", zap.Error(err))
 		}
 	}()
@@ -207,6 +213,33 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	srv.Shutdown(ctx)
+}
+
+// serve starts the HTTP or HTTPS server depending on tlsEnabled.
+//
+// Fail-secure contract: if tlsEnabled is true, both certFile and keyFile MUST
+// be non-empty.  An empty path causes an immediate error return — the server
+// will never silently fall back to plain HTTP because that would defeat the
+// purpose of enabling TLS in the first place.
+//
+// The function is extracted from main() so it can be unit-tested without
+// spinning up an entire router or requiring real TLS certificates on disk.
+func serve(srv *http.Server, tlsEnabled bool, certFile, keyFile string, logger *zap.Logger) error {
+	if tlsEnabled {
+		if certFile == "" || keyFile == "" {
+			return fmt.Errorf(
+				"AF_TLS_ENABLED=true but AF_TLS_CERT_FILE or AF_TLS_KEY_FILE is not set — "+
+					"refusing to fall back to plain HTTP (fail-secure); set both env vars or disable TLS",
+			)
+		}
+		logger.Info("TLS enabled",
+			zap.String("addr", srv.Addr),
+			zap.String("cert", certFile),
+		)
+		return srv.ListenAndServeTLS(certFile, keyFile)
+	}
+	logger.Info("TLS disabled — serving plain HTTP", zap.String("addr", srv.Addr))
+	return srv.ListenAndServe()
 }
 
 func envOr(key, def string) string {
