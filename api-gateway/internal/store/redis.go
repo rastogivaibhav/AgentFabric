@@ -96,6 +96,12 @@ func (r *RedisClient) IncrWithExpiry(ctx context.Context, key string, expiry tim
 	return incrCmd.Val(), nil
 }
 
+// Ping checks the Redis connection with a 2-second timeout.
+// Used by the /healthz handler to detect degraded storage.
+func (r *RedisClient) Ping(ctx context.Context) error {
+	return r.client.Ping(ctx).Err()
+}
+
 func (r *RedisClient) Close() error {
 	return r.client.Close()
 }

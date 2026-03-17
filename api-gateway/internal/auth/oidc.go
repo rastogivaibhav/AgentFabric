@@ -10,6 +10,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -25,9 +26,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 )
+
+// ─── UserLookup ──────────────────────────────────────────────────────────────
+
+// UserLookup is the minimal store interface needed by PasswordLogin to verify
+// user credentials against the database.
+// Implemented by *store.PostgresStore; accepts nil for env-var-only auth (dev/test).
+type UserLookup interface {
+	GetUserByUsername(ctx context.Context, username, tenantID string) (*models.UserRecord, error)
+}
 
 // OIDCConfig holds OIDC provider configuration from environment.
 type OIDCConfig struct {
@@ -125,13 +137,16 @@ func parseJWKSPublicKey(k jwkKey) (*rsa.PublicKey, error) {
 
 // OIDCHandler implements the login/callback/logout HTTP handlers.
 type OIDCHandler struct {
-	cfg        OIDCConfig
-	logger     *zap.Logger
-	jwksCache  *jwksCache
+	cfg       OIDCConfig
+	users     UserLookup // nil means env-var-only auth (dev / break-glass)
+	logger    *zap.Logger
+	jwksCache *jwksCache
 }
 
 // NewOIDCHandler creates a new OIDC handler.
-func NewOIDCHandler(cfg OIDCConfig, logger *zap.Logger) *OIDCHandler {
+// users may be nil; when nil, PasswordLogin falls back to the env-var admin
+// credential only (useful in tests and dev environments with no DB).
+func NewOIDCHandler(cfg OIDCConfig, users UserLookup, logger *zap.Logger) *OIDCHandler {
 	if len(cfg.Scopes) == 0 {
 		cfg.Scopes = []string{"openid", "email", "profile"}
 	}
@@ -145,7 +160,7 @@ func NewOIDCHandler(cfg OIDCConfig, logger *zap.Logger) *OIDCHandler {
 	if cfg.JWTSecret == "" && len(cfg.JWTSecrets) > 0 {
 		cfg.JWTSecret = cfg.JWTSecrets[0]
 	}
-	return &OIDCHandler{cfg: cfg, logger: logger, jwksCache: newJWKSCache()}
+	return &OIDCHandler{cfg: cfg, users: users, logger: logger, jwksCache: newJWKSCache()}
 }
 
 // ─── Multi-secret helpers (zero-downtime key rotation) ────────────────────────
@@ -327,12 +342,15 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		zap.String("subject", claims.Subject),
 		zap.String("email", claims.Email))
 
-	// Set JWT in secure cookie (portal reads this on load)
+	// Set JWT in an HttpOnly cookie.
+	// HttpOnly: true prevents XSS-based token theft — JS cannot read it.
+	// The portal uses GET /auth/me (reads the cookie server-side) for identity,
+	// and includes credentials: 'include' on all API fetch calls.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "af_token",
 		Value:    afJWT,
 		Path:     "/",
-		HttpOnly: false, // portal JS needs to read it
+		HttpOnly: true,
 		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(h.cfg.SessionMaxAge.Seconds()),
@@ -823,6 +841,10 @@ type passwordLoginRequest struct {
 	Password string `json:"password"`
 }
 
+// defaultTenantID is the canonical fallback tenant for password login when no
+// tenant claim is present. Must match the seed row in migration 001.
+const defaultTenantID = "00000000-0000-0000-0000-000000000001"
+
 func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 	var req passwordLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -837,37 +859,59 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve admin credentials — defaults protect against empty env vars
-	wantUser := h.cfg.AdminUser
-	if wantUser == "" {
-		wantUser = "admin"
-	}
-	wantPass := h.cfg.AdminPassword
-	if wantPass == "" {
-		wantPass = "admin"
+	var idClaims *idTokenClaims
+
+	// ── Primary path: look up user in the database and bcrypt-compare ──────
+	if h.users != nil {
+		rec, err := h.users.GetUserByUsername(r.Context(), req.Username, defaultTenantID)
+		if err == nil && rec.PasswordHash != "" {
+			// bcrypt.CompareHashAndPassword is constant-time; no timing leak.
+			if bcryptErr := bcrypt.CompareHashAndPassword([]byte(rec.PasswordHash), []byte(req.Password)); bcryptErr == nil {
+				idClaims = &idTokenClaims{
+					Subject: rec.ID,
+					Email:   rec.Email,
+					Name:    rec.DisplayName,
+					Role:    rec.Role,
+				}
+				h.logger.Info("password login: db auth successful", zap.String("username", req.Username))
+			}
+		}
 	}
 
-	// Use constant-time comparison for both fields to prevent timing-based
-	// username enumeration.  Both comparisons always run regardless of which
-	// field mismatches — short-circuit evaluation (||) would leak information
-	// about whether the username was correct via response-time differences.
-	userOK := subtle.ConstantTimeCompare([]byte(req.Username), []byte(wantUser)) == 1
-	passOK := subtle.ConstantTimeCompare([]byte(req.Password), []byte(wantPass)) == 1
-	if !(userOK && passOK) {
+	// ── Break-glass fallback: env-var admin credential ──────────────────────
+	// Activated when: DB lookup is unavailable (nil users), user not found,
+	// password hash is empty (seed row), or bcrypt comparison fails but
+	// the env-var credential matches.
+	if idClaims == nil {
+		wantUser := h.cfg.AdminUser
+		if wantUser == "" {
+			wantUser = "admin"
+		}
+		wantPass := h.cfg.AdminPassword
+		if wantPass == "" {
+			wantPass = "admin"
+		}
+		// Constant-time compare both fields; both always run to prevent
+		// timing-based username enumeration.
+		userOK := subtle.ConstantTimeCompare([]byte(req.Username), []byte(wantUser)) == 1
+		passOK := subtle.ConstantTimeCompare([]byte(req.Password), []byte(wantPass)) == 1
+		if userOK && passOK {
+			idClaims = &idTokenClaims{
+				Subject: wantUser,
+				Email:   wantUser + "@agentfabric.local",
+				Name:    "Admin",
+				Role:    "admin",
+			}
+			h.logger.Info("password login: break-glass env-var auth successful", zap.String("username", wantUser))
+		}
+	}
+
+	if idClaims == nil {
 		h.logger.Warn("password login: invalid credentials", zap.String("username", req.Username))
-		// Generic 401 — do not reveal which field was wrong
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 		return
 	}
 
-	// Build ID-token–shaped claims and reuse the existing issueAFToken path
-	// so the token format is identical whether the user came from OIDC or password login.
-	idClaims := &idTokenClaims{
-		Subject: wantUser,
-		Email:   wantUser + "@agentfabric.local",
-		Name:    "Admin",
-		Role:    "admin", // the static admin credential always grants admin role
-	}
 	token, err := h.issueAFToken(idClaims)
 	if err != nil {
 		h.logger.Error("password login: token issuance failed", zap.Error(err))
@@ -875,6 +919,20 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("password login successful", zap.String("username", wantUser))
+	// Fix C: set JWT in an HttpOnly cookie so JS cannot read it (XSS protection).
+	// The portal detects authentication state via GET /auth/me, not localStorage.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "af_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(h.cfg.SessionMaxAge.Seconds()),
+	})
+
+	// Also return the token in the response body so CLI / API callers can use it.
+	h.logger.Info("password login successful", zap.String("username", idClaims.Subject))
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }
+

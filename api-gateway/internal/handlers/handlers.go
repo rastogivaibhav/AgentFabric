@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
@@ -38,15 +40,34 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func tenantFromCtx(r *http.Request) string {
-	if t, ok := r.Context().Value("tenant_id").(string); ok && t != "" {
-		return t
-	}
-	return "default"
+	return middleware.TenantIDFromCtx(r.Context())
 }
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 
+// Health checks both Postgres and Redis with a 2-second timeout each.
+// Returns 200 {"status":"ok"} when all deps are reachable.
+// Returns 503 {"status":"degraded","error":"..."} if any dep fails.
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := h.pg.Ping(ctx); err != nil {
+		h.logger.Warn("healthz: postgres ping failed", zap.Error(err))
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "degraded",
+			"error":  "postgres unavailable",
+		})
+		return
+	}
+	if err := h.redis.Ping(ctx); err != nil {
+		h.logger.Warn("healthz: redis ping failed", zap.Error(err))
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "degraded",
+			"error":  "redis unavailable",
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -57,8 +78,16 @@ type ingestRequest struct {
 }
 
 func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
+	// Fix D: cap request body at 32 MiB to prevent DoS via unbounded reads.
+	r.Body = http.MaxBytesReader(w, r.Body, 32<<20)
+
 	var req ingestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// MaxBytesReader wraps the error when the limit is exceeded.
+		if err.Error() == "http: request body too large" {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 32 MiB limit")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
@@ -72,10 +101,10 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tenant from collector header or default
+	// Tenant from collector header; fall back to the canonical default UUID.
 	tenantID := r.Header.Get("X-AF-Tenant")
 	if tenantID == "" {
-		tenantID = "default"
+		tenantID = middleware.DefaultTenantID
 	}
 	for i := range req.Spans {
 		req.Spans[i].TenantID = tenantID

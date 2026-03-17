@@ -42,10 +42,7 @@ func DefaultRateLimitConfig() RateLimitConfig {
 func RateLimit(store RateLimitStore, cfg RateLimitConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tenantID, _ := r.Context().Value("tenant_id").(string)
-			if tenantID == "" {
-				tenantID = "default"
-			}
+			tenantID := TenantIDFromCtx(r.Context())
 
 			// Window key: changes every minute — naturally expires old windows
 			windowMinute := time.Now().Truncate(time.Minute).Unix()

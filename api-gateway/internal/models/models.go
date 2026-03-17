@@ -185,6 +185,20 @@ type UpdateUserRequest struct {
 	Password    *string `json:"password,omitempty"` // if set, rehashed and stored
 }
 
+// ─── Auth lookup ──────────────────────────────────────────────────────────────
+
+// UserRecord is the auth-layer view of a user row — includes the password hash
+// required for bcrypt comparison during password login.
+// It is separate from User (which is the public API type, password excluded).
+type UserRecord struct {
+	ID           string
+	Username     string
+	Email        string
+	DisplayName  string
+	Role         string
+	PasswordHash string
+}
+
 // ─── Live stream event ───────────────────────────────────────────────────────
 
 type LiveEvent struct {

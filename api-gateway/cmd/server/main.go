@@ -76,6 +76,9 @@ func main() {
 	go hub.Run(context.Background())
 
 	// OIDC handler (P0-4: enterprise SSO + S4: password login + GA: multi-secret rotation)
+	// pgStore is passed as the UserLookup implementation so PasswordLogin can
+	// verify credentials against the users table (bcrypt) with an env-var
+	// admin as a break-glass fallback.
 	oidcHandler := auth.NewOIDCHandler(auth.OIDCConfig{
 		Issuer:        envOr("AF_OIDC_ISSUER", ""),
 		ClientID:      envOr("AF_OIDC_CLIENT_ID", ""),
@@ -86,7 +89,7 @@ func main() {
 		LogoutURL:     envOr("AF_OIDC_LOGOUT_URL", ""),
 		AdminUser:     envOr("AF_ADMIN_USER", "admin"),
 		AdminPassword: envOr("AF_ADMIN_PASSWORD", "admin"),
-	}, logger)
+	}, pgStore, logger)
 
 	// Wire handlers
 	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret)
