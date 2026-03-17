@@ -2,6 +2,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Usage:
 #   make dev       — build images and start the full dev stack
+#   make prod-up   — start stack with production hardening overlay
 #   make down      — stop and remove containers (data volumes preserved)
 #   make build     — compile Go services + portal production bundle
 #   make test      — run all unit / integration tests (no Docker required)
@@ -10,9 +11,10 @@
 #   make e2e       — full-stack E2E: bring up stack → test → tear down
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: dev down build test lint certs e2e
+.PHONY: dev prod-up down build test lint certs e2e
 
 COMPOSE       := docker compose -f docker-compose.yml
+COMPOSE_PROD  := $(COMPOSE) -f deploy/docker/docker-compose.prod.yml
 GO_SERVICES   := ./api-gateway/... ./collector/...
 PORTAL_DIR    := portal
 TESTS_E2E_DIR := tests/e2e
@@ -29,6 +31,11 @@ dev:
 	@echo "  Prometheus    → http://localhost:9090"
 	@echo "  Grafana       → http://localhost:9091"
 	@echo "  Jaeger        → http://localhost:16686"
+
+prod-up:
+	@echo "Starting AgentFabric with production hardening overlay..."
+	@echo "Required env: AF_JWT_SECRET, AF_ADMIN_PASSWORD, AF_CORS_ORIGINS, DATABASE_URL, REDIS_URL, POSTGRES_PASSWORD"
+	$(COMPOSE_PROD) up -d --build
 
 down:
 	$(COMPOSE) down

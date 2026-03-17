@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -846,9 +847,15 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		wantPass = "admin"
 	}
 
-	if req.Username != wantUser || req.Password != wantPass {
+	// Use constant-time comparison for both fields to prevent timing-based
+	// username enumeration.  Both comparisons always run regardless of which
+	// field mismatches — short-circuit evaluation (||) would leak information
+	// about whether the username was correct via response-time differences.
+	userOK := subtle.ConstantTimeCompare([]byte(req.Username), []byte(wantUser)) == 1
+	passOK := subtle.ConstantTimeCompare([]byte(req.Password), []byte(wantPass)) == 1
+	if !(userOK && passOK) {
 		h.logger.Warn("password login: invalid credentials", zap.String("username", req.Username))
-		// Use 401 with a generic message — don't reveal which field was wrong
+		// Generic 401 — do not reveal which field was wrong
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 		return
 	}

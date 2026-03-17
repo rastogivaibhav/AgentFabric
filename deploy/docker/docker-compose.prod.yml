@@ -1,0 +1,107 @@
+# AgentFabric — Production Compose Override
+# ──────────────────────────────────────────────────────────────────────────────
+# This file is a Docker Compose OVERRIDE.  Apply it on top of the base
+# docker-compose.yml to harden a deployment for production traffic.
+#
+# Usage (from repo root):
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f deploy/docker/docker-compose.prod.yml \
+#     up -d
+#
+# Or add to your Makefile:
+#   make prod-up
+#
+# Required environment variables (fail-fast if missing):
+#   AF_JWT_SECRET          — minimum 32-byte random secret
+#   AF_ADMIN_PASSWORD      — strong admin password
+#   AF_CORS_ORIGINS        — your portal domain (e.g. https://app.agentfabric.io)
+#   DATABASE_URL           — production PostgreSQL DSN with sslmode=require
+#   REDIS_URL              — production Redis URL
+#   POSTGRES_PASSWORD      — PostgreSQL superuser password (for the DB container)
+#
+# Optional but recommended:
+#   AF_JWT_SECRETS         — comma-separated list for zero-downtime key rotation
+#   AF_OIDC_ISSUER         — enable enterprise SSO
+#   AF_TLS_ENABLED=true    — terminate TLS at the service layer (vs. load balancer)
+#
+# Generate all required secrets:
+#   openssl rand -base64 32   # for AF_JWT_SECRET and AF_ADMIN_PASSWORD
+#   openssl rand -base64 24   # for POSTGRES_PASSWORD
+# ──────────────────────────────────────────────────────────────────────────────
+
+version: '3.9'
+
+services:
+
+  # ─── PostgreSQL: enforce SSL, change default password ──────────────────────
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for production}
+    # Require SSL connections from all clients
+    command: >
+      postgres
+        -c ssl=on
+        -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+        -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+
+  # ─── Collector: enforce auth, disable debug, enable TLS ────────────────────
+  collector:
+    environment:
+      AF_AUTH_REQUIRE_AUTH: "true"          # Require JWT on all OTLP ingestion
+      AF_JWT_SECRET: ${AF_JWT_SECRET:?AF_JWT_SECRET must be set for production}
+      AF_DEBUG: "false"
+      AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
+      AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
+      # Tighten rate limits for production load profile
+      AF_RATE_LIMIT_SPANS_PER_SECOND: "${AF_RATE_LIMIT_SPANS_PER_SECOND:-10000}"
+      AF_PROCESSOR_WORKERS: "${AF_PROCESSOR_WORKERS:-8}"
+    restart: always
+
+  # ─── API Gateway: enforce auth, lock CORS, require strong secrets ───────────
+  api-gateway:
+    environment:
+      AF_AUTH_DISABLED: "false"             # JWT auth is MANDATORY in production
+      AF_JWT_SECRET: ${AF_JWT_SECRET:?AF_JWT_SECRET must be set for production}
+      AF_JWT_SECRETS: "${AF_JWT_SECRETS:-}"
+      AF_ADMIN_PASSWORD: ${AF_ADMIN_PASSWORD:?AF_ADMIN_PASSWORD must be set for production}
+      AF_ADMIN_USER: "${AF_ADMIN_USER:-admin}"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set for production}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set for production}
+      AF_CORS_ORIGINS: ${AF_CORS_ORIGINS:?AF_CORS_ORIGINS must be set for production}
+      AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
+      AF_LOG_LEVEL: "info"                  # Do not run debug logging in production
+      # OIDC SSO — optional, uncomment to enable enterprise login
+      # AF_OIDC_ISSUER:        "${AF_OIDC_ISSUER:-}"
+      # AF_OIDC_CLIENT_ID:     "${AF_OIDC_CLIENT_ID:-}"
+      # AF_OIDC_CLIENT_SECRET: "${AF_OIDC_CLIENT_SECRET:-}"
+      # AF_OIDC_REDIRECT_URI:  "${AF_OIDC_REDIRECT_URI:-}"
+      # AF_OIDC_LOGOUT_URL:    "${AF_OIDC_LOGOUT_URL:-}"
+    restart: always
+
+  # ─── af-core: production Rust core ─────────────────────────────────────────
+  af-core:
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set for production}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set for production}
+      KAFKA_ENABLED: "${KAFKA_ENABLED:-false}"
+      RUST_LOG: "${RUST_LOG:-af_core=info}"
+    restart: always
+
+  # ─── Portal: production build pointing at the live API ─────────────────────
+  portal:
+    build:
+      args:
+        VITE_API_URL: "${VITE_API_URL:?VITE_API_URL must be set for production}"
+        VITE_WS_URL: "${VITE_WS_URL:?VITE_WS_URL must be set for production}"
+        VITE_AUTH_DISABLED: "false"
+        VITE_SHOW_DEFAULT_CREDS: "false"
+    restart: always
+
+  # ─── Grafana: disable anonymous access in production ───────────────────────
+  grafana:
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: ""
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-CHANGE_ME_grafana}
+      GF_SERVER_DOMAIN: "${GF_DOMAIN:-localhost}"
