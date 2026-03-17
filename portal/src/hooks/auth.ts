@@ -150,6 +150,29 @@ export function useAuth(): AuthState & {
   return { ...state, login, logout, refetch: fetchUser }
 }
 
+// hasRole: returns true if user is authenticated AND their role is in allowedRoles.
+// Pure function — exported so it can be unit-tested independently of React
+// and used for inline element gating (e.g. show/hide buttons in UsersPage).
+//
+// Role hierarchy (most privileged first): admin > editor > viewer
+// Always returns false for unauthenticated users (user === null).
+export function hasRole(user: AuthUser | null, allowedRoles: string[]): boolean {
+  if (!user) return false
+  return allowedRoles.includes(user.role)
+}
+
+// isSelfOrRole: ABAC helper — returns true if the user holds one of allowedRoles
+// OR if subjectId matches user.sub (the user is acting on their own record).
+// Mirrors the RequireRoleOrSelf middleware on the api-gateway.
+export function isSelfOrRole(
+  user: AuthUser | null,
+  allowedRoles: string[],
+  subjectId: string,
+): boolean {
+  if (!user) return false
+  return allowedRoles.includes(user.role) || user.sub === subjectId
+}
+
 // RequireAuth: returns true if the user is authenticated.
 // Used by the route guard in App.tsx.
 export function isAuthEnabled(): boolean {

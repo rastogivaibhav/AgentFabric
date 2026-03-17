@@ -1,6 +1,12 @@
 // portal/src/hooks/auth.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { getToken, isAuthEnabled, getTokenExpiry } from './auth'
+import { getToken, isAuthEnabled, getTokenExpiry, hasRole, isSelfOrRole, AuthUser } from './auth'
+
+// ─── Fixture helpers ──────────────────────────────────────────────────────────
+
+function makeUser(role: string, sub = 'user-123'): AuthUser {
+  return { sub, email: `${role}@test.com`, name: role, role }
+}
 
 // ─── getToken ────────────────────────────────────────────────────────────────
 
@@ -117,6 +123,105 @@ describe('getTokenExpiry', () => {
   it('returns null when payload is valid base64 but not JSON', () => {
     const bad = btoa('not json').replace(/=/g, '')
     expect(getTokenExpiry(`header.${bad}.sig`)).toBeNull()
+  })
+})
+
+// ─── hasRole ─────────────────────────────────────────────────────────────────
+
+describe('hasRole', () => {
+  it('returns false for unauthenticated user (null)', () => {
+    expect(hasRole(null, ['admin'])).toBe(false)
+  })
+
+  it('returns true when user role is in allowedRoles', () => {
+    expect(hasRole(makeUser('admin'), ['admin'])).toBe(true)
+  })
+
+  it('returns true when role matches one of multiple allowed roles', () => {
+    expect(hasRole(makeUser('editor'), ['admin', 'editor'])).toBe(true)
+  })
+
+  it('returns false when user role is not in allowedRoles', () => {
+    expect(hasRole(makeUser('viewer'), ['admin'])).toBe(false)
+  })
+
+  it('returns false when user role is not in any of the allowed roles', () => {
+    expect(hasRole(makeUser('viewer'), ['admin', 'editor'])).toBe(false)
+  })
+
+  it('returns true when allowedRoles contains the exact role string', () => {
+    expect(hasRole(makeUser('admin'), ['admin', 'superuser'])).toBe(true)
+  })
+
+  it('returns false for an empty allowedRoles list', () => {
+    expect(hasRole(makeUser('admin'), [])).toBe(false)
+  })
+
+  it('is case-sensitive — "Admin" !== "admin"', () => {
+    expect(hasRole(makeUser('Admin'), ['admin'])).toBe(false)
+  })
+})
+
+// ─── isSelfOrRole ─────────────────────────────────────────────────────────────
+
+describe('isSelfOrRole', () => {
+  const ADMIN_ID   = 'admin-001'
+  const VIEWER_ID  = 'viewer-002'
+  const OTHER_ID   = 'other-003'
+
+  it('returns false for unauthenticated user (null)', () => {
+    expect(isSelfOrRole(null, ['admin'], ADMIN_ID)).toBe(false)
+  })
+
+  it('returns true when user holds an allowed role', () => {
+    const admin = makeUser('admin', ADMIN_ID)
+    expect(isSelfOrRole(admin, ['admin'], OTHER_ID)).toBe(true)
+  })
+
+  it('returns true when user.sub matches subjectId (self-service)', () => {
+    const viewer = makeUser('viewer', VIEWER_ID)
+    expect(isSelfOrRole(viewer, ['admin'], VIEWER_ID)).toBe(true)
+  })
+
+  it('returns false when user lacks role AND is not the subject', () => {
+    const viewer = makeUser('viewer', VIEWER_ID)
+    expect(isSelfOrRole(viewer, ['admin'], OTHER_ID)).toBe(false)
+  })
+
+  it('editor can edit their own record even though editor is not in allowedRoles', () => {
+    const editor = makeUser('editor', 'editor-id')
+    expect(isSelfOrRole(editor, ['admin'], 'editor-id')).toBe(true)
+  })
+
+  it('editor cannot edit another user\'s record without the admin role', () => {
+    const editor = makeUser('editor', 'editor-id')
+    expect(isSelfOrRole(editor, ['admin'], 'other-user-id')).toBe(false)
+  })
+})
+
+// ─── RequireRole rendering contract (behavioural spec via hasRole) ────────────
+// RequireRole wraps hasRole inside a React component.  We test the gating logic
+// here as pure-function tests; component render tests live in UsersPage.test.tsx.
+
+describe('RequireRole gating logic (via hasRole)', () => {
+  it('admin can see admin-only element', () => {
+    expect(hasRole(makeUser('admin'), ['admin'])).toBe(true)
+  })
+
+  it('viewer cannot see admin-only element', () => {
+    expect(hasRole(makeUser('viewer'), ['admin'])).toBe(false)
+  })
+
+  it('editor cannot see admin-only element', () => {
+    expect(hasRole(makeUser('editor'), ['admin'])).toBe(false)
+  })
+
+  it('editor CAN see editor-or-admin element', () => {
+    expect(hasRole(makeUser('editor'), ['admin', 'editor'])).toBe(true)
+  })
+
+  it('unauthenticated user sees nothing (null guard)', () => {
+    expect(hasRole(null, ['admin', 'editor', 'viewer'])).toBe(false)
   })
 })
 

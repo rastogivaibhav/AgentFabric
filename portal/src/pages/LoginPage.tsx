@@ -137,17 +137,19 @@ export default function LoginPage() {
           </>
         )}
 
-        {/* Hints */}
+        {/* Hints — default-creds line is suppressed in production builds.
+             Set VITE_SHOW_DEFAULT_CREDS=true in .env.development only. */}
         <div style={s.hints}>
-          {[
-            { icon: Lock,   text: 'Default credentials: admin / admin' },
-            { icon: Shield, text: 'Set AF_ADMIN_USER + AF_ADMIN_PASSWORD to change' },
-          ].map(({ icon: Icon, text }) => (
-            <div key={text} style={s.hint}>
-              <Icon size={11} color="#334155" />
-              <span style={s.hintText}>{text}</span>
+          {import.meta.env.VITE_SHOW_DEFAULT_CREDS === 'true' && (
+            <div style={s.hint}>
+              <Lock size={11} color="#334155" />
+              <span style={s.hintText}>Default credentials: admin / admin</span>
             </div>
-          ))}
+          )}
+          <div style={s.hint}>
+            <Shield size={11} color="#334155" />
+            <span style={s.hintText}>Set AF_ADMIN_USER + AF_ADMIN_PASSWORD to change</span>
+          </div>
         </div>
 
         <div style={s.footer}>v1.0.0 · © AgentFabric</div>
