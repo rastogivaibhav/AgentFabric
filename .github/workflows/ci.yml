@@ -306,10 +306,49 @@ jobs:
           flags: agent-sdk
           fail_ci_if_error: false
 
+  # ─── Helm chart smoke test (v1.0.0 GA) ──────────────────────────────────────
+  helm-smoke:
+    name: Helm Chart Smoke Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.0"
+
+      - name: Helm lint
+        run: helm lint deploy/helm
+
+      - name: Helm template (dry-run render)
+        run: |
+          helm template agentfabric deploy/helm \
+            --set collector.image.tag=ci \
+            --set afCore.image.tag=ci \
+            --set apiGateway.image.tag=ci \
+            --set portal.image.tag=ci \
+            | grep -c "^kind:" \
+            | xargs -I {} sh -c '
+              echo "Rendered {} Kubernetes resources"
+              [ "{}" -ge 10 ] || (echo "Expected ≥10 resources, got {}" && exit 1)
+            '
+
+      - name: Helm install dry-run
+        run: |
+          helm install agentfabric-smoke deploy/helm \
+            --dry-run \
+            --generate-name \
+            --set collector.image.tag=ci \
+            --set afCore.image.tag=ci \
+            --set apiGateway.image.tag=ci \
+            --set portal.image.tag=ci
+
   # ─── PR gate: all jobs must pass ────────────────────────────────────────────
   ci-gate:
     name: CI Gate
-    needs: [af-core, collector, api-gateway, portal, agent-sdk]
+    needs: [af-core, collector, api-gateway, portal, agent-sdk, helm-smoke]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -320,9 +359,10 @@ jobs:
           GATEWAY_RESULT: ${{ needs.api-gateway.result }}
           PORTAL_RESULT: ${{ needs.portal.result }}
           SDK_RESULT: ${{ needs.agent-sdk.result }}
+          HELM_RESULT: ${{ needs.helm-smoke.result }}
         run: |
           FAILED=0
-          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT"; do
+          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT" "$HELM_RESULT"; do
             if [ "$JOB" != "success" ]; then
               FAILED=1
             fi

@@ -6,16 +6,58 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 
 ---
 
-## [Unreleased] — v1.0.0 GA
+## [Unreleased] — post-v1.0.0
 
 ### Planned
-- E2E test suite against real pipeline (full span ingest → storage → API → UI)
-- mTLS enabled in dev docker-compose (certs generated; compose wiring next)
-- Secret rotation: AF_JWT_SECRETS multi-key support
-- Token refresh endpoint (`POST /auth/refresh`)
-- User management API (`/api/v1/users` CRUD)
-- Helm chart production smoke test
+- mTLS enabled in dev docker-compose (certs generated via `scripts/generate-dev-certs.sh`; compose wiring pending)
+- Secret rotation: `AF_JWT_SECRETS` multi-key HMAC support
+- Password hashing upgraded to bcrypt (`golang.org/x/crypto/bcrypt`)
 - Grafana alert notification channels (PagerDuty, Slack webhook)
+
+---
+
+## [1.0.0] — 2026-03-16 — GA Release
+
+### New Features
+
+- **GA-1 Token Refresh** — `api-gateway/internal/auth/oidc.go`:
+  Added `POST /auth/refresh` endpoint. Accepts `Authorization: Bearer <existing_token>`,
+  verifies the HS256 signature, and re-issues a new AF JWT with a refreshed 8-hour expiry
+  carrying the same identity claims (sub, email, name). Returns `{"token":"…","expires_in":28800}`.
+  Enables the portal to silently refresh sessions without forcing users to re-login.
+
+- **GA-2 User Management CRUD** — Full `/api/v1/users` REST resource:
+  - **`models.go`**: Added `User`, `CreateUserRequest`, `UpdateUserRequest` types.
+  - **`store/postgres.go`**: Added `ListUsers`, `GetUser`, `CreateUser`, `UpdateUser`,
+    `DeleteUser` store methods. Schema const updated with `users` table (tenant-isolated,
+    username/email unique per tenant). Passwords are SHA-256 hashed before storage;
+    TODO(v1.1) notes upgrade path to bcrypt. Added `generateStoreID()` and `hashPassword()`
+    helpers. Imported `crypto/rand`, `crypto/sha256`, `encoding/hex`, `strings`.
+  - **`handlers/handlers.go`**: `ListUsers` (GET `/api/v1/users`), `GetUser`
+    (GET `/{userId}`), `CreateUser` (POST, validates username + email), `UpdateUser`
+    (PUT, partial update semantics), `DeleteUser` (DELETE, 204 on success).
+  - **`cmd/server/main.go`**: Wired `/auth/refresh` + `/api/v1/users` route group.
+
+### CI/CD
+
+- **GA-3 Helm Chart Smoke Test** — `.github/workflows/ci.yml`: New `helm-smoke` job runs
+  on every PR:
+  1. `helm lint deploy/helm` — validates chart structure and YAML correctness.
+  2. `helm template` dry-render verifying ≥10 Kubernetes resources are produced.
+  3. `helm install --dry-run --generate-name` — full client-side dry-run.
+  `ci-gate` now requires all 6 jobs (added `helm-smoke`) to pass before merge is allowed.
+
+### Tests Added
+
+- `api-gateway/internal/auth/oidc_test.go` — 8 new `TestRefresh_*` tests:
+  valid token → 200 with new JWT, new token has fresh expiry (~8 h), identity preserved
+  (sub/email unchanged), `expires_in` matches `SessionMaxAge`, missing token → 401,
+  invalid JWT → 401, wrong signing secret → 401.
+- `tests/e2e/test_e2e_pipeline.py` — 8 new `@pytest.mark.integration` tests covering
+  auth login (valid/invalid), auth refresh (valid/missing token), and users CRUD lifecycle
+  (list, create→read→update→delete, field validation, 404 on missing). Added
+  `api_gateway_url` session-scoped fixture (reads `AF_GATEWAY_URL` env, defaults to
+  `http://localhost:8080`). Updated module docstring to list tests 16–23.
 
 ---
 
@@ -260,7 +302,8 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 - Kubernetes manifests + Helm chart
 - Prometheus scrape configs
 
-[Unreleased]: https://github.com/agentfabric/agentfabric/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/agentfabric/agentfabric/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/agentfabric/agentfabric/compare/v0.4.0...v1.0.0
 [0.4.0]: https://github.com/agentfabric/agentfabric/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/agentfabric/agentfabric/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/agentfabric/agentfabric/compare/v0.1.0...v0.2.0

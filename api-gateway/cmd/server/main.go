@@ -95,6 +95,8 @@ func main() {
 	r.Get("/auth/callback", oidcHandler.Callback)
 	r.Get("/auth/logout", oidcHandler.Logout)
 	r.Get("/auth/me", oidcHandler.Me)
+	// Token refresh (v1.0.0 GA): valid token → new token with refreshed expiry
+	r.Post("/auth/refresh", oidcHandler.Refresh)
 
 	// ─── Internal ingest (collector → gateway) ───────────────────────────────
 	// Skip collector auth in dev mode so the collector can send without a signed JWT
@@ -158,6 +160,15 @@ func main() {
 		// Audit log (Principle 4: immutable audit trail)
 		r.Get("/audit", h.ListAudit)
 		r.Get("/audit/verify", h.VerifyAuditChain)
+
+		// Users CRUD (Principle 2: tenant isolation — each tenant owns its user list)
+		r.Route("/users", func(r chi.Router) {
+			r.Get("/", h.ListUsers)
+			r.Post("/", h.CreateUser)
+			r.Get("/{userId}", h.GetUser)
+			r.Put("/{userId}", h.UpdateUser)
+			r.Delete("/{userId}", h.DeleteUser)
+		})
 	})
 
 	// ─── Start server ────────────────────────────────────────────────────────

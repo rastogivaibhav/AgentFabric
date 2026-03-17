@@ -2,8 +2,12 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/agentfabric/api-gateway/internal/models"
@@ -132,6 +136,25 @@ VALUES
     ('production',  'Production',  'Live production workloads', 'active',   'default'),
     ('staging',     'Staging',     'Pre-release validation',    'active',   'default'),
     ('development', 'Development', 'Local development & CI',    'inactive', 'default')
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id       TEXT PRIMARY KEY,
+    tenant_id     TEXT NOT NULL DEFAULT 'default',
+    username      TEXT NOT NULL,
+    password_hash TEXT NOT NULL DEFAULT '',
+    email         TEXT NOT NULL,
+    display_name  TEXT NOT NULL DEFAULT '',
+    role          TEXT NOT NULL DEFAULT 'viewer',
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    last_login_at TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, username),
+    UNIQUE (tenant_id, email)
+);
+INSERT INTO users (user_id, tenant_id, username, password_hash, email, display_name, role)
+VALUES ('00000000-0000-0000-0000-000000000001', 'default', 'admin', '', 'admin@agentfabric.local', 'Admin', 'admin')
 ON CONFLICT DO NOTHING;
 `
 
@@ -777,4 +800,164 @@ func (s *PostgresStore) VerifyAuditChain(ctx context.Context, tenantID string) (
 
 func (s *PostgresStore) Close() {
 	s.pool.Close()
+}
+
+// ─── Users CRUD ───────────────────────────────────────────────────────────────
+
+// ListUsers returns all users for a tenant, newest first.
+func (s *PostgresStore) ListUsers(ctx context.Context, tenantID string, limit, offset int) ([]models.User, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_id, tenant_id, username, email, display_name, role,
+		       is_active, last_login_at, created_at, updated_at
+		FROM users
+		WHERE tenant_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`, tenantID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []models.User
+	for rows.Next() {
+		var u models.User
+		if err := rows.Scan(
+			&u.ID, &u.TenantID, &u.Username, &u.Email, &u.DisplayName, &u.Role,
+			&u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	if users == nil {
+		users = []models.User{}
+	}
+	return users, rows.Err()
+}
+
+// GetUser returns a single user by ID within a tenant.
+func (s *PostgresStore) GetUser(ctx context.Context, userID, tenantID string) (*models.User, error) {
+	var u models.User
+	err := s.pool.QueryRow(ctx, `
+		SELECT user_id, tenant_id, username, email, display_name, role,
+		       is_active, last_login_at, created_at, updated_at
+		FROM users
+		WHERE user_id = $1 AND tenant_id = $2
+	`, userID, tenantID).Scan(
+		&u.ID, &u.TenantID, &u.Username, &u.Email, &u.DisplayName, &u.Role,
+		&u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// CreateUser inserts a new user into the tenant. Password is SHA-256 hashed before storage.
+// TODO(v1.1): migrate to bcrypt once golang.org/x/crypto is a declared dependency.
+func (s *PostgresStore) CreateUser(ctx context.Context, tenantID string, req models.CreateUserRequest) (*models.User, error) {
+	if req.Role == "" {
+		req.Role = "viewer"
+	}
+	var u models.User
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO users (user_id, tenant_id, username, password_hash, email, display_name, role)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING user_id, tenant_id, username, email, display_name, role,
+		          is_active, last_login_at, created_at, updated_at
+	`, generateStoreID(), tenantID, req.Username, hashPassword(req.Password),
+		req.Email, req.DisplayName, req.Role).Scan(
+		&u.ID, &u.TenantID, &u.Username, &u.Email, &u.DisplayName, &u.Role,
+		&u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// UpdateUser applies non-nil fields from req to the user record.
+func (s *PostgresStore) UpdateUser(ctx context.Context, userID, tenantID string, req models.UpdateUserRequest) (*models.User, error) {
+	sets := []string{"updated_at = NOW()"}
+	args := []interface{}{userID, tenantID}
+	argIdx := 3
+
+	if req.Email != nil {
+		sets = append(sets, fmt.Sprintf("email = $%d", argIdx))
+		args = append(args, *req.Email)
+		argIdx++
+	}
+	if req.DisplayName != nil {
+		sets = append(sets, fmt.Sprintf("display_name = $%d", argIdx))
+		args = append(args, *req.DisplayName)
+		argIdx++
+	}
+	if req.Role != nil {
+		sets = append(sets, fmt.Sprintf("role = $%d", argIdx))
+		args = append(args, *req.Role)
+		argIdx++
+	}
+	if req.IsActive != nil {
+		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
+		args = append(args, *req.IsActive)
+		argIdx++
+	}
+	if req.Password != nil {
+		sets = append(sets, fmt.Sprintf("password_hash = $%d", argIdx))
+		args = append(args, hashPassword(*req.Password))
+		argIdx++
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE users SET %s
+		WHERE user_id = $1 AND tenant_id = $2
+		RETURNING user_id, tenant_id, username, email, display_name, role,
+		          is_active, last_login_at, created_at, updated_at
+	`, strings.Join(sets, ", "))
+
+	var u models.User
+	err := s.pool.QueryRow(ctx, query, args...).Scan(
+		&u.ID, &u.TenantID, &u.Username, &u.Email, &u.DisplayName, &u.Role,
+		&u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// DeleteUser removes a user from the tenant. Returns an error if the user doesn't exist.
+func (s *PostgresStore) DeleteUser(ctx context.Context, userID, tenantID string) error {
+	result, err := s.pool.Exec(ctx,
+		`DELETE FROM users WHERE user_id = $1 AND tenant_id = $2`,
+		userID, tenantID,
+	)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("user %q not found in tenant %q", userID, tenantID)
+	}
+	return nil
+}
+
+// generateStoreID creates a random UUID-format string for new records.
+func generateStoreID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// hashPassword hashes a password with SHA-256 for storage.
+// TODO(v1.1): upgrade to bcrypt for production hardening.
+func hashPassword(password string) string {
+	h := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(h[:])
 }

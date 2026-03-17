@@ -516,3 +516,162 @@ func TestPasswordLogin_WhitespaceTrimmingUsername(t *testing.T) {
 		t.Errorf("expected 200 after trimming whitespace, got %d", rr.Code)
 	}
 }
+
+// ─── Refresh (v1.0.0 GA) ──────────────────────────────────────────────────────
+
+func refreshHandler() *OIDCHandler {
+	return NewOIDCHandler(OIDCConfig{
+		JWTSecret:     "test-jwt-secret-32-chars-long-ok",
+		SessionMaxAge: 8 * time.Hour,
+	}, zap.NewNop())
+}
+
+// mintTokenForRefreshTest issues a valid AF JWT via PasswordLogin and extracts it.
+func mintTokenForRefreshTest(t *testing.T) string {
+	t.Helper()
+	h := NewOIDCHandler(OIDCConfig{
+		JWTSecret:     "test-jwt-secret-32-chars-long-ok",
+		SessionMaxAge: 8 * time.Hour,
+		AdminUser:     "admin",
+		AdminPassword: "admin",
+	}, zap.NewNop())
+	rr := doPasswordLogin(h, `{"username":"admin","password":"admin"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("mintToken: expected 200, got %d — %s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("mintToken: decode: %v", err)
+	}
+	if resp["token"] == "" {
+		t.Fatal("mintToken: token is empty")
+	}
+	return resp["token"]
+}
+
+func doRefresh(h *OIDCHandler, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewReader(nil))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rr := httptest.NewRecorder()
+	h.Refresh(rr, req)
+	return rr
+}
+
+func TestRefresh_ValidToken_Returns200(t *testing.T) {
+	token := mintTokenForRefreshTest(t)
+	h := refreshHandler()
+	rr := doRefresh(h, token)
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d — body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRefresh_ValidToken_ReturnsNewToken(t *testing.T) {
+	token := mintTokenForRefreshTest(t)
+	h := refreshHandler()
+	rr := doRefresh(h, token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["token"] == "" {
+		t.Error("response should contain non-empty 'token'")
+	}
+	if resp["expires_in"] == nil {
+		t.Error("response should contain 'expires_in'")
+	}
+}
+
+func TestRefresh_NewTokenHasFreshExpiry(t *testing.T) {
+	token := mintTokenForRefreshTest(t)
+	h := refreshHandler()
+	rr := doRefresh(h, token)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(rr.Body).Decode(&resp)
+	newTokenStr, _ := resp["token"].(string)
+
+	claims := &afClaims{}
+	_, err := jwt.ParseWithClaims(newTokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		return []byte("test-jwt-secret-32-chars-long-ok"), nil
+	})
+	if err != nil {
+		t.Fatalf("new token should be a valid JWT: %v", err)
+	}
+
+	exp := claims.ExpiresAt.Time
+	if time.Until(exp) < 7*time.Hour {
+		t.Errorf("refreshed token expiry should be ~8 hours from now, got %v remaining", time.Until(exp))
+	}
+}
+
+func TestRefresh_NewTokenPreservesIdentity(t *testing.T) {
+	token := mintTokenForRefreshTest(t)
+	h := refreshHandler()
+	rr := doRefresh(h, token)
+	var resp map[string]interface{}
+	json.NewDecoder(rr.Body).Decode(&resp)
+	newTokenStr, _ := resp["token"].(string)
+
+	claims := &afClaims{}
+	jwt.ParseWithClaims(newTokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		return []byte("test-jwt-secret-32-chars-long-ok"), nil
+	})
+	if claims.Subject != "admin" {
+		t.Errorf("expected sub=admin, got %q", claims.Subject)
+	}
+	if claims.Email != "admin@agentfabric.local" {
+		t.Errorf("expected email=admin@agentfabric.local, got %q", claims.Email)
+	}
+}
+
+func TestRefresh_NoToken_Returns401(t *testing.T) {
+	h := refreshHandler()
+	rr := doRefresh(h, "")
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestRefresh_InvalidToken_Returns401(t *testing.T) {
+	h := refreshHandler()
+	rr := doRefresh(h, "not.a.valid.jwt")
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestRefresh_WrongSecret_Returns401(t *testing.T) {
+	// Token signed with a different secret
+	wrongH := NewOIDCHandler(OIDCConfig{
+		JWTSecret:     "wrong-secret-that-does-not-match",
+		SessionMaxAge: 8 * time.Hour,
+		AdminUser:     "admin",
+		AdminPassword: "admin",
+	}, zap.NewNop())
+	token := mintTokenForRefreshTest(t) // signed with correct secret
+	rr := doRefresh(wrongH, token)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with wrong secret, got %d", rr.Code)
+	}
+}
+
+func TestRefresh_ExpiresInMatchesSessionMaxAge(t *testing.T) {
+	token := mintTokenForRefreshTest(t)
+	h := refreshHandler()
+	rr := doRefresh(h, token)
+	var resp map[string]interface{}
+	json.NewDecoder(rr.Body).Decode(&resp)
+	expiresIn, _ := resp["expires_in"].(float64)
+	// SessionMaxAge is 8 hours = 28800 seconds
+	if int(expiresIn) != 28800 {
+		t.Errorf("expected expires_in=28800, got %v", expiresIn)
+	}
+}

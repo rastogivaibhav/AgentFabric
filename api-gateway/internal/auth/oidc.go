@@ -715,6 +715,53 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// ─── POST /auth/refresh ──────────────────────────────────────────────────────
+//
+// Exchange a valid AF JWT for a fresh one with a renewed expiry window.
+// No additional credentials required — the existing token IS the proof of identity.
+//
+// Request:  Authorization: Bearer <existing_token>
+// Response: {"token":"<new_jwt>","expires_in":28800}
+
+func (h *OIDCHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	tokenStr := bearerToken(r)
+	if tokenStr == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing token"})
+		return
+	}
+
+	claims := &afClaims{}
+	_, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(h.cfg.JWTSecret), nil
+	})
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired token"})
+		return
+	}
+
+	// Re-issue with the same identity claims but a fresh expiry
+	freshClaims := &idTokenClaims{
+		Subject: claims.Subject,
+		Email:   claims.Email,
+		Name:    claims.Name,
+	}
+	newToken, err := h.issueAFToken(freshClaims)
+	if err != nil {
+		h.logger.Error("token refresh: issuance failed", zap.Error(err))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	h.logger.Info("token refreshed", zap.String("subject", claims.Subject))
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"token":      newToken,
+		"expires_in": int(h.cfg.SessionMaxAge.Seconds()),
+	})
+}
+
 // ─── POST /auth/login ─────────────────────────────────────────────────────────
 //
 // Username + password login for environments without an OIDC provider.
