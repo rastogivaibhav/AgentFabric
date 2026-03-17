@@ -89,11 +89,11 @@ afCore:
 
   resources:
     requests:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 200m
+      memory: 256Mi
     limits:
-      cpu: 2000m
-      memory: 2Gi
+      cpu: 1000m
+      memory: 1Gi
 
   securityContext:
     runAsNonRoot: true
@@ -111,8 +111,12 @@ afCore:
   hpa:
     enabled: true
     minReplicas: 2
-    maxReplicas: 10
+    maxReplicas: 8
     targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
 
 # ─── API Gateway ─────────────────────────────────────────────────────────────
 api:
@@ -121,6 +125,18 @@ api:
     repository: ghcr.io/agentfabric/api
     tag: "1.0.0"
   replicas: 3
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
 
   service:
     type: ClusterIP
@@ -150,6 +166,11 @@ api:
   auth:
     jwtIssuer: "https://auth.agentfabric.io"
     jwtAudience: "agentfabric-api"
+    # Zero-downtime secret rotation: set jwtSecrets to "new-secret,old-secret".
+    # When set, the gateway accepts tokens signed by any listed secret and issues
+    # new tokens signed with the first (active) secret.
+    # Sourced from the agentfabric-secrets K8s Secret key: jwt-secrets
+    jwtSecrets: ""
 
 # ─── Portal (React dashboard) ────────────────────────────────────────────────
 portal:
@@ -158,6 +179,18 @@ portal:
     repository: ghcr.io/agentfabric/portal
     tag: "1.0.0"
   replicas: 2
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
 
   ingress:
     enabled: true
@@ -218,6 +251,8 @@ monitoring:
 rbac:
   create: true
 
+# Global PDB default — individual services can override via their own
+# podDisruptionBudget section (api, afCore, portal above).
 podDisruptionBudget:
   enabled: true
   minAvailable: 1

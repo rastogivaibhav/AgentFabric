@@ -41,6 +41,8 @@ data:
 
 ---
 # ─── Secret ───────────────────────────────────────────────────────────────────
+# Replace every REPLACE_* value before applying to a cluster.
+# Generate secrets: openssl rand -base64 32
 apiVersion: v1
 kind: Secret
 metadata:
@@ -48,12 +50,16 @@ metadata:
   namespace: agentfabric
 type: Opaque
 stringData:
-  jwt-secret: "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
-  database-url: "postgres://fabric:REPLACE_PASSWORD@postgres-svc:5432/agentfabric?sslmode=require"
-  redis-url: "redis://:REPLACE_PASSWORD@redis-svc:6379"
+  jwt-secret:       "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
+  jwt-secrets:      ""   # comma-separated for zero-downtime rotation (optional)
+  admin-password:   "REPLACE_WITH_STRONG_ADMIN_PASSWORD"
+  database-url:     "postgres://fabric:REPLACE_PASSWORD@postgres-svc:5432/agentfabric?sslmode=require"
+  redis-url:        "redis://:REPLACE_PASSWORD@redis-svc:6379"
+  clickhouse-url:   "http://fabric:REPLACE_PASSWORD@clickhouse-svc:8123"
 
 ---
 # ─── Collector DaemonSet ──────────────────────────────────────────────────────
+# Runs one pod per node for local-path OTLP ingestion (no network hop).
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -107,23 +113,25 @@ spec:
               mountPath: /etc/agentfabric
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 200m
+              memory: 256Mi
             limits:
-              cpu: 500m
-              memory: 512Mi
+              cpu: 1000m
+              memory: 1Gi
           livenessProbe:
             httpGet:
               path: /healthz
               port: 4318
             initialDelaySeconds: 10
-            periodSeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /healthz
               port: 4318
             initialDelaySeconds: 5
-            periodSeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
           securityContext:
             runAsNonRoot: true
             runAsUser: 65534
@@ -147,7 +155,7 @@ spec:
   selector:
     app: agentfabric-collector
   type: ClusterIP
-  clusterIP: None  # headless for DaemonSet node-local access
+  clusterIP: None  # headless — SDKs hit the local node pod directly
   ports:
     - name: grpc-otlp
       port: 4317
@@ -172,7 +180,7 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 0
+      maxUnavailable: 0        # zero-downtime: new pod must be ready before old is removed
   template:
     metadata:
       labels:
@@ -209,25 +217,39 @@ spec:
                 secretKeyRef:
                   name: agentfabric-secrets
                   key: jwt-secret
+            # AF_JWT_SECRETS: set for zero-downtime key rotation.
+            # When empty the gateway falls back to AF_JWT_SECRET.
+            - name: AF_JWT_SECRETS
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: jwt-secrets
+            - name: AF_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: admin-password
           resources:
             requests:
-              cpu: 200m
-              memory: 256Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
-              cpu: 1000m
-              memory: 1Gi
+              cpu: 500m
+              memory: 512Mi
           livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
-            initialDelaySeconds: 15
-            periodSeconds: 30
-          readinessProbe:
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
           securityContext:
             runAsNonRoot: true
             runAsUser: 65534
@@ -247,6 +269,193 @@ spec:
   ports:
     - port: 8080
       targetPort: 8080
+
+---
+# ─── af-core Deployment ───────────────────────────────────────────────────────
+# Rust processing engine: Kafka consumer, policy evaluation, audit log.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentfabric-af-core
+  namespace: agentfabric
+  labels:
+    app: agentfabric-af-core
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agentfabric-af-core
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: agentfabric-af-core
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8889"
+    spec:
+      terminationGracePeriodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: agentfabric-af-core
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: af-core
+          image: ghcr.io/agentfabric/af-core:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50051  # gRPC (internal)
+              protocol: TCP
+            - containerPort: 8889   # HTTP metrics / health
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: database-url
+            - name: CLICKHOUSE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: clickhouse-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: redis-url
+            - name: KAFKA_ENABLED
+              value: "true"
+            - name: KAFKA_BROKERS
+              value: "kafka-svc:9092"
+            - name: KAFKA_TOPIC
+              value: "af.spans"
+            - name: RUST_LOG
+              value: "af_core=info"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            tcpSocket:
+              port: 8889
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 8889
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentfabric-af-core-svc
+  namespace: agentfabric
+spec:
+  selector:
+    app: agentfabric-af-core
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+    - name: http
+      port: 8889
+      targetPort: 8889
+
+---
+# ─── Portal Deployment ────────────────────────────────────────────────────────
+# Nginx serving the pre-built React bundle.  Stateless — scale freely.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentfabric-portal
+  namespace: agentfabric
+  labels:
+    app: agentfabric-portal
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agentfabric-portal
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: agentfabric-portal
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: portal
+          image: ghcr.io/agentfabric/portal:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: false  # nginx worker needs port 80
+            allowPrivilegeEscalation: false
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentfabric-portal-svc
+  namespace: agentfabric
+spec:
+  selector:
+    app: agentfabric-portal
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
 
 ---
 # ─── RBAC for collector (K8s API discovery) ───────────────────────────────────
@@ -310,3 +519,71 @@ spec:
         target:
           type: Utilization
           averageUtilization: 80
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: agentfabric-af-core-hpa
+  namespace: agentfabric
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agentfabric-af-core
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+# ─── PodDisruptionBudgets ─────────────────────────────────────────────────────
+# Ensure at least one pod of each critical service survives voluntary disruptions
+# (node drains, rolling cluster upgrades).  Without PDBs, a multi-node drain
+# can take all pods offline simultaneously.
+#
+# api-gateway: minAvailable:1 with 3 replicas → two pods can drain at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentfabric-gateway-pdb
+  namespace: agentfabric
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: agentfabric-gateway
+
+---
+# collector (DaemonSet): minAvailable:1 prevents simultaneous drain of ALL nodes.
+# This is most relevant in single-AZ clusters; multi-AZ clusters are inherently
+# protected by zone topology, but the PDB is cheap insurance.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentfabric-collector-pdb
+  namespace: agentfabric
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: agentfabric-collector
+
+---
+# af-core: minAvailable:1 with 2 replicas → rolling update does not create
+# a window where Kafka consumer lag accumulates with zero processors.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentfabric-af-core-pdb
+  namespace: agentfabric
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: agentfabric-af-core
