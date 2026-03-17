@@ -21,6 +21,7 @@ import (
 )
 
 func testHandler() *OIDCHandler {
+	// nil UserLookup: tests use env-var break-glass auth only (no DB required).
 	return NewOIDCHandler(OIDCConfig{
 		Issuer:        "https://login.microsoftonline.com/tenant-id/v2.0",
 		ClientID:      "test-client-id",
@@ -28,7 +29,7 @@ func testHandler() *OIDCHandler {
 		RedirectURI:   "http://localhost:8080/auth/callback",
 		JWTSecret:     "test-jwt-secret-32-chars-long-ok",
 		SessionMaxAge: 8 * time.Hour,
-	}, zap.NewNop())
+	}, nil, zap.NewNop())
 }
 
 // ─── PKCE ────────────────────────────────────────────────────────────────────
@@ -123,7 +124,7 @@ func makeTestIDToken(sub, email, nonce string, expOffset time.Duration) string {
 
 func TestParseIDToken_ValidToken(t *testing.T) {
 	token := makeTestIDToken("user-123", "user@example.com", "test-nonce", time.Hour)
-	claims, err := parseIDToken(token)
+	claims, err := parseIDTokenUnsafe(token)
 	if err != nil {
 		t.Fatalf("parseIDToken: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestParseIDToken_ValidToken(t *testing.T) {
 
 func TestParseIDToken_ExpiredToken(t *testing.T) {
 	token := makeTestIDToken("user-123", "u@e.com", "n", -time.Hour)
-	_, err := parseIDToken(token)
+	_, err := parseIDTokenUnsafe(token)
 	if err == nil {
 		t.Error("expired token should return error")
 	}
@@ -159,21 +160,21 @@ func TestParseIDToken_MissingSubject(t *testing.T) {
 	payload := base64.RawURLEncoding.EncodeToString(claimsJSON)
 	sig := base64.RawURLEncoding.EncodeToString([]byte("sig"))
 
-	_, err := parseIDToken(header + "." + payload + "." + sig)
+	_, err := parseIDTokenUnsafe(header + "." + payload + "." + sig)
 	if err == nil {
 		t.Error("token without 'sub' should return error")
 	}
 }
 
 func TestParseIDToken_InvalidFormat_TwoPartToken(t *testing.T) {
-	_, err := parseIDToken("only.two_parts")
+	_, err := parseIDTokenUnsafe("only.two_parts")
 	if err == nil {
 		t.Error("two-part token should fail")
 	}
 }
 
 func TestParseIDToken_InvalidFormat_EmptyString(t *testing.T) {
-	_, err := parseIDToken("")
+	_, err := parseIDTokenUnsafe("")
 	if err == nil {
 		t.Error("empty string should fail")
 	}
@@ -302,7 +303,7 @@ func TestStateCookieVerify_InvalidJWT(t *testing.T) {
 
 func TestStateCookieVerify_WrongSecret(t *testing.T) {
 	h1 := testHandler()
-	h2 := NewOIDCHandler(OIDCConfig{JWTSecret: "different-secret-here-xxxxxx"}, zap.NewNop())
+	h2 := NewOIDCHandler(OIDCConfig{JWTSecret: "different-secret-here-xxxxxx"}, nil, zap.NewNop())
 
 	state := pkceState{Verifier: "v", Nonce: "n"}
 	signed, _ := h1.signStateCookie(state)
@@ -356,7 +357,7 @@ func TestBearerToken_EmptyWhenNoHeader(t *testing.T) {
 // ─── OIDCConfig defaults ─────────────────────────────────────────────────────
 
 func TestNewOIDCHandler_DefaultScopes(t *testing.T) {
-	h := NewOIDCHandler(OIDCConfig{JWTSecret: "s"}, zap.NewNop())
+	h := NewOIDCHandler(OIDCConfig{JWTSecret: "s"}, nil, zap.NewNop())
 	if len(h.cfg.Scopes) == 0 {
 		t.Error("default scopes should be set")
 	}
@@ -373,7 +374,7 @@ func TestNewOIDCHandler_DefaultScopes(t *testing.T) {
 }
 
 func TestNewOIDCHandler_DefaultSessionMaxAge(t *testing.T) {
-	h := NewOIDCHandler(OIDCConfig{JWTSecret: "s"}, zap.NewNop())
+	h := NewOIDCHandler(OIDCConfig{JWTSecret: "s"}, nil, zap.NewNop())
 	if h.cfg.SessionMaxAge == 0 {
 		t.Error("default session max age should be non-zero")
 	}
@@ -387,7 +388,7 @@ func passwordLoginHandler() *OIDCHandler {
 		SessionMaxAge: 8 * time.Hour,
 		AdminUser:     "admin",
 		AdminPassword: "admin",
-	}, zap.NewNop())
+	}, nil, zap.NewNop())
 }
 
 func doPasswordLogin(h *OIDCHandler, body string) *httptest.ResponseRecorder {
@@ -489,7 +490,7 @@ func TestPasswordLogin_CustomCredentials_ValidLogin(t *testing.T) {
 		SessionMaxAge: 8 * time.Hour,
 		AdminUser:     "ops",
 		AdminPassword: "s3cur3p@ss",
-	}, zap.NewNop())
+	}, nil, zap.NewNop())
 	rr := doPasswordLogin(h, `{"username":"ops","password":"s3cur3p@ss"}`)
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200 with custom credentials, got %d", rr.Code)
@@ -501,7 +502,7 @@ func TestPasswordLogin_DefaultCredentialsFallback(t *testing.T) {
 	h := NewOIDCHandler(OIDCConfig{
 		JWTSecret:     "test-jwt-secret-32-chars-long-ok",
 		SessionMaxAge: 8 * time.Hour,
-	}, zap.NewNop())
+	}, nil, zap.NewNop())
 	rr := doPasswordLogin(h, `{"username":"admin","password":"admin"}`)
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200 with default fallback credentials, got %d — body: %s",
@@ -523,7 +524,7 @@ func refreshHandler() *OIDCHandler {
 	return NewOIDCHandler(OIDCConfig{
 		JWTSecret:     "test-jwt-secret-32-chars-long-ok",
 		SessionMaxAge: 8 * time.Hour,
-	}, zap.NewNop())
+	}, nil, zap.NewNop())
 }
 
 // mintTokenForRefreshTest issues a valid AF JWT via PasswordLogin and extracts it.
@@ -534,7 +535,7 @@ func mintTokenForRefreshTest(t *testing.T) string {
 		SessionMaxAge: 8 * time.Hour,
 		AdminUser:     "admin",
 		AdminPassword: "admin",
-	}, zap.NewNop())
+	}, nil, zap.NewNop())
 	rr := doPasswordLogin(h, `{"username":"admin","password":"admin"}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("mintToken: expected 200, got %d — %s", rr.Code, rr.Body.String())
@@ -655,7 +656,7 @@ func TestRefresh_WrongSecret_Returns401(t *testing.T) {
 		SessionMaxAge: 8 * time.Hour,
 		AdminUser:     "admin",
 		AdminPassword: "admin",
-	}, zap.NewNop())
+	}, nil, zap.NewNop())
 	token := mintTokenForRefreshTest(t) // signed with correct secret
 	rr := doRefresh(wrongH, token)
 	if rr.Code != http.StatusUnauthorized {

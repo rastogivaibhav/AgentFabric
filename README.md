@@ -1,61 +1,143 @@
 # AgentFabric
 
-> The compliance-ready observability platform for enterprise AI agents — full-stack tracing, cost governance, and tamper-evident audit for CrewAI, LangGraph, and OpenAI Agents in production.
+> The compliance-ready observability platform for enterprise AI agents — full-stack tracing, cost governance, and tamper-evident audit for CrewAI, LangGraph, OpenAI Agents, Google ADK, and Claude Agents in production.
 
-![Build Status](https://img.shields.io/badge/status-beta-yellow)
+![Version](https://img.shields.io/badge/version-v1.1.0-blue)
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![License](https://img.shields.io/badge/license-proprietary-blue)
 ![Go](https://img.shields.io/badge/go-1.22-blue)
 ![Rust](https://img.shields.io/badge/rust-1.78-orange)
 ![Python](https://img.shields.io/badge/python-3.10+-green)
+![Tests](https://img.shields.io/badge/tests-121%20passing-brightgreen)
+
+---
 
 ## Why AgentFabric?
 
 Multi-agent systems are notoriously difficult to observe. You get spans from OTLP, but:
 
-- **No framework semantics** — is that span from CrewAI, LangGraph, or raw API call?
+- **No framework semantics** — is that span from CrewAI, LangGraph, or a raw API call?
 - **No cost attribution** — which agent used $500 of your LLM budget?
 - **No compliance trail** — auditors ask: "who accessed this agent's memory?"
 - **No policy enforcement** — PII leaks from agent outputs go undetected.
 
-AgentFabric solves this end-to-end. It's a production-grade observability platform purpose-built for AI agents.
+AgentFabric solves this end-to-end. It is a production-grade observability platform purpose-built for AI agents.
+
+---
+
+## What's New in v1.1.0
+
+- **Constant-time authentication** — timing-safe credential comparison prevents username enumeration
+- **Zero-downtime JWT key rotation** — `AF_JWT_SECRETS` comma-separated multi-key with signing/verification split
+- **TLS fail-secure** — server refuses to start as plain HTTP when `AF_TLS_ENABLED=true` with missing certs
+- **Schema migration tooling** — golang-migrate/v4 wired into startup; `make migrate/up`, `make migrate/down`, `make migrate/status`
+- **Portal RBAC/ABAC UI** — `RequireRole` component, admin-only Create/Delete in Users page, role badge in nav, production credential hint suppression
+- **Kubernetes hardening** — resource limits, liveness/readiness probes, PodDisruptionBudgets on all three deployments, HPA for gateway and af-core
+- **Helm alignment** — probe paths, image pull policy, and security context improvements
+- **Production checklist** — `docs/PRODUCTION_CHECKLIST.md` with runbook, SLOs, secret rotation procedures, rollback decision tree
+
+See [CHANGELOG.md](CHANGELOG.md) for the full diff.
+
+---
 
 ## Features
 
 ### Core Capabilities
 
-- **🔍 Protocol-Native Tracing** — OTLP gRPC + HTTP receivers. Instrument any framework without SDKs.
-- **🤖 5 Frameworks Out of the Box** — CrewAI, LangGraph, OpenAI Agents, Google ADK, Anthropic Claude Agents.
-- **💰 LLM Cost Attribution** — Token counts + model pricing. Real-time cost per agent, per trace, per model.
-- **🚨 Policy Engine** — 5 built-in policies: Sovereignty (no tool execution), Cost Thresholds, Tool Allowlists, PII Output Detection, Rate Limiting.
-- **📊 Live Dashboard** — React portal with trace timeline, span waterfall, agent topology, cost breakdown.
-- **🔐 Tamper-Evident Audit Log** — SHA-256 hash-chained entries with cryptographic verification. Regulatory-grade compliance trail.
-- **🏢 Multi-Tenancy** — Row-level security (RLS) on PostgreSQL. Tenant isolation at the database layer.
-- **📡 WebSocket Live Stream** — Real-time span events with pause/resume/filter.
+- **Protocol-Native Tracing** — OTLP gRPC (`:4317`) + HTTP (`:4318`) receivers. Instrument any framework without custom SDKs.
+- **5 Frameworks Out of the Box** — CrewAI, LangGraph, OpenAI Agents, Google ADK, Anthropic Claude Agents.
+- **LLM Cost Attribution** — Token counts + model pricing. Real-time cost per agent, per trace, per model.
+- **Policy Engine** — 5 built-in policies: Sovereignty (tool blocklist), Cost Thresholds, Tool Allowlists, PII Output Detection, Rate Limiting.
+- **Live Dashboard** — React portal with trace timeline, span waterfall, agent topology, cost breakdown.
+- **Tamper-Evident Audit Log** — SHA-256 hash-chained entries with cryptographic verification endpoint. Regulatory-grade compliance trail.
+- **Multi-Tenancy** — Row-level security (RLS) on PostgreSQL. Tenant isolation at the database layer.
+- **WebSocket Live Stream** — Real-time span events with pause/resume/filter.
+- **User Management** — Full CRUD with RBAC (admin/editor/viewer) + ABAC self-service (users can edit their own profile).
 
 ### Enterprise Ready
 
-- **SOC 2 Architecture** — Ready for Type II certification.
-- **HIPAA-Compatible** — PII redaction built-in (regex + contextual rules).
-- **Kubernetes Deployment** — DaemonSet collector, Deployment api-gateway, Helm charts included.
-- **Distributed Tracing** — Kafka → af-core → ClickHouse pipeline for petabyte-scale analytics.
-- **Self-Hosted & Cloud** — Run anywhere: Docker Compose, Kubernetes, or managed cloud service.
+- **SOC 2 Architecture** — Immutable audit trail, RBAC/ABAC, secrets manager guidance.
+- **HIPAA-Compatible** — PII redaction built-in (regex + contextual rules in collector).
+- **Kubernetes Deployment** — DaemonSet collector, Deployment api-gateway/af-core/portal, PodDisruptionBudgets, HPA, Helm chart.
+- **OIDC/SSO** — PKCE + nonce flow for Okta, Azure AD, Auth0. Password login for self-hosted.
+- **Self-Hosted & Cloud** — Docker Compose, Kubernetes, or managed cloud service.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│               Python / Node Agent Code                       │
+│       (CrewAI / LangGraph / OpenAI / ADK / Claude)           │
+└────────────────────┬─────────────────────────────────────────┘
+                     │ OTLP gRPC :4317  or  HTTP :4318
+                     ▼
+        ┌────────────────────────┐
+        │     Collector (Go)     │
+        │  • OTLP receiver       │
+        │  • Framework detection │
+        │  • PII scrubbing       │
+        │  • Cost computation    │
+        │  • JWT auth to gateway │
+        └────────┬───────────────┘
+                 │  POST /internal/ingest
+        ┌────────▼───────────────────────────────────┐
+        │           API Gateway (Go / Chi)            │
+        │  • JWT auth (OIDC + password login)         │
+        │  • RBAC/ABAC middleware                     │
+        │  • Per-tenant rate limiting (Redis)         │
+        │  • WebSocket hub (live stream)              │
+        │  • Prometheus metrics                       │
+        └────────┬───────────────────────────────────┘
+        ┌────────▼────────┐    ┌──────────────────────┐
+        │   PostgreSQL    │    │      af-core (Rust)   │
+        │  • Spans/Runs   │    │  • Kafka consumer     │
+        │  • Audit log    │    │  • Policy engine      │
+        │  • Users/Tenants│    │  • ClickHouse writes  │
+        │  • RLS enforced │    │  • SHA-256 audit chain│
+        └─────────────────┘    └──────────────────────┘
+                 ▲                     ▲
+                 │                     │
+        ┌────────┴─────────┐  ┌───────┴───────┐
+        │  Portal (React)  │  │     Redis      │
+        │  • Dashboard     │  │  Rate limiting │
+        │  • Traces/Agents │  │  WS pub/sub    │
+        │  • Cost analysis │  │  Session cache │
+        │  • Live stream   │  └───────────────┘
+        │  • User admin    │
+        └──────────────────┘
+```
+
+**Data pipeline** (high-throughput path):
+```
+Agent SDK → Collector → API Gateway → PostgreSQL (hot)
+                                    → Kafka → af-core → ClickHouse (analytics)
+```
+
+---
 
 ## Quick Start (5 Minutes)
 
 ### Prerequisites
 
-- Docker & Docker Compose
-- Go 1.22+
-- Node 20+
-- Python 3.10+
+| Tool | Minimum Version |
+|------|----------------|
+| Docker + Docker Compose | 24+ |
+| Go | 1.22+ |
+| Node | 20+ |
+| Python | 3.10+ |
 
-### Option A: Full Stack (Recommended for First Run)
+### Option A: Full Dev Stack (Recommended for First Run)
 
 ```bash
 git clone https://github.com/rastogivaibhav/AgentFabric.git
 cd AgentFabric
 
-# Start all services (Postgres, Redis, Collector, API Gateway, Portal)
+# Copy environment template and review defaults
+cp .env.example .env
+
+# Start all services (Postgres, Redis, Kafka, ClickHouse, Collector, API Gateway)
 docker compose up -d
 
 # Start the portal dev server (hot-reload)
@@ -64,15 +146,16 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
-Visit **http://localhost:3000** — portal is live with dev API proxy to `:8080`.
+Visit **http://localhost:3000** — portal is live.
+Default credentials: `admin` / `admin` *(change via `AF_ADMIN_PASSWORD` before any production use)*
 
-### Option B: Minimal Stack (Dev/Testing)
+### Option B: Minimal Stack (Dev / CI)
 
 ```bash
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
-Runs only PostgreSQL, Redis, Collector, API Gateway (no Kafka, ClickHouse, or Grafana).
+Runs PostgreSQL, Redis, Collector, and API Gateway only (no Kafka, ClickHouse, or Grafana).
 
 ### Send Your First Span
 
@@ -82,9 +165,7 @@ curl -X POST http://localhost:4318/v1/traces \
   -d '{
     "resourceSpans": [{
       "resource": {
-        "attributes": [
-          {"key":"service.name","value":{"stringValue":"demo-agent"}}
-        ]
+        "attributes": [{"key":"service.name","value":{"stringValue":"demo-agent"}}]
       },
       "scopeSpans": [{
         "spans": [{
@@ -105,128 +186,9 @@ curl -X POST http://localhost:4318/v1/traces \
   }'
 ```
 
-Check the portal at **http://localhost:3000/traces** — your span should be there.
+Check **http://localhost:3000/traces** — your span appears within seconds.
 
 ---
-
-## Real-World Example: Multi-Agent Research Pipeline
-
-Here's a production-ready CrewAI example that demonstrates AgentFabric observability:
-
-```python
-import os
-from agentfabric import instrument
-from crewai import Agent, Task, Crew
-from crewai_tools import tool
-
-# 1. One-line instrumentation (automatically traces all agents)
-instrument(
-    endpoint=os.getenv("AF_ENDPOINT", "http://localhost:4318"),
-    service_name="research-platform",
-)
-
-# 2. Define your tools
-@tool
-def web_search(query: str) -> str:
-    """Search the web for information"""
-    # Implementation here
-    return "Search results..."
-
-@tool
-def database_query(query: str) -> str:
-    """Query internal database"""
-    return "Database results..."
-
-# 3. Create your agents
-market_researcher = Agent(
-    role="Market Research Analyst",
-    goal="Gather comprehensive market intelligence",
-    backstory="Expert researcher with 10 years of industry experience",
-    tools=[web_search],
-    model="gpt-4",
-)
-
-data_analyst = Agent(
-    role="Data Analyst",
-    goal="Synthesize research into actionable insights",
-    backstory="Statistical expert and business strategist",
-    tools=[database_query],
-    model="gpt-4",
-)
-
-report_writer = Agent(
-    role="Technical Writer",
-    goal="Create clear, well-structured reports",
-    backstory="Award-winning author with tech background",
-    tools=[],
-    model="gpt-3.5-turbo",  # Cheaper for writing tasks
-)
-
-# 4. Define tasks
-research_task = Task(
-    description="Conduct market research on AI agents in 2026",
-    expected_output="Detailed market analysis with size, growth, and key players",
-    agent=market_researcher,
-    tools=[web_search],
-)
-
-analysis_task = Task(
-    description="Analyze research data and identify trends",
-    expected_output="Statistical analysis with trend forecasts",
-    agent=data_analyst,
-    tools=[database_query],
-)
-
-reporting_task = Task(
-    description="Create executive summary report",
-    expected_output="Professional report ready for stakeholders",
-    agent=report_writer,
-    context=[research_task, analysis_task],
-)
-
-# 5. Create and execute crew
-research_crew = Crew(
-    agents=[market_researcher, data_analyst, report_writer],
-    tasks=[research_task, analysis_task, reporting_task],
-    verbose=True,
-    memory=True,  # Enable memory for context carry-over
-)
-
-# 6. Kickoff (automatic tracing happens here)
-result = research_crew.kickoff()
-
-# 7. Monitor in AgentFabric Portal
-print(f"Report: {result}")
-print("\n📊 View detailed traces at http://localhost:3000/traces")
-print("📈 View cost breakdown at http://localhost:3000/cost")
-print("🤖 View agent performance at http://localhost:3000/agents")
-```
-
-**What AgentFabric Captures:**
-
-- **Agent Performance**: Each agent's execution time, tokens used, cost
-- **Tool Usage**: Which tools were called, success rate, latency
-- **Task Dependencies**: How research_task feeds into analysis_task
-- **Cost Attribution**: $0.45 for researcher, $0.12 for analyst, $0.03 for writer
-- **Error Tracking**: If web_search fails, it's logged with retry attempts
-- **Token Efficiency**: See which agent is most token-efficient
-- **Model Selection**: Cost savings from using gpt-3.5 for writing vs gpt-4
-
-**View in Portal:**
-
-```
-Dashboard
-├── Total Cost (24h): $145.32
-├── Total Tokens: 890,452
-├── Avg Latency: 2.1s per agent run
-├── Agents
-│   ├── Market Researcher: 42 runs, $67.20, 5.1s avg
-│   ├── Data Analyst: 42 runs, $51.30, 2.3s avg
-│   └── Report Writer: 42 runs, $26.82, 1.2s avg
-└── Tools
-    ├── web_search: 145 calls, 94.2% success rate
-    └── database_query: 87 calls, 100% success rate
-```
 
 ## Python SDK: Automatic Instrumentation
 
@@ -236,699 +198,446 @@ Dashboard
 pip install agentfabric
 ```
 
-### Quick Start with CrewAI
+### One-Line Instrumentation (CrewAI)
 
 ```python
 from agentfabric import instrument
 from crewai import Agent, Task, Crew
 
-# 1. Instrument your environment (one line!)
+# Instrument once at app startup — all agents traced automatically
 instrument(
     endpoint="http://localhost:4318",
-    service_name="my-crew-squad"
+    service_name="my-research-platform",
+    headers={"X-AF-Tenant": "acme-corp"}  # optional: tenant isolation
 )
 
-# 2. Define your agents
+# Define agents normally — no changes needed
 researcher = Agent(
-    role="Research Analyst",
-    goal="Gather comprehensive market research",
-    backstory="Expert at finding and analyzing trends",
-    tools=[web_search, data_analyzer]
+    role="Market Research Analyst",
+    goal="Gather comprehensive market intelligence",
+    backstory="Expert researcher with 10 years experience",
+    tools=[web_search],
+    model="gpt-4",
 )
 
-analyst = Agent(
-    role="Business Analyst",
-    goal="Synthesize research into actionable insights",
-    backstory="Strategic thinker with 15 years experience",
-    tools=[database_query, report_generator]
-)
-
-# 3. Define your tasks
-research_task = Task(
-    description="Research the AI agent market",
-    agent=researcher,
-    expected_output="Comprehensive market analysis"
-)
-
-analysis_task = Task(
-    description="Analyze research and create strategy",
-    agent=analyst,
-    expected_output="Strategic recommendations"
-)
-
-# 4. Create your crew
-crew = Crew(
-    agents=[researcher, analyst],
-    tasks=[research_task, analysis_task],
-    verbose=True
-)
-
-# 5. Execute — automatic tracing happens here
+# Execute — tracing is automatic
+crew = Crew(agents=[researcher], tasks=[research_task])
 result = crew.kickoff()
-print(result)
-
-# 6. View traces at http://localhost:3000/traces
-#    Every agent action, tool call, and LLM invocation is traced
-```
-
-### CrewAI Observability Features
-
-Once instrumented, AgentFabric automatically captures:
-
-**Agent-Level Metrics:**
-- Agent name, role, backstory
-- Time spent thinking vs executing
-- Tool success/failure rates
-- Tokens consumed per agent
-- Cost attribution per agent
-
-**Task-Level Tracing:**
-- Task description and expected output
-- Subtask execution order
-- Dependencies between tasks
-- Task duration and status
-
-**Tool Instrumentation:**
-- Tool name and input/output
-- Execution time
-- Errors and retries
-- Tool-to-agent call graph
-
-**LLM Instrumentation:**
-- Model used per call
-- Prompt + completion tokens
-- Cost per API call
-- Latency histogram
-
-**View in Portal:**
-```
-Dashboard → Agents Tab
-├── researcher
-│   ├── Total runs: 42
-│   ├── Avg cost: $0.18/run
-│   ├── Error rate: 2.3%
-│   └── Recent tasks: [List of tasks]
-└── analyst
-    ├── Total runs: 42
-    ├── Avg cost: $0.12/run
-    ├── Error rate: 0%
-    └── Recent tasks: [List of tasks]
-```
-
-### CrewAI Team Observability Example
-
-```python
-# Track multiple crews in the same tenant
-from agentfabric import instrument
-
-instrument(
-    endpoint="http://localhost:4318",
-    service_name="enterprise-ai-platform",  # Shared service name
-    headers={"X-AF-Tenant": "acme-corp"}    # Tenant isolation
-)
-
-# Crew 1: Marketing Team
-marketing_crew = Crew(agents=[copywriter, seo_expert], tasks=[...])
-result1 = marketing_crew.kickoff()  # Traced as "marketing_crew"
-
-# Crew 2: Customer Support Team
-support_crew = Crew(agents=[support_agent, escalation_agent], tasks=[...])
-result2 = support_crew.kickoff()  # Traced as "support_crew"
-
-# View in Portal:
-# - Compare performance across crews
-# - Allocate budget per team
-# - Monitor error rates by team
-# - Track tool usage patterns
-```
-
-### Advanced: Custom Spans for Nested Logic
-
-```python
-from agentfabric import trace_tool_call, agent_span
-
-# Instrument a custom function
-@trace_tool_call("custom_validator")
-def validate_research(data: dict):
-    # This creates a span under the active trace
-    # Automatically tracks execution time and errors
-    return data
-
-# Or use context manager for fine-grained control
-with agent_span("data_processing", {"stage": "preprocessing"}):
-    processed = preprocess(raw_data)
-    # Nested spans are automatically linked in the trace DAG
 ```
 
 ### Supported Frameworks
 
-| Framework | Version | Status | Features |
-|-----------|---------|--------|----------|
-| **CrewAI** | 0.30+ | ✅ GA | Agent roles, tasks, tools, memory |
-| **LangGraph** | 0.1+ | ✅ GA | State graphs, cycles, memory |
-| **OpenAI** | 1.0+ | ✅ GA | Chat completions, tool use |
-| **Anthropic** | 0.7+ | ✅ GA | Claude models, tool_use |
-| **Google ADK** | 0.1+ | ✅ GA | Generative agents, looping |
+| Framework | Version | Status | Auto-traced |
+|-----------|---------|--------|-------------|
+| **CrewAI** | 0.30+ | GA | Agent roles, tasks, tools, memory |
+| **LangGraph** | 0.1+ | GA | State graphs, cycles, memory |
+| **OpenAI Agents** | 1.0+ | GA | Chat completions, tool use |
+| **Anthropic Claude** | 0.7+ | GA | Claude models, tool_use |
+| **Google ADK** | 0.1+ | GA | Generative agents, looping |
 
-## Table of Contents
+### Advanced: Custom Spans
 
-- [Why AgentFabric?](#why-agentfabric)
-- [Features](#features)
-- [Quick Start](#quick-start-5-minutes)
-- [Python SDK](#python-sdk-automatic-instrumentation)
-- [CrewAI Quick Start](#quick-start-with-crewai)
-- [CrewAI Observability](#crewai-observability-features)
-- [Configuration](#configuration)
-- [API Reference](#api-reference)
-- [Policy Engine](#policy-engine)
-- [Cost Control](#crewai-team-governance--cost-control)
-- [Debugging](#debugging-crewai-teams-with-agentfabric)
-- [Best Practices](#best-practices-for-crewai--agentfabric)
-- [Troubleshooting](#troubleshooting)
-- [Deployment](#deployment)
-- [Roadmap](#roadmap)
+```python
+from agentfabric import trace_tool_call, agent_span
+
+@trace_tool_call("custom_validator")
+def validate_research(data: dict):
+    return data  # Creates a span automatically
+
+with agent_span("data_processing", {"stage": "preprocessing"}):
+    processed = preprocess(raw_data)
+```
 
 ---
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    Python Agent Code                         │
-│              (CrewAI / LangGraph / OpenAI)                   │
-└────────────────────┬─────────────────────────────────────────┘
-                     │ OTLP (gRPC or HTTP)
-                     ↓
-        ┌────────────────────────┐
-        │    Collector (Go)      │
-        │                        │
-        │ • OTLP gRPC :4317      │
-        │ • OTLP HTTP :4318      │
-        │ • PII Scrubbing        │
-        │ • Framework Detection  │
-        │ • Cost Computation     │
-        └────────────┬───────────┘
-                     │
-        ┌────────────┴──────────────────┐
-        │                               │
-        ↓                               ↓
-  API Gateway (Go)               af-core (Rust)
-  • REST/WebSocket API           • Kafka Consumer
-  • JWT Auth                      • ClickHouse Writes
-  • Multi-tenancy RLS             • Policy Evaluation
-  • Prometheus Metrics            • SHA-256 Audit Log
-        │
-  ┌─────┴──────────────┐
-  ↓                    ↓
-PostgreSQL           Redis
-(Spans, Runs,        (Cache,
- Traces, Audit)      WebSocket
-                      Pub/Sub)
-
-        ↑
-        │ GraphQL/REST API
-        │
-  ┌─────┴──────────────┐
-  │  Portal (React)    │
-  │                    │
-  │ • Dashboard        │
-  │ • Traces           │
-  │ • Agents           │
-  │ • Cost Analysis    │
-  │ • Live Stream      │
-  └────────────────────┘
-```
 
 ## Configuration
 
 ### Environment Variables
 
-**API Gateway** (`api-gateway/cmd/server/main.go`):
-```bash
-AF_JWT_SECRET=<32+ byte hex secret>          # REQUIRED in production
-AF_AUTH_DISABLED=true|false                  # Default: false (auth required)
-AF_CORS_ORIGINS=http://localhost:3000,...    # Comma-separated allowed origins
-DATABASE_URL=postgres://user:pass@host/db    # Default: localhost
-REDIS_URL=redis://localhost:6379             # Default: localhost
-LISTEN_ADDR=:8080                            # Default: :8080
-```
+#### API Gateway (`api-gateway/cmd/server/main.go`)
 
-**Collector** (`collector/cmd/collector/main.go`):
-```bash
-AF_GRPC_ADDR=:4317                           # gRPC listener
-AF_HTTP_ADDR=:4318                           # HTTP listener
-AF_GATEWAY_ENDPOINT=http://api-gateway:8080  # Where to forward spans
-AF_AUTH_REQUIRE_AUTH=true|false               # Require JWT for ingest
-AF_GATEWAY_JWT_SECRET=<matching api-gateway secret>
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AF_JWT_SECRET` | `dev-secret-change-in-production` | **Required in prod** — primary JWT signing key |
+| `AF_JWT_SECRETS` | *(uses AF_JWT_SECRET)* | Comma-separated key rotation list. First = signing, all = verify |
+| `AF_ADMIN_USER` | `admin` | Admin username for password login |
+| `AF_ADMIN_PASSWORD` | `admin` | **Change before deployment** |
+| `AF_AUTH_DISABLED` | `false` | Disable auth entirely (CI/e2e only) |
+| `AF_TLS_ENABLED` | `false` | Enable HTTPS. Fail-secure: server refuses to start without cert/key |
+| `AF_TLS_CERT_FILE` | *(empty)* | Path to TLS certificate |
+| `AF_TLS_KEY_FILE` | *(empty)* | Path to TLS private key |
+| `DATABASE_URL` | `postgres://fabric:fabric@localhost:5432/agentfabric?sslmode=disable` | PostgreSQL DSN |
+| `REDIS_URL` | `redis://localhost:6379` | Redis URL |
+| `LISTEN_ADDR` | `:8080` | HTTP/HTTPS listen address |
+| `AF_RATE_LIMIT_RPM` | `1000` | Per-tenant requests-per-minute cap |
+| `AF_MIGRATE_ON_STARTUP` | `true` | Run `migrate/up` at startup. Set `false` for read replicas |
+| `AF_MIGRATIONS_PATH` | `deploy/migrations` | Path to SQL migration files |
+| `AF_OIDC_ISSUER` | *(empty)* | OIDC provider issuer URL (Okta/Azure/Auth0). Leave empty for password-only |
+| `AF_OIDC_CLIENT_ID` | *(empty)* | OIDC application client ID |
+| `AF_OIDC_CLIENT_SECRET` | *(empty)* | OIDC application client secret |
+| `AF_OIDC_REDIRECT_URI` | `http://localhost:8080/auth/callback` | OIDC callback URL |
 
-**Portal** (`.env.local`):
-```bash
-VITE_API_URL=http://localhost:8080           # Backend URL
-```
+#### Collector (`collector/internal/config/config.go`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AF_GRPC_ADDR` | `:4317` | OTLP gRPC listener |
+| `AF_HTTP_ADDR` | `:4318` | OTLP HTTP listener |
+| `AF_GATEWAY_ENDPOINT` | `http://localhost:8080` | API gateway ingest URL |
+| `AF_AUTH_REQUIRE_AUTH` | `true` | Require JWT bearer on OTLP ingest |
+| `AF_JWT_SECRET` | *(required when auth=true)* | Must match gateway's signing secret |
+| `AF_PII_ENABLED` | `true` | Enable PII scrubbing |
+| `AF_PII_REDACT` | `true` | Redact (true) vs flag-only (false) |
+| `AF_RATE_LIMIT_SPANS_PER_SECOND` | `50000` | Ingest rate cap |
+| `AF_PROCESSOR_WORKERS` | `4` | Parallel span processing goroutines |
+| `AF_PROCESSOR_BATCH_SIZE` | `512` | Spans per flush batch |
+
+#### Portal (`.env.local` / build args)
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_API_URL` | API gateway base URL (default: `http://localhost:8080`) |
+| `VITE_WS_URL` | WebSocket base URL (default: `ws://localhost:8080`) |
+| `VITE_SSO_ENABLED` | Show SSO button on login page (`true`/`false`) |
+| `VITE_SHOW_DEFAULT_CREDS` | Show `admin/admin` hint on login page. **Never `true` in production** |
+| `VITE_AUTH_DISABLED` | Skip login entirely for CI/e2e (`true`/`false`) |
+
+---
 
 ## API Reference
 
+### Authentication
+
+```bash
+# Password login
+TOKEN=$(curl -sf -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin"}' | jq -r .token)
+
+# Use token
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/environments
+```
+
 ### REST Endpoints
 
+**Auth:**
+- `POST /auth/login` — Password login → `{"token":"<JWT>"}`
+- `GET  /auth/login` — OIDC SSO redirect (when `AF_OIDC_ISSUER` set)
+- `GET  /auth/callback` — OIDC callback
+- `GET  /auth/logout` — Clear session
+- `GET  /auth/me` — Current user identity
+- `POST /auth/refresh` — Refresh JWT (returns new token with extended expiry)
+
 **Traces:**
-- `GET /api/v1/traces` — List traces with filtering
-- `GET /api/v1/traces/{traceId}` — Get full trace with spans
+- `GET /api/v1/traces` — List traces (`?since=24h&framework=crewai&limit=50`)
+- `GET /api/v1/traces/{traceId}` — Full trace with all spans
 - `GET /api/v1/traces/{traceId}/graph` — Span DAG topology
-- `GET /api/v1/traces/{traceId}/timeline` — Waterfall timeline
-- `GET /api/v1/traces/{traceId}/cost` — Cost breakdown
+- `GET /api/v1/traces/{traceId}/timeline` — Waterfall timeline data
+- `GET /api/v1/traces/{traceId}/cost` — Per-span cost breakdown
 
 **Agents:**
-- `GET /api/v1/agents` — List all agents
-- `GET /api/v1/agents/{agentId}` — Agent details (run count, cost, error rate)
-- `GET /api/v1/agents/{agentId}/runs` — Runs for specific agent
+- `GET /api/v1/agents` — List agents with run count, cost, error rate
+- `GET /api/v1/agents/{agentId}` — Agent detail
+- `GET /api/v1/agents/{agentId}/runs` — Run history
 - `GET /api/v1/agents/{agentId}/metrics` — 24h metrics snapshot
-- `GET /api/v1/agents/{agentId}/topology` — Agent call graph
+- `GET /api/v1/agents/{agentId}/topology` — Call graph
 
 **Runs:**
-- `GET /api/v1/runs` — List runs with filtering
-- `GET /api/v1/runs/{runId}` — Run details
-- `GET /api/v1/runs/{runId}/children` — Child runs (nested execution)
-- `POST /api/v1/runs/{runId}/feedback` — Submit human feedback (score + comment)
+- `GET  /api/v1/runs` — List runs (`?agent=x&framework=langgraph`)
+- `GET  /api/v1/runs/{runId}` — Run detail with metadata
+- `GET  /api/v1/runs/{runId}/children` — Child runs (nested execution)
+- `POST /api/v1/runs/{runId}/feedback` — Submit human feedback `{"score":5,"comment":"..."}`
 
 **Analytics:**
 - `GET /api/v1/analytics/overview?since=24h` — Dashboard KPIs
-- `GET /api/v1/analytics/frameworks` — Traces by framework
+- `GET /api/v1/analytics/frameworks` — Trace count by framework
 - `GET /api/v1/analytics/cost?since=24h` — Cost breakdown by model
 - `GET /api/v1/analytics/errors?since=24h` — Error frequency by framework
 
-**Live Stream:**
-- `WebSocket /api/v1/stream/live` — Real-time span events (JSON)
+**Users (RBAC-gated):**
+- `GET    /api/v1/users` — List users (any authenticated user)
+- `POST   /api/v1/users` — Create user (admin only)
+- `GET    /api/v1/users/{userId}` — Get user (any authenticated user)
+- `PUT    /api/v1/users/{userId}` — Update user (admin OR self)
+- `DELETE /api/v1/users/{userId}` — Delete user (admin only)
 
-**System:**
+**Other:**
+- `GET /api/v1/environments` — List environments
+- `GET /api/v1/audit` — Paginated audit log (`?limit=100&offset=0`)
+- `GET /api/v1/audit/verify` — Verify SHA-256 hash chain integrity
+- `WS  /api/v1/stream/live` — Real-time span events
 - `GET /healthz` — Health check
 - `GET /metrics` — Prometheus metrics
 
 ### Query Parameters
 
 ```
-?since=24h|7d|30d        # Time window for aggregations
-?framework=crewai        # Filter by framework
-?agent=my-agent          # Filter by agent name
-?model=gpt-4             # Filter by LLM model
-?status=ok|error         # Filter by trace status
-?limit=50                # Pagination (1-200, default 50)
+?since=1h|6h|24h|7d|30d    Time window for aggregations
+?framework=crewai           Filter by framework
+?agent=my-agent             Filter by agent name
+?model=gpt-4                Filter by LLM model
+?status=ok|error            Filter by trace status
+?limit=50                   Page size (1–200, default 50)
+?offset=0                   Pagination offset
 ```
 
-### Response Format
+---
 
-All responses are JSON. Errors return `{"error": "message"}` with appropriate HTTP status codes.
+## Database Migrations
 
-**Example Trace:**
-```json
-{
-  "id": "trace-uuid",
-  "root_span_name": "agent_kickoff",
-  "framework": "crewai",
-  "start_time": "2026-03-10T12:34:56Z",
-  "duration_ns": 5000000000,
-  "span_count": 42,
-  "error_count": 0,
-  "total_cost_usd": 0.0234,
-  "total_tokens": 1850,
-  "status": "ok",
-  "spans": [...]
-}
+AgentFabric uses [golang-migrate/v4](https://github.com/golang-migrate/migrate) for versioned SQL migrations.
+
+```bash
+# Check current migration version
+make migrate/status DATABASE_URL=postgres://...
+
+# Apply all pending migrations
+make migrate/up DATABASE_URL=postgres://...
+
+# Roll back one step
+make migrate/down DATABASE_URL=postgres://...
 ```
 
-## CrewAI Team Governance & Cost Control
+Migrations run automatically at API gateway startup (`AF_MIGRATE_ON_STARTUP=true` by default).
+Set `AF_MIGRATE_ON_STARTUP=false` for read-only replicas or external migration pipelines.
 
-### Cost Attribution by Team
-
-Track spending across multiple CrewAI teams in a single dashboard:
-
-```python
-# Production crew (expensive, needs budget controls)
-production_crew = Crew(
-    agents=[senior_researcher, lead_analyst],
-    tasks=[...],
-    max_rpm=100  # Rate limit configuration
-)
-
-# Experimental crew (learning phase, lower cost threshold)
-experimental_crew = Crew(
-    agents=[junior_researcher],
-    tasks=[...],
-    max_rpm=10
-)
-
-# Monitor in Portal:
-# Cost Breakdown
-# ├── Production Team: $2,340.12/month (45% of budget)
-# ├── Experimental: $234.01/month (4% of budget)
-# └── Support: $1,200.00/month (23% of budget)
+Migration files live in `deploy/migrations/`:
 ```
-
-### Policy Governance for Crews
-
-Enforce team-level constraints:
-
-```json
-{
-  "policy": "cost_threshold",
-  "config": {
-    "per_run_limit_usd": 5.00,
-    "daily_limit_usd": 500.00,
-    "enforcement": "hard_stop"  // Crew fails if exceeded
-  },
-  "scope": "crew:marketing"  // Apply to specific crew
-}
-```
-
-### Multi-Agent Task Monitoring
-
-Watch task execution across agents:
-
-```
-Portal → Traces Tab
-Task: "Research Market Trends"
-├── Agent: researcher
-│   ├── Duration: 45s
-│   ├── Tool calls: 8 (web_search x6, data_analyzer x2)
-│   ├── Cost: $0.34
-│   └── Status: ✅ Completed
-├── Agent: analyst
-│   ├── Duration: 23s
-│   ├── Tool calls: 4 (database_query x3, report_gen x1)
-│   ├── Cost: $0.12
-│   └── Status: ✅ Completed
-└── Task Total: 68s, $0.46, 12 tool calls
+deploy/migrations/
+  001_initial_schema.up.sql    # Full schema: 10 tables, RLS, audit rules, seed data
+  001_initial_schema.down.sql  # Reverse in FK-safe dependency order
 ```
 
 ---
 
 ## Policy Engine
 
-AgentFabric's policy engine evaluates 5 built-in policies per span:
+Five built-in policies evaluated per span by `af-core`:
 
-### 1. Sovereignty Policy
-Prevents specific tools from executing based on runtime allowlist.
+| Policy | Trigger | Action |
+|--------|---------|--------|
+| **Sovereignty** | Tool name in forbidden list | DENY execution |
+| **Cost Threshold** | Cumulative cost > limit | DENY / alert |
+| **Tool Allowlist** | Tool not in allowed set | DENY execution |
+| **PII Output** | SSN / credit card / email / phone pattern in output | REDACT |
+| **Rate Limit** | Requests > per-tenant cap | DENY with 429 |
 
-```json
-{
-  "name": "sovereignty",
-  "config": {
-    "forbidden_tools": ["delete_user", "modify_system"]
-  },
-  "decision": "DENY",
-  "reason": "tool 'delete_user' is not in allowlist"
-}
-```
+All policy decisions are written to the immutable `policy_audit_log` with SHA-256 hash chaining.
 
-### 2. Cost Threshold Policy
-Halts execution if cumulative cost exceeds limit.
-
-```json
-{
-  "name": "cost_threshold",
-  "config": {
-    "max_cost_usd": 10.0,
-    "window_minutes": 60
-  },
-  "decision": "ALLOW",
-  "reason": "current_cost: $2.34 < limit: $10.00"
-}
-```
-
-### 3. Tool Allowlist Policy
-Restricts execution to a whitelist of tools only.
-
-```json
-{
-  "name": "tool_allowlist",
-  "config": {
-    "allowed_tools": ["search", "calculator", "send_email"]
-  },
-  "decision": "DENY",
-  "reason": "tool 'web_scraper' not in allowlist"
-}
-```
-
-### 4. PII Output Policy
-Detects and redacts PII patterns (SSN, credit card, email, phone).
-
-```json
-{
-  "name": "pii_output",
-  "config": {
-    "patterns": ["ssn", "credit_card", "email", "phone"]
-  },
-  "decision": "REDACT",
-  "reason": "detected SSN pattern in output"
-}
-```
-
-### 5. Rate Limit Policy
-Per-tenant, per-agent request throttling.
-
-```json
-{
-  "name": "rate_limit",
-  "config": {
-    "requests_per_minute": 100,
-    "burst_window_sec": 10
-  },
-  "decision": "ALLOW",
-  "reason": "rate: 45 req/min < limit: 100 req/min"
-}
-```
-
-All policy decisions are logged to the immutable audit trail.
+---
 
 ## Deployment
 
 ### Docker Compose (Development)
 
 ```bash
+# Full stack with Kafka + ClickHouse + Grafana
 docker compose up -d
-# Access portal at http://localhost:3000
+
+# Minimal stack
+docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
 ### Kubernetes (Production)
 
 ```bash
+# Apply manifests directly
 kubectl apply -f deploy/k8s/agentfabric.yaml
-# or
-helm install agentfabric deploy/helm/
+
+# Or use Helm
+helm install agentfabric deploy/helm/ \
+  --namespace agentfabric \
+  --create-namespace \
+  --values deploy/helm/values.yaml
 ```
 
-See [deploy/helm/values.yaml](deploy/helm/values.yaml) for tuning options.
+See [docs/PRODUCTION_CHECKLIST.md](docs/PRODUCTION_CHECKLIST.md) for the full pre-deployment gate — 20 required checks covering security, infrastructure, database, and observability.
 
-### Self-Hosted (On-Premise)
+### Docker Compose (Production-like)
 
 ```bash
-# Set AF_JWT_SECRET before deploying
-export AF_JWT_SECRET=$(openssl rand -hex 32)
+export AF_JWT_SECRET=$(openssl rand -base64 32)
+export AF_ADMIN_PASSWORD=$(openssl rand -base64 24)
+export AF_CORS_ORIGINS="https://app.yourdomain.com"
+export DATABASE_URL="postgres://fabric:<strong_pass>@postgres:5432/agentfabric?sslmode=require"
+export REDIS_URL="redis://:<strong_pass>@redis:6379"
+export POSTGRES_PASSWORD="<strong_pass>"
+export VITE_API_URL="https://api.yourdomain.com"
+export VITE_WS_URL="wss://api.yourdomain.com"
 
-docker compose -f deploy/docker/docker-compose.yml up -d
-```
-
-## Roadmap
-
-- [ ] Web UI login page with OIDC/SSO
-- [ ] Policy marketplace (share/sell custom policies)
-- [ ] Cost optimization suggestions (LLM router recommendations)
-- [ ] Span search with SQL-like DSL
-- [ ] Agent DAG visualization (multi-agent orchestration)
-- [ ] Kafka topic backpressure handling
-- [ ] ClickHouse integration for petabyte-scale analytics
-- [ ] OpenTelemetry Collector distribution with AgentFabric processor
-
-## Contributing
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Commit changes (`git commit -am 'Add feature'`)
-4. Push to branch (`git push origin feature/my-feature`)
-5. Open a Pull Request
-
-## Debugging CrewAI Teams with AgentFabric
-
-### Find Slow Tasks
-
-```python
-# Query dashboard or API
-curl 'http://localhost:8080/api/v1/analytics/overview?since=24h' \
-  -H 'Authorization: Bearer <token>'
-
-# Response shows:
-# {
-#   "avg_latency_ms": 3200,
-#   "spans_per_second": 12,
-#   "total_cost_usd": 452.34,
-#   "framework_counts": { "crewai": 156 }
-# }
-
-# Then drill down:
-# Portal → Traces → Filter by framework=crewai
-# Sort by duration → Identify bottleneck agents
-```
-
-### Debug Tool Failures
-
-```python
-# In Portal, go to a trace with errors
-# Trace ID: abc-123-def
-#
-# Span: "tool_call:web_search"
-# Status: ❌ ERROR
-# Error Message: "Rate limit exceeded"
-#
-# Context:
-# ├── Tool: web_search
-# ├── Input: {"query": "AI agents 2026"}
-# ├── Duration: 2.3s
-# ├── Attempt: 1/3
-# └── Next retry in: 5s
-```
-
-### Monitor PII Leakage
-
-AgentFabric automatically detects when agent outputs contain PII:
-
-```python
-# Example: Customer support agent accidentally includes SSN
-support_agent = Agent(
-    role="Customer Service",
-    backstory="Helpful and friendly"
-)
-
-# In Portal, Policy Audit Log shows:
-# Timestamp: 2026-03-10T12:34:56Z
-# Policy: pii_output
-# Decision: REDACT
-# Reason: "Detected SSN pattern (###-##-####)"
-# Span: trace-abc123 / span-xyz789
-# Agent: support_agent
-# Action Taken: Output scrubbed before returning to user
-```
-
-### Cost Anomaly Detection
-
-```python
-# Portal alerts when cost exceeds baseline
-# Example:
-# Alert: "Cost spike detected"
-# Current: $120/hour (baseline: $45/hour)
-# Cause: researcher agent making 3x more API calls
-# Recommendation: Check for stuck loops or verbose prompts
+make prod-up
 ```
 
 ---
 
-## Best Practices for CrewAI + AgentFabric
+## Service Level Objectives (v1.1.0)
 
-### 1. Instrument Once, Trace Everything
+| SLO | Target |
+|-----|--------|
+| API Gateway availability | 99.9% (43.8 min downtime/month) |
+| API P99 latency | < 300 ms |
+| API P50 latency | < 50 ms |
+| Span ingest throughput | > 10,000 spans/s per collector node |
+| Error rate (5xx) | < 0.1% of requests |
+| PII redaction coverage | 100% |
 
-```python
-# Put this at app startup
-from agentfabric import instrument
+PagerDuty alert mapping: `ServiceDown` → P1, `HighErrorRate` / `HighP95Latency` → P2, `UnexpectedCostSpike` → P3.
 
-instrument(
-    endpoint=os.getenv("AF_COLLECTOR_ENDPOINT"),
-    service_name="my-app",
-    headers={"X-API-Key": os.getenv("AF_API_KEY")}
-)
+---
 
-# Now ALL CrewAI agents (and other frameworks) are traced automatically
-# No need to modify agent definitions
+## Security
+
+### Credential Requirements
+
+| Secret | Minimum | Generate |
+|--------|---------|---------|
+| `AF_JWT_SECRET` | 32 chars | `openssl rand -base64 32` |
+| `AF_ADMIN_PASSWORD` | 20 chars | `openssl rand -base64 24` |
+| `POSTGRES_PASSWORD` | 24 chars | `openssl rand -base64 24` |
+| `REDIS_URL` password | 20 chars | `openssl rand -base64 20` |
+
+### JWT Key Rotation (Zero-Downtime)
+
+```bash
+# 1. Generate new key
+NEW_SECRET=$(openssl rand -base64 32)
+
+# 2. Add as first key (old key stays for verification of in-flight sessions)
+kubectl patch secret agentfabric-secrets -n agentfabric \
+  --type='json' \
+  -p='[{"op":"replace","path":"/data/jwt-secrets","value":"'"$(echo -n "${NEW_SECRET},${OLD_SECRET}" | base64 -w0)"'"}]'
+
+# 3. Rolling restart gateway
+kubectl rollout restart deployment/agentfabric-gateway -n agentfabric
+
+# 4. After AF_SESSION_MAX_AGE (default 8h), remove old key
+# See docs/PRODUCTION_CHECKLIST.md §2.2 for the full 6-step procedure
 ```
 
-### 2. Use Meaningful Agent Roles
+---
 
-```python
-# ✅ Good: Specific roles
-researcher = Agent(role="Market Research Analyst")
-analyst = Agent(role="Financial Analyst")
+## Development
 
-# ❌ Avoid: Generic names
-agent1 = Agent(role="Agent 1")
-agent2 = Agent(role="Agent 2")
+### Running Tests
 
-# In Portal: Easy to identify and correlate by agent role
+```bash
+# Go server tests
+cd api-gateway && go test ./... -count=1
+
+# Portal tests (113 Vitest tests)
+cd portal && npm test
+
+# Go lint
+make lint
+
+# Full build
+make build
 ```
 
-### 3. Set Expectations for Tasks
+### Make Targets
 
-```python
-task = Task(
-    description="Research AI agent market trends",
-    agent=researcher,
-    expected_output="A comprehensive report with market size, growth rate, and key players",
-    # AgentFabric captures if actual output matches expected output quality
-)
-```
-
-### 4. Monitor Tool Success Rates
-
-```python
-# Portal automatically calculates:
-# Tool Success Rate = (Successful calls) / (Total calls)
-
-# High failure rate (>20%) on a tool suggests:
-# - Tool API is down
-# - Agent prompts need refinement
-# - Rate limiting is too aggressive
-
-# Portal alerts on degradation
-```
-
-### 5. Budget by Crew, Not by LLM API
-
-```python
-# Instead of:
-# - OpenAI budget: $1000/month
-
-# Use:
-# - Marketing Crew: $200/month (budget: $250)
-# - Support Crew: $150/month (budget: $200)
-# - R&D Crew: $500/month (budget: $600)
-
-# This aligns cost accountability with business teams
+```bash
+make build          # Build Go binaries + portal bundle
+make test           # Run all tests
+make lint           # golangci-lint + tsc --noEmit + ESLint
+make migrate/up     # Apply pending migrations
+make migrate/down   # Roll back one migration
+make migrate/status # Show current migration version
+make certs          # Generate dev self-signed TLS certs
+make prod-up        # Start production Docker Compose stack
+make prod-down      # Stop production stack
 ```
 
 ---
 
 ## Troubleshooting
 
-### Traces Not Appearing in Portal
+### Traces Not Appearing
 
-**Check 1: Is the collector running?**
 ```bash
-curl http://localhost:4318/v1/traces -v
-# Should return 400 or 200, not "Connection refused"
+# 1. Check collector is reachable
+curl -v http://localhost:4318/v1/traces
+
+# 2. Check API gateway logs
+docker compose logs api-gateway --tail 50
+
+# 3. Verify database migration ran
+make migrate/status DATABASE_URL="postgres://fabric:fabric@localhost:5432/agentfabric?sslmode=disable"
 ```
 
-**Check 2: Is your app sending spans?**
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-# Should see debug logs from agentfabric SDK
-```
+### Auth Failures (401 Storm)
 
-**Check 3: Check API Gateway logs**
 ```bash
-docker logs agentfabric-api-gateway
-# Look for "span submission failed" errors
+# Check AF_JWT_SECRET matches between collector and gateway
+docker compose exec api-gateway printenv AF_JWT_SECRET
+docker compose exec collector printenv AF_JWT_SECRET
 ```
 
-### High Latency on Portal
+### High Portal Latency
 
-**Check:**
-- Number of spans: `curl http://localhost:8080/metrics | grep span`
-- Database connection pool: `docker exec agentfabric-postgres psql -c "SELECT * FROM pg_stat_activity"`
-- Redis cache hit rate: `redis-cli INFO stats`
+```bash
+# Check DB connections
+docker exec agentfabric-postgres psql -U fabric -d agentfabric \
+  -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state"
 
-### Cost Attribution Wrong
+# Check Redis
+redis-cli -u $REDIS_URL INFO stats | grep instantaneous_ops
+```
 
-**Check:**
-- Model pricing table: `curl http://localhost:8080/api/v1/analytics/frameworks`
-- Token counts in spans: `Portal → Traces → Select trace → Inspect span attributes`
+---
+
+## Known Limitations (v1.1.0)
+
+| Item | Risk | Target |
+|------|------|--------|
+| Password login authenticates only the env-var admin, not DB users | High | v1.1.1 |
+| Tenant ID type mismatch between migration (UUID) and query layer (TEXT) | High | v1.1.1 |
+| JWT stored in localStorage (XSS-accessible) | High | v1.1.1 |
+| `af_audit_writer` DB role password must be changed manually after first migration | High | v1.2.0 |
+| mTLS between collector pods not enabled in docker-compose | Medium | v1.2.0 |
+| Grafana alert notification channels not configured | Medium | v1.2.0 |
+| No automated certificate rotation (cert-manager not configured) | Medium | v1.2.0 |
+| Edit-user modal links to unimplemented route | Low | v1.2.0 |
+| Per-tenant audit retention policy not enforced | Low | v1.3.0 |
+
+---
+
+## Roadmap
+
+### v1.1.1 (Patch — in progress)
+- [ ] Password login queries `users` table with bcrypt verification
+- [ ] Resolve tenant ID type (UUID vs TEXT)
+- [ ] HttpOnly cookie for JWT — remove localStorage storage
+- [ ] `MaxBytesReader` on ingest endpoint
+- [ ] Health endpoint checks Postgres + Redis
+
+### v1.2.0
+- [ ] Keyset (cursor-based) pagination for traces and runs
+- [ ] HTTP security headers middleware (CSP, X-Frame-Options, etc.)
+- [ ] Admin action audit trail (user create/delete/role-change to policy_audit_log)
+- [ ] cert-manager integration for automatic TLS renewal
+- [ ] Grafana alert notification channels (PagerDuty, Slack)
+- [ ] af-core integration test harness
+- [ ] Wire `AF_CORS_ORIGINS` env var
+
+### v1.3.0
+- [ ] Per-tenant audit log retention policy with automated purge
+- [ ] Span search with SQL-like DSL
+- [ ] Cost optimisation recommendations (LLM router suggestions)
+- [ ] Policy marketplace (share custom policies)
+- [ ] OpenTelemetry Collector distribution packaging
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Run tests (`make test && make lint`)
+4. Commit with a descriptive message
+5. Open a Pull Request against `main`
+
+All PRs require at least one peer review approval before merge.
 
 ---
 
@@ -936,9 +645,10 @@ docker logs agentfabric-api-gateway
 
 - **Issues** — GitHub Issues for bugs and feature requests
 - **Discussions** — GitHub Discussions for questions and ideas
-- **Community Slack** — [Join AgentFabric Slack](https://slack.agentfabric.io) (coming soon)
-- **Email** — support@agentfabric.io (coming soon)
-- **Docs** — [Full documentation](https://docs.agentfabric.io) (coming soon)
+- **Docs** — [Full documentation](https://docs.agentfabric.io) *(coming soon)*
+- **Email** — support@agentfabric.io *(coming soon)*
+
+---
 
 ## License
 
@@ -946,4 +656,4 @@ Proprietary — All rights reserved. See LICENSE file for details.
 
 ---
 
-**Built with ❤️ for AI agents in production.**
+**Built for AI agents in production.**

@@ -21,7 +21,7 @@ func ok200(w http.ResponseWriter, _ *http.Request) {
 
 // claimsCtx injects *Claims into a request context (simulates JWTAuth having run).
 func claimsCtx(r *http.Request, claims *Claims) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), "claims", claims))
+	return r.WithContext(context.WithValue(r.Context(), claimsKey, claims))
 }
 
 // chiCtx injects a chi route context with a {userId} URL param.

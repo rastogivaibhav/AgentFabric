@@ -44,6 +44,7 @@ export default function LoginPage() {
       const res = await fetch(`${BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // required for cross-origin HttpOnly cookie to be set
         body: JSON.stringify({ username: username.trim(), password: password.trim() }),
       })
       if (!res.ok) {
@@ -51,8 +52,10 @@ export default function LoginPage() {
         setError(body.error ?? 'Invalid credentials.')
         return
       }
-      const { token } = await res.json()
-      localStorage.setItem('af_token', token)
+      // Token is set as an HttpOnly cookie by the server (XSS-safe).
+      // We do NOT store it in localStorage — reading an HttpOnly cookie
+      // from JS is intentionally impossible.
+      await res.json() // consume body; token arrives via Set-Cookie header
       navigate('/dashboard', { replace: true })
     } catch {
       setError('Could not reach the server. Make sure the API gateway is running.')

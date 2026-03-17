@@ -111,7 +111,7 @@ func TestJWTAuth_InjectsClaims_IntoContext(t *testing.T) {
 
 	var gotClaims *Claims
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotClaims, _ = r.Context().Value("claims").(*Claims)
+		gotClaims = ClaimsFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -148,7 +148,7 @@ func TestTenantInjector_WithClaims_UsesTenantID(t *testing.T) {
 
 	var gotTenant string
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTenant, _ = r.Context().Value("tenant_id").(string)
+		gotTenant = TenantIDFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -166,14 +166,14 @@ func TestTenantInjector_WithoutClaims_UsesDefault(t *testing.T) {
 
 	var gotTenant string
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTenant, _ = r.Context().Value("tenant_id").(string)
+		gotTenant = TenantIDFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 
 	TenantInjector(inner).ServeHTTP(rr, req)
 
-	if gotTenant != "default" {
-		t.Errorf("expected 'default', got %q", gotTenant)
+	if gotTenant != DefaultTenantID {
+		t.Errorf("expected DefaultTenantID %q, got %q", DefaultTenantID, gotTenant)
 	}
 }
 
@@ -184,7 +184,7 @@ func TestTenantInjector_P2_TenantIsolation_NeverEmpty(t *testing.T) {
 
 	var gotTenant string
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTenant, _ = r.Context().Value("tenant_id").(string)
+		gotTenant = TenantIDFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 

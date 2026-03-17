@@ -42,122 +42,11 @@ func NewPostgresStore(dsn string, logger *zap.Logger) (*PostgresStore, error) {
 	}
 
 	s := &PostgresStore{pool: pool, logger: logger}
-	// Schema is initialized by deploy/sql/init.sql in docker-compose.yml
-	// No migration needed here
+	// Schema is managed by golang-migrate: deploy/migrations/*.up.sql.
+	// runMigrations() in cmd/server/main.go applies all pending migrations
+	// at process startup before this store is created.
 	return s, nil
 }
-
-const schema = `
-CREATE TABLE IF NOT EXISTS tenants (
-    tenant_id   TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-INSERT INTO tenants (tenant_id, name) VALUES ('default', 'Default') ON CONFLICT DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS spans (
-    span_id         TEXT NOT NULL,
-    trace_id        TEXT NOT NULL,
-    parent_span_id  TEXT,
-    run_id          TEXT NOT NULL,
-    name            TEXT NOT NULL,
-    framework       TEXT NOT NULL DEFAULT 'unknown',
-    start_time_ns   BIGINT NOT NULL,
-    duration_ns     BIGINT NOT NULL DEFAULT 0,
-    status_code     SMALLINT NOT NULL DEFAULT 0,
-    status_msg      TEXT,
-    attributes      JSONB NOT NULL DEFAULT '{}',
-    events          JSONB NOT NULL DEFAULT '[]',
-    input_tokens    BIGINT NOT NULL DEFAULT 0,
-    output_tokens   BIGINT NOT NULL DEFAULT 0,
-    cost_usd        NUMERIC(12,8) NOT NULL DEFAULT 0,
-    tenant_id       TEXT NOT NULL DEFAULT 'default',
-    received_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (span_id, tenant_id)
-);
-CREATE INDEX IF NOT EXISTS idx_spans_trace     ON spans(trace_id, tenant_id);
-CREATE INDEX IF NOT EXISTS idx_spans_run       ON spans(run_id, tenant_id);
-CREATE INDEX IF NOT EXISTS idx_spans_framework ON spans(framework, tenant_id, received_at DESC);
-CREATE INDEX IF NOT EXISTS idx_spans_time      ON spans(received_at DESC, tenant_id);
-
-CREATE TABLE IF NOT EXISTS runs (
-    run_id          TEXT NOT NULL,
-    trace_id        TEXT NOT NULL,
-    parent_run_id   TEXT,
-    framework       TEXT NOT NULL DEFAULT 'unknown',
-    agent_name      TEXT NOT NULL DEFAULT 'unknown',
-    model           TEXT NOT NULL DEFAULT '',
-    start_time      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    end_time        TIMESTAMPTZ,
-    status          TEXT NOT NULL DEFAULT 'running',
-    total_tokens    BIGINT NOT NULL DEFAULT 0,
-    total_cost_usd  NUMERIC(12,8) NOT NULL DEFAULT 0,
-    metadata        JSONB NOT NULL DEFAULT '{}',
-    tenant_id       TEXT NOT NULL DEFAULT 'default',
-    PRIMARY KEY (run_id, tenant_id)
-);
-CREATE INDEX IF NOT EXISTS idx_runs_trace     ON runs(trace_id, tenant_id);
-CREATE INDEX IF NOT EXISTS idx_runs_framework ON runs(framework, tenant_id, start_time DESC);
-CREATE INDEX IF NOT EXISTS idx_runs_agent     ON runs(agent_name, tenant_id, start_time DESC);
-
-CREATE TABLE IF NOT EXISTS policy_audit_log (
-    id              BIGSERIAL PRIMARY KEY,
-    decision_id     TEXT NOT NULL UNIQUE,
-    trace_id        TEXT NOT NULL,
-    span_id         TEXT NOT NULL,
-    policy_name     TEXT NOT NULL,
-    result          TEXT NOT NULL,
-    reason          TEXT NOT NULL,
-    tenant_id       TEXT NOT NULL DEFAULT 'default',
-    evaluated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
--- Prevent modification of audit log
-CREATE OR REPLACE RULE no_update_audit AS ON UPDATE TO policy_audit_log DO INSTEAD NOTHING;
-CREATE OR REPLACE RULE no_delete_audit AS ON DELETE TO policy_audit_log DO INSTEAD NOTHING;
-
-CREATE TABLE IF NOT EXISTS feedback (
-    id          BIGSERIAL PRIMARY KEY,
-    run_id      TEXT NOT NULL,
-    score       SMALLINT,
-    comment     TEXT,
-    tenant_id   TEXT NOT NULL DEFAULT 'default',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS environments (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    status      TEXT NOT NULL DEFAULT 'active',
-    tenant_id   TEXT NOT NULL DEFAULT 'default',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-INSERT INTO environments (id, name, description, status, tenant_id)
-VALUES
-    ('production',  'Production',  'Live production workloads', 'active',   'default'),
-    ('staging',     'Staging',     'Pre-release validation',    'active',   'default'),
-    ('development', 'Development', 'Local development & CI',    'inactive', 'default')
-ON CONFLICT DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS users (
-    user_id       TEXT PRIMARY KEY,
-    tenant_id     TEXT NOT NULL DEFAULT 'default',
-    username      TEXT NOT NULL,
-    password_hash TEXT NOT NULL DEFAULT '',
-    email         TEXT NOT NULL,
-    display_name  TEXT NOT NULL DEFAULT '',
-    role          TEXT NOT NULL DEFAULT 'viewer',
-    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
-    last_login_at TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tenant_id, username),
-    UNIQUE (tenant_id, email)
-);
-INSERT INTO users (user_id, tenant_id, username, password_hash, email, display_name, role)
-VALUES ('00000000-0000-0000-0000-000000000001', 'default', 'admin', '', 'admin@agentfabric.local', 'Admin', 'admin')
-ON CONFLICT DO NOTHING;
-`
 
 // ─── Span writes ─────────────────────────────────────────────────────────────
 
@@ -799,6 +688,12 @@ func (s *PostgresStore) VerifyAuditChain(ctx context.Context, tenantID string) (
 	}, nil
 }
 
+// Ping verifies the Postgres connection is alive with a short timeout.
+// Used by the /healthz handler to detect degraded storage.
+func (s *PostgresStore) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
+}
+
 func (s *PostgresStore) Close() {
 	s.pool.Close()
 }
@@ -944,6 +839,24 @@ func (s *PostgresStore) DeleteUser(ctx context.Context, userID, tenantID string)
 		return fmt.Errorf("user %q not found in tenant %q", userID, tenantID)
 	}
 	return nil
+}
+
+// GetUserByUsername looks up a user by username within a tenant and returns the
+// minimal auth fields including the bcrypt password hash.
+// Implements auth.UserLookup — called by OIDCHandler.PasswordLogin.
+func (s *PostgresStore) GetUserByUsername(ctx context.Context, username, tenantID string) (*models.UserRecord, error) {
+	var rec models.UserRecord
+	err := s.pool.QueryRow(ctx, `
+		SELECT user_id, username, email, display_name, role, COALESCE(password_hash,'')
+		FROM users
+		WHERE username = $1 AND tenant_id = $2 AND is_active = TRUE
+	`, username, tenantID).Scan(
+		&rec.ID, &rec.Username, &rec.Email, &rec.DisplayName, &rec.Role, &rec.PasswordHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &rec, nil
 }
 
 // generateStoreID creates a random UUID-format string for new records.

@@ -12,6 +12,39 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// ─── Context keys ─────────────────────────────────────────────────────────────
+
+// contextKey is an unexported named type for context keys used by this package.
+// Using a named type prevents key collisions with other packages that use plain
+// string or int keys — a common source of silent bugs (Go best practice).
+type contextKey int
+
+const (
+	claimsKey   contextKey = iota // value: *Claims
+	tenantIDKey                   // value: string
+)
+
+// DefaultTenantID is the canonical fallback tenant UUID — the seeded "default"
+// row in deploy/migrations/001_initial_schema.up.sql.
+// Used when a request carries no JWT tenant claim (unauthenticated dev mode).
+const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
+
+// ClaimsFromCtx returns the JWT claims injected by JWTAuth.
+// Returns nil for unauthenticated requests.
+func ClaimsFromCtx(ctx context.Context) *Claims {
+	c, _ := ctx.Value(claimsKey).(*Claims)
+	return c
+}
+
+// TenantIDFromCtx returns the tenant ID set by TenantInjector.
+// Falls back to DefaultTenantID when not present (never returns empty string).
+func TenantIDFromCtx(ctx context.Context) string {
+	if t, ok := ctx.Value(tenantIDKey).(string); ok && t != "" {
+		return t
+	}
+	return DefaultTenantID
+}
+
 // ─── Prometheus ───────────────────────────────────────────────────────────────
 
 var (
@@ -91,7 +124,7 @@ func JWTAuth(secrets ...string) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), "claims", validClaims)
+			ctx := context.WithValue(r.Context(), claimsKey, validClaims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -100,12 +133,12 @@ func JWTAuth(secrets ...string) func(http.Handler) http.Handler {
 // ─── RBAC / ABAC middleware ───────────────────────────────────────────────────
 
 // RequireRole blocks requests whose JWT does not carry one of the specified roles.
-// Must run after JWTAuth (depends on "claims" being set in context).
+// Must run after JWTAuth (depends on claims being set in context).
 func RequireRole(roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims, ok := r.Context().Value("claims").(*Claims)
-			if !ok || claims == nil {
+			claims := ClaimsFromCtx(r.Context())
+			if claims == nil {
 				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 				return
 			}
@@ -127,8 +160,8 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 func RequireRoleOrSelf(roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims, ok := r.Context().Value("claims").(*Claims)
-			if !ok || claims == nil {
+			claims := ClaimsFromCtx(r.Context())
+			if claims == nil {
 				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 				return
 			}
@@ -154,13 +187,16 @@ func RequireRoleOrSelf(roles ...string) func(http.Handler) http.Handler {
 
 // ─── Tenant Injector ──────────────────────────────────────────────────────────
 
+// TenantInjector reads the tenant_id from JWT claims (set by JWTAuth) and
+// injects it into the request context for downstream handlers.
+// Falls back to DefaultTenantID when no claims are present (unauthenticated / dev mode).
 func TenantInjector(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tenantID := "default"
-		if claims, ok := r.Context().Value("claims").(*Claims); ok && claims.TenantID != "" {
+		tenantID := DefaultTenantID
+		if claims := ClaimsFromCtx(r.Context()); claims != nil && claims.TenantID != "" {
 			tenantID = claims.TenantID
 		}
-		ctx := context.WithValue(r.Context(), "tenant_id", tenantID)
+		ctx := context.WithValue(r.Context(), tenantIDKey, tenantID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
