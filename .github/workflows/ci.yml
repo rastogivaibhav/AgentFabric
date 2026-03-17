@@ -6,8 +6,8 @@ on:
   pull_request:
     branches: [main, master]
 
-# Coverage gate: PRs blocked if any service drops below 80% (Sprint 3 gate — all services)
-# Will be raised to 90% at Sprint 4.
+# Coverage gate: PRs blocked if any service drops below 90% (Sprint 4 gate — all services)
+# Next milestone: v1.0.0 GA release.
 
 env:
   RUST_BACKTRACE: 1
@@ -71,17 +71,17 @@ jobs:
             --exclude-files "src/main.rs" \
             --timeout 120
 
-      - name: Enforce coverage gate (80% Sprint 3)
+      - name: Enforce coverage gate (90% Sprint 4)
         run: |
           COVERAGE=$(cargo tarpaulin --out Stdout 2>&1 | grep -oP '\d+\.\d+(?=% coverage)' | head -1)
           echo "af-core coverage: ${COVERAGE}%"
           python3 -c "
           import sys
           cov = float('${COVERAGE}' or '0')
-          if cov < 80.0:
-              print(f'Coverage {cov}% is below 80% gate')
+          if cov < 90.0:
+              print(f'Coverage {cov}% is below 90% gate')
               sys.exit(1)
-          print(f'Coverage {cov}% passes 80% gate')
+          print(f'Coverage {cov}% passes 90% gate')
           "
 
       - name: Upload coverage
@@ -115,17 +115,17 @@ jobs:
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -func=coverage.out | tee coverage_report.txt
 
-      - name: Enforce coverage gate (80% Sprint 3)
+      - name: Enforce coverage gate (90% Sprint 4)
         run: |
           TOTAL=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "collector coverage: ${TOTAL}%"
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
-          if cov < 80.0:
-              print(f'Coverage {cov}% is below 80% gate')
+          if cov < 90.0:
+              print(f'Coverage {cov}% is below 90% gate')
               sys.exit(1)
-          print(f'Coverage {cov}% passes 80% gate')
+          print(f'Coverage {cov}% passes 90% gate')
           "
 
       - name: Upload coverage
@@ -179,17 +179,17 @@ jobs:
           go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -func=coverage.out | tee coverage_report.txt
 
-      - name: Enforce coverage gate (80% Sprint 3)
+      - name: Enforce coverage gate (90% Sprint 4)
         run: |
           TOTAL=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "api-gateway coverage: ${TOTAL}%"
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
-          if cov < 80.0:
-              print(f'Coverage {cov}% is below 80% gate')
+          if cov < 90.0:
+              print(f'Coverage {cov}% is below 90% gate')
               sys.exit(1)
-          print(f'Coverage {cov}% passes 80% gate')
+          print(f'Coverage {cov}% passes 90% gate')
           "
 
       - name: Upload coverage
@@ -225,7 +225,7 @@ jobs:
       - name: Tests + coverage
         run: npx vitest run --coverage
 
-      - name: Enforce coverage gate (80% Sprint 3)
+      - name: Enforce coverage gate (90% Sprint 4)
         run: |
           TOTAL=$(node -e "
             const fs = require('fs');
@@ -237,10 +237,10 @@ jobs:
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
-          if cov < 80.0:
-              print(f'Coverage {cov}% is below 80% gate')
+          if cov < 90.0:
+              print(f'Coverage {cov}% is below 90% gate')
               sys.exit(1)
-          print(f'Coverage {cov}% passes 80% gate')
+          print(f'Coverage {cov}% passes 90% gate')
           "
 
       - name: Upload coverage
@@ -275,7 +275,29 @@ jobs:
           pytest --cov=agentfabric \
                  --cov-report=xml:coverage.xml \
                  --cov-report=term-missing \
+                 --cov-report=json:coverage.json \
                  -v
+
+      - name: Enforce coverage gate (90% Sprint 4)
+        run: |
+          TOTAL=$(python3 -c "
+          import json, sys
+          try:
+              data = json.load(open('coverage.json'))
+              pct = data['totals']['percent_covered']
+              print(f'{pct:.1f}')
+          except Exception as e:
+              print('0')
+          ")
+          echo "agent-sdk coverage: ${TOTAL}%"
+          python3 -c "
+          import sys
+          cov = float('${TOTAL}' or '0')
+          if cov < 90.0:
+              print(f'Coverage {cov}% is below 90% gate')
+              sys.exit(1)
+          print(f'Coverage {cov}% passes 90% gate')
+          "
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -284,10 +306,49 @@ jobs:
           flags: agent-sdk
           fail_ci_if_error: false
 
+  # ─── Helm chart smoke test (v1.0.0 GA) ──────────────────────────────────────
+  helm-smoke:
+    name: Helm Chart Smoke Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.0"
+
+      - name: Helm lint
+        run: helm lint deploy/helm
+
+      - name: Helm template (dry-run render)
+        run: |
+          helm template agentfabric deploy/helm \
+            --set collector.image.tag=ci \
+            --set afCore.image.tag=ci \
+            --set apiGateway.image.tag=ci \
+            --set portal.image.tag=ci \
+            | grep -c "^kind:" \
+            | xargs -I {} sh -c '
+              echo "Rendered {} Kubernetes resources"
+              [ "{}" -ge 10 ] || (echo "Expected ≥10 resources, got {}" && exit 1)
+            '
+
+      - name: Helm install dry-run
+        run: |
+          helm install agentfabric-smoke deploy/helm \
+            --dry-run \
+            --generate-name \
+            --set collector.image.tag=ci \
+            --set afCore.image.tag=ci \
+            --set apiGateway.image.tag=ci \
+            --set portal.image.tag=ci
+
   # ─── PR gate: all jobs must pass ────────────────────────────────────────────
   ci-gate:
     name: CI Gate
-    needs: [af-core, collector, api-gateway, portal, agent-sdk]
+    needs: [af-core, collector, api-gateway, portal, agent-sdk, helm-smoke]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -298,9 +359,10 @@ jobs:
           GATEWAY_RESULT: ${{ needs.api-gateway.result }}
           PORTAL_RESULT: ${{ needs.portal.result }}
           SDK_RESULT: ${{ needs.agent-sdk.result }}
+          HELM_RESULT: ${{ needs.helm-smoke.result }}
         run: |
           FAILED=0
-          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT"; do
+          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT" "$HELM_RESULT"; do
             if [ "$JOB" != "success" ]; then
               FAILED=1
             fi

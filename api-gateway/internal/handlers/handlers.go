@@ -468,6 +468,87 @@ func (h *Handler) VerifyAuditChain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, result)
 }
 
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+// ListUsers returns all users for the current tenant.
+// GET /api/v1/users?limit=50&offset=0
+func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	limit := parseIntOr(r.URL.Query().Get("limit"), 50)
+	offset := parseIntOr(r.URL.Query().Get("offset"), 0)
+
+	users, err := h.pg.ListUsers(r.Context(), tenantFromCtx(r), limit, offset)
+	if err != nil {
+		h.logger.Error("list users", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, models.Page[models.User]{
+		Items: users,
+		Total: int64(len(users)),
+	})
+}
+
+// GetUser returns a single user by ID within the current tenant.
+// GET /api/v1/users/{userId}
+func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
+	user, err := h.pg.GetUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+// CreateUser creates a new user in the current tenant.
+// POST /api/v1/users — admin role required in production; enforced by policy layer.
+func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var req models.CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Username == "" || req.Email == "" {
+		writeError(w, http.StatusBadRequest, "username and email are required")
+		return
+	}
+
+	user, err := h.pg.CreateUser(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		h.logger.Error("create user", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "create failed")
+		return
+	}
+	writeJSON(w, http.StatusCreated, user)
+}
+
+// UpdateUser applies partial updates to a user record.
+// PUT /api/v1/users/{userId}
+func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	var req models.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	user, err := h.pg.UpdateUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r), req)
+	if err != nil {
+		h.logger.Error("update user", zap.Error(err))
+		writeError(w, http.StatusNotFound, "user not found or no change")
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+// DeleteUser removes a user from the current tenant.
+// DELETE /api/v1/users/{userId}
+func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	if err := h.pg.DeleteUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r)); err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ─── Build helpers ────────────────────────────────────────────────────────────
 
 func buildTrace(traceID string, spans []models.Span) models.Trace {

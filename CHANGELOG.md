@@ -6,19 +6,223 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 
 ---
 
-## [Unreleased] — Sprint 4 target
+## [Unreleased]
 
 ### Planned
-- mTLS wired in collector dev config (in progress — Sprint 4)
-- Secret rotation mechanism
-- Monitoring dashboards (Grafana)
-- Coverage gate raised to 90% (Sprint 4 target)
-- Performance tuning (query optimization, caching layer)
-- Agent-sdk integration tests for `_patch_crewai`, `_patch_langgraph`, etc.
-- v1.0.0 release
+- Grafana alert notification channels (PagerDuty, Slack webhook)
+- mTLS wiring in dev docker-compose (certs script already in `scripts/generate-dev-certs.sh`)
+- Per-tenant audit retention policy enforcement
+- Agent SDK trace sampling rate configuration
 
-### Done (moved to v0.3.0)
-- Coverage gate raised to 80% — completed Sprint 3
+---
+
+## [1.1.0] — 2026-03-16 — Production Hardening Sprint
+
+All items verified: `make test` (113 portal + all Go tests pass), `make build` clean, `npx tsc --noEmit` zero errors.
+
+### Security
+
+- **H1 Constant-time admin authentication** — `api-gateway/internal/auth/oidc.go`:
+  Replaced `!=` equality checks on username and password with
+  `crypto/subtle.ConstantTimeCompare`. Both comparisons always execute regardless of
+  whether the username is valid, eliminating a timing oracle that would allow an attacker
+  to enumerate valid usernames via response-time differences. Zero new dependencies
+  (stdlib `crypto/subtle`).
+
+- **H2 JWT zero-downtime key rotation** — `api-gateway/cmd/server/main.go`:
+  `AF_JWT_SECRETS` env var accepts a comma-separated list of signing secrets.
+  The first entry is the active signing key; all entries are accepted for verification.
+  Rotate by prepending a new secret, deploying, then removing the old one — no active
+  sessions are invalidated. `parseSecrets()` trims whitespace and skips empty segments.
+
+- **H3 Production Compose fail-fast secrets** — `deploy/docker/docker-compose.prod.yml` (NEW):
+  Compose override that enforces all required secrets at startup using `${VAR:?error}` syntax.
+  `AF_AUTH_DISABLED: "false"` and `AF_AUTH_REQUIRE_AUTH: "true"` are hardcoded — they cannot
+  be accidentally relaxed. Grafana anonymous access disabled. Portal default-creds hint hidden.
+
+- **H4 `.env.example`** — `.env.example` (NEW):
+  Comprehensive reference for all 30+ env vars tagged `(required)`, `(conditional)`,
+  `(optional)`, or `(dev-only)`. Includes secret generation commands, secrets policy, OIDC
+  section, and rotation guidance. Whitelisted in `.gitignore` via `!.env.example`.
+
+### Added
+
+- **H5 TLS wiring on api-gateway** — `api-gateway/cmd/server/main.go`:
+  New `serve()` helper reads `AF_TLS_ENABLED`, `AF_TLS_CERT_FILE`, `AF_TLS_KEY_FILE`.
+  Fail-secure contract: if `AF_TLS_ENABLED=true` and cert/key paths are empty, the server
+  returns a descriptive error immediately and **never** silently falls back to plain HTTP.
+  8 new unit tests in `api-gateway/cmd/server/main_test.go`:
+  `TestServe_TLSDisabled` (real HTTP GET), `TestServe_TLSMissingCert` (error names env vars),
+  `TestServe_TLSCertFileNotFound`, and 5 `TestParseSecrets_*` edge-case tests.
+
+- **H6 Versioned database migrations** — `deploy/migrations/` (NEW directory):
+  - `001_initial_schema.up.sql` — promoted from `deploy/sql/init.sql`; authoritative first
+    migration containing all 10 tables, RLS policies, immutable audit-log rules
+    (`no_update_audit`, `no_delete_audit`), `af_audit_writer` INSERT-only role, and seed data.
+  - `001_initial_schema.down.sql` — full rollback in strict reverse FK dependency order;
+    revokes `af_audit_writer` grants before dropping the role.
+  - `api-gateway/go.mod`: added `github.com/golang-migrate/migrate/v4 v4.17.1` as direct dep
+    with `lib/pq` postgres driver.
+  - `api-gateway/cmd/server/main.go`: `runMigrations()` called at startup before HTTP bind.
+    `AF_MIGRATE_ON_STARTUP=false` skips (for tests / read-only replicas).
+    `AF_MIGRATIONS_PATH` overrides the default `deploy/migrations` path.
+  - `Makefile`: `make migrate/up`, `make migrate/down`, `make migrate/status` via `go run`
+    (no separate binary install; version pinned in go.mod). `DATABASE_URL`-aware via
+    `MIGRATE_DSN` variable.
+
+- **H7 Portal RBAC-aware UI** — defence-in-depth UI layer (API already enforces 403):
+  - `portal/src/hooks/auth.ts`: `hasRole(user, allowedRoles)` pure bool helper;
+    `isSelfOrRole(user, roles, subjectId)` ABAC helper mirrors backend `RequireRoleOrSelf`.
+  - `portal/src/App.tsx`: `RequireRole` component — renders children only when
+    `hasRole(user, roles)` is true, returns `fallback` (default `null`) otherwise.
+    `/users` route added.
+  - `portal/src/components/Layout.tsx`: `adminOnly: true` flag on nav items (Users nav hidden
+    from editors/viewers). Role badge chip in sidebar footer: **ADMIN** red · **EDITOR** amber ·
+    **VIEWER** slate.
+  - `portal/src/pages/UsersPage.tsx` (NEW): full user management page — list all users,
+    Create (admin only), Edit (admin or own record — ABAC parity), Delete (admin only,
+    two-step confirm, self-delete disabled).
+  - `portal/src/pages/LoginPage.tsx`: "Default credentials: admin / admin" hint now guarded
+    by `VITE_SHOW_DEFAULT_CREDS === 'true'` — hidden in all production builds.
+  - `portal/src/hooks/auth.test.ts`: +21 tests (113 total) covering `hasRole` (8),
+    `isSelfOrRole` (6), `RequireRole` gating contract (5).
+
+### Changed
+
+- **H8 K8s resource limits corrected** — `deploy/k8s/agentfabric.yaml` (full rewrite, 19 documents):
+  - Collector resources corrected: `cpu 100m→200m / 500m→1000m`, `mem 128Mi→256Mi / 512Mi→1Gi`
+    (collector is CPU-heavy — span processing, PII scrubbing, batch export).
+  - API Gateway resources corrected: `cpu 200m→100m / 1000m→500m`, `mem 256Mi→128Mi / 1Gi→512Mi`
+    (gateway is I/O-bound — database + Redis reads).
+  - Probe timings tightened: liveness `periodSeconds 30→10`; readiness `initialDelaySeconds`
+    reduced; `failureThreshold: 3` explicit on every probe.
+  - `AF_JWT_SECRETS` and `AF_ADMIN_PASSWORD` wired into gateway Deployment env (were absent).
+  - af-core and portal Deployments + Services added (were entirely missing from the manifest).
+  - af-core HPA added: min 2, max 8, at 70% CPU.
+  - 3 `PodDisruptionBudget` resources added (`policy/v1`, `minAvailable: 1`) for gateway,
+    collector, and af-core — prevents simultaneous drain from taking all pods offline.
+
+- **H9 Helm chart aligned** — `deploy/helm/values.yaml`:
+  - af-core, gateway, portal resource blocks added.
+  - Per-service `podDisruptionBudget` flags added.
+  - `api.auth.jwtSecrets` rotation field added.
+  - `deploy/helm/Chart.yaml`: version bumped `1.0.0 → 1.1.0`.
+
+### Tests Added
+
+- `api-gateway/cmd/server/main_test.go` (NEW) — 8 tests: TLS disabled HTTP, fail-secure TLS
+  missing cert, cert file not found, `parseSecrets` multi/trim/single/empty/segment cases.
+- `portal/src/hooks/auth.test.ts` — extended from 16 to 37 tests (see H7).
+
+---
+
+## [1.0.0] — 2026-03-16 — GA Release
+
+### New Features
+
+- **GA-1 Token Refresh** — `api-gateway/internal/auth/oidc.go`:
+  Added `POST /auth/refresh` endpoint. Accepts `Authorization: Bearer <existing_token>`,
+  verifies the HS256 signature, and re-issues a new AF JWT with a refreshed 8-hour expiry
+  carrying the same identity claims (sub, email, name). Returns `{"token":"…","expires_in":28800}`.
+  Enables the portal to silently refresh sessions without forcing users to re-login.
+
+- **GA-2 User Management CRUD** — Full `/api/v1/users` REST resource:
+  - **`models.go`**: Added `User`, `CreateUserRequest`, `UpdateUserRequest` types.
+  - **`store/postgres.go`**: Added `ListUsers`, `GetUser`, `CreateUser`, `UpdateUser`,
+    `DeleteUser` store methods. Schema const updated with `users` table (tenant-isolated,
+    username/email unique per tenant). Passwords are SHA-256 hashed before storage;
+    TODO(v1.1) notes upgrade path to bcrypt. Added `generateStoreID()` and `hashPassword()`
+    helpers. Imported `crypto/rand`, `crypto/sha256`, `encoding/hex`, `strings`.
+  - **`handlers/handlers.go`**: `ListUsers` (GET `/api/v1/users`), `GetUser`
+    (GET `/{userId}`), `CreateUser` (POST, validates username + email), `UpdateUser`
+    (PUT, partial update semantics), `DeleteUser` (DELETE, 204 on success).
+  - **`cmd/server/main.go`**: Wired `/auth/refresh` + `/api/v1/users` route group.
+
+### CI/CD
+
+- **GA-3 Helm Chart Smoke Test** — `.github/workflows/ci.yml`: New `helm-smoke` job runs
+  on every PR:
+  1. `helm lint deploy/helm` — validates chart structure and YAML correctness.
+  2. `helm template` dry-render verifying ≥10 Kubernetes resources are produced.
+  3. `helm install --dry-run --generate-name` — full client-side dry-run.
+  `ci-gate` now requires all 6 jobs (added `helm-smoke`) to pass before merge is allowed.
+
+### Tests Added
+
+- `api-gateway/internal/auth/oidc_test.go` — 8 new `TestRefresh_*` tests:
+  valid token → 200 with new JWT, new token has fresh expiry (~8 h), identity preserved
+  (sub/email unchanged), `expires_in` matches `SessionMaxAge`, missing token → 401,
+  invalid JWT → 401, wrong signing secret → 401.
+- `tests/e2e/test_e2e_pipeline.py` — 8 new `@pytest.mark.integration` tests covering
+  auth login (valid/invalid), auth refresh (valid/missing token), and users CRUD lifecycle
+  (list, create→read→update→delete, field validation, 404 on missing). Added
+  `api_gateway_url` session-scoped fixture (reads `AF_GATEWAY_URL` env, defaults to
+  `http://localhost:8080`). Updated module docstring to list tests 16–23.
+
+---
+
+## [0.4.0] — 2026-03-16 — Sprint 4: Production Hardening
+
+### New Features
+
+- **S4-1 Password Login in Real API Gateway** — `api-gateway/internal/auth/oidc.go`:
+  Added `POST /auth/login` handler (`PasswordLogin`) to the real Go api-gateway, replacing
+  the mock-only implementation. Accepts `{username, password}` JSON, validates against
+  `AF_ADMIN_USER` / `AF_ADMIN_PASSWORD` env vars (defaults: `admin` / `admin`), issues
+  an AF HS256 JWT using the identical token path as OIDC login. Whitespace is trimmed from
+  credentials; a generic 401 is returned on mismatch to avoid username enumeration.
+  `OIDCConfig` gains `AdminUser` + `AdminPassword` fields populated from env in `main.go`.
+
+- **S4-2 Users Table** — `deploy/sql/init.sql`: Added `users` table with tenant isolation,
+  bcrypt password hashes via pgcrypto `crypt()`/`gen_salt('bf', 10)`, role-based access
+  (admin / editor / viewer), last-login tracking, and unique constraints on
+  `(tenant_id, username)` and `(tenant_id, email)`. Default admin user seeded on
+  first `docker-compose up` with password `admin`.
+
+- **S4-3 Grafana Dashboards (Auto-Provisioned)** — `monitoring/grafana/`:
+  - `provisioning/datasources/prometheus.yaml` — Prometheus datasource, auto-registered.
+  - `provisioning/dashboards/dashboards.yaml` — filesystem dashboard provider.
+  - `dashboards/agentfabric-overview.json` — 15-panel production dashboard covering:
+    service health (UP/DOWN), HTTP request rate, error rate %, P50/P95/P99 latency,
+    latency by endpoint, spans/min throughput, processor queue depth, spans by framework,
+    cost rate (USD/hour), token rate, cost by framework, PII redaction rate, and policy
+    decisions. Auto-loads on `docker-compose up` at `http://localhost:9091`.
+
+- **S4-4 Prometheus Alert Rules** — `monitoring/alerts.yml`: Six production-grade alert
+  rules across three groups:
+  - `agentfabric.service_health`: ServiceDown, CollectorNotReceivingSpans, HighProcessorQueueDepth
+  - `agentfabric.api_gateway`: HighErrorRate (>5% 5xx), HighP95Latency (>2s), HighRateLimitRate
+  - `agentfabric.cost`: UnexpectedCostSpike (>$100/hour projected)
+  All alerts include runbook URLs. `monitoring/prometheus.yml` updated to reference the rules
+  file and alerting config block.
+
+- **S4-5 mTLS Certificate Generation Script** — `scripts/generate-dev-certs.sh`:
+  Generates a self-signed dev CA, collector server cert (with SAN for DNS:collector,
+  DNS:localhost, IP:127.0.0.1), and client cert using OpenSSL. Certs land in
+  `deploy/certs/` which is gitignored. Comment block in the script explains how to
+  enable `AF_TLS_ENABLED: "true"` in docker-compose once certs are generated.
+  The collector code already supports mTLS when this env var is set.
+
+- **S4-6 af-core Readiness Probe** — `af-core/src/server/http.rs`: Upgraded `/healthz`
+  to return structured JSON `{"status":"ok","service":"af-core","version":"<semver>"}`.
+  Added proper `/readyz` readiness check returning `{"status":"ready"}` (200) or
+  `{"status":"not_ready","reason":"..."}` (503). Kubernetes liveness vs. readiness probes
+  now route correctly to their respective endpoints.
+
+### CI/CD
+
+- **S4-7 Coverage gate raised 80% → 90%** — `.github/workflows/ci.yml`: all five services
+  (af-core, collector, api-gateway, portal, agent-sdk) now gate at 90%. Added
+  `--cov-report=json` to pytest and a `Enforce coverage gate (90% Sprint 4)` step to
+  agent-sdk (previously had no gate, only reporting).
+
+### Tests Added
+
+- `api-gateway/internal/auth/oidc_test.go` — 10 new tests for `PasswordLogin`:
+  valid credentials → 200 with JWT, token carries correct claims (sub/email/iss/aud),
+  wrong password → 401, wrong username → 401, empty username → 400, empty password → 400,
+  invalid JSON → 400, custom credentials via config, whitespace trimming, default fallback.
+  Import updated to add `net/http/httptest`.
 
 ---
 
@@ -198,8 +402,11 @@ Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY
 - Kubernetes manifests + Helm chart
 - Prometheus scrape configs
 
-[Unreleased]: https://github.com/agentfabric/agentfabric/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/agentfabric/agentfabric/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/agentfabric/agentfabric/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/agentfabric/agentfabric/compare/v0.0.1...v0.1.0
-[0.0.1]: https://github.com/agentfabric/agentfabric/releases/tag/v0.0.1
+[Unreleased]: https://github.com/rastogivaibhav/AgentFabric/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.4.0...v1.0.0
+[0.4.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.0.1...v0.1.0
+[0.0.1]: https://github.com/rastogivaibhav/AgentFabric/releases/tag/v0.0.1

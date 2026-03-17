@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +19,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimid "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	migrate "github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres" // postgres driver for migrate
+	_ "github.com/golang-migrate/migrate/v4/source/file"       // file:// source driver
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
@@ -32,8 +37,26 @@ func main() {
 	authDisabled := os.Getenv("AF_AUTH_DISABLED") == "true"
 	rateLimitRPM := int64(parseIntEnv("AF_RATE_LIMIT_RPM", 1000))
 
+	// TLS configuration — fail-secure: if AF_TLS_ENABLED=true the server will
+	// refuse to start as plain HTTP when cert/key paths are absent.
+	tlsEnabled  := os.Getenv("AF_TLS_ENABLED") == "true"
+	tlsCertFile := os.Getenv("AF_TLS_CERT_FILE")
+	tlsKeyFile  := os.Getenv("AF_TLS_KEY_FILE")
+
+	// AF_JWT_SECRETS: comma-separated list for zero-downtime key rotation.
+	// First entry = active signing key. All entries accepted for verification.
+	// Falls back to AF_JWT_SECRET when not set.
+	jwtSecrets := parseSecrets(envOr("AF_JWT_SECRETS", jwtSecret))
+
 	if authDisabled {
 		logger.Warn("AF_AUTH_DISABLED=true — JWT authentication is OFF (dev mode only)")
+	}
+
+	// ─── Database migrations ──────────────────────────────────────────────────
+	// AF_MIGRATE_ON_STARTUP defaults to true.  Set to "false" to skip (tests,
+	// read-only replicas, or environments where migrations are applied out-of-band).
+	if os.Getenv("AF_MIGRATE_ON_STARTUP") != "false" {
+		runMigrations(pgDSN, envOr("AF_MIGRATIONS_PATH", "deploy/migrations"), logger)
 	}
 
 	// Storage
@@ -52,14 +75,17 @@ func main() {
 	hub := ws.NewHub(logger)
 	go hub.Run(context.Background())
 
-	// OIDC handler (P0-4: enterprise SSO)
+	// OIDC handler (P0-4: enterprise SSO + S4: password login + GA: multi-secret rotation)
 	oidcHandler := auth.NewOIDCHandler(auth.OIDCConfig{
-		Issuer:       envOr("AF_OIDC_ISSUER", ""),
-		ClientID:     envOr("AF_OIDC_CLIENT_ID", ""),
-		ClientSecret: envOr("AF_OIDC_CLIENT_SECRET", ""),
-		RedirectURI:  envOr("AF_OIDC_REDIRECT_URI", "http://localhost:8080/auth/callback"),
-		JWTSecret:    jwtSecret,
-		LogoutURL:    envOr("AF_OIDC_LOGOUT_URL", ""),
+		Issuer:        envOr("AF_OIDC_ISSUER", ""),
+		ClientID:      envOr("AF_OIDC_CLIENT_ID", ""),
+		ClientSecret:  envOr("AF_OIDC_CLIENT_SECRET", ""),
+		RedirectURI:   envOr("AF_OIDC_REDIRECT_URI", "http://localhost:8080/auth/callback"),
+		JWTSecret:     jwtSecrets[0],
+		JWTSecrets:    jwtSecrets,
+		LogoutURL:     envOr("AF_OIDC_LOGOUT_URL", ""),
+		AdminUser:     envOr("AF_ADMIN_USER", "admin"),
+		AdminPassword: envOr("AF_ADMIN_PASSWORD", "admin"),
 	}, logger)
 
 	// Wire handlers
@@ -85,11 +111,16 @@ func main() {
 	r.Get("/healthz", h.Health)
 	r.Handle("/metrics", promhttp.Handler())
 
-	// ─── OIDC SSO endpoints (P0-4) ───────────────────────────────────────────
+	// ─── Auth endpoints ───────────────────────────────────────────────────────
+	// Password login (default, no OIDC required): POST /auth/login {username, password}
+	r.Post("/auth/login", oidcHandler.PasswordLogin)
+	// OIDC SSO (P0-4, opt-in via AF_OIDC_ISSUER): GET /auth/login redirects to provider
 	r.Get("/auth/login", oidcHandler.Login)
 	r.Get("/auth/callback", oidcHandler.Callback)
 	r.Get("/auth/logout", oidcHandler.Logout)
 	r.Get("/auth/me", oidcHandler.Me)
+	// Token refresh (v1.0.0 GA): valid token → new token with refreshed expiry
+	r.Post("/auth/refresh", oidcHandler.Refresh)
 
 	// ─── Internal ingest (collector → gateway) ───────────────────────────────
 	// Skip collector auth in dev mode so the collector can send without a signed JWT
@@ -107,7 +138,8 @@ func main() {
 	// ─── Public API v1 ───────────────────────────────────────────────────────
 	r.Route("/api/v1", func(r chi.Router) {
 		if !authDisabled {
-			r.Use(middleware.JWTAuth(jwtSecret))
+			// Multi-secret JWTAuth: accepts tokens signed by any key in the rotation list.
+			r.Use(middleware.JWTAuth(jwtSecrets...))
 		}
 		r.Use(middleware.TenantInjector)
 		r.Use(rateLimiter) // Rate limiting runs after TenantInjector (needs tenant_id)
@@ -153,6 +185,19 @@ func main() {
 		// Audit log (Principle 4: immutable audit trail)
 		r.Get("/audit", h.ListAudit)
 		r.Get("/audit/verify", h.VerifyAuditChain)
+
+		// Users CRUD — RBAC + ABAC enforced per operation:
+		//   GET  (list/read):   any authenticated user
+		//   POST (create):      admin only
+		//   PUT  (update):      admin OR the user updating their own record (ABAC self-service)
+		//   DELETE:             admin only
+		r.Route("/users", func(r chi.Router) {
+			r.Get("/", h.ListUsers)
+			r.With(middleware.RequireRole("admin")).Post("/", h.CreateUser)
+			r.Get("/{userId}", h.GetUser)
+			r.With(middleware.RequireRoleOrSelf("admin")).Put("/{userId}", h.UpdateUser)
+			r.With(middleware.RequireRole("admin")).Delete("/{userId}", h.DeleteUser)
+		})
 	})
 
 	// ─── Start server ────────────────────────────────────────────────────────
@@ -168,8 +213,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		logger.Info("API Gateway listening", zap.String("addr", listenAddr))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := serve(srv, tlsEnabled, tlsCertFile, tlsKeyFile, logger); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("server error", zap.Error(err))
 		}
 	}()
@@ -179,6 +223,33 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	srv.Shutdown(ctx)
+}
+
+// serve starts the HTTP or HTTPS server depending on tlsEnabled.
+//
+// Fail-secure contract: if tlsEnabled is true, both certFile and keyFile MUST
+// be non-empty.  An empty path causes an immediate error return — the server
+// will never silently fall back to plain HTTP because that would defeat the
+// purpose of enabling TLS in the first place.
+//
+// The function is extracted from main() so it can be unit-tested without
+// spinning up an entire router or requiring real TLS certificates on disk.
+func serve(srv *http.Server, tlsEnabled bool, certFile, keyFile string, logger *zap.Logger) error {
+	if tlsEnabled {
+		if certFile == "" || keyFile == "" {
+			return fmt.Errorf(
+				"AF_TLS_ENABLED=true but AF_TLS_CERT_FILE or AF_TLS_KEY_FILE is not set — "+
+					"refusing to fall back to plain HTTP (fail-secure); set both env vars or disable TLS",
+			)
+		}
+		logger.Info("TLS enabled",
+			zap.String("addr", srv.Addr),
+			zap.String("cert", certFile),
+		)
+		return srv.ListenAndServeTLS(certFile, keyFile)
+	}
+	logger.Info("TLS disabled — serving plain HTTP", zap.String("addr", srv.Addr))
+	return srv.ListenAndServe()
 }
 
 func envOr(key, def string) string {
@@ -195,4 +266,47 @@ func parseIntEnv(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// runMigrations applies all pending SQL migrations from migrationsPath against
+// the database at dsn.  It is called once at process startup, before the HTTP
+// server is bound, so the schema is always consistent with the binary version.
+//
+// On success it logs "migrations: N applied" (version number) or
+// "migrations: already at latest" when nothing needed to change.
+// Any error is fatal — a binary that cannot guarantee its schema is sound should
+// not serve traffic.
+func runMigrations(dsn, migrationsPath string, logger *zap.Logger) {
+	m, err := migrate.New("file://"+migrationsPath, dsn)
+	if err != nil {
+		logger.Fatal("migrations: init failed", zap.Error(err))
+	}
+	defer m.Close()
+
+	if err := m.Up(); err != nil {
+		if err == migrate.ErrNoChange {
+			logger.Info("migrations: already at latest")
+			return
+		}
+		logger.Fatal("migrations: up failed", zap.Error(err))
+	}
+
+	version, _, _ := m.Version()
+	logger.Info("migrations: applied", zap.Uint("version", version))
+}
+
+// parseSecrets splits a comma-separated list of JWT secrets.
+// The first entry is the active signing key; remaining entries are accepted for
+// verification only (zero-downtime rotation: prepend new secret, retire old one).
+func parseSecrets(raw string) []string {
+	var out []string
+	for _, s := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(s); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"dev-secret-change-in-production"}
+	}
+	return out
 }

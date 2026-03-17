@@ -1,5 +1,5 @@
 """
-E2E Pipeline Tests — AgentFabric Sprint 3
+E2E Pipeline Tests — AgentFabric v1.0.0 GA
 Tests the full flow: Agent SDK -> Collector -> af-core -> API Gateway
 
 In CI: services are mocked using pytest fixtures (see conftest.py).
@@ -23,6 +23,14 @@ Test coverage:
   13. Trace appears in API Gateway after ingestion
   14. Multi-tenant isolation — tenant A's spans not visible to tenant B
   15. WebSocket live stream delivers span within 5 s
+  16. Auth login returns JWT (integration)
+  17. Auth login bad password returns 401 (integration)
+  18. Auth refresh returns new token (integration)
+  19. Auth refresh without token returns 401 (integration)
+  20. Users list returns admin (integration)
+  21. Users CRUD lifecycle — create, read, update, delete (integration)
+  22. Users create validates required fields (integration)
+  23. Users get nonexistent returns 404 (integration)
 """
 import json
 import os
@@ -705,3 +713,243 @@ def test_websocket_live_stream_receives_span(mock_collector):
     except (ConnectionResetError, BrokenPipeError, OSError):
         # Connection reset is also an acceptable rejection behaviour
         pass
+
+
+# ─── Integration fixtures ────────────────────────────────────────────────────
+
+@pytest.fixture(scope="session")
+def api_gateway_url() -> str:
+    """Base URL for the real api-gateway used by integration tests.
+
+    Reads AF_GATEWAY_URL from environment (default: http://localhost:8080).
+    Tests decorated with @pytest.mark.integration require a live api-gateway.
+    """
+    return os.environ.get("AF_GATEWAY_URL", "http://localhost:8080")
+
+
+# ─── Auth: login + refresh (v1.0.0 GA) ───────────────────────────────────────
+
+@pytest.mark.integration
+def test_auth_login_returns_token(api_gateway_url):
+    """POST /auth/login with valid admin credentials returns a JWT."""
+    import json as _json, urllib.request as _req, urllib.error
+
+    payload = _json.dumps({"username": "admin", "password": "admin"}).encode()
+    request = _req.Request(
+        f"{api_gateway_url}/auth/login",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with _req.urlopen(request, timeout=5) as resp:
+            body = _json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        pytest.fail(f"POST /auth/login returned {e.code}: {e.read()}")
+
+    assert "token" in body, "Response must contain 'token'"
+    # JWT has 3 parts separated by '.'
+    parts = body["token"].split(".")
+    assert len(parts) == 3, f"Token should be a 3-part JWT, got {body['token']!r}"
+
+
+@pytest.mark.integration
+def test_auth_login_bad_password_returns_401(api_gateway_url):
+    """POST /auth/login with wrong password must return 401."""
+    import json as _json, urllib.request as _req, urllib.error
+
+    payload = _json.dumps({"username": "admin", "password": "wrong"}).encode()
+    request = _req.Request(
+        f"{api_gateway_url}/auth/login",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _req.urlopen(request, timeout=5)
+    assert exc_info.value.code == 401, f"Expected 401, got {exc_info.value.code}"
+
+
+@pytest.mark.integration
+def test_auth_refresh_returns_new_token(api_gateway_url):
+    """POST /auth/refresh with a valid token returns a fresh JWT."""
+    import json as _json, urllib.request as _req, urllib.error
+
+    # Step 1: log in
+    login_payload = _json.dumps({"username": "admin", "password": "admin"}).encode()
+    login_req = _req.Request(
+        f"{api_gateway_url}/auth/login",
+        data=login_payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with _req.urlopen(login_req, timeout=5) as resp:
+        token = _json.loads(resp.read())["token"]
+
+    # Step 2: refresh
+    refresh_req = _req.Request(
+        f"{api_gateway_url}/auth/refresh",
+        data=b"",
+        headers={"Authorization": f"Bearer {token}", "Content-Length": "0"},
+        method="POST",
+    )
+    try:
+        with _req.urlopen(refresh_req, timeout=5) as resp:
+            body = _json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        pytest.fail(f"POST /auth/refresh returned {e.code}: {e.read()}")
+
+    assert "token" in body, "Refresh response must contain 'token'"
+    assert "expires_in" in body, "Refresh response must contain 'expires_in'"
+    new_token = body["token"]
+    assert len(new_token.split(".")) == 3, "Refreshed token must be a 3-part JWT"
+    # New token should be different from the original (new iat)
+    assert new_token != token, "Refreshed token should differ from original"
+
+
+@pytest.mark.integration
+def test_auth_refresh_without_token_returns_401(api_gateway_url):
+    """POST /auth/refresh with no Authorization header must return 401."""
+    import urllib.request as _req, urllib.error
+
+    refresh_req = _req.Request(
+        f"{api_gateway_url}/auth/refresh",
+        data=b"",
+        headers={"Content-Length": "0"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _req.urlopen(refresh_req, timeout=5)
+    assert exc_info.value.code == 401, f"Expected 401, got {exc_info.value.code}"
+
+
+# ─── Users CRUD (v1.0.0 GA) ──────────────────────────────────────────────────
+
+@pytest.mark.integration
+def test_users_list_returns_at_least_admin(api_gateway_url, tenant_a_headers):
+    """GET /api/v1/users returns the seeded admin user."""
+    import json as _json, urllib.request as _req, urllib.error
+
+    req = _req.Request(
+        f"{api_gateway_url}/api/v1/users",
+        headers=tenant_a_headers,
+        method="GET",
+    )
+    try:
+        with _req.urlopen(req, timeout=5) as resp:
+            body = _json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        pytest.fail(f"GET /api/v1/users returned {e.code}: {e.read()}")
+
+    assert "items" in body, "Response must have 'items'"
+    assert "total" in body, "Response must have 'total'"
+    usernames = [u["username"] for u in body["items"]]
+    assert "admin" in usernames, f"Seeded admin user not found; got {usernames}"
+
+
+@pytest.mark.integration
+def test_users_crud_lifecycle(api_gateway_url, tenant_a_headers):
+    """POST → GET → PUT → DELETE lifecycle for /api/v1/users."""
+    import json as _json, urllib.request as _req, urllib.error
+
+    # ── CREATE ──────────────────────────────────────────────────────────────
+    create_payload = _json.dumps({
+        "username": "e2e-test-user",
+        "email": "e2e@agentfabric.local",
+        "display_name": "E2E Test User",
+        "role": "viewer",
+        "password": "TestPass123!",
+    }).encode()
+
+    create_req = _req.Request(
+        f"{api_gateway_url}/api/v1/users",
+        data=create_payload,
+        headers={**tenant_a_headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with _req.urlopen(create_req, timeout=5) as resp:
+            user = _json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        pytest.fail(f"POST /api/v1/users returned {e.code}: {e.read()}")
+
+    assert user["username"] == "e2e-test-user"
+    assert user["email"] == "e2e@agentfabric.local"
+    assert user["role"] == "viewer"
+    assert "user_id" in user
+    user_id = user["user_id"]
+
+    # ── READ ─────────────────────────────────────────────────────────────────
+    get_req = _req.Request(
+        f"{api_gateway_url}/api/v1/users/{user_id}",
+        headers=tenant_a_headers,
+        method="GET",
+    )
+    with _req.urlopen(get_req, timeout=5) as resp:
+        fetched = _json.loads(resp.read())
+    assert fetched["user_id"] == user_id
+    assert fetched["username"] == "e2e-test-user"
+
+    # ── UPDATE ───────────────────────────────────────────────────────────────
+    update_payload = _json.dumps({"display_name": "Updated Name", "role": "editor"}).encode()
+    update_req = _req.Request(
+        f"{api_gateway_url}/api/v1/users/{user_id}",
+        data=update_payload,
+        headers={**tenant_a_headers, "Content-Type": "application/json"},
+        method="PUT",
+    )
+    with _req.urlopen(update_req, timeout=5) as resp:
+        updated = _json.loads(resp.read())
+    assert updated["display_name"] == "Updated Name"
+    assert updated["role"] == "editor"
+
+    # ── DELETE ───────────────────────────────────────────────────────────────
+    delete_req = _req.Request(
+        f"{api_gateway_url}/api/v1/users/{user_id}",
+        headers=tenant_a_headers,
+        method="DELETE",
+    )
+    with _req.urlopen(delete_req, timeout=5) as resp:
+        assert resp.status == 204, f"Expected 204, got {resp.status}"
+
+    # Verify deletion — GET must return 404
+    get_after_delete = _req.Request(
+        f"{api_gateway_url}/api/v1/users/{user_id}",
+        headers=tenant_a_headers,
+        method="GET",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _req.urlopen(get_after_delete, timeout=5)
+    assert exc_info.value.code == 404, f"Expected 404 after delete, got {exc_info.value.code}"
+
+
+@pytest.mark.integration
+def test_users_create_validates_required_fields(api_gateway_url, tenant_a_headers):
+    """POST /api/v1/users with missing username returns 400."""
+    import json as _json, urllib.request as _req, urllib.error
+
+    bad_payload = _json.dumps({"email": "no-username@example.com"}).encode()
+    req = _req.Request(
+        f"{api_gateway_url}/api/v1/users",
+        data=bad_payload,
+        headers={**tenant_a_headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _req.urlopen(req, timeout=5)
+    assert exc_info.value.code == 400, f"Expected 400, got {exc_info.value.code}"
+
+
+@pytest.mark.integration
+def test_users_get_nonexistent_returns_404(api_gateway_url, tenant_a_headers):
+    """GET /api/v1/users/{id} with unknown ID returns 404."""
+    import urllib.request as _req, urllib.error
+
+    req = _req.Request(
+        f"{api_gateway_url}/api/v1/users/does-not-exist-000",
+        headers=tenant_a_headers,
+        method="GET",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        _req.urlopen(req, timeout=5)
+    assert exc_info.value.code == 404, f"Expected 404, got {exc_info.value.code}"
