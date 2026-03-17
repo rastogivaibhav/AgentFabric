@@ -11,7 +11,7 @@
 #   make e2e       — full-stack E2E: bring up stack → test → tear down
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: dev prod-up down build test lint certs e2e
+.PHONY: dev prod-up down build test lint certs e2e migrate/up migrate/down migrate/status
 
 COMPOSE       := docker compose -f docker-compose.yml
 COMPOSE_PROD  := $(COMPOSE) -f deploy/docker/docker-compose.prod.yml
@@ -86,3 +86,27 @@ certs:
 
 e2e:
 	bash scripts/e2e.sh
+
+# ─── Migrations ───────────────────────────────────────────────────────────────
+# Requires DATABASE_URL to be set, e.g.:
+#   DATABASE_URL="postgres://fabric:fabric@localhost:5432/agentfabric?sslmode=disable" make migrate/up
+#
+# go run fetches the migrate CLI from the version pinned in api-gateway/go.mod —
+# no separate binary installation is needed.
+
+MIGRATE_DSN ?= $(or $(DATABASE_URL),postgres://fabric:fabric@localhost:5432/agentfabric?sslmode=disable)
+MIGRATE_CMD  = cd api-gateway && go run github.com/golang-migrate/migrate/v4/cmd/migrate \
+               -path ../deploy/migrations \
+               -database "$(MIGRATE_DSN)"
+
+migrate/up:
+	@echo "Applying all pending migrations..."
+	$(MIGRATE_CMD) up
+
+migrate/down:
+	@echo "Rolling back one migration..."
+	$(MIGRATE_CMD) down 1
+
+migrate/status:
+	@echo "Migration version:"
+	$(MIGRATE_CMD) version

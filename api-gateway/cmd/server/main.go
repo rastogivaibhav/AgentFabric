@@ -19,6 +19,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimid "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	migrate "github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres" // postgres driver for migrate
+	_ "github.com/golang-migrate/migrate/v4/source/file"       // file:// source driver
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
@@ -47,6 +50,13 @@ func main() {
 
 	if authDisabled {
 		logger.Warn("AF_AUTH_DISABLED=true — JWT authentication is OFF (dev mode only)")
+	}
+
+	// ─── Database migrations ──────────────────────────────────────────────────
+	// AF_MIGRATE_ON_STARTUP defaults to true.  Set to "false" to skip (tests,
+	// read-only replicas, or environments where migrations are applied out-of-band).
+	if os.Getenv("AF_MIGRATE_ON_STARTUP") != "false" {
+		runMigrations(pgDSN, envOr("AF_MIGRATIONS_PATH", "deploy/migrations"), logger)
 	}
 
 	// Storage
@@ -256,6 +266,33 @@ func parseIntEnv(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// runMigrations applies all pending SQL migrations from migrationsPath against
+// the database at dsn.  It is called once at process startup, before the HTTP
+// server is bound, so the schema is always consistent with the binary version.
+//
+// On success it logs "migrations: N applied" (version number) or
+// "migrations: already at latest" when nothing needed to change.
+// Any error is fatal — a binary that cannot guarantee its schema is sound should
+// not serve traffic.
+func runMigrations(dsn, migrationsPath string, logger *zap.Logger) {
+	m, err := migrate.New("file://"+migrationsPath, dsn)
+	if err != nil {
+		logger.Fatal("migrations: init failed", zap.Error(err))
+	}
+	defer m.Close()
+
+	if err := m.Up(); err != nil {
+		if err == migrate.ErrNoChange {
+			logger.Info("migrations: already at latest")
+			return
+		}
+		logger.Fatal("migrations: up failed", zap.Error(err))
+	}
+
+	version, _, _ := m.Version()
+	logger.Info("migrations: applied", zap.Uint("version", version))
 }
 
 // parseSecrets splits a comma-separated list of JWT secrets.
