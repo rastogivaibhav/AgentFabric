@@ -1,6 +1,6 @@
 // portal/src/hooks/auth.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { getToken, isAuthEnabled } from './auth'
+import { getToken, isAuthEnabled, getTokenExpiry } from './auth'
 
 // ─── getToken ────────────────────────────────────────────────────────────────
 
@@ -72,6 +72,51 @@ describe('isAuthEnabled', () => {
   it('returns true when VITE_AUTH_DISABLED is "false"', () => {
     vi.stubEnv('VITE_AUTH_DISABLED', 'false')
     expect(isAuthEnabled()).toBe(true)
+  })
+})
+
+// ─── getTokenExpiry ──────────────────────────────────────────────────────────
+
+// Build a minimal fake JWT (header.payload.sig) — signature is not validated here.
+function makeToken(payload: Record<string, unknown>): string {
+  const encode = (obj: object) =>
+    btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(payload)}.fakesig`
+}
+
+describe('getTokenExpiry', () => {
+  it('returns null for an empty string', () => {
+    expect(getTokenExpiry('')).toBeNull()
+  })
+
+  it('returns null for a plain non-JWT string', () => {
+    expect(getTokenExpiry('not-a-token')).toBeNull()
+  })
+
+  it('returns null for a JWT without an exp claim', () => {
+    const token = makeToken({ sub: 'alice', role: 'admin' })
+    expect(getTokenExpiry(token)).toBeNull()
+  })
+
+  it('returns the exp unix timestamp for a valid JWT payload', () => {
+    const exp = Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
+    const token = makeToken({ sub: 'alice', exp })
+    expect(getTokenExpiry(token)).toBe(exp)
+  })
+
+  it('returns exp even when the token is already past its expiry', () => {
+    const exp = Math.floor(Date.now() / 1000) - 100 // 100 s in the past
+    const token = makeToken({ sub: 'alice', exp })
+    expect(getTokenExpiry(token)).toBe(exp)
+  })
+
+  it('returns null when the payload segment is invalid base64', () => {
+    expect(getTokenExpiry('header.!!!invalid.sig')).toBeNull()
+  })
+
+  it('returns null when payload is valid base64 but not JSON', () => {
+    const bad = btoa('not json').replace(/=/g, '')
+    expect(getTokenExpiry(`header.${bad}.sig`)).toBeNull()
   })
 })
 

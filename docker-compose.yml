@@ -100,9 +100,14 @@ services:
       AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
       AF_AUTH_REQUIRE_AUTH: "false"  # Dev only — enable in production
       AF_JWT_SECRET: "dev-secret-change-in-prod"
-      AF_TLS_ENABLED: "false"       # Dev only — TLS required in production
+      AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"   # Override: AF_TLS_ENABLED=true for mTLS
+      AF_TLS_CERT_FILE: "/certs/server.crt"
+      AF_TLS_KEY_FILE:  "/certs/server.key"
+      AF_TLS_CA_FILE:   "/certs/ca.crt"
       AF_DEBUG: "true"
       AF_PROCESSOR_WORKERS: "4"
+    volumes:
+      - ./deploy/certs:/certs:ro   # mount generated certs (see: make certs)
     ports:
       - "4317:4317"  # OTLP gRPC
       - "4318:4318"  # OTLP HTTP
@@ -143,10 +148,18 @@ services:
       DATABASE_URL: postgres://fabric:fabric_dev_only@postgres:5432/agentfabric?sslmode=disable
       REDIS_URL: redis://redis:6379/2
       AF_JWT_SECRET: "dev-secret-change-in-prod"
+      # To enable secret rotation set AF_JWT_SECRETS=new-secret,old-secret
+      AF_JWT_SECRETS: "${AF_JWT_SECRETS:-}"
       LISTEN_ADDR: ":8080"
       AF_LOG_LEVEL: debug
       AF_CORS_ORIGINS: "http://localhost:3000"
       AF_AUTH_DISABLED: "true"  # Dev: no auth required
+      AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
+      AF_TLS_CERT_FILE: "/certs/server.crt"
+      AF_TLS_KEY_FILE:  "/certs/server.key"
+      AF_TLS_CA_FILE:   "/certs/ca.crt"
+    volumes:
+      - ./deploy/certs:/certs:ro   # mount generated certs (see: make certs)
     ports:
       - "8080:8080"
     networks: [af-net]

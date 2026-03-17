@@ -2,8 +2,10 @@
 // OIDC session management hook.
 // Reads the af_token from the cookie set by /auth/callback, falls back to
 // localStorage for dev environments where cookies aren't set.
+// Schedules a silent token refresh 30 minutes before expiry so the session
+// never interrupts an active user.
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -11,6 +13,7 @@ export interface AuthUser {
   sub: string
   email: string
   name: string
+  role: string // admin | editor | viewer
 }
 
 interface AuthState {
@@ -32,6 +35,23 @@ export function getToken(): string {
   return localStorage.getItem('af_token') ?? ''
 }
 
+// Decode the `exp` claim from a JWT payload without signature verification.
+// Returns the expiry Unix timestamp in seconds, or null if the token is malformed
+// or carries no `exp` claim.  Safe to call on any string.
+export function getTokenExpiry(token: string): number | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    // Normalise base64url → standard base64, then pad to a multiple of 4.
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64.padEnd(b64.length + (4 - (b64.length % 4)) % 4, '=')
+    const payload = JSON.parse(atob(padded))
+    return typeof payload.exp === 'number' ? payload.exp : null
+  } catch {
+    return null
+  }
+}
+
 export function useAuth(): AuthState & {
   login: () => void
   logout: () => void
@@ -43,6 +63,45 @@ export function useAuth(): AuthState & {
     isLoading: true,
     error: null,
   })
+
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Schedule a silent token refresh 30 minutes before the token expires.
+  // On success the new token is persisted to localStorage and the timer is
+  // rescheduled for the new token's expiry.  On a non-recoverable failure the
+  // session is cleared so the user is prompted to log in again.
+  const scheduleRefresh = useCallback((token: string) => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+
+    const exp = getTokenExpiry(token)
+    if (!exp) return // token has no expiry — nothing to schedule
+
+    const msUntilRefresh = Math.max(0, (exp - 30 * 60) * 1000 - Date.now())
+
+    refreshTimerRef.current = setTimeout(async () => {
+      const currentToken = getToken()
+      if (!currentToken) return
+
+      try {
+        const res = await fetch(`${BASE}/auth/refresh`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${currentToken}` },
+        })
+        if (res.ok) {
+          const { token: newToken } = await res.json()
+          localStorage.setItem('af_token', newToken)
+          scheduleRefresh(newToken) // arm the timer for the fresh token
+        } else {
+          // Server rejected refresh — clear session and ask user to re-login
+          localStorage.removeItem('af_token')
+          setState({ user: null, isAuthenticated: false, isLoading: false, error: 'session_expired' })
+        }
+      } catch {
+        // Network error — don't kill the session; it will be re-evaluated on
+        // next page load.  Timer is already cleared so no double-fire.
+      }
+    }, msUntilRefresh)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchUser = useCallback(async () => {
     const token = getToken()
@@ -58,6 +117,7 @@ export function useAuth(): AuthState & {
       if (res.ok) {
         const user: AuthUser = await res.json()
         setState({ user, isAuthenticated: true, isLoading: false, error: null })
+        scheduleRefresh(token) // start silent-refresh cycle
       } else {
         // Token is invalid or expired — clear it
         localStorage.removeItem('af_token')
@@ -66,10 +126,14 @@ export function useAuth(): AuthState & {
     } catch {
       setState({ user: null, isAuthenticated: false, isLoading: false, error: 'network_error' })
     }
-  }, [])
+  }, [scheduleRefresh])
 
   useEffect(() => {
     fetchUser()
+    return () => {
+      // Cancel any pending refresh timer when the component unmounts
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+    }
   }, [fetchUser])
 
   const login = useCallback(() => {
@@ -77,6 +141,7 @@ export function useAuth(): AuthState & {
   }, [])
 
   const logout = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
     localStorage.removeItem('af_token')
     // Clear cookie by navigating to logout endpoint which expires it
     window.location.href = `${BASE}/auth/logout`
