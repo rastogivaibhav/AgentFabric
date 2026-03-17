@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,6 +33,11 @@ func main() {
 	authDisabled := os.Getenv("AF_AUTH_DISABLED") == "true"
 	rateLimitRPM := int64(parseIntEnv("AF_RATE_LIMIT_RPM", 1000))
 
+	// AF_JWT_SECRETS: comma-separated list for zero-downtime key rotation.
+	// First entry = active signing key. All entries accepted for verification.
+	// Falls back to AF_JWT_SECRET when not set.
+	jwtSecrets := parseSecrets(envOr("AF_JWT_SECRETS", jwtSecret))
+
 	if authDisabled {
 		logger.Warn("AF_AUTH_DISABLED=true — JWT authentication is OFF (dev mode only)")
 	}
@@ -52,13 +58,14 @@ func main() {
 	hub := ws.NewHub(logger)
 	go hub.Run(context.Background())
 
-	// OIDC handler (P0-4: enterprise SSO + S4: password login fallback)
+	// OIDC handler (P0-4: enterprise SSO + S4: password login + GA: multi-secret rotation)
 	oidcHandler := auth.NewOIDCHandler(auth.OIDCConfig{
 		Issuer:        envOr("AF_OIDC_ISSUER", ""),
 		ClientID:      envOr("AF_OIDC_CLIENT_ID", ""),
 		ClientSecret:  envOr("AF_OIDC_CLIENT_SECRET", ""),
 		RedirectURI:   envOr("AF_OIDC_REDIRECT_URI", "http://localhost:8080/auth/callback"),
-		JWTSecret:     jwtSecret,
+		JWTSecret:     jwtSecrets[0],
+		JWTSecrets:    jwtSecrets,
 		LogoutURL:     envOr("AF_OIDC_LOGOUT_URL", ""),
 		AdminUser:     envOr("AF_ADMIN_USER", "admin"),
 		AdminPassword: envOr("AF_ADMIN_PASSWORD", "admin"),
@@ -114,7 +121,8 @@ func main() {
 	// ─── Public API v1 ───────────────────────────────────────────────────────
 	r.Route("/api/v1", func(r chi.Router) {
 		if !authDisabled {
-			r.Use(middleware.JWTAuth(jwtSecret))
+			// Multi-secret JWTAuth: accepts tokens signed by any key in the rotation list.
+			r.Use(middleware.JWTAuth(jwtSecrets...))
 		}
 		r.Use(middleware.TenantInjector)
 		r.Use(rateLimiter) // Rate limiting runs after TenantInjector (needs tenant_id)
@@ -161,13 +169,17 @@ func main() {
 		r.Get("/audit", h.ListAudit)
 		r.Get("/audit/verify", h.VerifyAuditChain)
 
-		// Users CRUD (Principle 2: tenant isolation — each tenant owns its user list)
+		// Users CRUD — RBAC + ABAC enforced per operation:
+		//   GET  (list/read):   any authenticated user
+		//   POST (create):      admin only
+		//   PUT  (update):      admin OR the user updating their own record (ABAC self-service)
+		//   DELETE:             admin only
 		r.Route("/users", func(r chi.Router) {
 			r.Get("/", h.ListUsers)
-			r.Post("/", h.CreateUser)
+			r.With(middleware.RequireRole("admin")).Post("/", h.CreateUser)
 			r.Get("/{userId}", h.GetUser)
-			r.Put("/{userId}", h.UpdateUser)
-			r.Delete("/{userId}", h.DeleteUser)
+			r.With(middleware.RequireRoleOrSelf("admin")).Put("/{userId}", h.UpdateUser)
+			r.With(middleware.RequireRole("admin")).Delete("/{userId}", h.DeleteUser)
 		})
 	})
 
@@ -211,4 +223,20 @@ func parseIntEnv(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// parseSecrets splits a comma-separated list of JWT secrets.
+// The first entry is the active signing key; remaining entries are accepted for
+// verification only (zero-downtime rotation: prepend new secret, retire old one).
+func parseSecrets(raw string) []string {
+	var out []string
+	for _, s := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(s); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"dev-secret-change-in-production"}
+	}
+	return out
 }

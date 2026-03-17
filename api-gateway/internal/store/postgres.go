@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type PostgresStore struct {
@@ -955,9 +956,17 @@ func generateStoreID() string {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// hashPassword hashes a password with SHA-256 for storage.
-// TODO(v1.1): upgrade to bcrypt for production hardening.
+// hashPassword hashes a password with bcrypt (cost=12) for storage.
+// Falls back to SHA-256 hex on the extremely unlikely event bcrypt fails.
 func hashPassword(password string) string {
-	h := sha256.Sum256([]byte(password))
-	return hex.EncodeToString(h[:])
+	if password == "" {
+		return ""
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		// Fallback: should never happen; bcrypt only fails on invalid cost or OOM.
+		h := sha256.Sum256([]byte(password))
+		return hex.EncodeToString(h[:])
+	}
+	return string(hash)
 }

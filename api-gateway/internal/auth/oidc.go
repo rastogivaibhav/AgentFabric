@@ -35,7 +35,8 @@ type OIDCConfig struct {
 	ClientSecret  string
 	RedirectURI   string // e.g. https://portal.agentfabric.io/auth/callback
 	Scopes        []string
-	JWTSecret     string
+	JWTSecret     string   // primary secret (legacy / single-secret mode)
+	JWTSecrets    []string // ordered list for zero-downtime rotation: [0]=active, rest=old
 	SessionMaxAge time.Duration
 	// Optional: provider-specific logout endpoint override
 	LogoutURL string
@@ -136,7 +137,53 @@ func NewOIDCHandler(cfg OIDCConfig, logger *zap.Logger) *OIDCHandler {
 	if cfg.SessionMaxAge == 0 {
 		cfg.SessionMaxAge = 8 * time.Hour
 	}
+	// Normalise secret list: JWTSecrets overrides JWTSecret when present.
+	if len(cfg.JWTSecrets) == 0 && cfg.JWTSecret != "" {
+		cfg.JWTSecrets = []string{cfg.JWTSecret}
+	}
+	if cfg.JWTSecret == "" && len(cfg.JWTSecrets) > 0 {
+		cfg.JWTSecret = cfg.JWTSecrets[0]
+	}
 	return &OIDCHandler{cfg: cfg, logger: logger, jwksCache: newJWKSCache()}
+}
+
+// ─── Multi-secret helpers (zero-downtime key rotation) ────────────────────────
+
+// activeSecret returns the current signing secret (first in the rotation list).
+func (h *OIDCHandler) activeSecret() string {
+	if len(h.cfg.JWTSecrets) > 0 && h.cfg.JWTSecrets[0] != "" {
+		return h.cfg.JWTSecrets[0]
+	}
+	return h.cfg.JWTSecret
+}
+
+// allSecrets returns all accepted secrets for verification (current + old rotated keys).
+func (h *OIDCHandler) allSecrets() []string {
+	if len(h.cfg.JWTSecrets) > 0 {
+		return h.cfg.JWTSecrets
+	}
+	return []string{h.cfg.JWTSecret}
+}
+
+// parseAFToken validates an AF JWT against all known secrets and returns its claims.
+// Accepts tokens signed with any secret in the rotation list (current or previous).
+func (h *OIDCHandler) parseAFToken(tokenStr string) (*afClaims, error) {
+	secrets := h.allSecrets()
+	var lastErr error
+	for _, secret := range secrets {
+		claims := &afClaims{}
+		_, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return []byte(secret), nil
+		})
+		if err == nil {
+			return claims, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 // ─── GET /auth/login ─────────────────────────────────────────────────────────
@@ -325,13 +372,7 @@ func (h *OIDCHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := &afClaims{}
-	_, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return []byte(h.cfg.JWTSecret), nil
-	})
+	claims, err := h.parseAFToken(tokenStr)
 	if err != nil {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
@@ -341,6 +382,7 @@ func (h *OIDCHandler) Me(w http.ResponseWriter, r *http.Request) {
 		"sub":   claims.Subject,
 		"email": claims.Email,
 		"name":  claims.Name,
+		"role":  claims.Role,
 	})
 }
 
@@ -447,6 +489,8 @@ type idTokenClaims struct {
 	Iss     string `json:"iss"`
 	Aud     string `json:"aud"`
 	Exp     int64  `json:"exp"`
+	// Role is set locally (not from OIDC provider) to carry the platform role.
+	Role string `json:"role,omitempty"`
 }
 
 // ─── JWKS fetching ────────────────────────────────────────────────────────────
@@ -597,13 +641,19 @@ func parseIDTokenUnsafe(idToken string) (*idTokenClaims, error) {
 type afClaims struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
+	Role  string `json:"role"` // admin|editor|viewer — propagated into every AF JWT
 	jwt.RegisteredClaims
 }
 
 func (h *OIDCHandler) issueAFToken(idClaims *idTokenClaims) (string, error) {
+	role := idClaims.Role
+	if role == "" {
+		role = "viewer" // safe default for OIDC logins without an explicit role claim
+	}
 	claims := afClaims{
 		Email: idClaims.Email,
 		Name:  idClaims.Name,
+		Role:  role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   idClaims.Subject,
 			Issuer:    "agentfabric",
@@ -613,7 +663,7 @@ func (h *OIDCHandler) issueAFToken(idClaims *idTokenClaims) (string, error) {
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.cfg.JWTSecret))
+	return token.SignedString([]byte(h.activeSecret()))
 }
 
 // ─── State cookie signing ────────────────────────────────────────────────────
@@ -633,7 +683,7 @@ func (h *OIDCHandler) signStateCookie(state pkceState) (string, error) {
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.cfg.JWTSecret))
+	return token.SignedString([]byte(h.activeSecret()))
 }
 
 // verifyStateCookie decodes and validates a signed state cookie.
@@ -648,7 +698,7 @@ func (h *OIDCHandler) verifyStateCookie(value string) (*pkceState, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return []byte(h.cfg.JWTSecret), nil
+		return []byte(h.activeSecret()), nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("invalid state cookie: %w", err)
@@ -730,23 +780,19 @@ func (h *OIDCHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := &afClaims{}
-	_, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return []byte(h.cfg.JWTSecret), nil
-	})
+	// parseAFToken tries all rotation keys, so tokens signed before a key rotation are accepted.
+	claims, err := h.parseAFToken(tokenStr)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired token"})
 		return
 	}
 
-	// Re-issue with the same identity claims but a fresh expiry
+	// Re-issue with the same identity + role but a fresh expiry, signed with the active key.
 	freshClaims := &idTokenClaims{
 		Subject: claims.Subject,
 		Email:   claims.Email,
 		Name:    claims.Name,
+		Role:    claims.Role, // preserve role across refresh
 	}
 	newToken, err := h.issueAFToken(freshClaims)
 	if err != nil {
@@ -755,7 +801,7 @@ func (h *OIDCHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("token refreshed", zap.String("subject", claims.Subject))
+	h.logger.Info("token refreshed", zap.String("subject", claims.Subject), zap.String("role", claims.Role))
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"token":      newToken,
 		"expires_in": int(h.cfg.SessionMaxAge.Seconds()),
@@ -813,6 +859,7 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		Subject: wantUser,
 		Email:   wantUser + "@agentfabric.local",
 		Name:    "Admin",
+		Role:    "admin", // the static admin credential always grants admin role
 	}
 	token, err := h.issueAFToken(idClaims)
 	if err != nil {
