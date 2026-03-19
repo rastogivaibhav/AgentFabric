@@ -199,6 +199,7 @@ services:
       args:
         VITE_API_URL: "http://localhost:8080"
         VITE_WS_URL: "ws://localhost:8080"
+        VITE_AUTH_DISABLED: "true"   # mirrors AF_AUTH_DISABLED on the gateway
     ports:
       - "3000:80"
     networks: [af-net]
