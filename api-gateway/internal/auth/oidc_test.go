@@ -589,40 +589,73 @@ func TestRefresh_ValidToken_ReturnsNewToken(t *testing.T) {
 }
 
 func TestRefresh_NewTokenHasFreshExpiry(t *testing.T) {
+	// Refresh now rotates the HttpOnly cookie and returns {"exp": <unix>, "expires_in": <secs>}.
+	// The raw token is no longer returned in the response body (browser security model).
 	token := mintTokenForRefreshTest(t)
 	h := refreshHandler()
 	rr := doRefresh(h, token)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
+
 	var resp map[string]interface{}
 	json.NewDecoder(rr.Body).Decode(&resp)
-	newTokenStr, _ := resp["token"].(string)
 
+	// Verify exp is a future Unix timestamp (~8 hours from now).
+	expRaw, ok := resp["exp"]
+	if !ok {
+		t.Fatal("response must include 'exp' field")
+	}
+	expFloat, _ := expRaw.(float64)
+	expTime := time.Unix(int64(expFloat), 0)
+	if time.Until(expTime) < 7*time.Hour {
+		t.Errorf("refreshed token expiry should be ~8 hours from now, got %v remaining", time.Until(expTime))
+	}
+
+	// Verify the new token is set as an HttpOnly cookie.
+	cookies := rr.Result().Cookies()
+	var afCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "af_token" {
+			afCookie = c
+			break
+		}
+	}
+	if afCookie == nil {
+		t.Fatal("Refresh must set af_token cookie")
+	}
+	if !afCookie.HttpOnly {
+		t.Error("af_token cookie must be HttpOnly")
+	}
+	// Validate the cookie value is a well-formed JWT.
 	claims := &afClaims{}
-	_, err := jwt.ParseWithClaims(newTokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+	_, err := jwt.ParseWithClaims(afCookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
 		return []byte("test-jwt-secret-32-chars-long-ok"), nil
 	})
 	if err != nil {
-		t.Fatalf("new token should be a valid JWT: %v", err)
-	}
-
-	exp := claims.ExpiresAt.Time
-	if time.Until(exp) < 7*time.Hour {
-		t.Errorf("refreshed token expiry should be ~8 hours from now, got %v remaining", time.Until(exp))
+		t.Fatalf("af_token cookie must contain a valid JWT: %v", err)
 	}
 }
 
 func TestRefresh_NewTokenPreservesIdentity(t *testing.T) {
+	// Identity claims (sub, email, role) must be preserved in the rotated cookie.
 	token := mintTokenForRefreshTest(t)
 	h := refreshHandler()
 	rr := doRefresh(h, token)
-	var resp map[string]interface{}
-	json.NewDecoder(rr.Body).Decode(&resp)
-	newTokenStr, _ := resp["token"].(string)
+
+	cookies := rr.Result().Cookies()
+	var afCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "af_token" {
+			afCookie = c
+		}
+	}
+	if afCookie == nil {
+		t.Fatal("expected af_token cookie in Refresh response")
+	}
 
 	claims := &afClaims{}
-	jwt.ParseWithClaims(newTokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+	jwt.ParseWithClaims(afCookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
 		return []byte("test-jwt-secret-32-chars-long-ok"), nil
 	})
 	if claims.Subject != "admin" {

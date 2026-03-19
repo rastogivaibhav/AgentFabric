@@ -100,6 +100,7 @@ def instrument(
     auto_instrument_langgraph: bool = True,
     auto_instrument_openai: bool = True,
     auto_instrument_anthropic: bool = True,
+    auto_instrument_google_adk: bool = True,
 ) -> trace.Tracer:
     """
     Initialise AgentFabric instrumentation.
@@ -148,6 +149,8 @@ def instrument(
         _try_instrument_openai()
     if auto_instrument_anthropic:
         _try_instrument_anthropic()
+    if auto_instrument_google_adk:
+        _try_instrument_google_adk()
 
     logger.info(f"AgentFabric instrumentation active → {endpoint}")
     return _tracer
@@ -277,7 +280,70 @@ def _try_instrument_langgraph():
 
 def _patch_langgraph(langgraph):
     try:
+        import asyncio
         from langgraph.graph import StateGraph
+
+        # ── Node-level tracing ────────────────────────────────────────────────
+        # Wrap each node function at add_node time so every node execution
+        # produces a child span under the parent graph.invoke span.
+
+        original_add_node = StateGraph.add_node
+
+        def _wrap_node(node_name: str, fn):
+            """Return a traced wrapper for a node function (sync or async)."""
+            if asyncio.iscoroutinefunction(fn):
+                @functools.wraps(fn)
+                async def traced_async_node(state, *args, **kw):
+                    tracer = get_tracer()
+                    with tracer.start_as_current_span(
+                        f"langgraph.node.{node_name}",
+                        attributes={
+                            Attrs.LANGGRAPH_NODE:  node_name,
+                            Attrs.GEN_AI_SYSTEM:   "langgraph",
+                        },
+                    ) as span:
+                        try:
+                            return await fn(state, *args, **kw)
+                        except Exception as e:
+                            span.set_status(Status(StatusCode.ERROR, str(e)))
+                            span.record_exception(e)
+                            raise
+                return traced_async_node
+            else:
+                @functools.wraps(fn)
+                def traced_sync_node(state, *args, **kw):
+                    tracer = get_tracer()
+                    with tracer.start_as_current_span(
+                        f"langgraph.node.{node_name}",
+                        attributes={
+                            Attrs.LANGGRAPH_NODE:  node_name,
+                            Attrs.GEN_AI_SYSTEM:   "langgraph",
+                        },
+                    ) as span:
+                        try:
+                            return fn(state, *args, **kw)
+                        except Exception as e:
+                            span.set_status(Status(StatusCode.ERROR, str(e)))
+                            span.record_exception(e)
+                            raise
+                return traced_sync_node
+
+        def patched_add_node(self, node, action=None, **kwargs):
+            # LangGraph accepts add_node(name, func) or add_node(func).
+            # Only wrap plain callables — Runnables expose .invoke() and are
+            # handled by LangChain's own tracing layer.
+            if callable(node) and action is None:
+                node_name = getattr(node, "__name__", "node")
+                node = _wrap_node(node_name, node)
+            elif isinstance(node, str) and callable(action):
+                action = _wrap_node(node, action)
+            return original_add_node(self, node, action, **kwargs)
+
+        StateGraph.add_node = patched_add_node
+
+        # ── Graph-level tracing ───────────────────────────────────────────────
+        # Wrap the compiled graph's invoke() to create the outer span that all
+        # node spans nest under.
 
         original_compile = StateGraph.compile
 
@@ -366,10 +432,9 @@ def _patch_anthropic(anthropic_module):
     try:
         from anthropic import Anthropic
 
-        original_create = Anthropic.messages.create.__func__ if hasattr(
-            Anthropic.messages.create, "__func__") else None
-
-        # Patch via __init_subclass__ hook on the Messages class
+        # Resolve the concrete Messages class from a live instance.
+        # Accessing Anthropic.messages at class level returns a cached_property
+        # descriptor (sdk >= 0.28), not the Messages class — so we instantiate.
         Messages = type(Anthropic().messages)
         original_messages_create = Messages.create
 
@@ -412,6 +477,101 @@ def _patch_anthropic(anthropic_module):
         Messages.create = traced_messages_create
     except Exception as e:
         logger.debug(f"Anthropic patch failed: {e}")
+
+
+# ─── Google ADK Auto-instrumentation ─────────────────────────────────────────
+
+def _try_instrument_google_adk():
+    try:
+        import google.adk  # noqa: F401
+        _patch_google_adk()
+        logger.info("AgentFabric: Google ADK instrumented")
+    except ImportError:
+        pass
+
+
+def _patch_google_adk():
+    try:
+        from google.adk.runners import Runner
+        from google.adk.agents.base_agent import BaseAgent
+
+        # ── Runner-level span (outer: one per session turn) ───────────────────
+        # Created by Runner.run_async — covers the entire turn and all agents
+        # invoked within it.  Agent-level spans nest inside this span.
+
+        original_run_async = Runner.run_async
+
+        async def traced_run_async(
+            self,
+            *,
+            user_id: str,
+            session_id: str,
+            invocation_id=None,
+            new_message=None,
+            state_delta=None,
+            run_config=None,
+        ):
+            tracer = get_tracer()
+            agent_name = getattr(getattr(self, "agent", None), "name", "unknown")
+            with tracer.start_as_current_span(
+                f"google_adk.runner.{agent_name}",
+                kind=SpanKind.INTERNAL,
+                attributes={
+                    Attrs.GOOGLE_ADK_AGENT:   agent_name,
+                    Attrs.GOOGLE_ADK_SESSION:  session_id,
+                    Attrs.AGENT_NAME:          agent_name,
+                    Attrs.GEN_AI_SYSTEM:       "google_adk",
+                },
+            ) as span:
+                try:
+                    async for event in original_run_async(
+                        self,
+                        user_id=user_id,
+                        session_id=session_id,
+                        invocation_id=invocation_id,
+                        new_message=new_message,
+                        state_delta=state_delta,
+                        run_config=run_config,
+                    ):
+                        yield event
+                except Exception as e:
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    span.record_exception(e)
+                    raise
+
+        Runner.run_async = traced_run_async
+
+        # ── Agent-level spans (one per agent invocation, incl. sub-agents) ───
+        # BaseAgent.run_async is called for every agent in the call tree
+        # (root agent AND any sub-agents it delegates to).  Patching it here
+        # produces a child span per agent, giving full node-level visibility.
+
+        original_agent_run_async = BaseAgent.run_async
+
+        async def traced_agent_run_async(self, invocation_context):
+            tracer = get_tracer()
+            agent_name = getattr(self, "name", "unknown")
+            with tracer.start_as_current_span(
+                f"google_adk.agent.{agent_name}",
+                kind=SpanKind.INTERNAL,
+                attributes={
+                    Attrs.GOOGLE_ADK_AGENT: agent_name,
+                    Attrs.AGENT_NAME:        agent_name,
+                    Attrs.GEN_AI_SYSTEM:     "google_adk",
+                },
+            ) as span:
+                try:
+                    async for event in original_agent_run_async(self, invocation_context):
+                        yield event
+                except Exception as e:
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    span.record_exception(e)
+                    raise
+
+        BaseAgent.run_async = traced_agent_run_async
+
+    except Exception as e:
+        logger.debug(f"Google ADK patch failed: {e}")
 
 
 # ─── Setup.py compatible __all__ ─────────────────────────────────────────────

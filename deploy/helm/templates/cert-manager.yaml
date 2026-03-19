@@ -1,0 +1,107 @@
+{{/*
+cert-manager integration — auto-TLS for the API gateway and Portal ingresses.
+
+Prerequisites:
+  cert-manager must be installed in the cluster:
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+
+Enable via values:
+  certManager:
+    enabled: true
+    email: ops@agentfabric.io
+    issuer:
+      create: true           # set false to use a pre-existing issuer
+      name: agentfabric-letsencrypt
+      kind: ClusterIssuer    # ClusterIssuer | Issuer
+      server: https://acme-v02.api.letsencrypt.org/directory  # staging: https://acme-staging-v02.api.letsencrypt.org/directory
+
+When certManager.enabled=true the Chart:
+  1. Creates a ClusterIssuer (or Issuer) backed by Let's Encrypt ACME HTTP-01.
+  2. Issues a Certificate for the API gateway TLS secret.
+  3. Issues a Certificate for the Portal TLS secret.
+  4. Adds cert-manager.io/cluster-issuer annotation to both Ingress resources
+     so the ingress-controller picks up certificate renewal automatically.
+*/}}
+
+{{- if .Values.certManager.enabled }}
+
+{{- if .Values.certManager.issuer.create }}
+---
+# ─── ClusterIssuer / Issuer ──────────────────────────────────────────────────
+apiVersion: cert-manager.io/v1
+kind: {{ .Values.certManager.issuer.kind }}
+metadata:
+  name: {{ .Values.certManager.issuer.name }}
+  {{- if eq .Values.certManager.issuer.kind "Issuer" }}
+  namespace: {{ .Release.Namespace }}
+  {{- end }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  acme:
+    email: {{ required "certManager.email is required when certManager.enabled=true" .Values.certManager.email }}
+    server: {{ .Values.certManager.issuer.server }}
+    privateKeySecretRef:
+      name: {{ .Values.certManager.issuer.name }}-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: {{ .Values.api.ingress.className | default "nginx" }}
+{{- end }}
+
+{{- if and .Values.api.ingress.enabled .Values.api.enabled }}
+---
+# ─── Certificate: API Gateway ────────────────────────────────────────────────
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentfabric-api-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  secretName: agentfabric-api-tls
+  issuerRef:
+    name: {{ .Values.certManager.issuer.name }}
+    kind: {{ .Values.certManager.issuer.kind }}
+    group: cert-manager.io
+  dnsNames:
+    {{- range .Values.api.ingress.hosts }}
+    - {{ .host | quote }}
+    {{- end }}
+  # Renew 30 days before expiry (Let's Encrypt certificates are 90-day).
+  renewBefore: 720h
+  # Request a 90-day certificate (LE default; explicit for documentation).
+  duration: 2160h
+{{- end }}
+
+{{- if and .Values.portal.ingress.enabled .Values.portal.enabled }}
+---
+# ─── Certificate: Portal ─────────────────────────────────────────────────────
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentfabric-portal-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  secretName: agentfabric-portal-tls
+  issuerRef:
+    name: {{ .Values.certManager.issuer.name }}
+    kind: {{ .Values.certManager.issuer.kind }}
+    group: cert-manager.io
+  dnsNames:
+    {{- range .Values.portal.ingress.hosts }}
+    - {{ .host | quote }}
+    {{- end }}
+  renewBefore: 720h
+  duration: 2160h
+{{- end }}
+
+{{- end }}{{/* certManager.enabled */}}

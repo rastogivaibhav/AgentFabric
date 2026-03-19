@@ -18,6 +18,8 @@ jobs:
   af-core:
     name: af-core (Rust)
     runs-on: ubuntu-latest
+    outputs:
+      coverage_pct: ${{ steps.coverage-gate.outputs.pct }}
     defaults:
       run:
         working-directory: af-core
@@ -72,9 +74,11 @@ jobs:
             --timeout 120
 
       - name: Enforce coverage gate (90% Sprint 4)
+        id: coverage-gate
         run: |
           COVERAGE=$(cargo tarpaulin --out Stdout 2>&1 | grep -oP '\d+\.\d+(?=% coverage)' | head -1)
           echo "af-core coverage: ${COVERAGE}%"
+          echo "pct=${COVERAGE}" >> $GITHUB_OUTPUT
           python3 -c "
           import sys
           cov = float('${COVERAGE}' or '0')
@@ -95,6 +99,8 @@ jobs:
   collector:
     name: collector (Go)
     runs-on: ubuntu-latest
+    outputs:
+      coverage_pct: ${{ steps.coverage-gate.outputs.pct }}
     defaults:
       run:
         working-directory: collector
@@ -116,9 +122,11 @@ jobs:
           go tool cover -func=coverage.out | tee coverage_report.txt
 
       - name: Enforce coverage gate (90% Sprint 4)
+        id: coverage-gate
         run: |
           TOTAL=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "collector coverage: ${TOTAL}%"
+          echo "pct=${TOTAL}" >> $GITHUB_OUTPUT
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
@@ -139,6 +147,8 @@ jobs:
   api-gateway:
     name: api-gateway (Go)
     runs-on: ubuntu-latest
+    outputs:
+      coverage_pct: ${{ steps.coverage-gate.outputs.pct }}
     defaults:
       run:
         working-directory: api-gateway
@@ -180,9 +190,11 @@ jobs:
           go tool cover -func=coverage.out | tee coverage_report.txt
 
       - name: Enforce coverage gate (90% Sprint 4)
+        id: coverage-gate
         run: |
           TOTAL=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "api-gateway coverage: ${TOTAL}%"
+          echo "pct=${TOTAL}" >> $GITHUB_OUTPUT
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
@@ -203,6 +215,8 @@ jobs:
   portal:
     name: portal (TypeScript)
     runs-on: ubuntu-latest
+    outputs:
+      coverage_pct: ${{ steps.coverage-gate.outputs.pct }}
     defaults:
       run:
         working-directory: portal
@@ -226,6 +240,7 @@ jobs:
         run: npx vitest run --coverage
 
       - name: Enforce coverage gate (90% Sprint 4)
+        id: coverage-gate
         run: |
           TOTAL=$(node -e "
             const fs = require('fs');
@@ -234,6 +249,7 @@ jobs:
             console.log(lines);
           ")
           echo "portal coverage: ${TOTAL}%"
+          echo "pct=${TOTAL}" >> $GITHUB_OUTPUT
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
@@ -254,6 +270,8 @@ jobs:
   agent-sdk:
     name: agent-sdk (Python)
     runs-on: ubuntu-latest
+    outputs:
+      coverage_pct: ${{ steps.coverage-gate.outputs.pct }}
     defaults:
       run:
         working-directory: agent-sdk
@@ -279,6 +297,7 @@ jobs:
                  -v
 
       - name: Enforce coverage gate (90% Sprint 4)
+        id: coverage-gate
         run: |
           TOTAL=$(python3 -c "
           import json, sys
@@ -290,6 +309,7 @@ jobs:
               print('0')
           ")
           echo "agent-sdk coverage: ${TOTAL}%"
+          echo "pct=${TOTAL}" >> $GITHUB_OUTPUT
           python3 -c "
           import sys
           cov = float('${TOTAL}' or '0')
@@ -305,6 +325,72 @@ jobs:
           files: agent-sdk/coverage.xml
           flags: agent-sdk
           fail_ci_if_error: false
+
+  # ─── Coverage PR comment ────────────────────────────────────────────────────
+  # Posts (or updates) a single sticky comment on every PR with a per-service
+  # coverage table.  Skipped on direct pushes (not a PR).
+  coverage-comment:
+    name: Coverage Report (PR Comment)
+    needs: [af-core, collector, api-gateway, portal, agent-sdk]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Post coverage table
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const services = [
+              { name: 'af-core',      pct: '${{ needs.af-core.outputs.coverage_pct }}' },
+              { name: 'collector',    pct: '${{ needs.collector.outputs.coverage_pct }}' },
+              { name: 'api-gateway',  pct: '${{ needs.api-gateway.outputs.coverage_pct }}' },
+              { name: 'portal',       pct: '${{ needs.portal.outputs.coverage_pct }}' },
+              { name: 'agent-sdk',    pct: '${{ needs.agent-sdk.outputs.coverage_pct }}' },
+            ];
+
+            const rows = services.map(({ name, pct }) => {
+              const n = parseFloat(pct) || 0;
+              const icon = n >= 90 ? '✅' : '❌';
+              const gate = n >= 90 ? 'PASS' : `**FAIL** (${90 - n > 0 ? (90 - n).toFixed(1) : 0}% below gate)`;
+              return `| ${name} | ${icon} ${pct}% | ${gate} |`;
+            }).join('\n');
+
+            const allPass = services.every(({ pct }) => parseFloat(pct) >= 90);
+            const header = allPass
+              ? '## ✅ Coverage Report — All services pass 90% gate'
+              : '## ❌ Coverage Report — One or more services below 90% gate';
+
+            const body = [
+              header,
+              '',
+              '| Service | Coverage | Gate (90%) |',
+              '|---------|----------|-----------|',
+              rows,
+              '',
+              '_Coverage gate: 90% lines. Updated on every commit._',
+            ].join('\n');
+
+            // Update existing bot comment if present, otherwise create new one
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user.login === 'github-actions[bot]' &&
+              c.body.includes('Coverage Report')
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 
   # ─── Helm chart smoke test (v1.0.0 GA) ──────────────────────────────────────
   helm-smoke:
@@ -345,10 +431,47 @@ jobs:
             --set apiGateway.image.tag=ci \
             --set portal.image.tag=ci
 
+  # ─── Secret scanning ─────────────────────────────────────────────────────────
+  # Blocks merge if Gitleaks detects high-entropy secrets, API keys, or the
+  # known dev-secret sentinel in any non-test source file.
+  secret-scan:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history — Gitleaks checks all commits on the PR branch
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE is required for private org repos; leave unset for public repos.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+      # Belt-and-braces: assert the known dev-secret sentinel is not in any
+      # production source path (env defaults, docker configs, Go source).
+      # Test files are explicitly excluded so the sentinel may appear in test fixtures.
+      - name: Assert dev sentinel absent from production source
+        env:
+          SENTINEL: "dev-secret-change-in-production"
+        run: |
+          HITS=$(grep -rn "$SENTINEL" \
+            --include="*.go" --include="*.yml" --include="*.yaml" --include="*.env" \
+            --exclude="*_test.go" \
+            --exclude-dir=".git" \
+            . || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::Dev-secret sentinel found in production source files:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "OK — dev sentinel not present in production source paths."
+
   # ─── PR gate: all jobs must pass ────────────────────────────────────────────
   ci-gate:
     name: CI Gate
-    needs: [af-core, collector, api-gateway, portal, agent-sdk, helm-smoke]
+    needs: [af-core, collector, api-gateway, portal, agent-sdk, helm-smoke, secret-scan, coverage-comment]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -360,13 +483,19 @@ jobs:
           PORTAL_RESULT: ${{ needs.portal.result }}
           SDK_RESULT: ${{ needs.agent-sdk.result }}
           HELM_RESULT: ${{ needs.helm-smoke.result }}
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+          COVERAGE_COMMENT_RESULT: ${{ needs.coverage-comment.result }}
         run: |
           FAILED=0
-          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT" "$HELM_RESULT"; do
+          # coverage-comment is skipped on non-PR pushes — treat skipped as passing
+          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT" "$HELM_RESULT" "$SECRET_SCAN_RESULT"; do
             if [ "$JOB" != "success" ]; then
               FAILED=1
             fi
           done
+          if [ "$COVERAGE_COMMENT_RESULT" != "success" ] && [ "$COVERAGE_COMMENT_RESULT" != "skipped" ]; then
+            echo "Warning: coverage-comment job did not succeed (result: $COVERAGE_COMMENT_RESULT)"
+          fi
           if [ "$FAILED" = "1" ]; then
             echo "One or more CI jobs failed. Merge blocked."
             exit 1

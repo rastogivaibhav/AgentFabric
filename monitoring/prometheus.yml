@@ -8,7 +8,7 @@ rule_files:
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: []  # Add alertmanager:9093 when deployed
+        - targets: ['alertmanager:9093']
 
 scrape_configs:
   - job_name: 'agentfabric-collector'

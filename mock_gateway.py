@@ -31,12 +31,15 @@ JWT_SECRET     = os.environ.get("AF_JWT_SECRET",     "dev-secret-changeme")
 
 app = FastAPI(title="AgentFabric Mock Gateway")
 
-# ─── CORS (portal runs on :3000) ─────────────────────────────────────────────
+# ─── CORS (portal runs on :3000 or :5173) ────────────────────────────────────
+# allow_credentials=True requires explicit origins — wildcard ("*") is rejected
+# by browsers when credentials are included.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
 # ─── In-Memory Store ─────────────────────────────────────────────────────────
@@ -416,9 +419,35 @@ def _make_jwt(sub: str, email: str, tenant_id: str = "tenant-default") -> str:
     return f"{header}.{payload}.{sig}"
 
 
+SESSION_MAX_AGE = 8 * 60 * 60  # 8 hours in seconds
+
+
+def _decode_token(token_str: str) -> dict | None:
+    """Decode JWT payload without signature verification (mock only)."""
+    try:
+        parts = token_str.split(".")
+        if len(parts) != 3:
+            return None
+        padding = 4 - len(parts[1]) % 4
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * padding))
+        if payload.get("exp", 0) < time.time():
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def _token_from_request(request: Request) -> str | None:
+    """Extract JWT from Authorization: Bearer header or af_token cookie."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return request.cookies.get("af_token")
+
+
 @app.post("/auth/login")
 async def basic_login(request: Request):
-    """Username/password login — returns AF session JWT."""
+    """Username/password login — sets HttpOnly cookie and returns token for CLI callers."""
     try:
         body = await request.json()
     except Exception:
@@ -429,39 +458,274 @@ async def basic_login(request: Request):
 
     if username == ADMIN_USER and password == ADMIN_PASSWORD:
         token = _make_jwt(sub=username, email=f"{username}@agentfabric.local")
-        return JSONResponse({"token": token, "user": {"sub": username, "email": f"{username}@agentfabric.local"}})
+        resp = JSONResponse({"token": token})
+        # HttpOnly cookie — JS cannot read it; portal uses GET /auth/me with credentials:'include'
+        resp.set_cookie(
+            key="af_token", value=token,
+            httponly=True, samesite="strict",
+            max_age=SESSION_MAX_AGE, path="/",
+        )
+        return resp
 
     return JSONResponse({"error": "invalid credentials"}, status_code=401)
 
 
 @app.get("/auth/me")
 async def auth_me(request: Request):
-    """Return current user info from Authorization bearer token."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
+    """Return current user identity from af_token cookie or Authorization: Bearer header."""
+    token_str = _token_from_request(request)
+    if not token_str:
         return JSONResponse({"error": "unauthenticated"}, status_code=401)
-    # Decode payload (no signature verification in mock)
-    try:
-        parts   = auth[7:].split(".")
-        padding = 4 - len(parts[1]) % 4
-        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * padding))
-        if payload.get("exp", 0) < time.time():
-            return JSONResponse({"error": "token expired"}, status_code=401)
-        return JSONResponse({"sub": payload["sub"], "email": payload["email"], "tenant_id": payload.get("tenant_id", "")})
-    except Exception:
-        return JSONResponse({"error": "invalid token"}, status_code=401)
+    payload = _decode_token(token_str)
+    if not payload:
+        return JSONResponse({"error": "invalid or expired token"}, status_code=401)
+    exp = payload.get("exp", int(time.time()) + SESSION_MAX_AGE)
+    return JSONResponse({
+        "sub":   payload.get("sub", ""),
+        "email": payload.get("email", ""),
+        "name":  payload.get("name", payload.get("sub", "")),
+        "role":  payload.get("role", "admin"),
+        "exp":   exp,
+    })
+
+
+@app.post("/auth/refresh")
+async def auth_refresh(request: Request):
+    """Rotate the af_token cookie; returns new exp for the portal refresh scheduler."""
+    token_str = _token_from_request(request)
+    if not token_str:
+        return JSONResponse({"error": "missing token"}, status_code=401)
+    payload = _decode_token(token_str)
+    if not payload:
+        return JSONResponse({"error": "invalid or expired token"}, status_code=401)
+
+    new_token = _make_jwt(sub=payload.get("sub", ""), email=payload.get("email", ""))
+    new_exp = int(time.time()) + SESSION_MAX_AGE
+    resp = JSONResponse({"exp": new_exp, "expires_in": SESSION_MAX_AGE})
+    resp.set_cookie(
+        key="af_token", value=new_token,
+        httponly=True, samesite="strict",
+        max_age=SESSION_MAX_AGE, path="/",
+    )
+    return resp
 
 
 @app.get("/auth/logout")
 async def auth_logout():
     resp = JSONResponse({"ok": True})
-    resp.delete_cookie("af_token")
+    resp.delete_cookie("af_token", path="/", samesite="strict")
     return resp
+
+
+# ─── Users ────────────────────────────────────────────────────────────────────
+MOCK_USERS = [
+    {"user_id": "u-001", "tenant_id": "tenant-default", "username": "admin",
+     "email": "admin@agentfabric.local", "display_name": "Admin",
+     "role": "admin", "is_active": True, "last_login_at": "2026-03-19T08:00:00Z",
+     "created_at": "2026-01-01T00:00:00Z"},
+    {"user_id": "u-002", "tenant_id": "tenant-default", "username": "alice",
+     "email": "alice@agentfabric.local", "display_name": "Alice Chen",
+     "role": "editor", "is_active": True, "last_login_at": "2026-03-18T14:32:00Z",
+     "created_at": "2026-01-15T09:00:00Z"},
+    {"user_id": "u-003", "tenant_id": "tenant-default", "username": "bob",
+     "email": "bob@agentfabric.local", "display_name": "Bob Smith",
+     "role": "viewer", "is_active": True, "last_login_at": "2026-03-17T11:10:00Z",
+     "created_at": "2026-02-01T00:00:00Z"},
+    {"user_id": "u-004", "tenant_id": "tenant-default", "username": "ci-bot",
+     "email": "ci@agentfabric.local", "display_name": "CI Bot",
+     "role": "viewer", "is_active": True, "last_login_at": None,
+     "created_at": "2026-03-01T00:00:00Z"},
+]
+
+@app.get("/api/v1/users")
+def list_users():
+    return MOCK_USERS
+
+@app.get("/api/v1/users/{user_id}")
+def get_user(user_id: str):
+    u = next((u for u in MOCK_USERS if u["user_id"] == user_id), None)
+    if not u:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return u
+
+@app.post("/api/v1/users")
+async def create_user(request: Request):
+    body = await request.json()
+    new_user = {
+        "user_id": f"u-{str(uuid.uuid4())[:8]}",
+        "tenant_id": "tenant-default",
+        "username": body.get("username", ""),
+        "email": body.get("email", ""),
+        "display_name": body.get("display_name", ""),
+        "role": body.get("role", "viewer"),
+        "is_active": True,
+        "last_login_at": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    MOCK_USERS.append(new_user)
+    return JSONResponse(new_user, status_code=201)
+
+@app.delete("/api/v1/users/{user_id}")
+def delete_user(user_id: str):
+    global MOCK_USERS
+    MOCK_USERS = [u for u in MOCK_USERS if u["user_id"] != user_id]
+    return JSONResponse({"ok": True})
+
+@app.patch("/api/v1/users/{user_id}")
+async def update_user(user_id: str, request: Request):
+    body = await request.json()
+    for u in MOCK_USERS:
+        if u["user_id"] == user_id:
+            u.update({k: v for k, v in body.items() if k in u})
+            return u
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
+# ─── Audit log ────────────────────────────────────────────────────────────────
+def _make_hash(prev: str, fields: str) -> str:
+    return hashlib.sha256(f"{prev}{fields}".encode()).hexdigest()
+
+_AUDIT_SEED = [
+    ("pii-block",   "deny",     "PII detected: email address in prompt"),
+    ("rate-limit",  "warn",     "Request rate near limit for tenant"),
+    ("pii-block",   "sanitize", "Phone number redacted from output"),
+    ("allow-all",   "allow",    "Policy passed — no violations"),
+    ("pii-block",   "deny",     "SSN pattern matched in user input"),
+    ("cost-guard",  "warn",     "Token budget 80% consumed for this run"),
+    ("allow-all",   "allow",    "Policy passed — no violations"),
+    ("pii-block",   "deny",     "Credit card number detected in output"),
+    ("allow-all",   "allow",    "Policy passed — no violations"),
+    ("rate-limit",  "deny",     "Rate limit exceeded — request blocked"),
+]
+
+def _build_audit_entries():
+    entries = []
+    prev_hash = "0" * 64
+    base_ts = 1742378400  # 2026-03-19T10:00:00Z
+    for i, (policy, result, reason) in enumerate(_AUDIT_SEED):
+        fields = f"{i+1}{policy}{result}{reason}"
+        entry_hash = _make_hash(prev_hash, fields)
+        entries.append({
+            "id":            i + 1,
+            "decision_id":   f"dec-{i+1:04d}",
+            "trace_id":      f"trace-{'abcdef0123456789'[i % 16] * 16}",
+            "span_id":       f"span-{'fedcba9876543210'[i % 16] * 8}",
+            "policy_name":   policy,
+            "result":        result,
+            "reason":        reason,
+            "tenant_id":     "tenant-default",
+            "evaluated_at":  datetime.fromtimestamp(base_ts + i * 37, tz=timezone.utc).isoformat(),
+            "previous_hash": prev_hash,
+            "entry_hash":    entry_hash,
+        })
+        prev_hash = entry_hash
+    return entries
+
+AUDIT_ENTRIES = _build_audit_entries()
+
+@app.get("/api/v1/audit")
+def list_audit(limit: int = 100, offset: int = 0):
+    return AUDIT_ENTRIES[offset:offset + limit]
+
+@app.get("/api/v1/audit/verify")
+def verify_audit():
+    ok = True
+    prev = "0" * 64
+    for e in AUDIT_ENTRIES:
+        fields = f"{e['id']}{e['policy_name']}{e['result']}{e['reason']}"
+        expected = _make_hash(prev, fields)
+        if expected != e["entry_hash"]:
+            ok = False
+            break
+        prev = e["entry_hash"]
+    return {"valid": ok, "entries_checked": len(AUDIT_ENTRIES)}
+
+
+# ─── Collectors ───────────────────────────────────────────────────────────────
+@app.get("/api/v1/collectors")
+def list_collectors():
+    return [
+        {"id": "col-001", "name": "local-collector",
+         "endpoint_grpc": "localhost:4317", "endpoint_http": "http://localhost:4318",
+         "status": "healthy", "version": "1.2.0",
+         "last_checked": datetime.now(timezone.utc).isoformat()},
+    ]
+
+
+# ─── Integration test run seed data ──────────────────────────────────────────
+def _seed_spans():
+    """Populate in-memory spans with realistic framework + integration test data."""
+    now_ns = int(time.time() * 1e9)
+    minute = 60 * 1_000_000_000
+
+    runs = [
+        # (framework, agent_name, nodes, status_code, cost, tokens, minutes_ago)
+        ("langgraph",   "research-graph",   ["retriever", "summarizer", "writer"],         0, 0.0042, 1820, 2),
+        ("crewai",      "analysis-crew",    ["researcher", "analyst", "reporter"],          0, 0.0071, 3200, 5),
+        ("langgraph",   "qa-graph",         ["loader", "splitter", "embedder", "ranker"],  0, 0.0018,  740, 8),
+        ("google_adk",  "assistant-agent",  ["planner", "executor", "reviewer"],           0, 0.0055, 2400, 12),
+        ("openai",      "support-agent",    ["classify", "respond"],                       2, 0.0012,  510, 15),
+        ("langgraph",   "pipeline-graph",   ["ingest", "transform", "validate", "emit"],   0, 0.0093, 4100, 20),
+        ("crewai",      "content-crew",     ["writer", "editor"],                          0, 0.0031, 1350, 28),
+        ("claude",      "claude-agent",     ["think", "act", "observe"],                   0, 0.0066, 2900, 35),
+        # integration test runs (emitted by the test harness)
+        ("langgraph",   "int-test:node-tracing",  ["node-a", "node-b", "node-c"],           0, 0.0,    0, 40),
+        ("google_adk",  "int-test:adk-delegation",["root-agent", "sub-agent-1", "sub-agent-2"], 0, 0.0, 0, 42),
+        ("crewai",      "int-test:crew-basic",    ["worker-1", "worker-2"],                 0, 0.0,    0, 44),
+    ]
+
+    for fw, agent, nodes, status, cost_total, tokens_total, mins_ago in runs:
+        trace_id  = str(uuid.uuid4())
+        run_id    = str(uuid.uuid4())
+        cost_each = round(cost_total / max(len(nodes), 1), 6)
+        tok_each  = tokens_total // max(len(nodes), 1)
+
+        parent_id = ""
+        for i, node in enumerate(nodes):
+            span_id   = str(uuid.uuid4())[:16]
+            start_ns  = now_ns - (mins_ago * minute) + i * (minute // 10)
+            dur_ns    = random.randint(200_000_000, 1_200_000_000)
+            s_code    = status if i == len(nodes) - 1 else 0
+
+            spans.append({
+                "id":            span_id,
+                "trace_id":      trace_id,
+                "parent_id":     parent_id,
+                "run_id":        run_id,
+                "name":          f"{fw}.node.{node}" if fw in ("langgraph", "google_adk") else f"{fw}.{node}",
+                "framework":     fw,
+                "start_time_ns": start_ns,
+                "duration_ns":   dur_ns,
+                "status_code":   s_code,
+                "status_msg":    "internal error" if s_code == 2 else "",
+                "attributes":    {
+                    "af.agent.name":          agent,
+                    "af.agent.framework":     fw,
+                    "af.agent.run_id":        run_id,
+                    "gen_ai.request.model":   "claude-sonnet-4-6" if fw == "claude" else ("gpt-4o" if fw == "openai" else ""),
+                    "gen_ai.usage.input_tokens":  str(tok_each // 2),
+                    "gen_ai.usage.output_tokens": str(tok_each // 2),
+                    "af.cost.total_usd":      str(cost_each),
+                },
+                "events":        [],
+                "input_tokens":  tok_each // 2,
+                "output_tokens": tok_each // 2,
+                "cost_usd":      cost_each,
+                "agent_name":    agent,
+                "model":         "claude-sonnet-4-6" if fw == "claude" else ("gpt-4o" if fw == "openai" else ""),
+                "environment":   "integration-test" if agent.startswith("int-test:") else "development",
+                "received_at":   datetime.now(timezone.utc).isoformat(),
+                "start_time":    ts_str(start_ns),
+            })
+            parent_id = span_id  # chain spans as parent→child
+
+    print(f"[seed] Loaded {len(spans)} spans across {len(runs)} trace runs")
 
 
 # ─── Startup banner ──────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
+    _seed_spans()
     print("\n" + "="*55)
     print("  AgentFabric Mock Gateway  |  :8080")
     print("  Auth login        -> POST /auth/login  (admin/admin)")

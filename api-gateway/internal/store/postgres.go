@@ -91,45 +91,70 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		q.Limit = 50
 	}
 
-	query := `
-		SELECT 
-			trace_id,
-			MIN(name) as root_span_name,
-			MAX(framework) as framework,
-			MIN(start_time_ns) as start_ns,
-			MAX(start_time_ns + duration_ns) - MIN(start_time_ns) as duration_ns,
-			COUNT(*) as span_count,
-			SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) as error_count,
-			SUM(cost_usd) as total_cost,
-			SUM(input_tokens + output_tokens) as total_tokens,
-			CASE WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0 THEN 'error' ELSE 'ok' END as status
-		FROM spans
-		WHERE tenant_id = $1`
-
+	// Build the inner WHERE clause (filters applied before GROUP BY).
 	args := []interface{}{q.TenantID}
 	argIdx := 2
+	innerWhere := "WHERE tenant_id = $1"
 
 	if q.Framework != "" {
-		query += fmt.Sprintf(" AND framework = $%d", argIdx)
+		innerWhere += fmt.Sprintf(" AND framework = $%d", argIdx)
 		args = append(args, q.Framework)
 		argIdx++
 	}
 	if q.StartTime > 0 {
-		query += fmt.Sprintf(" AND start_time_ns >= $%d", argIdx)
+		innerWhere += fmt.Sprintf(" AND start_time_ns >= $%d", argIdx)
 		args = append(args, q.StartTime)
 		argIdx++
 	}
 	if q.EndTime > 0 {
-		query += fmt.Sprintf(" AND start_time_ns <= $%d", argIdx)
+		innerWhere += fmt.Sprintf(" AND start_time_ns <= $%d", argIdx)
 		args = append(args, q.EndTime)
 		argIdx++
 	}
 
-	query += fmt.Sprintf(`
-		GROUP BY trace_id
-		ORDER BY MIN(start_time_ns) DESC
-		LIMIT $%d`, argIdx)
-	args = append(args, q.Limit)
+	// Keyset cursor: WHERE (start_ns, trace_id) < (cursor_ns, cursor_trace_id)
+	// applied on the CTE output so the filter runs after aggregation.
+	outerWhere := ""
+	if q.Cursor != "" {
+		if cursorNs, cursorTraceID, ok := models.DecodeTraceCursor(q.Cursor); ok {
+			outerWhere = fmt.Sprintf(
+				" WHERE (start_ns, trace_id) < ($%d, $%d)", argIdx, argIdx+1,
+			)
+			args = append(args, cursorNs, cursorTraceID)
+			argIdx += 2
+		}
+	}
+
+	// Fetch limit+1 to detect whether a next page exists.
+	args = append(args, q.Limit+1)
+	limitIdx := argIdx
+
+	query := fmt.Sprintf(`
+		WITH agg AS (
+			SELECT
+				trace_id,
+				MIN(name)                                                            AS root_span_name,
+				MAX(framework)                                                       AS framework,
+				MIN(start_time_ns)                                                   AS start_ns,
+				MAX(start_time_ns + duration_ns) - MIN(start_time_ns)               AS duration_ns,
+				COUNT(*)                                                             AS span_count,
+				SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)                   AS error_count,
+				SUM(cost_usd)                                                        AS total_cost,
+				SUM(input_tokens + output_tokens)                                   AS total_tokens,
+				CASE WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0
+				     THEN 'error' ELSE 'ok' END                                     AS status
+			FROM spans
+			%s
+			GROUP BY trace_id
+		)
+		SELECT trace_id, root_span_name, framework, start_ns, duration_ns,
+		       span_count, error_count, total_cost, total_tokens, status
+		FROM agg
+		%s
+		ORDER BY start_ns DESC, trace_id DESC
+		LIMIT $%d`,
+		innerWhere, outerWhere, limitIdx,
+	)
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -152,10 +177,17 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		traces = append(traces, t)
 	}
 
-	return &models.Page[models.Trace]{
-		Items:   traces,
-		HasMore: len(traces) == q.Limit,
-	}, nil
+	hasMore := len(traces) > q.Limit
+	if hasMore {
+		traces = traces[:q.Limit]
+	}
+
+	page := &models.Page[models.Trace]{Items: traces, HasMore: hasMore}
+	if hasMore && len(traces) > 0 {
+		last := traces[len(traces)-1]
+		page.NextCursor = models.EncodeTraceCursor(last.StartTime.UnixNano(), last.ID)
+	}
+	return page, nil
 }
 
 func (s *PostgresStore) GetTraceSpans(ctx context.Context, traceID, tenantID string) ([]models.Span, error) {
@@ -301,8 +333,18 @@ func (s *PostgresStore) ListRuns(ctx context.Context, q models.RunQuery) (*model
 		args = append(args, q.Framework)
 		idx++
 	}
-	query += fmt.Sprintf(" ORDER BY start_time DESC LIMIT $%d", idx)
-	args = append(args, q.Limit)
+	// Keyset cursor: (start_time, run_id) < (cursor_time, cursor_run_id)
+	// ensures stable, gap-free pagination even under concurrent writes.
+	if q.Cursor != "" {
+		if cursorTime, cursorRunID, ok := models.DecodeRunCursor(q.Cursor); ok {
+			query += fmt.Sprintf(" AND (start_time, run_id) < ($%d, $%d)", idx, idx+1)
+			args = append(args, cursorTime, cursorRunID)
+			idx += 2
+		}
+	}
+	// Fetch limit+1 to detect whether a next page exists.
+	query += fmt.Sprintf(" ORDER BY start_time DESC, run_id DESC LIMIT $%d", idx)
+	args = append(args, q.Limit+1)
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -324,7 +366,18 @@ func (s *PostgresStore) ListRuns(ctx context.Context, q models.RunQuery) (*model
 	if runs == nil {
 		runs = []models.Run{}
 	}
-	return &models.Page[models.Run]{Items: runs, HasMore: len(runs) == q.Limit}, nil
+
+	hasMore := len(runs) > q.Limit
+	if hasMore {
+		runs = runs[:q.Limit]
+	}
+
+	page := &models.Page[models.Run]{Items: runs, HasMore: hasMore}
+	if hasMore && len(runs) > 0 {
+		last := runs[len(runs)-1]
+		page.NextCursor = models.EncodeRunCursor(last.StartTime, last.ID)
+	}
+	return page, nil
 }
 
 func (s *PostgresStore) GetRun(ctx context.Context, runID, tenantID string) (*models.Run, error) {
@@ -428,6 +481,34 @@ func (s *PostgresStore) ListAgents(ctx context.Context, tenantID string, limit i
 		agents = []models.Agent{}
 	}
 	return agents, nil
+}
+
+// GetAgentByName returns a single agent aggregated from the runs table.
+// O(1) indexed lookup — avoids the O(n) full-scan in ListAgents.
+// Returns pgx.ErrNoRows when no runs exist for the given agent name.
+func (s *PostgresStore) GetAgentByName(ctx context.Context, tenantID, agentName string) (models.Agent, error) {
+	var a models.Agent
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+		    agent_name,
+		    MAX(framework)                                             AS framework,
+		    MIN(start_time)                                           AS first_seen,
+		    MAX(COALESCE(end_time, NOW()))                            AS last_seen,
+		    COUNT(*)                                                  AS run_count,
+		    SUM(total_cost_usd)                                       AS total_cost,
+		    AVG(CASE WHEN status = 'error' THEN 1.0 ELSE 0.0 END)    AS error_rate
+		FROM runs
+		WHERE tenant_id = $1
+		  AND agent_name = $2
+		GROUP BY agent_name`,
+		tenantID, agentName,
+	).Scan(&a.Name, &a.Framework, &a.FirstSeen, &a.LastSeen,
+		&a.RunCount, &a.TotalCost, &a.ErrorRate)
+	if err != nil {
+		return models.Agent{}, err
+	}
+	a.ID = a.Name
+	return a, nil
 }
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
@@ -753,8 +834,8 @@ func (s *PostgresStore) GetUser(ctx context.Context, userID, tenantID string) (*
 	return &u, nil
 }
 
-// CreateUser inserts a new user into the tenant. Password is SHA-256 hashed before storage.
-// TODO(v1.1): migrate to bcrypt once golang.org/x/crypto is a declared dependency.
+// CreateUser inserts a new user into the tenant. Password is bcrypt-hashed (cost 12)
+// before storage. golang.org/x/crypto/bcrypt is declared in go.mod.
 func (s *PostgresStore) CreateUser(ctx context.Context, tenantID string, req models.CreateUserRequest) (*models.User, error) {
 	if req.Role == "" {
 		req.Role = "viewer"

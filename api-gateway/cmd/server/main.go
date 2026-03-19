@@ -97,12 +97,20 @@ func main() {
 	r := chi.NewRouter()
 
 	// ─── Global middleware ───────────────────────────────────────────────────
+	// AF_CORS_ORIGINS: comma-separated list of allowed CORS origins.
+	// Defaults to the standard local dev ports + the production wildcard domain.
+	allowedOrigins := parseOrigins(envOr(
+		"AF_CORS_ORIGINS",
+		"http://localhost:3000,http://localhost:5173,https://*.agentfabric.io",
+	))
+
 	r.Use(chimid.RequestID)
 	r.Use(chimid.RealIP)
 	r.Use(chimid.Recoverer)
 	r.Use(chimid.Timeout(30 * time.Second))
+	r.Use(middleware.SecurityHeaders)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:5173", "https://*.agentfabric.io"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-AF-Source", "X-AF-Tenant"},
 		AllowCredentials: true,
@@ -296,6 +304,17 @@ func runMigrations(dsn, migrationsPath string, logger *zap.Logger) {
 
 	version, _, _ := m.Version()
 	logger.Info("migrations: applied", zap.Uint("version", version))
+}
+
+// parseOrigins splits a comma-separated list of CORS origins, trimming whitespace.
+func parseOrigins(raw string) []string {
+	var out []string
+	for _, s := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(s); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // parseSecrets splits a comma-separated list of JWT secrets.

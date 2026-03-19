@@ -1,9 +1,19 @@
 // portal/src/hooks/auth.ts
 // OIDC session management hook.
-// Reads the af_token from the cookie set by /auth/callback, falls back to
-// localStorage for dev environments where cookies aren't set.
-// Schedules a silent token refresh 30 minutes before expiry so the session
-// never interrupts an active user.
+//
+// Security model (Blocker 1 fix):
+//   The JWT is stored exclusively in an HttpOnly + Secure + SameSite=Strict
+//   cookie set by the server at /auth/login and /auth/callback. JavaScript
+//   CANNOT read HttpOnly cookies, so the token is never accessible to scripts
+//   — eliminating the localStorage XSS attack surface entirely.
+//
+//   Authentication state is determined by calling GET /auth/me with
+//   credentials:'include'. The browser sends the HttpOnly cookie automatically;
+//   the portal never reads or stores the raw token value.
+//
+//   Silent refresh is scheduled 30 minutes before the token expiry using the
+//   `exp` timestamp returned by /auth/me and /auth/refresh. The refresh call
+//   also uses credentials:'include'; the server rotates the cookie transparently.
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 
@@ -23,33 +33,46 @@ interface AuthState {
   error: string | null
 }
 
-// Read af_token from cookie (set by OIDC callback) or localStorage (dev fallback).
-export function getToken(): string {
-  // Try cookie first (production OIDC flow)
-  const cookies = document.cookie.split(';')
-  for (const cookie of cookies) {
-    const [name, value] = cookie.trim().split('=')
-    if (name === 'af_token') return decodeURIComponent(value ?? '')
-  }
-  // Fall back to localStorage (dev / manual token injection)
-  return localStorage.getItem('af_token') ?? ''
-}
+// Schedule a silent token refresh 30 minutes before the server-reported expiry.
+// On success the server rotates the HttpOnly cookie and returns a new `exp`;
+// we re-arm the timer for the new expiry. On a non-recoverable failure the
+// session state is cleared so the user is prompted to log in again.
+function useTokenRefreshScheduler() {
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const setAuthState = useRef<((s: Partial<AuthState>) => void) | null>(null)
 
-// Decode the `exp` claim from a JWT payload without signature verification.
-// Returns the expiry Unix timestamp in seconds, or null if the token is malformed
-// or carries no `exp` claim.  Safe to call on any string.
-export function getTokenExpiry(token: string): number | null {
-  try {
-    const parts = token.split('.')
-    if (parts.length !== 3) return null
-    // Normalise base64url → standard base64, then pad to a multiple of 4.
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    const padded = b64.padEnd(b64.length + (4 - (b64.length % 4)) % 4, '=')
-    const payload = JSON.parse(atob(padded))
-    return typeof payload.exp === 'number' ? payload.exp : null
-  } catch {
-    return null
-  }
+  const scheduleRefresh = useCallback((expUnix: number) => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+
+    // Fire 30 minutes before expiry; floor at 0 so we refresh immediately if
+    // the token is already within the refresh window.
+    const msUntilRefresh = Math.max(0, (expUnix - 30 * 60) * 1000 - Date.now())
+
+    refreshTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${BASE}/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include', // sends af_token HttpOnly cookie
+        })
+        if (res.ok) {
+          const { exp } = await res.json()
+          if (exp) scheduleRefresh(exp) // re-arm for the new token's expiry
+        } else {
+          // Server rejected refresh (token expired or revoked) — force re-login.
+          setAuthState.current?.({ user: null, isAuthenticated: false, isLoading: false, error: 'session_expired' })
+        }
+      } catch {
+        // Network error — leave session intact; will be re-evaluated on next
+        // page load or when the next refresh fires.
+      }
+    }, msUntilRefresh)
+  }, [])
+
+  const cancelRefresh = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+  }, [])
+
+  return { scheduleRefresh, cancelRefresh, setAuthState }
 }
 
 export function useAuth(): AuthState & {
@@ -64,64 +87,34 @@ export function useAuth(): AuthState & {
     error: null,
   })
 
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { scheduleRefresh, cancelRefresh, setAuthState } = useTokenRefreshScheduler()
 
-  // Schedule a silent token refresh 30 minutes before the token expires.
-  // On success the new token is persisted to localStorage and the timer is
-  // rescheduled for the new token's expiry.  On a non-recoverable failure the
-  // session is cleared so the user is prompted to log in again.
-  const scheduleRefresh = useCallback((token: string) => {
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+  // Wire the setState ref so the refresh scheduler can clear auth state on
+  // session expiry without creating a circular dependency.
+  useEffect(() => {
+    setAuthState.current = (partial) => setState((prev) => ({ ...prev, ...partial }))
+  })
 
-    const exp = getTokenExpiry(token)
-    if (!exp) return // token has no expiry — nothing to schedule
-
-    const msUntilRefresh = Math.max(0, (exp - 30 * 60) * 1000 - Date.now())
-
-    refreshTimerRef.current = setTimeout(async () => {
-      const currentToken = getToken()
-      if (!currentToken) return
-
-      try {
-        const res = await fetch(`${BASE}/auth/refresh`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${currentToken}` },
-        })
-        if (res.ok) {
-          const { token: newToken } = await res.json()
-          localStorage.setItem('af_token', newToken)
-          scheduleRefresh(newToken) // arm the timer for the fresh token
-        } else {
-          // Server rejected refresh — clear session and ask user to re-login
-          localStorage.removeItem('af_token')
-          setState({ user: null, isAuthenticated: false, isLoading: false, error: 'session_expired' })
-        }
-      } catch {
-        // Network error — don't kill the session; it will be re-evaluated on
-        // next page load.  Timer is already cleared so no double-fire.
-      }
-    }, msUntilRefresh)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
+  // Fetch identity from the server using the HttpOnly cookie.
+  // GET /auth/me validates the cookie server-side and returns user claims + exp.
   const fetchUser = useCallback(async () => {
-    const token = getToken()
-    if (!token) {
-      setState({ user: null, isAuthenticated: false, isLoading: false, error: null })
-      return
-    }
-
     try {
       const res = await fetch(`${BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include', // browser sends af_token HttpOnly cookie automatically
       })
       if (res.ok) {
-        const user: AuthUser = await res.json()
+        const data = await res.json()
+        const user: AuthUser = {
+          sub: data.sub,
+          email: data.email,
+          name: data.name,
+          role: data.role,
+        }
         setState({ user, isAuthenticated: true, isLoading: false, error: null })
-        scheduleRefresh(token) // start silent-refresh cycle
+        if (data.exp) scheduleRefresh(data.exp) // arm silent-refresh cycle
       } else {
-        // Token is invalid or expired — clear it
-        localStorage.removeItem('af_token')
-        setState({ user: null, isAuthenticated: false, isLoading: false, error: 'session_expired' })
+        // 401 = no valid cookie (not logged in) — not an error state, just unauthenticated.
+        setState({ user: null, isAuthenticated: false, isLoading: false, error: null })
       }
     } catch {
       setState({ user: null, isAuthenticated: false, isLoading: false, error: 'network_error' })
@@ -130,22 +123,18 @@ export function useAuth(): AuthState & {
 
   useEffect(() => {
     fetchUser()
-    return () => {
-      // Cancel any pending refresh timer when the component unmounts
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
-    }
-  }, [fetchUser])
+    return cancelRefresh // cancel timer on unmount
+  }, [fetchUser, cancelRefresh])
 
   const login = useCallback(() => {
     window.location.href = `${BASE}/auth/login`
   }, [])
 
   const logout = useCallback(() => {
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
-    localStorage.removeItem('af_token')
-    // Clear cookie by navigating to logout endpoint which expires it
+    cancelRefresh()
+    // Navigate to the logout endpoint; the server expires the HttpOnly cookie.
     window.location.href = `${BASE}/auth/logout`
-  }, [])
+  }, [cancelRefresh])
 
   return { ...state, login, logout, refetch: fetchUser }
 }
@@ -156,9 +145,14 @@ export function useAuth(): AuthState & {
 //
 // Role hierarchy (most privileged first): admin > editor > viewer
 // Always returns false for unauthenticated users (user === null).
+//
+// Comparison is case-insensitive on both sides (normalized to lowercase) to match
+// the Go RequireRole middleware which uses strings.ToLower. DB roles are always
+// stored lowercase, so this is a defensive guard against JWT claim casing drift.
 export function hasRole(user: AuthUser | null, allowedRoles: string[]): boolean {
   if (!user) return false
-  return allowedRoles.includes(user.role)
+  const userRole = user.role.toLowerCase()
+  return allowedRoles.map((r) => r.toLowerCase()).includes(userRole)
 }
 
 // isSelfOrRole: ABAC helper — returns true if the user holds one of allowedRoles
@@ -170,11 +164,11 @@ export function isSelfOrRole(
   subjectId: string,
 ): boolean {
   if (!user) return false
-  return allowedRoles.includes(user.role) || user.sub === subjectId
+  const userRole = user.role.toLowerCase()
+  return allowedRoles.map((r) => r.toLowerCase()).includes(userRole) || user.sub === subjectId
 }
 
-// RequireAuth: returns true if the user is authenticated.
-// Used by the route guard in App.tsx.
+// isAuthEnabled: returns true unless VITE_AUTH_DISABLED=true (dev-only bypass).
 export function isAuthEnabled(): boolean {
   return import.meta.env.VITE_AUTH_DISABLED !== 'true'
 }

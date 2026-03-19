@@ -1,0 +1,53 @@
+# AgentFabric — Integration test stack
+# Brings up only the services required to run api-gateway integration tests:
+# Postgres, Redis, and the api-gateway itself (built from source).
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   # wait for healthy, then:
+#   cd api-gateway && go test -tags=integration ./tests/integration/... \
+#       -db-url="postgres://fabric:fabric_dev_only@localhost:5432/agentfabric?sslmode=disable" \
+#       -redis-url="redis://localhost:6379"
+#   docker compose -f docker-compose.test.yml down -v
+
+networks:
+  af-test-net:
+    driver: bridge
+
+services:
+
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: af_test_postgres
+    environment:
+      POSTGRES_DB: agentfabric
+      POSTGRES_USER: fabric
+      POSTGRES_PASSWORD: fabric_dev_only
+    ports:
+      - "5433:5432"     # port 5433 avoids collision with a local dev Postgres on 5432
+    networks: [af-test-net]
+    tmpfs:
+      - /var/lib/postgresql/data   # in-memory — fast teardown, no leftover data between runs
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fabric -d agentfabric"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: af_test_redis
+    ports:
+      - "6380:6379"     # port 6380 avoids collision with a local dev Redis
+    networks: [af-test-net]
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # api-gateway is NOT started here — it is invoked by `go test -tags=integration`.
+  # The test binary connects directly to postgres-test and redis-test.
+  # This keeps the test harness lightweight and avoids port binding races.

@@ -1,0 +1,69 @@
+# AgentFabric — Alertmanager configuration
+# Receives firing alerts from Prometheus and routes them to the ops team.
+#
+# Override receiver settings via environment before deploying:
+#   AF_ALERTMANAGER_WEBHOOK_URL   Slack / PagerDuty / custom webhook
+#   AF_OPS_EMAIL                  ops@yourcompany.com
+#
+# Reload without restart:
+#   curl -X POST http://alertmanager:9093/-/reload
+
+global:
+  resolve_timeout: 5m
+  # SMTP — uncomment and set for email delivery
+  # smtp_smarthost: 'smtp.yourcompany.com:587'
+  # smtp_from: 'alertmanager@agentfabric.io'
+  # smtp_auth_username: '${AF_SMTP_USER}'
+  # smtp_auth_password: '${AF_SMTP_PASSWORD}'
+  # smtp_require_tls: true
+
+# ─── Routing tree ────────────────────────────────────────────────────────────
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s          # wait before sending first alert in group
+  group_interval: 5m       # wait between sending groups for the same group
+  repeat_interval: 4h      # resend if still firing after this interval
+  receiver: 'ops-webhook'
+
+  routes:
+    # Critical: page immediately, repeat every hour until resolved
+    - matchers:
+        - severity = "critical"
+      receiver: 'ops-webhook'
+      repeat_interval: 1h
+      continue: false
+
+    # Warning: batch and notify, lower urgency
+    - matchers:
+        - severity = "warning"
+      receiver: 'ops-webhook'
+      repeat_interval: 4h
+      continue: false
+
+# ─── Receivers ───────────────────────────────────────────────────────────────
+receivers:
+  - name: 'ops-webhook'
+    webhook_configs:
+      - url: '${AF_ALERTMANAGER_WEBHOOK_URL:-http://localhost:9091/webhook}'
+        send_resolved: true
+        http_config:
+          # bearer_token: '${AF_WEBHOOK_TOKEN}'  # add if webhook requires auth
+
+    # Uncomment to enable email notifications:
+    # email_configs:
+    #   - to: '${AF_OPS_EMAIL:-ops@agentfabric.io}'
+    #     send_resolved: true
+    #     headers:
+    #       Subject: '[{{ .Status | toUpper }}] {{ .CommonAnnotations.summary }}'
+
+  # Silence target for maintenance windows — route alerts here during deploys
+  - name: 'null'
+
+# ─── Inhibition rules ────────────────────────────────────────────────────────
+# Suppress warning-level alerts for the same service when critical already fires.
+inhibit_rules:
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ['alertname', 'service']

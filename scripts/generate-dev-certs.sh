@@ -66,17 +66,32 @@ openssl x509 -req -days "$DAYS" \
 echo "→ Cleaning up CSR and extension files..."
 rm -f collector.csr client.csr collector-ext.cnf
 
+# docker-compose.yml references /certs/server.crt and /certs/server.key.
+# Create copies under those names so both the docker-compose default path and
+# the explicit collector.* names work without changing docker-compose.
+echo "→ Creating server.crt / server.key aliases for docker-compose..."
+cp collector.crt server.crt
+cp collector.key server.key
+
 echo ""
 echo "✓ Certificates written to: $(pwd)"
 echo "  ca.crt         — CA certificate (share with clients)"
+echo "  server.crt     — Server cert (alias for collector.crt; used by docker-compose)"
+echo "  server.key     — Server key  (alias for collector.key; used by docker-compose)"
 echo "  collector.crt  — Collector server cert"
 echo "  collector.key  — Collector server key (KEEP SECRET)"
 echo "  client.crt     — Client certificate"
 echo "  client.key     — Client key (KEEP SECRET)"
 echo ""
-echo "To enable mTLS in docker-compose, update collector service:"
-echo "  AF_TLS_ENABLED: \"true\""
-echo "  AF_TLS_CERT_FILE: /certs/collector.crt"
-echo "  AF_TLS_KEY_FILE: /certs/collector.key"
-echo "  volumes:"
-echo "    - ./deploy/certs:/certs:ro"
+echo "To test mTLS locally:"
+echo "  make dev-tls"
+echo ""
+echo "Or manually:"
+echo "  AF_TLS_ENABLED=true docker compose up -d --build"
+echo ""
+echo "SDK mTLS example:"
+echo "  from agentfabric import instrument"
+echo "  instrument("
+echo "      endpoint='https://localhost:4317',"
+echo "      insecure=False,"
+echo "  )"
