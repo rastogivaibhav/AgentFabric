@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentfabric/api-gateway/internal/budget"
+	"github.com/agentfabric/api-gateway/internal/kafka"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/store"
@@ -19,15 +20,16 @@ import (
 )
 
 type Handler struct {
-	pg              *store.PostgresStore
-	redis           *store.RedisClient
-	hub             *ws.Hub
-	logger          *zap.Logger
-	jwtSecret       string
-	budgetEnforcer  *budget.BudgetEnforcer
+	pg             *store.PostgresStore
+	redis          *store.RedisClient
+	hub            *ws.Hub
+	logger         *zap.Logger
+	jwtSecret      string
+	budgetEnforcer *budget.BudgetEnforcer
+	kafkaProducer  *kafka.Producer
 }
 
-func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer) *Handler {
+func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, kafkaProducer *kafka.Producer) *Handler {
 	return &Handler{
 		pg:             pg,
 		redis:          redis,
@@ -35,6 +37,7 @@ func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger 
 		logger:         logger,
 		jwtSecret:      jwtSecret,
 		budgetEnforcer: budgetEnforcer,
+		kafkaProducer:  kafkaProducer,
 	}
 }
 
@@ -155,6 +158,12 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("bulk insert failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "storage error")
 		return
+	}
+
+	// Fan-out to Kafka for af-core policy evaluation + ClickHouse analytics.
+	// Non-blocking — ingest is unaffected if Kafka is unavailable.
+	if h.kafkaProducer != nil {
+		h.kafkaProducer.PublishSpans(r.Context(), req.Spans)
 	}
 
 	// Broadcast to WebSocket clients

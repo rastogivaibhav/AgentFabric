@@ -175,6 +175,11 @@ services:
       AF_TLS_KEY_FILE:  "/certs/server.key"
       AF_TLS_CA_FILE:   "/certs/ca.crt"
       AF_MIGRATIONS_PATH: "/migrations"
+      # Kafka fan-out: spans are published here after PostgreSQL write
+      # so af-core can consume them for policy evaluation + ClickHouse analytics.
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TOPIC: "af.spans"
+      AF_BUDGET_ENABLED: "${AF_BUDGET_ENABLED:-true}"
     volumes:
       - ./deploy/certs:/certs:ro   # mount generated certs (see: make certs)
       - ./deploy/migrations:/migrations:ro
@@ -184,6 +189,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
       interval: 10s

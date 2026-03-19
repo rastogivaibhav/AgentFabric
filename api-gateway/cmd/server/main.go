@@ -14,6 +14,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/auth"
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/handlers"
+	gkafka "github.com/agentfabric/api-gateway/internal/kafka"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
@@ -101,8 +102,17 @@ func main() {
 		logger.Info("budget enforcement enabled")
 	}
 
+	// Kafka producer — fan-out spans to af-core after PostgreSQL write.
+	// Disabled when KAFKA_BROKERS is unset; fail-open in all error paths.
+	kafkaProducer := gkafka.NewProducer(
+		envOr("KAFKA_BROKERS", ""),
+		envOr("KAFKA_TOPIC", "af.spans"),
+		logger,
+	)
+	defer kafkaProducer.Close()
+
 	// Wire handlers
-	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer)
+	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer, kafkaProducer)
 
 	r := chi.NewRouter()
 
