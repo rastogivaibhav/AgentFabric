@@ -174,8 +174,10 @@ services:
       AF_TLS_CERT_FILE: "/certs/server.crt"
       AF_TLS_KEY_FILE:  "/certs/server.key"
       AF_TLS_CA_FILE:   "/certs/ca.crt"
+      AF_MIGRATIONS_PATH: "/migrations"
     volumes:
       - ./deploy/certs:/certs:ro   # mount generated certs (see: make certs)
+      - ./deploy/migrations:/migrations:ro
     ports:
       - "8080:8080"
     networks: [af-net]

@@ -5,9 +5,9 @@ import "time"
 // ─── Span ────────────────────────────────────────────────────────────────────
 
 type Span struct {
-	ID           string            `json:"id" db:"span_id"`
+	ID           string            `json:"span_id" db:"span_id"`
 	TraceID      string            `json:"trace_id" db:"trace_id"`
-	ParentID     string            `json:"parent_id,omitempty" db:"parent_span_id"`
+	ParentID     string            `json:"parent_span_id,omitempty" db:"parent_span_id"`
 	RunID        string            `json:"run_id" db:"run_id"`
 	Name         string            `json:"name" db:"name"`
 	Framework    string            `json:"framework" db:"framework"`
