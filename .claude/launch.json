@@ -7,7 +7,8 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm run dev"],
       "cwd": "portal",
-      "port": 3000
+      "port": 3000,
+      "autoPort": true
     },
     {
       "name": "mock-gateway",
@@ -33,25 +34,17 @@
       "port": 4318
     },
     {
-      "name": "af-core",
-      "description": "Rust policy engine + Kafka consumer — gRPC :50051, HTTP :8889 — requires infra running first",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cargo run"],
-      "cwd": "af-core",
-      "port": 8889
-    },
-    {
       "name": "full-stack",
-      "description": "All 13 services via Docker Compose — Postgres, ClickHouse, Redis, Kafka, collector, af-core, api-gateway, portal, Prometheus, Grafana, Jaeger",
+      "description": "All 8 services via Docker Compose — Postgres, Redis, collector, api-gateway, portal, Prometheus, Grafana, Jaeger",
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "docker compose up --build"],
       "port": 3000
     },
     {
       "name": "infra",
-      "description": "Infrastructure only — Postgres :5432, ClickHouse :8123/:9000, Redis :6379, Kafka :9092. Start this before running Go/Rust services natively.",
+      "description": "Infrastructure only — Postgres :5432, Redis :6379. Start this before running Go services natively.",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "docker compose up postgres clickhouse redis zookeeper kafka"],
+      "runtimeArgs": ["/c", "docker compose up postgres redis"],
       "port": 5432
     },
     {

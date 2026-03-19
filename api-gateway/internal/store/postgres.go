@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -963,4 +964,132 @@ func hashPassword(password string) string {
 		return hex.EncodeToString(h[:])
 	}
 	return string(hash)
+}
+
+// ─── Budget operations ────────────────────────────────────────────────────────
+
+// GetBudget retrieves the budget for a tenant
+func (s *PostgresStore) GetBudget(ctx context.Context, tenantID string) (*budget.Budget, error) {
+	var b budget.Budget
+
+	err := s.pool.QueryRow(ctx, `
+		SELECT tenant_id, monthly_tokens, monthly_cost_usd, alert_threshold,
+		       hard_limit, reset_day, created_at, updated_at
+		FROM tenant_budgets
+		WHERE tenant_id = $1
+	`, tenantID).Scan(
+		&b.TenantID, &b.MonthlyTokens, &b.MonthlyCostUSD, &b.AlertThreshold,
+		&b.HardLimit, &b.ResetDay, &b.CreatedAt, &b.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &b, nil
+}
+
+// UpsertBudget creates or updates a budget for a tenant
+func (s *PostgresStore) UpsertBudget(ctx context.Context, b *budget.Budget) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO tenant_budgets
+		(tenant_id, monthly_tokens, monthly_cost_usd, alert_threshold, hard_limit, reset_day)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (tenant_id) DO UPDATE SET
+		  monthly_tokens = $2,
+		  monthly_cost_usd = $3,
+		  alert_threshold = $4,
+		  hard_limit = $5,
+		  reset_day = $6,
+		  updated_at = NOW()
+	`, b.TenantID, b.MonthlyTokens, b.MonthlyCostUSD, b.AlertThreshold, b.HardLimit, b.ResetDay,
+	)
+	return err
+}
+
+// GetMonthlyUsage returns current period usage for a tenant
+func (s *PostgresStore) GetMonthlyUsage(ctx context.Context, tenantID string, since time.Time) (*budget.UsageSummary, error) {
+	var usage budget.UsageSummary
+
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+		  COALESCE(SUM(input_tokens + output_tokens), 0),
+		  COALESCE(SUM(cost_usd), 0),
+		  $2,
+		  NOW()
+		FROM spans
+		WHERE tenant_id = $1 AND received_at >= $2
+	`, tenantID, since).Scan(
+		&usage.TokensUsed, &usage.CostUsedUSD, &usage.PeriodStart, &usage.PeriodEnd,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+	return &usage, nil
+}
+
+// RecordAlert logs a budget alert
+func (s *PostgresStore) RecordAlert(ctx context.Context, tenantID, alertType string, usage budget.UsageSummary, b budget.Budget) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO usage_alerts
+		(tenant_id, alert_type, tokens_used, cost_used_usd, budget_tokens, budget_cost_usd)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, tenantID, alertType, usage.TokensUsed, usage.CostUsedUSD, b.MonthlyTokens, b.MonthlyCostUSD,
+	)
+	return err
+}
+
+// ListBudgetAlerts returns recent alerts for a tenant
+func (s *PostgresStore) ListBudgetAlerts(ctx context.Context, tenantID string, limit int) ([]map[string]interface{}, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, alert_type, tokens_used, cost_used_usd,
+		       budget_tokens, budget_cost_usd, triggered_at
+		FROM usage_alerts
+		WHERE tenant_id = $1
+		ORDER BY triggered_at DESC
+		LIMIT $2
+	`, tenantID, limit)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var alerts []map[string]interface{}
+	for rows.Next() {
+		var (
+			id, triggeredAt interface{}
+			alertType       string
+			tokensUsed      interface{}
+			costUsedUsd     interface{}
+			budgetTokens    interface{}
+			budgetCostUsd   interface{}
+			tid             string
+		)
+		err := rows.Scan(
+			&id, &tid, &alertType, &tokensUsed, &costUsedUsd,
+			&budgetTokens, &budgetCostUsd, &triggeredAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, map[string]interface{}{
+			"id":               id,
+			"alert_type":       alertType,
+			"tokens_used":      tokensUsed,
+			"cost_used_usd":    costUsedUsd,
+			"budget_tokens":    budgetTokens,
+			"budget_cost_usd":  budgetCostUsd,
+			"triggered_at":     triggeredAt,
+		})
+	}
+
+	return alerts, rows.Err()
 }

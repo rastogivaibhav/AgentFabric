@@ -1,4 +1,7 @@
-# AgentFabric — Full local development stack
+# AgentFabric — Local development stack
+# Removed: Kafka, Zookeeper, af-core, ClickHouse (unused in production data path)
+# Data path: Agent SDK → Collector → api-gateway → PostgreSQL + Redis → Portal
+#
 # Usage: docker-compose up -d
 
 networks:
@@ -7,13 +10,11 @@ networks:
 
 volumes:
   pg_data:
-  ch_data:
   redis_data:
-  kafka_data:
 
 services:
 
-  # ─── Storage ──────────────────────────────────────────────────────────────
+  # ─── Storage ────────────────────────────────────────────────────────────────
 
   postgres:
     image: postgres:16-alpine
@@ -23,9 +24,7 @@ services:
       POSTGRES_PASSWORD: fabric_dev_only
     volumes:
       - pg_data:/var/lib/postgresql/data
-      # Schema is managed exclusively by golang-migrate (api-gateway runMigrations on startup).
-      # deploy/sql/init.sql is kept as a reference for manual inspection only — do NOT re-add
-      # it here: mounting it causes CREATE TABLE conflicts when the migrations also run.
+      # Schema managed by golang-migrate (api-gateway runs migrations on startup).
     ports:
       - "5432:5432"
     networks: [af-net]
@@ -33,25 +32,6 @@ services:
       test: ["CMD-SHELL", "pg_isready -U fabric -d agentfabric"]
       interval: 5s
       timeout: 5s
-      retries: 10
-
-  clickhouse:
-    image: clickhouse/clickhouse-server:24-alpine
-    environment:
-      CLICKHOUSE_DB: agentfabric
-      CLICKHOUSE_USER: fabric
-      CLICKHOUSE_PASSWORD: fabric_dev_only
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-    volumes:
-      - ch_data:/var/lib/clickhouse
-      - ./deploy/sql/clickhouse_init.sql:/docker-entrypoint-initdb.d/clickhouse_init.sql
-    ports:
-      - "9000:9000"
-      - "8123:8123"
-    networks: [af-net]
-    healthcheck:
-      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
-      interval: 5s
       retries: 10
 
   redis:
@@ -64,96 +44,7 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
 
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.0
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-    networks: [af-net]
-
-  kafka:
-    image: confluentinc/cp-kafka:7.6.0
-    depends_on: [zookeeper]
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-    ports: ["9092:9092"]
-    networks: [af-net]
-    volumes: [kafka_data:/var/lib/kafka/data]
-    healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
-      interval: 10s
-      retries: 10
-
-  # ─── AgentFabric Services ─────────────────────────────────────────────────
-
-  collector:
-    build:
-      context: ./collector
-      dockerfile: Dockerfile
-    environment:
-      AF_ENV: development
-      AF_GRPC_ADDR: "0.0.0.0:4317"
-      AF_HTTP_ADDR: "0.0.0.0:4318"
-      AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
-      AF_AUTH_REQUIRE_AUTH: "false"  # Dev only — enable in production
-      AF_JWT_SECRET: "dev-secret-change-in-prod"
-      AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"   # Override: AF_TLS_ENABLED=true for mTLS
-      AF_TLS_CERT_FILE: "/certs/server.crt"
-      AF_TLS_KEY_FILE:  "/certs/server.key"
-      AF_TLS_CA_FILE:   "/certs/ca.crt"
-      AF_DEBUG: "true"
-      AF_PROCESSOR_WORKERS: "4"
-    volumes:
-      - ./deploy/certs:/certs:ro   # mount generated certs (see: make certs)
-    ports:
-      - "4317:4317"  # OTLP gRPC
-      - "4318:4318"  # OTLP HTTP
-    networks: [af-net]
-    depends_on:
-      api-gateway:
-        condition: service_healthy
-    healthcheck:
-      # Uses the /healthcheck binary built into the collector image (static Go TCP probe).
-      # See collector/Dockerfile — the binary dials :4318 to confirm the HTTP listener is up.
-      test: ["CMD", "/healthcheck"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
-
-  af-core:
-    build:
-      context: ./af-core
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgres://fabric:fabric_dev_only@postgres:5432/agentfabric?sslmode=disable
-      CLICKHOUSE_URL: http://fabric:fabric_dev_only@clickhouse:8123
-      REDIS_URL: redis://redis:6379/1
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_TOPIC: af.spans
-      GRPC_ADDR: "0.0.0.0:50051"
-      HTTP_ADDR: "0.0.0.0:8889"
-      RUST_LOG: info
-    ports:
-      - "50051:50051"
-    networks: [af-net]
-    depends_on:
-      postgres: {condition: service_healthy}
-      clickhouse: {condition: service_healthy}
-      kafka: {condition: service_healthy}
-    healthcheck:
-      # curl is installed in the af-core runtime image (ubuntu:24.04).
-      # :8889 is the af-core HTTP management port (health + metrics).
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8889/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    restart: unless-stopped
+  # ─── AgentFabric Services ────────────────────────────────────────────────────
 
   api-gateway:
     build:
@@ -164,19 +55,19 @@ services:
       DATABASE_URL: postgres://fabric:fabric_dev_only@postgres:5432/agentfabric?sslmode=disable
       REDIS_URL: redis://redis:6379/2
       AF_JWT_SECRET: "dev-secret-change-in-prod"
-      # To enable secret rotation set AF_JWT_SECRETS=new-secret,old-secret
       AF_JWT_SECRETS: "${AF_JWT_SECRETS:-}"
       LISTEN_ADDR: ":8080"
       AF_LOG_LEVEL: debug
       AF_CORS_ORIGINS: "http://localhost:3000"
-      AF_AUTH_DISABLED: "true"  # Dev: no auth required
+      AF_AUTH_DISABLED: "true"
       AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
       AF_TLS_CERT_FILE: "/certs/server.crt"
       AF_TLS_KEY_FILE:  "/certs/server.key"
       AF_TLS_CA_FILE:   "/certs/ca.crt"
       AF_MIGRATIONS_PATH: "/migrations"
+      AF_BUDGET_ENABLED: "${AF_BUDGET_ENABLED:-true}"
     volumes:
-      - ./deploy/certs:/certs:ro   # mount generated certs (see: make certs)
+      - ./deploy/certs:/certs:ro
       - ./deploy/migrations:/migrations:ro
     ports:
       - "8080:8080"
@@ -192,6 +83,40 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile
+    environment:
+      AF_ENV: development
+      AF_GRPC_ADDR: "0.0.0.0:4317"
+      AF_HTTP_ADDR: "0.0.0.0:4318"
+      AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
+      AF_AUTH_REQUIRE_AUTH: "false"
+      AF_JWT_SECRET: "dev-secret-change-in-prod"
+      AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
+      AF_TLS_CERT_FILE: "/certs/server.crt"
+      AF_TLS_KEY_FILE:  "/certs/server.key"
+      AF_TLS_CA_FILE:   "/certs/ca.crt"
+      AF_DEBUG: "true"
+      AF_PROCESSOR_WORKERS: "4"
+    volumes:
+      - ./deploy/certs:/certs:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks: [af-net]
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   portal:
     build:
       context: ./portal
@@ -199,13 +124,13 @@ services:
       args:
         VITE_API_URL: "http://localhost:8080"
         VITE_WS_URL: "ws://localhost:8080"
-        VITE_AUTH_DISABLED: "true"   # mirrors AF_AUTH_DISABLED on the gateway
+        VITE_AUTH_DISABLED: "true"
     ports:
       - "3000:80"
     networks: [af-net]
     depends_on: [api-gateway]
 
-  # ─── Observability of the Observability Platform ──────────────────────────
+  # ─── Observability ──────────────────────────────────────────────────────────
 
   prometheus:
     image: prom/prometheus:v2.51.0
@@ -235,8 +160,6 @@ services:
   grafana:
     image: grafana/grafana:10.4.0
     environment:
-      # Anonymous access disabled — metrics must not be exposed without auth.
-      # Set GF_ADMIN_PASSWORD via .env or environment before starting.
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ADMIN_USER: "${GF_ADMIN_USER:-admin}"
       GF_SECURITY_ADMIN_PASSWORD: "${GF_ADMIN_PASSWORD:-grafana_dev_only}"
@@ -253,6 +176,6 @@ services:
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
-      - "16686:16686"  # Jaeger UI
-      - "14250:14250"  # gRPC
+      - "16686:16686"
+      - "14250:14250"
     networks: [af-net]

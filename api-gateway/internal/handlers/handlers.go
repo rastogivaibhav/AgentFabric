@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/store"
@@ -18,15 +19,23 @@ import (
 )
 
 type Handler struct {
-	pg        *store.PostgresStore
-	redis     *store.RedisClient
-	hub       *ws.Hub
-	logger    *zap.Logger
-	jwtSecret string
+	pg              *store.PostgresStore
+	redis           *store.RedisClient
+	hub             *ws.Hub
+	logger          *zap.Logger
+	jwtSecret       string
+	budgetEnforcer  *budget.BudgetEnforcer
 }
 
-func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string) *Handler {
-	return &Handler{pg: pg, redis: redis, hub: hub, logger: logger, jwtSecret: jwtSecret}
+func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer) *Handler {
+	return &Handler{
+		pg:             pg,
+		redis:          redis,
+		hub:            hub,
+		logger:         logger,
+		jwtSecret:      jwtSecret,
+		budgetEnforcer: budgetEnforcer,
+	}
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -125,6 +134,20 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		req.Spans[i].TenantID = tenantID
 		if req.Spans[i].ReceivedAt.IsZero() {
 			req.Spans[i].ReceivedAt = time.Now()
+		}
+	}
+
+	// Budget enforcement — check before writing to DB.
+	// Fail open: if the enforcer errors, we still allow the ingest.
+	if h.budgetEnforcer != nil {
+		totalTokens, totalCost := sumSpanUsage(req.Spans)
+		allowed, err := h.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, totalTokens, totalCost)
+		if err != nil {
+			h.logger.Warn("budget check error (fail open)", zap.String("tenant", tenantID), zap.Error(err))
+		}
+		if !allowed {
+			writeError(w, http.StatusTooManyRequests, "monthly budget exceeded")
+			return
 		}
 	}
 
@@ -669,4 +692,13 @@ func parseIntOr(s string, def int) int {
 		return v
 	}
 	return def
+}
+
+// sumSpanUsage totals tokens and cost across a batch of spans.
+func sumSpanUsage(spans []models.Span) (tokens int64, costUSD float64) {
+	for _, sp := range spans {
+		tokens += sp.InputTokens + sp.OutputTokens
+		costUSD += sp.CostUSD
+	}
+	return
 }

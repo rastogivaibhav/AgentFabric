@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -216,4 +216,80 @@ export function useLiveStream(maxEvents = 500) {
   const clear = () => setEvents([])
 
   return { events, connected, pause, resume, clear }
+}
+
+// ─── Budget hooks ─────────────────────────────────────────────────────────────
+
+export interface Budget {
+  tenant_id: string
+  monthly_tokens: number    // 0 = unlimited
+  monthly_cost_usd: number  // 0 = unlimited
+  alert_threshold: number   // 0.80 = 80%
+  hard_limit: boolean
+  reset_day: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface BudgetUsage {
+  tokens_used: number
+  cost_used_usd: number
+  period_start: string
+  period_end: string
+  tokens_pct?: number
+  cost_pct?: number
+  budget?: Budget
+}
+
+async function apiMutate<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const res = await fetch(BASE + '/api/v1' + path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(`API ${res.status}: ${path}`)
+  if (res.status === 204) return undefined as T
+  return res.json()
+}
+
+export function useBudget(tenantId: string) {
+  return useQuery<Budget>({
+    queryKey: ['budget', tenantId],
+    queryFn: () => apiFetch(`/budgets/${tenantId}`),
+    retry: false,
+    enabled: !!tenantId,
+  })
+}
+
+export function useBudgetUsage(tenantId: string) {
+  return useQuery<BudgetUsage>({
+    queryKey: ['budget-usage', tenantId],
+    queryFn: () => apiFetch(`/budgets/${tenantId}/usage`),
+    retry: false,
+    enabled: !!tenantId,
+    refetchInterval: 30_000,
+  })
+}
+
+export function useUpsertBudget(tenantId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (b: Partial<Budget>) => apiMutate<Budget>(`/budgets/${tenantId}`, 'PUT', b),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['budget', tenantId] })
+      qc.invalidateQueries({ queryKey: ['budget-usage', tenantId] })
+    },
+  })
+}
+
+export function useDeleteBudget(tenantId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiMutate<void>(`/budgets/${tenantId}`, 'DELETE'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['budget', tenantId] })
+      qc.invalidateQueries({ queryKey: ['budget-usage', tenantId] })
+    },
+  })
 }

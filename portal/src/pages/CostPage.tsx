@@ -1,6 +1,6 @@
-import { useOverview, useFrameworkStats, useTraces } from '../hooks/api'
+import { useOverview, useFrameworkStats, useTraces, useBudget, useBudgetUsage, useUpsertBudget, useDeleteBudget } from '../hooks/api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 const FRAMEWORK_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
@@ -20,6 +20,177 @@ interface FrameworkStat {
   input_tokens?: number
   output_tokens?: number
   error_rate?: number
+}
+
+// ─── Budget Panel ─────────────────────────────────────────────────────────────
+
+function UsageBar({ label, used, limit, pct, color }: {
+  label: string; used: string; limit: string; pct: number; color: string
+}) {
+  const capped = Math.min(pct, 1)
+  const barColor = pct >= 1 ? '#EF4444' : pct >= 0.8 ? '#F59E0B' : color
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 11, color: '#94A3B8' }}>{label}</span>
+        <span style={{ fontSize: 11, color: barColor, fontWeight: 600 }}>
+          {used} / {limit} &nbsp;({Math.round(pct * 100)}%)
+        </span>
+      </div>
+      <div style={{ height: 8, background: '#0F1F35', borderRadius: 4 }}>
+        <div style={{ width: `${capped * 100}%`, height: '100%', background: barColor, borderRadius: 4, transition: 'width 0.3s' }} />
+      </div>
+    </div>
+  )
+}
+
+function BudgetPanel({ tenantId }: { tenantId: string }) {
+  const { data: budget, isLoading: budgetLoading } = useBudget(tenantId)
+  const { data: usage, isLoading: usageLoading } = useBudgetUsage(tenantId)
+  const upsert = useUpsertBudget(tenantId)
+  const remove = useDeleteBudget(tenantId)
+
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ monthly_tokens: 0, monthly_cost_usd: 0, hard_limit: true, alert_threshold: 0.8, reset_day: 1 })
+
+  const openEdit = () => {
+    setForm({
+      monthly_tokens: budget?.monthly_tokens ?? 0,
+      monthly_cost_usd: budget?.monthly_cost_usd ?? 0,
+      hard_limit: budget?.hard_limit ?? true,
+      alert_threshold: budget?.alert_threshold ?? 0.8,
+      reset_day: budget?.reset_day ?? 1,
+    })
+    setEditing(true)
+  }
+
+  const save = () => {
+    upsert.mutate(form, { onSuccess: () => setEditing(false) })
+  }
+
+  const noBudget = !budget || (budget.monthly_tokens === 0 && budget.monthly_cost_usd === 0)
+  const loading = budgetLoading || usageLoading
+
+  const cardStyle: React.CSSProperties = {
+    background: '#0D1B2A', border: '1px solid #0F1F35',
+    borderTop: '2px solid #3B82F6', borderRadius: 10, padding: 24, marginBottom: 16,
+  }
+  const inputStyle: React.CSSProperties = {
+    background: '#071525', border: '1px solid #1E3A5F', borderRadius: 6,
+    color: '#F0F9FF', padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box',
+  }
+  const btnStyle = (color: string): React.CSSProperties => ({
+    background: color, border: 'none', borderRadius: 6, color: '#fff',
+    padding: '7px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 600,
+  })
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 12, color: '#475569', letterSpacing: '0.1em' }}>MONTHLY BUDGET</div>
+          <div style={{ fontSize: 10, color: '#334155', marginTop: 2 }}>
+            {noBudget ? 'No limit set — unlimited usage' : `Resets on day ${budget.reset_day} · ${budget.hard_limit ? 'Hard limit (blocks at 100%)' : 'Soft limit (alerts only)'}`}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!editing && (
+            <>
+              <button style={btnStyle('#1E3A5F')} onClick={openEdit}>
+                {noBudget ? 'Set Budget' : 'Edit'}
+              </button>
+              {!noBudget && (
+                <button style={btnStyle('#7F1D1D')} onClick={() => remove.mutate()}>
+                  Remove
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Usage bars */}
+      {!loading && !noBudget && usage && (
+        <>
+          {budget.monthly_tokens > 0 && (
+            <UsageBar
+              label="Token Usage"
+              used={`${(usage.tokens_used / 1_000).toFixed(1)}K`}
+              limit={`${(budget.monthly_tokens / 1_000).toFixed(0)}K`}
+              pct={usage.tokens_pct ?? usage.tokens_used / budget.monthly_tokens}
+              color="#3B82F6"
+            />
+          )}
+          {budget.monthly_cost_usd > 0 && (
+            <UsageBar
+              label="Cost Usage"
+              used={`$${usage.cost_used_usd.toFixed(4)}`}
+              limit={`$${budget.monthly_cost_usd.toFixed(2)}`}
+              pct={usage.cost_pct ?? usage.cost_used_usd / budget.monthly_cost_usd}
+              color="#10B981"
+            />
+          )}
+          {budget.alert_threshold > 0 && (
+            <div style={{ fontSize: 10, color: '#334155', marginTop: -8 }}>
+              Alert threshold: {Math.round(budget.alert_threshold * 100)}% · Period: {usage.period_start ? new Date(usage.period_start).toLocaleDateString() : '—'} — {usage.period_end ? new Date(usage.period_end).toLocaleDateString() : '—'}
+            </div>
+          )}
+        </>
+      )}
+
+      {!loading && noBudget && !editing && (
+        <div style={{ color: '#334155', fontSize: 12, textAlign: 'center', padding: '12px 0' }}>
+          No budget set. Click "Set Budget" to define monthly token or cost limits.
+        </div>
+      )}
+
+      {/* Edit form */}
+      {editing && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <label style={{ fontSize: 11, color: '#94A3B8' }}>
+            Monthly Tokens (0 = unlimited)
+            <input style={{ ...inputStyle, marginTop: 4 }} type="number" min={0}
+              value={form.monthly_tokens}
+              onChange={e => setForm(f => ({ ...f, monthly_tokens: Number(e.target.value) }))} />
+          </label>
+          <label style={{ fontSize: 11, color: '#94A3B8' }}>
+            Monthly Cost USD (0 = unlimited)
+            <input style={{ ...inputStyle, marginTop: 4 }} type="number" min={0} step={0.01}
+              value={form.monthly_cost_usd}
+              onChange={e => setForm(f => ({ ...f, monthly_cost_usd: Number(e.target.value) }))} />
+          </label>
+          <label style={{ fontSize: 11, color: '#94A3B8' }}>
+            Alert Threshold (0–1, default 0.8)
+            <input style={{ ...inputStyle, marginTop: 4 }} type="number" min={0} max={1} step={0.05}
+              value={form.alert_threshold}
+              onChange={e => setForm(f => ({ ...f, alert_threshold: Number(e.target.value) }))} />
+          </label>
+          <label style={{ fontSize: 11, color: '#94A3B8' }}>
+            Reset Day of Month (1–28)
+            <input style={{ ...inputStyle, marginTop: 4 }} type="number" min={1} max={28}
+              value={form.reset_day}
+              onChange={e => setForm(f => ({ ...f, reset_day: Number(e.target.value) }))} />
+          </label>
+          <label style={{ fontSize: 11, color: '#94A3B8', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={form.hard_limit}
+              onChange={e => setForm(f => ({ ...f, hard_limit: e.target.checked }))} />
+            Hard Limit (block ingest at 100% — uncheck for alerts only)
+          </label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <button style={btnStyle('#1D4ED8')} onClick={save} disabled={upsert.isPending}>
+              {upsert.isPending ? 'Saving…' : 'Save'}
+            </button>
+            <button style={{ ...btnStyle('#1E3A5F') }} onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+          {upsert.isError && (
+            <div style={{ fontSize: 11, color: '#EF4444', gridColumn: '1/-1' }}>
+              Save failed — check console.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function CostPage() {
@@ -192,6 +363,9 @@ export default function CostPage() {
           </div>
         </div>
       </div>
+
+      {/* Budget Panel */}
+      <BudgetPanel tenantId="default" />
 
       {/* Row 2: cost by framework (bar) + framework share by cost */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>

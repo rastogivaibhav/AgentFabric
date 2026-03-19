@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentfabric/api-gateway/internal/auth"
+	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/handlers"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/store"
@@ -91,8 +92,17 @@ func main() {
 		AdminPassword: envOr("AF_ADMIN_PASSWORD", "admin"),
 	}, pgStore, logger)
 
+	// Budget enforcement
+	budgetEnabled := os.Getenv("AF_BUDGET_ENABLED") != "false"
+	var budgetEnforcer *budget.BudgetEnforcer
+	if budgetEnabled {
+		alerter := budget.NewWebhookAlerter(logger)
+		budgetEnforcer = budget.NewBudgetEnforcer(pgStore, alerter, logger)
+		logger.Info("budget enforcement enabled")
+	}
+
 	// Wire handlers
-	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret)
+	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer)
 
 	r := chi.NewRouter()
 
@@ -208,6 +218,15 @@ func main() {
 			r.Get("/{userId}", h.GetUser)
 			r.With(middleware.RequireRoleOrSelf("admin")).Put("/{userId}", h.UpdateUser)
 			r.With(middleware.RequireRole("admin")).Delete("/{userId}", h.DeleteUser)
+		})
+
+		// Budgets — admin sets limits, any user can read usage
+		r.Route("/budgets/{tenant_id}", func(r chi.Router) {
+			r.Get("/", h.GetBudget)
+			r.Get("/usage", h.GetBudgetUsage)
+			r.Get("/alerts", h.GetBudgetAlerts)
+			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertBudget)
+			r.With(middleware.RequireRole("admin")).Delete("/", h.DeleteBudget)
 		})
 	})
 
