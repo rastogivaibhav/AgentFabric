@@ -1,0 +1,267 @@
+name: SDK Integration Tests
+
+# Runs against REAL framework packages — not mocks.
+# Kept separate from ci.yml so framework install times don't slow down every PR.
+#
+# Triggers:
+#   - Weekly on Monday at 07:00 UTC (catches upstream framework breakages)
+#   - Manual via workflow_dispatch (for pre-release validation)
+#   - Push/PR touching the SDK or this workflow
+#
+# Each framework job is independent so a failure in one doesn't block others.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"   # weekly Monday 07:00 UTC
+  workflow_dispatch:
+    inputs:
+      framework:
+        description: "Run a single framework (langgraph|openai|anthropic|crewai|all)"
+        required: false
+        default: "all"
+  push:
+    branches: ["feature/**", "main", "master"]
+    paths:
+      - "agent-sdk/**"
+      - ".github/workflows/sdk-integration.yml"
+  pull_request:
+    branches: ["main", "master"]
+    paths:
+      - "agent-sdk/**"
+      - ".github/workflows/sdk-integration.yml"
+
+defaults:
+  run:
+    working-directory: agent-sdk
+
+# ─── LangGraph ────────────────────────────────────────────────────────────────
+jobs:
+  langgraph:
+    name: LangGraph / Python ${{ matrix.python }}
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      contains(fromJson('["all","langgraph"]'), github.event.inputs.framework)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: agent-sdk/pyproject.toml
+
+      - name: Install SDK + langgraph integration deps
+        run: |
+          pip install -e ".[dev]"
+          pip install "langgraph>=0.1.0" "langchain>=0.2.0"
+
+      - name: Report installed versions
+        run: |
+          python -c "import langgraph; print('langgraph', langgraph.__version__)"
+          python -c "import agentfabric; print('agentfabric', agentfabric.__version__)"
+          python --version
+
+      - name: Run LangGraph integration tests
+        run: |
+          pytest tests/test_patching_integration.py::TestLangGraphIntegration \
+            -v -m integration \
+            --tb=short \
+            --junitxml=test-results-langgraph-${{ matrix.python }}.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-langgraph-py${{ matrix.python }}
+          path: agent-sdk/test-results-langgraph-${{ matrix.python }}.xml
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## LangGraph — Python ${{ matrix.python }}" >> $GITHUB_STEP_SUMMARY
+          python -c "import langgraph; print('langgraph version:', langgraph.__version__)" >> $GITHUB_STEP_SUMMARY || true
+
+# ─── OpenAI ───────────────────────────────────────────────────────────────────
+  openai:
+    name: OpenAI / Python ${{ matrix.python }}
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      contains(fromJson('["all","openai"]'), github.event.inputs.framework)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: agent-sdk/pyproject.toml
+
+      - name: Install SDK + openai integration deps
+        run: pip install -e ".[dev]" "openai>=1.30.0" "respx>=0.20.0" "httpx>=0.27.0"
+
+      - name: Report installed versions
+        run: |
+          python -c "import openai; print('openai', openai.__version__)"
+          python -c "import respx; print('respx', respx.__version__)"
+          python --version
+
+      - name: Run OpenAI integration tests
+        run: |
+          pytest tests/test_patching_integration.py::TestOpenAIIntegration \
+            -v -m integration \
+            --tb=short \
+            --junitxml=test-results-openai-${{ matrix.python }}.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-openai-py${{ matrix.python }}
+          path: agent-sdk/test-results-openai-${{ matrix.python }}.xml
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## OpenAI — Python ${{ matrix.python }}" >> $GITHUB_STEP_SUMMARY
+          python -c "import openai; print('openai version:', openai.__version__)" >> $GITHUB_STEP_SUMMARY || true
+
+# ─── Anthropic ────────────────────────────────────────────────────────────────
+  anthropic:
+    name: Anthropic / Python ${{ matrix.python }}
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      contains(fromJson('["all","anthropic"]'), github.event.inputs.framework)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: agent-sdk/pyproject.toml
+
+      - name: Install SDK + anthropic integration deps
+        run: pip install -e ".[dev]" "anthropic>=0.28.0" "respx>=0.20.0" "httpx>=0.27.0"
+
+      - name: Report installed versions
+        run: |
+          python -c "import anthropic; print('anthropic', anthropic.__version__)"
+          python -c "import respx; print('respx', respx.__version__)"
+          python --version
+
+      - name: Run Anthropic integration tests
+        run: |
+          pytest tests/test_patching_integration.py::TestAnthropicIntegration \
+            -v -m integration \
+            --tb=short \
+            --junitxml=test-results-anthropic-${{ matrix.python }}.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-anthropic-py${{ matrix.python }}
+          path: agent-sdk/test-results-anthropic-${{ matrix.python }}.xml
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Anthropic — Python ${{ matrix.python }}" >> $GITHUB_STEP_SUMMARY
+          python -c "import anthropic; print('anthropic version:', anthropic.__version__)" >> $GITHUB_STEP_SUMMARY || true
+
+# ─── CrewAI ───────────────────────────────────────────────────────────────────
+  crewai:
+    name: CrewAI / Python ${{ matrix.python }}
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      contains(fromJson('["all","crewai"]'), github.event.inputs.framework)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # CrewAI does not yet publish Python 3.13 wheels; cap at 3.12
+        python: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: agent-sdk/pyproject.toml
+
+      - name: Install SDK + crewai integration deps
+        # crewai pulls in large transitive deps (litellm, pydantic v2, etc.)
+        # Use --no-deps for the SDK itself to avoid conflict, then let crewai resolve
+        run: pip install -e ".[dev]" "crewai>=0.30.0"
+
+      - name: Report installed versions
+        run: |
+          python -c "import crewai; print('crewai', crewai.__version__)"
+          python --version
+
+      - name: Run CrewAI integration tests
+        run: |
+          pytest tests/test_patching_integration.py::TestCrewAIIntegration \
+            -v -m integration \
+            --tb=short \
+            --junitxml=test-results-crewai-${{ matrix.python }}.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-crewai-py${{ matrix.python }}
+          path: agent-sdk/test-results-crewai-${{ matrix.python }}.xml
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## CrewAI — Python ${{ matrix.python }}" >> $GITHUB_STEP_SUMMARY
+          python -c "import crewai; print('crewai version:', crewai.__version__)" >> $GITHUB_STEP_SUMMARY || true
+
+# ─── Summary gate ─────────────────────────────────────────────────────────────
+  integration-gate:
+    name: Integration Gate
+    needs: [langgraph, openai, anthropic, crewai]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all framework jobs passed
+        run: |
+          echo "langgraph:  ${{ needs.langgraph.result }}"
+          echo "openai:     ${{ needs.openai.result }}"
+          echo "anthropic:  ${{ needs.anthropic.result }}"
+          echo "crewai:     ${{ needs.crewai.result }}"
+
+          # Treat 'skipped' (workflow_dispatch filter) as passing
+          for result in \
+            "${{ needs.langgraph.result }}" \
+            "${{ needs.openai.result }}" \
+            "${{ needs.anthropic.result }}" \
+            "${{ needs.crewai.result }}"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "::error::One or more framework integration jobs failed or were cancelled."
+              exit 1
+            fi
+          done
+          echo "All framework integration tests passed."

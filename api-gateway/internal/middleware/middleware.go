@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -91,27 +92,44 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// JWTAuth validates a Bearer JWT against one or more secrets (multi-secret rotation).
+// JWTAuth validates a JWT against one or more secrets (multi-secret rotation).
+// Token source priority: Authorization: Bearer header (API/CLI clients) →
+// af_token HttpOnly cookie (browser clients). The cookie path allows the portal
+// to authenticate without storing the JWT in JavaScript-accessible storage.
 // Secrets are tried in order; the first valid match accepts the request.
 // The active (issuing) secret should always be secrets[0].
 func JWTAuth(secrets ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := r.Header.Get("Authorization")
-			if h == "" {
-				http.Error(w, `{"error":"missing authorization"}`, http.StatusUnauthorized)
-				return
+			// 1. Check Authorization: Bearer header first (API / CLI clients).
+			var tokenStr string
+			if h := r.Header.Get("Authorization"); h != "" {
+				parts := strings.SplitN(h, " ", 2)
+				if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+					http.Error(w, `{"error":"invalid auth format"}`, http.StatusUnauthorized)
+					return
+				}
+				tokenStr = parts[1]
 			}
-			parts := strings.SplitN(h, " ", 2)
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-				http.Error(w, `{"error":"invalid auth format"}`, http.StatusUnauthorized)
+
+			// 2. Fall back to the HttpOnly af_token cookie (browser clients).
+			// JS cannot read HttpOnly cookies so the token is never accessible
+			// to scripts, eliminating the localStorage XSS attack surface.
+			if tokenStr == "" {
+				if c, err := r.Cookie("af_token"); err == nil && c.Value != "" {
+					tokenStr = c.Value
+				}
+			}
+
+			if tokenStr == "" {
+				http.Error(w, `{"error":"missing authorization"}`, http.StatusUnauthorized)
 				return
 			}
 
 			var validClaims *Claims
 			for _, secret := range secrets {
 				claims := &Claims{}
-				token, err := jwt.ParseWithClaims(parts[1], claims, func(t *jwt.Token) (interface{}, error) {
+				token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
 					return []byte(secret), nil
 				})
 				if err == nil && token.Valid {
@@ -134,6 +152,10 @@ func JWTAuth(secrets ...string) func(http.Handler) http.Handler {
 
 // RequireRole blocks requests whose JWT does not carry one of the specified roles.
 // Must run after JWTAuth (depends on claims being set in context).
+//
+// Role comparison is case-insensitive on both sides (both normalized to lowercase)
+// to match the TypeScript hasRole() behaviour in the portal. DB roles are always
+// stored lowercase (admin|editor|viewer) so this is a defensive guard only.
 func RequireRole(roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -142,8 +164,9 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 				return
 			}
+			userRole := strings.ToLower(claims.Role)
 			for _, allowed := range roles {
-				if strings.EqualFold(claims.Role, allowed) {
+				if userRole == strings.ToLower(allowed) {
 					next.ServeHTTP(w, r)
 					return
 				}
@@ -173,9 +196,10 @@ func RequireRoleOrSelf(roles ...string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// RBAC fallback: check role
+			// RBAC fallback: check role (case-insensitive, matching TypeScript hasRole)
+			userRole := strings.ToLower(claims.Role)
 			for _, allowed := range roles {
-				if strings.EqualFold(claims.Role, allowed) {
+				if userRole == strings.ToLower(allowed) {
 					next.ServeHTTP(w, r)
 					return
 				}
@@ -187,13 +211,30 @@ func RequireRoleOrSelf(roles ...string) func(http.Handler) http.Handler {
 
 // ─── Tenant Injector ──────────────────────────────────────────────────────────
 
+// uuidRE validates RFC 4122 UUID format.
+// Used to guard against non-UUID strings reaching PostgreSQL UUID columns,
+// which would cause a cast error rather than proper tenant isolation.
+var uuidRE = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// isValidUUID returns true if s matches RFC 4122 UUID format (case-insensitive).
+func isValidUUID(s string) bool { return uuidRE.MatchString(s) }
+
 // TenantInjector reads the tenant_id from JWT claims (set by JWTAuth) and
 // injects it into the request context for downstream handlers.
 // Falls back to DefaultTenantID when no claims are present (unauthenticated / dev mode).
+//
+// Blocker 3 (UUID/TEXT mismatch): validates the tenant_id claim is a valid UUID
+// before injecting it. The DB schema defines tenant_id as UUID; a non-UUID value
+// would cause PostgreSQL to throw a cast error rather than silently failing.
+// Rejecting invalid values here prevents 500s and potential tenant isolation bugs.
 func TenantInjector(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID := DefaultTenantID
 		if claims := ClaimsFromCtx(r.Context()); claims != nil && claims.TenantID != "" {
+			if !isValidUUID(claims.TenantID) {
+				http.Error(w, `{"error":"invalid tenant_id in token"}`, http.StatusForbidden)
+				return
+			}
 			tenantID = claims.TenantID
 		}
 		ctx := context.WithValue(r.Context(), tenantIDKey, tenantID)

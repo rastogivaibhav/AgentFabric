@@ -1,16 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { getToken } from './auth'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
+// apiFetch uses credentials:'include' so the browser automatically sends the
+// af_token HttpOnly cookie on every request. The raw token is never read by JS.
+// The api-gateway JWTAuth middleware accepts this cookie as a valid auth source.
+// CLI / API callers may still use Authorization: Bearer by calling the gateway directly.
 async function apiFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(BASE + '/api/v1' + path)
   if (params) Object.entries(params).forEach(([k, v]) => v && url.searchParams.set(k, v))
-  // Read token dynamically on every request — picks up OIDC cookie + localStorage updates
-  const token = getToken()
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(url.toString(), { headers })
+  const res = await fetch(url.toString(), {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include', // sends af_token HttpOnly cookie; JS never reads the token
+  })
   if (!res.ok) throw new Error(`API ${res.status}: ${path}`)
   return res.json()
 }
@@ -160,20 +162,38 @@ export function useLiveStream(maxEvents = 500) {
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const pausedRef = useRef(false)
+  // Lifecycle guard — prevents reconnect attempts after the component unmounts.
+  const mountedRef = useRef(true)
+  // Exponential backoff state: retry 0 → 1s, 1 → 2s, 2 → 4s … capped at 30s.
+  const retryCountRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const connect = useCallback(() => {
+    if (!mountedRef.current) return
+
     const wsBase = BASE.replace(/^http/, 'ws')
     const ws = new WebSocket(`${wsBase}/api/v1/stream/live`)
     wsRef.current = ws
 
-    ws.onopen = () => setConnected(true)
-    ws.onclose = () => {
-      setConnected(false)
-      setTimeout(connect, 3000) // auto-reconnect
+    ws.onopen = () => {
+      if (!mountedRef.current) { ws.close(); return }
+      setConnected(true)
+      retryCountRef.current = 0 // reset backoff on successful connection
     }
+
+    ws.onclose = () => {
+      if (!mountedRef.current) return
+      setConnected(false)
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)
+      const delay = Math.min(30_000, 1_000 * Math.pow(2, retryCountRef.current))
+      retryCountRef.current = Math.min(retryCountRef.current + 1, 5)
+      retryTimerRef.current = setTimeout(connect, delay)
+    }
+
     ws.onerror = () => ws.close()
+
     ws.onmessage = (e) => {
-      if (pausedRef.current) return
+      if (pausedRef.current || !mountedRef.current) return
       try {
         const event: LiveEvent = JSON.parse(e.data)
         setEvents(prev => [event, ...prev].slice(0, maxEvents))
@@ -182,8 +202,13 @@ export function useLiveStream(maxEvents = 500) {
   }, [maxEvents])
 
   useEffect(() => {
+    mountedRef.current = true
     connect()
-    return () => wsRef.current?.close()
+    return () => {
+      mountedRef.current = false
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+      wsRef.current?.close()
+    }
   }, [connect])
 
   const pause = () => { pausedRef.current = true }

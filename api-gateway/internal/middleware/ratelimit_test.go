@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,7 +14,9 @@ import (
 // ─── Mock RateLimitStore ──────────────────────────────────────────────────────
 
 // mockRateLimitStore is an in-memory stub implementing RateLimitStore.
+// mu protects counts against concurrent map writes (required by TestRateLimit_Concurrent_NoPanic).
 type mockRateLimitStore struct {
+	mu      sync.Mutex
 	counts  map[string]int64
 	failErr error // if non-nil, IncrWithExpiry returns this error
 }
@@ -26,6 +29,8 @@ func (m *mockRateLimitStore) IncrWithExpiry(_ context.Context, key string, _ tim
 	if m.failErr != nil {
 		return 0, m.failErr
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.counts[key]++
 	return m.counts[key], nil
 }
@@ -34,7 +39,7 @@ func (m *mockRateLimitStore) IncrWithExpiry(_ context.Context, key string, _ tim
 
 func requestWithTenant(tenantID string) *http.Request {
 	req := httptest.NewRequest("GET", "/api/v1/traces", nil)
-	ctx := context.WithValue(req.Context(), "tenant_id", tenantID)
+	ctx := context.WithValue(req.Context(), tenantIDKey, tenantID)
 	return req.WithContext(ctx)
 }
 

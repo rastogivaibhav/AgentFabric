@@ -134,8 +134,17 @@ CREATE TABLE policy_audit_log (
 CREATE RULE no_update_audit AS ON UPDATE TO policy_audit_log DO INSTEAD NOTHING;
 CREATE RULE no_delete_audit AS ON DELETE TO policy_audit_log DO INSTEAD NOTHING;
 
--- Separate role with INSERT-only access
-CREATE ROLE af_audit_writer WITH LOGIN PASSWORD 'CHANGE_IN_PRODUCTION';
+-- Separate role with INSERT-only access (immutable audit principle).
+-- NOLOGIN by default — the role exists for GRANT enforcement.
+-- Production setup: run the following after deployment, replacing the placeholder:
+--   ALTER ROLE af_audit_writer WITH LOGIN PASSWORD '$AF_AUDIT_WRITER_PASSWORD';
+-- Then set AF_AUDIT_DSN in af-core to connect as this role for audit writes.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'af_audit_writer') THEN
+    CREATE ROLE af_audit_writer NOLOGIN;
+  END IF;
+END$$;
 GRANT INSERT ON policy_audit_log TO af_audit_writer;
 GRANT USAGE ON SEQUENCE policy_audit_log_id_seq TO af_audit_writer;
 -- No SELECT, UPDATE, DELETE granted

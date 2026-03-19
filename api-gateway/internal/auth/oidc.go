@@ -342,17 +342,18 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		zap.String("subject", claims.Subject),
 		zap.String("email", claims.Email))
 
-	// Set JWT in an HttpOnly cookie.
-	// HttpOnly: true prevents XSS-based token theft — JS cannot read it.
-	// The portal uses GET /auth/me (reads the cookie server-side) for identity,
-	// and includes credentials: 'include' on all API fetch calls.
+	// Set JWT in an HttpOnly + SameSite=Strict cookie.
+	// HttpOnly: true  — JS cannot read the token; eliminates XSS token theft.
+	// SameSite=Strict — cookie is not sent on cross-site requests, blocking CSRF.
+	// The portal authenticates via GET /auth/me with credentials:'include';
+	// it never reads or stores the raw JWT.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "af_token",
 		Value:    afJWT,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(h.cfg.SessionMaxAge.Seconds()),
 	})
 
@@ -383,9 +384,17 @@ func (h *OIDCHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // ─── GET /auth/me ─────────────────────────────────────────────────────────────
 
-// Me returns the current user's identity from the JWT in the Authorization header.
+// Me returns the current user's identity.
+// Accepts the JWT from the Authorization: Bearer header (API/CLI) or the
+// af_token HttpOnly cookie (browser). Returns the exp Unix timestamp so the
+// portal can schedule a silent token refresh without reading the token itself.
 func (h *OIDCHandler) Me(w http.ResponseWriter, r *http.Request) {
 	tokenStr := bearerToken(r)
+	if tokenStr == "" {
+		if c, err := r.Cookie("af_token"); err == nil && c.Value != "" {
+			tokenStr = c.Value
+		}
+	}
 	if tokenStr == "" {
 		http.Error(w, "no token", http.StatusUnauthorized)
 		return
@@ -397,11 +406,16 @@ func (h *OIDCHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	exp := int64(0)
+	if claims.ExpiresAt != nil {
+		exp = claims.ExpiresAt.Unix()
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"sub":   claims.Subject,
 		"email": claims.Email,
 		"name":  claims.Name,
 		"role":  claims.Role,
+		"exp":   exp, // Unix timestamp; portal uses this to schedule silent refresh
 	})
 }
 
@@ -792,14 +806,30 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 // Request:  Authorization: Bearer <existing_token>
 // Response: {"token":"<new_jwt>","expires_in":28800}
 
+// Refresh exchanges a valid AF JWT for a fresh one with a renewed expiry.
+// Accepts the token from Authorization: Bearer (CLI/API) or the af_token
+// HttpOnly cookie (browser). On success it rotates the HttpOnly cookie so the
+// browser session is extended without JS ever touching the raw token.
+//
+// Response: {"exp": <unix_timestamp>} — the new token's expiry, so the portal
+// can schedule the next silent refresh. The token itself is NOT returned in the
+// body; browser clients receive it exclusively via the Set-Cookie header.
+// CLI/API clients may inspect the Set-Cookie header or call /auth/login to get
+// a fresh Bearer token.
 func (h *OIDCHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	// Accept Bearer header (CLI/API) or HttpOnly cookie (browser)
 	tokenStr := bearerToken(r)
+	if tokenStr == "" {
+		if c, err := r.Cookie("af_token"); err == nil && c.Value != "" {
+			tokenStr = c.Value
+		}
+	}
 	if tokenStr == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing token"})
 		return
 	}
 
-	// parseAFToken tries all rotation keys, so tokens signed before a key rotation are accepted.
+	// parseAFToken tries all rotation keys — accepts tokens issued before a key rotation.
 	claims, err := h.parseAFToken(tokenStr)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired token"})
@@ -820,9 +850,23 @@ func (h *OIDCHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rotate the HttpOnly cookie — browser receives new token without JS reading it.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "af_token",
+		Value:    newToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(h.cfg.SessionMaxAge.Seconds()),
+	})
+
+	newExp := time.Now().Add(h.cfg.SessionMaxAge).Unix()
 	h.logger.Info("token refreshed", zap.String("subject", claims.Subject), zap.String("role", claims.Role))
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"token":      newToken,
+		// exp: new token's expiry as Unix timestamp (portal uses this to re-arm the
+		// silent-refresh timer without reading the token value itself).
+		"exp":        newExp,
 		"expires_in": int(h.cfg.SessionMaxAge.Seconds()),
 	})
 }
@@ -919,19 +963,22 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fix C: set JWT in an HttpOnly cookie so JS cannot read it (XSS protection).
-	// The portal detects authentication state via GET /auth/me, not localStorage.
+	// Set JWT in an HttpOnly + SameSite=Strict cookie.
+	// Browser clients (portal) never read the token — they use GET /auth/me
+	// with credentials:'include' for identity, and the cookie is sent automatically
+	// on all same-origin API requests by the browser.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "af_token",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(h.cfg.SessionMaxAge.Seconds()),
 	})
 
-	// Also return the token in the response body so CLI / API callers can use it.
+	// Return the token in the response body for CLI / API clients that use
+	// Authorization: Bearer. Browser clients should ignore this field.
 	h.logger.Info("password login successful", zap.String("username", idClaims.Subject))
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }

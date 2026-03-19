@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
 
@@ -28,6 +30,12 @@ func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger 
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// isNotFound returns true when err is a pgx "no rows" sentinel,
+// used to translate DB misses into HTTP 404 responses.
+func isNotFound(err error) bool {
+	return errors.Is(err, pgx.ErrNoRows)
+}
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -142,6 +150,7 @@ func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {
 		AgentName: r.URL.Query().Get("agent"),
 		Status:    r.URL.Query().Get("status"),
 		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
+		Cursor:    r.URL.Query().Get("cursor"),
 	}
 	if s := r.URL.Query().Get("start"); s != "" {
 		q.StartTime, _ = strconv.ParseInt(s, 10, 64)
@@ -252,18 +261,17 @@ func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "agentId")
-	agents, err := h.pg.ListAgents(r.Context(), tenantFromCtx(r), 200)
+	// O(1) indexed SQL lookup — replaces the previous O(n) ListAgents+scan pattern.
+	agent, err := h.pg.GetAgentByName(r.Context(), tenantFromCtx(r), agentID)
 	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	for _, a := range agents {
-		if a.ID == agentID || a.Name == agentID {
-			writeJSON(w, http.StatusOK, a)
-			return
-		}
-	}
-	writeError(w, http.StatusNotFound, "agent not found")
+	writeJSON(w, http.StatusOK, agent)
 }
 
 func (h *Handler) GetAgentRuns(w http.ResponseWriter, r *http.Request) {
@@ -337,6 +345,7 @@ func (h *Handler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		Framework: r.URL.Query().Get("framework"),
 		AgentName: r.URL.Query().Get("agent"),
 		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
+		Cursor:    r.URL.Query().Get("cursor"),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

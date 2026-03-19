@@ -141,7 +141,9 @@ func TestJWTAuth_BearerCaseInsensitive(t *testing.T) {
 // ─── TenantInjector ──────────────────────────────────────────────────────────
 
 func TestTenantInjector_WithClaims_UsesTenantID(t *testing.T) {
-	tok := makeToken(testSecret, "tenant-prod", true)
+	// tenant_id must be a valid UUID — the DB schema defines the column as UUID type.
+	const validTenantUUID = "11111111-2222-3333-4444-555555555555"
+	tok := makeToken(testSecret, validTenantUUID, true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
@@ -155,8 +157,28 @@ func TestTenantInjector_WithClaims_UsesTenantID(t *testing.T) {
 	// Chain JWTAuth → TenantInjector so claims are present
 	JWTAuth(testSecret)(TenantInjector(inner)).ServeHTTP(rr, req)
 
-	if gotTenant != "tenant-prod" {
-		t.Errorf("expected 'tenant-prod', got %q", gotTenant)
+	if gotTenant != validTenantUUID {
+		t.Errorf("expected %q, got %q", validTenantUUID, gotTenant)
+	}
+}
+
+func TestTenantInjector_InvalidUUID_Returns403(t *testing.T) {
+	// "tenant-prod" is NOT a valid UUID — TenantInjector must reject it to
+	// prevent a PostgreSQL cast error when the value reaches a UUID column.
+	tok := makeToken(testSecret, "tenant-prod", true)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("inner handler should not be reached with invalid tenant_id")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	JWTAuth(testSecret)(TenantInjector(inner)).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for non-UUID tenant_id, got %d", rr.Code)
 	}
 }
 

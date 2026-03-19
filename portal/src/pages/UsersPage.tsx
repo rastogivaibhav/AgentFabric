@@ -14,7 +14,6 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { UserPlus, Trash2, Pencil, ShieldAlert, X, Check } from 'lucide-react'
 import { useAuth, hasRole, isSelfOrRole } from '../hooks/auth'
-import { getToken } from '../hooks/auth'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
@@ -78,13 +77,10 @@ function CreateUserModal({ onClose, onCreated }: CreateModalProps) {
 
   const mutation = useMutation({
     mutationFn: async (payload: CreateUserPayload) => {
-      const token = getToken()
       const res = await fetch(`${BASE}/api/v1/users`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       })
       if (!res.ok) {
@@ -208,9 +204,8 @@ export default function UsersPage() {
   const { data: users, isLoading, error } = useQuery<UserRecord[]>({
     queryKey: ['users'],
     queryFn: async () => {
-      const token = getToken()
       const res = await fetch(`${BASE}/api/v1/users`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const body = await res.json()
@@ -221,10 +216,9 @@ export default function UsersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const token = getToken()
       const res = await fetch(`${BASE}/api/v1/users/${userId}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     },

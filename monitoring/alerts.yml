@@ -76,6 +76,24 @@ groups:
           description: "More than 10 requests/second are being rate-limited (429). A tenant may be exceeding their quota."
           runbook: "https://docs.agentfabric.io/runbooks/rate-limiting"
 
+  - name: agentfabric.audit_chain
+    interval: 1m
+    rules:
+
+      - alert: AuditChainMultipleReplicas
+        expr: kube_deployment_spec_replicas{deployment=~".*af-core.*"} > 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "af-core is running {{ $value }} replicas — audit chain integrity at risk"
+          description: |
+            af-core's AuditWriter stores the last-known hash in process memory (Mutex<String>).
+            Running more than one replica produces independent diverged chains, breaking
+            tamper-evidence. Scale back to 1 replica immediately and investigate.
+            This constraint will be lifted in v1.2.0 (PostgreSQL-backed chain).
+          runbook: "https://docs.agentfabric.io/runbooks/audit-chain-single-replica"
+
   - name: agentfabric.cost
     interval: 1m
     rules:

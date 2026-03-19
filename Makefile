@@ -11,7 +11,8 @@
 #   make e2e       — full-stack E2E: bring up stack → test → tear down
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: dev prod-up down build test lint certs e2e migrate/up migrate/down migrate/status
+.PHONY: dev prod-up down build test lint certs e2e migrate/up migrate/down migrate/status \
+        test/integration integration/up integration/down
 
 COMPOSE       := docker compose -f docker-compose.yml
 COMPOSE_PROD  := $(COMPOSE) -f deploy/docker/docker-compose.prod.yml
@@ -62,6 +63,37 @@ test-go:
 test-portal:
 	cd $(PORTAL_DIR) && npm ci --silent && npm run test -- --run
 
+# ─── Integration tests ────────────────────────────────────────────────────────
+# Requires Docker.  Starts a disposable Postgres + Redis, runs the tagged tests,
+# then tears everything down.  Data is ephemeral (tmpfs) — safe to run in CI.
+#
+#   make test/integration
+#   make test/integration INTEGRATION_DB_URL="postgres://..." INTEGRATION_REDIS_URL="redis://..."
+
+COMPOSE_TEST   := docker compose -f docker-compose.test.yml
+INT_DB_URL     ?= postgres://fabric:fabric_dev_only@localhost:5433/agentfabric?sslmode=disable
+INT_REDIS_URL  ?= redis://localhost:6380
+
+integration/up:
+	$(COMPOSE_TEST) up -d
+	@echo "Waiting for test Postgres to be healthy..."
+	@until docker inspect af_test_postgres --format='{{.State.Health.Status}}' 2>/dev/null | grep -q healthy; do sleep 1; done
+	@echo "Waiting for test Redis to be healthy..."
+	@until docker inspect af_test_redis --format='{{.State.Health.Status}}' 2>/dev/null | grep -q healthy; do sleep 1; done
+	@echo "Test infrastructure ready."
+
+integration/down:
+	$(COMPOSE_TEST) down -v
+
+test/integration: integration/up
+	cd api-gateway && go test -tags=integration ./tests/integration/... \
+	    -db-url="$(INT_DB_URL)" \
+	    -redis-url="$(INT_REDIS_URL)" \
+	    -v -count=1 -timeout=120s; \
+	    STATUS=$$?; \
+	    $(MAKE) integration/down; \
+	    exit $$STATUS
+
 # ─── Lint ─────────────────────────────────────────────────────────────────────
 
 lint: lint-go lint-portal
@@ -81,6 +113,18 @@ lint-portal:
 
 certs:
 	bash scripts/generate-dev-certs.sh
+
+# dev-tls: generate certs (if not present) and start the full stack with mTLS enabled.
+# Services read AF_TLS_ENABLED=true and load certs from deploy/certs/ at startup.
+# Run 'make certs' separately first if you want to inspect the certs before starting.
+dev-tls:
+	@test -f deploy/certs/server.crt || $(MAKE) certs
+	AF_TLS_ENABLED=true $(COMPOSE) up -d --build
+	@echo ""
+	@echo "  mTLS enabled on collector — OTLP gRPC :4317 / HTTP :4318 now require TLS"
+	@echo "  CA cert for clients: deploy/certs/ca.crt"
+	@echo "  Client cert:         deploy/certs/client.crt"
+	@echo "  Client key:          deploy/certs/client.key"
 
 # ─── E2E ──────────────────────────────────────────────────────────────────────
 

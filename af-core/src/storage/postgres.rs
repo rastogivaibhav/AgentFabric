@@ -35,6 +35,12 @@ impl PostgresStore {
         Ok(())
     }
 
+    /// Expose the underlying pool — used by integration tests to execute
+    /// schema setup DDL and by health-check endpoints.
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+
     // ─── Span Upsert ───────────────────────────────────────────────────────
 
     pub async fn upsert_span(&self, span: &EnrichedSpan) -> Result<()> {
