@@ -271,12 +271,12 @@ func (s *PostgresStore) GetOverview(ctx context.Context, tenantID string, since 
 	var stats models.OverviewStats
 
 	err := s.pool.QueryRow(ctx, `
-		SELECT 
+		SELECT
 			COUNT(DISTINCT trace_id),
-			SUM(cost_usd),
-			SUM(input_tokens + output_tokens),
-			AVG(CASE WHEN status_code = 2 THEN 1.0 ELSE 0.0 END),
-			AVG(duration_ns) / 1e6
+			COALESCE(SUM(cost_usd), 0),
+			COALESCE(SUM(input_tokens + output_tokens), 0),
+			COALESCE(AVG(CASE WHEN status_code = 2 THEN 1.0 ELSE 0.0 END), 0),
+			COALESCE(AVG(duration_ns) / 1e6, 0)
 		FROM spans
 		WHERE tenant_id = $1 AND start_time_ns >= $2`,
 		tenantID, cutoff,

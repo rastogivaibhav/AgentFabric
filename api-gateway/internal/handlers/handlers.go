@@ -86,13 +86,20 @@ type ingestRequest struct {
 }
 
 func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
+	const maxBody = 32 << 20 // 32 MiB
+	// Fast path: reject immediately if Content-Length is known and too large.
+	if r.ContentLength > maxBody {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 32 MiB limit")
+		return
+	}
 	// Fix D: cap request body at 32 MiB to prevent DoS via unbounded reads.
-	r.Body = http.MaxBytesReader(w, r.Body, 32<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 
 	var req ingestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		// MaxBytesReader wraps the error when the limit is exceeded.
-		if err.Error() == "http: request body too large" {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) || err.Error() == "http: request body too large" {
 			writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 32 MiB limit")
 			return
 		}

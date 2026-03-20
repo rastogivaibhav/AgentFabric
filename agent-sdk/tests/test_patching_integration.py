@@ -231,8 +231,8 @@ class TestOpenAIIntegration:
     @staticmethod
     def _call(model: str = "gpt-4o", content: str = "hello"):
         import openai, respx  # noqa: PLC0415, E401
-        with respx.mock(assert_all_called=False):
-            respx.post("https://api.openai.com/v1/chat/completions").mock(
+        with respx.mock(assert_all_called=False) as rmock:
+            rmock.post("https://api.openai.com/v1/chat/completions").mock(
                 return_value=TestOpenAIIntegration._fake_200()
             )
             return openai.chat.completions.create(
@@ -334,8 +334,8 @@ class TestAnthropicIntegration:
     def _call(model: str = "claude-opus-4-6", max_tokens: int = 64):
         import anthropic, respx  # noqa: PLC0415, E401
         client = anthropic.Anthropic(api_key="test-key")
-        with respx.mock(assert_all_called=False):
-            respx.post("https://api.anthropic.com/v1/messages").mock(
+        with respx.mock(assert_all_called=False) as rmock:
+            rmock.post("https://api.anthropic.com/v1/messages").mock(
                 return_value=TestAnthropicIntegration._fake_200()
             )
             return client.messages.create(
