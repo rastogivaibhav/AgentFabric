@@ -98,6 +98,10 @@ try:
     import anthropic as _an; agentfabric._patch_anthropic(_an); print("[setup] anthropic patched")
 except ImportError: pass
 
+try:
+    import google.adk as _adk; agentfabric._patch_google_adk(); print("[setup] google_adk patched")
+except ImportError: pass
+
 print()
 
 
@@ -236,6 +240,74 @@ def run_anthropic():
         print(f"  {model}")
 
 
+# ─── Google ADK runs ──────────────────────────────────────────────────────────
+
+def run_google_adk():
+    import asyncio
+    from unittest.mock import patch
+
+    from google.adk.agents import Agent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.adk.models.llm_response import LlmResponse
+    import google.genai.types as genai_types
+
+    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "0")
+    os.environ.setdefault("GOOGLE_API_KEY", "adk-run-agents-placeholder")
+
+    LLM_TARGET = "google.adk.models.google_llm.Gemini.generate_content_async"
+
+    def _fake_llm(text: str):
+        resp = LlmResponse(
+            content=genai_types.Content(
+                role="model",
+                parts=[genai_types.Part(text=text)],
+            )
+        )
+        async def _gen(*args, **kwargs):
+            yield resp
+        return _gen
+
+    scenarios = [
+        ("research_agent",   "Researches AI infrastructure trends",
+         "What are the top AI observability trends?",
+         "Top trends: tracing, cost tracking, PII redaction."),
+        ("coding_assistant", "Helps developers write and review code",
+         "Write a Python hello-world",
+         "print('Hello, World!')"),
+        ("devops_agent",     "Assists with Kubernetes and CI/CD pipeline tasks",
+         "Design a blue-green deployment for the API gateway",
+         "Two Deployments + Service selector toggle."),
+        ("security_review_agent", "Reviews code for security vulnerabilities",
+         "Review this JWT validation snippet",
+         "CWE-613: expiry not validated. Add exp claim check."),
+        ("finops_agent",     "Identifies cloud cost optimisation opportunities",
+         "Analyse EC2 $12K, RDS $3.2K, Kafka $4.1K spend",
+         "Kafka Spot migration saves $2,460/mo."),
+    ]
+
+    async def _run_scenario(agent_name, description, prompt, reply):
+        ss = InMemorySessionService()
+        agent = Agent(name=agent_name, description=description, model="gemini-2.0-flash")
+        runner = Runner(agent=agent, app_name="agentfabric-demo", session_service=ss)
+        session = await ss.create_session(app_name="agentfabric-demo", user_id="demo_user")
+        msg = genai_types.Content(role="user", parts=[genai_types.Part(text=prompt)])
+        with patch(LLM_TARGET, side_effect=_fake_llm(reply)):
+            async for _ in runner.run_async(
+                user_id="demo_user",
+                session_id=session.id,
+                new_message=msg,
+            ):
+                pass
+
+    for agent_name, description, prompt, reply in scenarios:
+        try:
+            asyncio.run(_run_scenario(agent_name, description, prompt, reply))
+            print(f"  {agent_name}")
+        except Exception as e:
+            print(f"  {agent_name} skipped: {e}")
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -250,6 +322,9 @@ if __name__ == "__main__":
 
     print("\n== Anthropic " + "=" * 50)
     run_anthropic()
+
+    print("\n== Google ADK " + "=" * 49)
+    run_google_adk()
 
     time.sleep(0.5)  # let SimpleSpanProcessor flush
 

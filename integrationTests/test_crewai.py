@@ -130,18 +130,20 @@ class TestCrewAIIntegration:
         pytest.importorskip("crewai")
 
     @pytest.fixture(scope="module", autouse=True)
-    def _setup_tracer(self):
+    def _setup_tracer(self, gateway_exporter):
         """
         Wire agentfabric to the in-memory exporter and apply the CrewAI patch
         exactly once for the whole module.  The patch is NOT restored so that
         all tests in this module share a single patched Agent.execute_task,
         mirroring real application behaviour where instrument() is called once.
+        Spans are also forwarded to the AgentFabric dashboard in real-time.
         """
         import agentfabric  # noqa: PLC0415
         import crewai  # noqa: PLC0415
 
         provider = TracerProvider()
         provider.add_span_processor(SimpleSpanProcessor(_mem_exporter))
+        provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
         # Get tracer directly from the local provider to avoid the global
         # TracerProvider override warning emitted by trace.set_tracer_provider().
         agentfabric._tracer = provider.get_tracer("agentfabric", "1.0.0")

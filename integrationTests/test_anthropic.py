@@ -101,17 +101,19 @@ class TestAnthropicIntegration:
         pytest.importorskip("respx")
 
     @pytest.fixture(scope="class", autouse=True)
-    def tracer_setup(self):
+    def tracer_setup(self, gateway_exporter):
         """
         Module-scoped fixture that:
         1. Creates an InMemorySpanExporter + TracerProvider.
         2. Injects the tracer into agentfabric globals.
         3. Applies the Anthropic class-level monkey-patch.
         4. Restores the original Messages.create on teardown.
+        Spans are also forwarded to the AgentFabric dashboard in real-time.
         """
         exporter = InMemorySpanExporter()
         provider = TracerProvider()
         provider.add_span_processor(SimpleSpanProcessor(exporter))
+        provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
 
         tracer = provider.get_tracer("agentfabric-test", "1.0.0")
         agentfabric._tracer = tracer
