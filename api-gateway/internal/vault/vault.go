@@ -94,6 +94,10 @@ func (v *Vault) Store(ctx context.Context, tenantID, provider, realKey, displayN
 // Returns ErrInvalidKey when the key does not exist or is revoked.
 // Returns ErrKeyExpired when expires_at is set and in the past.
 func (v *Vault) Resolve(ctx context.Context, virtualKey string) (provider, realKey, tenantID string, err error) {
+	if v.pool == nil {
+		return "", "", "", ErrInvalidKey
+	}
+
 	var enc []byte
 	var expiresAt *time.Time
 

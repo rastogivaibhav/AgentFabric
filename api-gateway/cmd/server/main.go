@@ -15,6 +15,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/handlers"
 	"github.com/agentfabric/api-gateway/internal/middleware"
+	"github.com/agentfabric/api-gateway/internal/netproxy"
 	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/vault"
@@ -120,6 +121,16 @@ func main() {
 	keyHandler := handlers.NewKeyHandler(llmVault, logger)
 	llmProxy := proxy.New(llmVault, budgetEnforcer, pgStore, logger)
 
+	// ─── NetProxy (Layer 3: transparent HTTPS MITM proxy) ────────────────────
+	// Listens on AF_NETPROXY_ADDR (:8443) and handles HTTP CONNECT tunnelling.
+	// Intercepts HTTPS to known LLM API domains; all other hosts pass through.
+	// Clients must set HTTP_PROXY=http://localhost:8443 and install the CA cert.
+	netProxyCA, err := netproxy.NewCA()
+	if err != nil {
+		logger.Fatal("netproxy CA init failed", zap.Error(err))
+	}
+	np := netproxy.New(netProxyCA, llmVault, budgetEnforcer, pgStore, logger)
+
 	// Wire handlers
 	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer)
 
@@ -150,6 +161,15 @@ func main() {
 	// ─── Health & metrics ────────────────────────────────────────────────────
 	r.Get("/healthz", h.Health)
 	r.Handle("/metrics", promhttp.Handler())
+
+	// ─── NetProxy CA cert download (no auth required) ─────────────────────────
+	// GET /api/v1/netproxy/ca.crt — download the MITM CA certificate in PEM format.
+	// Install with: scripts/install-ca-cert.sh or manually into OS trust store.
+	r.Get("/api/v1/netproxy/ca.crt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-pem-file")
+		w.Header().Set("Content-Disposition", `attachment; filename="agentfabric-ca.crt"`)
+		w.Write(netProxyCA.CertPEM()) //nolint:errcheck
+	})
 
 	// ─── Auth endpoints ───────────────────────────────────────────────────────
 	// Password login (default, no OIDC required): POST /auth/login {username, password}
@@ -286,10 +306,27 @@ func main() {
 		}
 	}()
 
+	// ─── Layer 3: Net proxy server on :8443 ──────────────────────────────────
+	netProxyAddr := envOr("AF_NETPROXY_ADDR", ":8443")
+	netProxySrv := &http.Server{
+		Addr:        netProxyAddr,
+		Handler:     np,
+		// No write timeout — CONNECT tunnels are long-lived bidirectional streams.
+		ReadTimeout: 60 * time.Second,
+		IdleTimeout: 120 * time.Second,
+	}
+	go func() {
+		logger.Info("net proxy listener starting", zap.String("addr", netProxyAddr))
+		if err := netProxySrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("net proxy listener error", zap.Error(err))
+		}
+	}()
+
 	<-sigCh
 	logger.Info("Shutting down API gateway...")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	netProxySrv.Shutdown(ctx) //nolint:errcheck
 	srv.Shutdown(ctx)
 }
 

@@ -225,16 +225,16 @@ func TestProxy_RealKeyNeverForwarded(t *testing.T) {
 	_ = receivedAuth
 }
 
-// ─── parserFor ───────────────────────────────────────────────────────────────
+// ─── ParserFor ───────────────────────────────────────────────────────────────
 
 func TestParserFor_Known(t *testing.T) {
-	_, ok := parserFor(ProviderOpenAI)
+	_, ok := ParserFor(ProviderOpenAI)
 	assert.True(t, ok)
-	_, ok = parserFor(ProviderAnthropic)
+	_, ok = ParserFor(ProviderAnthropic)
 	assert.True(t, ok)
 }
 
 func TestParserFor_Unknown(t *testing.T) {
-	_, ok := parserFor("unknown-provider")
+	_, ok := ParserFor("unknown-provider")
 	assert.False(t, ok)
 }

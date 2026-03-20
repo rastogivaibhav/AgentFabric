@@ -243,7 +243,20 @@
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(p\\) for p in d.get\\(''''paths'''',{}\\).keys\\(\\)]\")",
       "Bash(curl -s -X POST http://localhost:8001/evaluate -H \"Content-Type: application/json\" -H \"X-AGS-KEY: agentfabric-test-key\" -d '{\"\"\"\"agent_id\"\"\"\":\"\"\"\"srp-recipe-agent\"\"\"\",\"\"\"\"action_type\"\"\"\":\"\"\"\"file_write\"\"\"\",\"\"\"\"action_target\"\"\"\":\"\"\"\"/tmp/results.json\"\"\"\",\"\"\"\"tenant_id\"\"\"\":\"\"\"\"agentfabric-demo\"\"\"\",\"\"\"\"context\"\"\"\":{\"\"\"\"size_bytes\"\"\"\":4096,\"\"\"\"purpose\"\"\"\":\"\"\"\"output_log\"\"\"\"}}')",
       "Bash(curl -s http://localhost:8001/agents/srp-recipe-agent -H \"X-AGS-KEY: agentfabric-test-key\")",
-      "Bash(grep -r \"auth\\\\|token\\\\|api.key\\\\|x-api-key\" '/c/Users/vrast/Documents/Agentic Code/files/collector/' --include=*.go --include=*.yaml -l)"
+      "Bash(grep -r \"auth\\\\|token\\\\|api.key\\\\|x-api-key\" '/c/Users/vrast/Documents/Agentic Code/files/collector/' --include=*.go --include=*.yaml -l)",
+      "Bash(cd \"/c/Users/vrast/Documents/Agentic Code/files\" cat api-gateway/internal/budget/budget.go)",
+      "Bash(curl -s http://localhost:8080/health)",
+      "Bash(curl -sv http://localhost:8080/api/v1/keys)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXYtYWRtaW4iLCJ0ZW5hbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJlbWFpbCI6ImRldkBhZ2VudGZhYnJpYy5sb2NhbCIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NDAwNTA0NiwiZXhwIjoxNzc0MDA4NjQ2fQ.Cxk1_8Wb1jNWlflCpr6-7YuFeNXW4UqAHl_NahVgwUI\" __NEW_LINE_1b1bcdec22ac0742__ echo \"=== 1. Register virtual key ===\")",
+      "Bash(curl -s -X POST http://localhost:8080/api/v1/keys -H \"Content-Type: application/json\" -H \"Authorization: Bearer $TOKEN\" -d '{\"\"\"\"provider\"\"\"\":\"\"\"\"openai\"\"\"\",\"\"\"\"real_key\"\"\"\":\"\"\"\"sk-test-notarealkey1234567890abcdef1234\"\"\"\",\"\"\"\"display_name\"\"\"\":\"\"\"\"Validation Test Key\"\"\"\",\"\"\"\"team_id\"\"\"\":\"\"\"\"\"\"\"\"}')",
+      "Bash(python3 -m json.tool)",
+      "Bash(AF_AUTH_DISABLED=false docker compose up -d --no-deps api-gateway)",
+      "Bash(curl -s http://localhost:8080/api/v1/keys)",
+      "Bash(export AF_AUTH_DISABLED=false)",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "Bash(curl -s http://localhost:8080/api/v1/netproxy/ca.crt)",
+      "Bash(curl -s --proxy http://localhost:8443 --cacert /tmp/af-ca.crt https://api.openai.com/v1/models -H \"Authorization: Bearer sk-test-fake-key\" -w \"\\\\nHTTP_STATUS:%{http_code}\")",
+      "Bash(curl --version)"
     ]
   }
 }

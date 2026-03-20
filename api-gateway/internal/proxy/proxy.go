@@ -40,8 +40,9 @@ type spanStore interface {
 	BulkInsertSpans(ctx context.Context, spans []models.Span) error
 }
 
-// providerParser abstracts the differences between LLM provider APIs.
-type providerParser interface {
+// ProviderParser abstracts the differences between LLM provider APIs.
+// Exported so the netproxy package can reuse parsers without duplicating logic.
+type ProviderParser interface {
 	ParseRequest(body []byte) (model string, streaming bool, estimatedTokens int64, err error)
 	ParseUsage(body []byte) (inputTokens, outputTokens int64, err error)
 	ParseStreamingUsage(chunks [][]byte) (inputTokens, outputTokens int64)
@@ -57,6 +58,12 @@ type LLMProxy struct {
 	store          spanStore
 	httpClient     *http.Client
 	logger         *zap.Logger
+}
+
+// ParserFor returns the ProviderParser for the given provider name.
+// Exported for use by the netproxy package.
+func ParserFor(provider string) (ProviderParser, bool) {
+	return parserFor(provider)
 }
 
 // New creates an LLMProxy.
@@ -194,7 +201,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStreaming forwards SSE chunks as they arrive, buffering them for usage parsing.
-func (p *LLMProxy) handleStreaming(w http.ResponseWriter, resp *http.Response, parser providerParser) (inputTokens, outputTokens int64) {
+func (p *LLMProxy) handleStreaming(w http.ResponseWriter, resp *http.Response, parser ProviderParser) (inputTokens, outputTokens int64) {
 	flusher, canFlush := w.(http.Flusher)
 
 	var chunks [][]byte
@@ -277,7 +284,7 @@ func WithProvider(r *http.Request, provider string) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxKeyProvider{}, provider))
 }
 
-func parserFor(provider string) (providerParser, bool) {
+func parserFor(provider string) (ProviderParser, bool) {
 	switch provider {
 	case ProviderOpenAI:
 		return &openAIParser{}, true

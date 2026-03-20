@@ -72,6 +72,7 @@ services:
       - ./deploy/migrations:/migrations:ro
     ports:
       - "8080:8080"
+      - "8443:8443"   # Layer 3: transparent HTTPS MITM proxy (HTTP CONNECT)
     networks: [af-net]
     depends_on:
       postgres: {condition: service_healthy}
