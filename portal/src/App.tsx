@@ -10,6 +10,7 @@ import CostPage from './pages/CostPage'
 import EnvironmentsPage from './pages/EnvironmentsPage'
 import UsersPage from './pages/UsersPage'
 import AuditPage from './pages/AuditPage'
+import ApiKeysPage from './pages/ApiKeysPage'
 import LoginPage from './pages/LoginPage'
 import { useAuth, isAuthEnabled, hasRole } from './hooks/auth'
 
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="environments" element={<EnvironmentsPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="audit" element={<AuditPage />} />
+            <Route path="keys" element={<ApiKeysPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

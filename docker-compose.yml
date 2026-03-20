@@ -66,6 +66,7 @@ services:
       AF_TLS_CA_FILE:   "/certs/ca.crt"
       AF_MIGRATIONS_PATH: "/migrations"
       AF_BUDGET_ENABLED: "${AF_BUDGET_ENABLED:-true}"
+      AF_VAULT_KEY: "${AF_VAULT_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
     volumes:
       - ./deploy/certs:/certs:ro
       - ./deploy/migrations:/migrations:ro

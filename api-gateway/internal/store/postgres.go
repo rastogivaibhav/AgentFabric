@@ -780,6 +780,12 @@ func (s *PostgresStore) Close() {
 	s.pool.Close()
 }
 
+// Pool exposes the underlying pgxpool.Pool for packages (e.g. vault) that need
+// direct pool access without going through the store abstraction.
+func (s *PostgresStore) Pool() *pgxpool.Pool {
+	return s.pool
+}
+
 // ─── Users CRUD ───────────────────────────────────────────────────────────────
 
 // ListUsers returns all users for a tenant, newest first.

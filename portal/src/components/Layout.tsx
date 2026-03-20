@@ -1,7 +1,7 @@
 import { Outlet, NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Activity, Radio,
-  Bot, DollarSign, Server, Zap, LogOut, User, Users, ClipboardList
+  Bot, DollarSign, Server, Zap, LogOut, User, Users, ClipboardList, KeyRound
 } from 'lucide-react'
 import { useAuth } from '../hooks/auth'
 
@@ -29,6 +29,7 @@ const NAV: NavItem[] = [
   { to: '/environments', icon: Server,          label: 'Environments'  },
   // Admin-only nav items — hidden from editors and viewers.
   { to: '/users',        icon: Users,          label: 'Users',      adminOnly: true },
+  { to: '/keys',         icon: KeyRound,       label: 'API Keys',   adminOnly: true },
   { to: '/audit',        icon: ClipboardList,  label: 'Audit Log',  adminOnly: true },
 ]
 

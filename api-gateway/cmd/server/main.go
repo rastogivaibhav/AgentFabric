@@ -15,7 +15,9 @@ import (
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/handlers"
 	"github.com/agentfabric/api-gateway/internal/middleware"
+	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
+	"github.com/agentfabric/api-gateway/internal/vault"
 	"github.com/agentfabric/api-gateway/internal/ws"
 	"github.com/go-chi/chi/v5"
 	chimid "github.com/go-chi/chi/v5/middleware"
@@ -100,6 +102,23 @@ func main() {
 		budgetEnforcer = budget.NewBudgetEnforcer(pgStore, alerter, logger)
 		logger.Info("budget enforcement enabled")
 	}
+
+	// ─── Vault (Layer 2: virtual key proxy) ──────────────────────────────────
+	// AF_VAULT_KEY must be a 64-char hex string (32 bytes).
+	// In dev a predictable key is used with a loud warning; production must set this.
+	vaultKeyHex := envOr("AF_VAULT_KEY", "")
+	var llmVault *vault.Vault
+	if vaultKeyHex == "" {
+		vaultKeyHex = "0000000000000000000000000000000000000000000000000000000000000000"
+		logger.Warn("AF_VAULT_KEY not set — using insecure dev key. Set AF_VAULT_KEY in production.")
+	}
+	llmVault, err = vault.New(pgStore.Pool(), vaultKeyHex)
+	if err != nil {
+		logger.Fatal("vault init failed", zap.Error(err))
+	}
+
+	keyHandler := handlers.NewKeyHandler(llmVault, logger)
+	llmProxy := proxy.New(llmVault, budgetEnforcer, pgStore, logger)
 
 	// Wire handlers
 	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer)
@@ -227,6 +246,25 @@ func main() {
 			r.Get("/alerts", h.GetBudgetAlerts)
 			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertBudget)
 			r.With(middleware.RequireRole("admin")).Delete("/", h.DeleteBudget)
+		})
+
+		// Virtual keys (Layer 2) — register real LLM keys, receive af-vk-* virtual keys
+		r.Route("/keys", func(r chi.Router) {
+			r.Get("/", keyHandler.ListKeys)
+			r.With(middleware.RequireRole("admin")).Post("/", keyHandler.RegisterKey)
+			r.With(middleware.RequireRole("admin")).Delete("/{virtualKey}", keyHandler.RevokeKey)
+		})
+	})
+
+	// ─── LLM Proxy (Layer 2) — virtual key → real key, budget check, span record ──
+	// Routes: /proxy/{provider}/v1/*  (no JWT auth — virtual key IS the auth)
+	r.Route("/proxy/{provider}", func(r chi.Router) {
+		r.HandleFunc("/v1/*", func(w http.ResponseWriter, r *http.Request) {
+			provider := chi.URLParam(r, "provider")
+			r = proxy.WithProvider(r, provider)
+			// Strip /proxy/{provider} prefix so the upstream sees /v1/...
+			r.URL.Path = "/v1/" + chi.URLParam(r, "*")
+			llmProxy.ServeHTTP(w, r)
 		})
 	})
 
