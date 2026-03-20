@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Key, Plus, Trash2, Copy, Check, RefreshCw } from 'lucide-react'
-import { apiFetch } from '../hooks/api'
+import { apiFetch, apiMutate } from '../hooks/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,13 +26,13 @@ interface RegisterKeyForm {
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 const fetchKeys = (): Promise<{ items: VirtualKey[]; count: number }> =>
-  apiFetch('/api/v1/keys')
+  apiFetch('/keys')
 
 const registerKey = (form: RegisterKeyForm) =>
-  apiFetch('/api/v1/keys', { method: 'POST', body: JSON.stringify(form) })
+  apiMutate<{ virtual_key: string }>('/keys', 'POST', form)
 
 const revokeKey = (virtualKey: string) =>
-  apiFetch(`/api/v1/keys/${virtualKey}`, { method: 'DELETE' })
+  apiMutate<void>(`/keys/${virtualKey}`, 'DELETE')
 
 // ─── Component ────────────────────────────────────────────────────────────────
 

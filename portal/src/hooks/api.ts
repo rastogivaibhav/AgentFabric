@@ -6,7 +6,7 @@ const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 // af_token HttpOnly cookie on every request. The raw token is never read by JS.
 // The api-gateway JWTAuth middleware accepts this cookie as a valid auth source.
 // CLI / API callers may still use Authorization: Bearer by calling the gateway directly.
-async function apiFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
+export async function apiFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(BASE + '/api/v1' + path)
   if (params) Object.entries(params).forEach(([k, v]) => v && url.searchParams.set(k, v))
   const res = await fetch(url.toString(), {
@@ -241,7 +241,7 @@ export interface BudgetUsage {
   budget?: Budget
 }
 
-async function apiMutate<T>(path: string, method: string, body?: unknown): Promise<T> {
+export async function apiMutate<T>(path: string, method: string, body?: unknown): Promise<T> {
   const res = await fetch(BASE + '/api/v1' + path, {
     method,
     headers: { 'Content-Type': 'application/json' },

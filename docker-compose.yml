@@ -59,7 +59,7 @@ services:
       LISTEN_ADDR: ":8080"
       AF_LOG_LEVEL: debug
       AF_CORS_ORIGINS: "http://localhost:3000"
-      AF_AUTH_DISABLED: "true"
+      AF_AUTH_DISABLED: "${AF_AUTH_DISABLED:-true}"
       AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
       AF_TLS_CERT_FILE: "/certs/server.crt"
       AF_TLS_KEY_FILE:  "/certs/server.key"
