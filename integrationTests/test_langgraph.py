@@ -65,14 +65,16 @@ def _spans(fragment: str):
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="module", autouse=True)
-def _setup_tracer_and_patch():
+def _setup_tracer_and_patch(gateway_exporter):
     """
     Module-scoped fixture: wire up an InMemorySpanExporter and patch LangGraph
     once for the entire module.  NOT session-scoped so the patch stays isolated
     to this test file.
+    Spans are also forwarded to the AgentFabric dashboard in real-time.
     """
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(_exporter))
+    provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
 
     agentfabric._tracer = provider.get_tracer("agentfabric-test", "1.0.0")
     agentfabric._initialized = True

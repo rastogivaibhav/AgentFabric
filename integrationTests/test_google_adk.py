@@ -158,16 +158,18 @@ class TestGoogleADKIntegration:
         pytest.importorskip("google.adk")
 
     @pytest.fixture(scope="module", autouse=True)
-    def _setup_tracer(self):
+    def _setup_tracer(self, gateway_exporter):
         """
         Wire agentfabric to the in-memory exporter and apply the Google ADK patch
         exactly once for the whole module, mirroring how instrument() is called
         once at application startup.
+        Spans are also forwarded to the AgentFabric dashboard in real-time.
         """
         import agentfabric  # noqa: PLC0415
 
         provider = TracerProvider()
         provider.add_span_processor(SimpleSpanProcessor(_mem_exporter))
+        provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
         agentfabric._tracer = provider.get_tracer("agentfabric", "1.0.0")
         agentfabric._initialized = True
         agentfabric._patch_google_adk()

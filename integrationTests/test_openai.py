@@ -64,6 +64,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 _exporter = InMemorySpanExporter()
 _provider = TracerProvider()
 _provider.add_span_processor(SimpleSpanProcessor(_exporter))
+# Gateway processor is added inside _setup_tracer once the session fixture is available.
 
 
 # ---------------------------------------------------------------------------
@@ -85,14 +86,19 @@ class TestOpenAIIntegration:
         pytest.importorskip("respx")
 
     @pytest.fixture(autouse=True, scope="class")
-    def _setup_tracer(self):
+    def _setup_tracer(self, gateway_exporter):
         """
         Class-scoped fixture: wire up InMemorySpanExporter and apply the
         agentfabric OpenAI patch exactly once for the entire test class.
         Restores the original create on teardown.
+        Spans are also forwarded to the AgentFabric dashboard in real-time.
         """
         import openai
         import agentfabric
+
+        # Add gateway exporter to the shared provider (idempotent — processors
+        # accumulate but the gateway exporter silently drops dupes on its end).
+        _provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
 
         # Point agentfabric at our in-memory provider / tracer
         agentfabric._tracer = _provider.get_tracer("agentfabric-test", "1.0.0")

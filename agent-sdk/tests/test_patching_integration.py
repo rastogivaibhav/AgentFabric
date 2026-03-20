@@ -499,3 +499,195 @@ class TestCrewAIIntegration:
         expected = hashlib.sha256(description.encode()).hexdigest()[:16]
         attrs = _spans_named("crewai")[-1].attributes
         assert attrs.get("crewai.task.description_hash") == expected
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Google ADK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.integration
+class TestGoogleADKIntegration:
+    """Tests for agentfabric._patch_google_adk().
+
+    Uses a lightweight EchoAgent (no LLM) so tests run without API keys or
+    network access.  The patching wraps Runner.run_async and BaseAgent.run_async
+    to emit spans — both layers are exercised here.
+    """
+
+    @pytest.fixture(autouse=True, scope="class")
+    def _apply_patch(self):
+        """Apply google-adk patching once for the whole class (not per test).
+
+        Calling _patch_google_adk() per test wraps Runner.run_async/
+        BaseAgent.run_async repeatedly, creating N spans per invocation on the
+        Nth test — which breaks span-count and parent-child assertions.
+        """
+        import agentfabric  # noqa: PLC0415
+
+        agentfabric._patch_google_adk()
+
+    # ── minimal agent fixture ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_agent():
+        """Return a no-LLM BaseAgent subclass that yields one event and exits."""
+        try:
+            from google.adk.agents.base_agent import BaseAgent
+            from google.adk.events import Event
+
+            class EchoAgent(BaseAgent):
+                model_config = {"arbitrary_types_allowed": True}
+
+                async def _run_async_impl(self, ctx):
+                    yield Event(
+                        author=self.name,
+                        invocation_id=ctx.invocation_id,
+                        content=None,
+                    )
+
+            return EchoAgent(name="echo_agent")
+        except Exception as exc:
+            pytest.skip(f"Google ADK unavailable: {exc}")
+
+    @staticmethod
+    def _run(agent, session_id: str = "sess-001"):
+        """Synchronously drive Runner.run_async to completion."""
+        import asyncio
+
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.genai.types import Content, Part
+
+        async def _inner():
+            ss = InMemorySessionService()
+            runner = Runner(
+                agent=agent,
+                app_name="af-integration-test",
+                session_service=ss,
+            )
+            await ss.create_session(
+                app_name="af-integration-test",
+                user_id="test-user",
+                session_id=session_id,
+            )
+            msg = Content(role="user", parts=[Part(text="hello")])
+            events = []
+            async for ev in runner.run_async(
+                user_id="test-user",
+                session_id=session_id,
+                new_message=msg,
+            ):
+                events.append(ev)
+            return events
+
+        return asyncio.run(_inner())
+
+    # ── patch verification ────────────────────────────────────────────────────
+
+    def test_runner_run_async_is_replaced(self):
+        from google.adk.runners import Runner
+
+        # After patching the method wrapper is not the original coroutine
+        # function — it is our traced_run_async generator wrapper.
+        fn = Runner.run_async
+        assert callable(fn)
+        assert fn.__name__ in ("run_async", "traced_run_async")
+
+    def test_base_agent_run_async_is_replaced(self):
+        from google.adk.agents.base_agent import BaseAgent
+
+        fn = BaseAgent.run_async
+        assert callable(fn)
+        assert fn.__name__ in ("run_async", "traced_agent_run_async")
+
+    # ── runner-level span ─────────────────────────────────────────────────────
+
+    def test_runner_span_is_emitted(self):
+        agent = self._make_agent()
+        self._run(agent)
+
+        spans = _spans_named("google_adk.runner.")
+        assert len(spans) >= 1, "Expected a runner-level span"
+
+    def test_runner_span_name_contains_agent_name(self):
+        agent = self._make_agent()
+        self._run(agent)
+
+        assert len(_spans_named("google_adk.runner.echo_agent")) >= 1
+
+    def test_runner_span_gen_ai_system(self):
+        agent = self._make_agent()
+        self._run(agent)
+
+        attrs = _spans_named("google_adk.runner.echo_agent")[-1].attributes
+        assert attrs.get("gen_ai.system") == "google_adk"
+
+    def test_runner_span_agent_name_attribute(self):
+        agent = self._make_agent()
+        self._run(agent)
+
+        attrs = _spans_named("google_adk.runner.echo_agent")[-1].attributes
+        assert attrs.get("google.adk.agent.name") == "echo_agent"
+
+    def test_runner_span_session_id_attribute(self):
+        agent = self._make_agent()
+        self._run(agent, session_id="sess-adk-42")
+
+        attrs = _spans_named("google_adk.runner.echo_agent")[-1].attributes
+        assert attrs.get("google.adk.session.id") == "sess-adk-42"
+
+    # ── agent-level span ──────────────────────────────────────────────────────
+
+    def test_agent_span_is_emitted(self):
+        agent = self._make_agent()
+        self._run(agent)
+
+        spans = _spans_named("google_adk.agent.")
+        assert len(spans) >= 1, "Expected an agent-level span"
+
+    def test_agent_span_name_contains_agent_name(self):
+        agent = self._make_agent()
+        self._run(agent)
+
+        assert len(_spans_named("google_adk.agent.echo_agent")) >= 1
+
+    def test_agent_span_gen_ai_system(self):
+        agent = self._make_agent()
+        self._run(agent)
+
+        attrs = _spans_named("google_adk.agent.echo_agent")[-1].attributes
+        assert attrs.get("gen_ai.system") == "google_adk"
+
+    def test_agent_span_agent_name_attribute(self):
+        agent = self._make_agent()
+        self._run(agent)
+
+        attrs = _spans_named("google_adk.agent.echo_agent")[-1].attributes
+        assert attrs.get("google.adk.agent.name") == "echo_agent"
+
+    # ── span hierarchy ────────────────────────────────────────────────────────
+
+    def test_agent_span_is_child_of_runner_span(self):
+        """The agent-level span must be nested inside the runner-level span."""
+        agent = self._make_agent()
+        self._run(agent)
+
+        runner_spans = _spans_named("google_adk.runner.echo_agent")
+        agent_spans = _spans_named("google_adk.agent.echo_agent")
+        assert runner_spans and agent_spans
+        runner_ctx = runner_spans[-1].context
+        agent_parent_id = agent_spans[-1].parent.span_id
+        assert agent_parent_id == runner_ctx.span_id, (
+            "Agent span's parent span_id should match the runner span"
+        )
+
+    # ── multiple independent runs do not bleed spans ──────────────────────────
+
+    def test_two_runs_produce_two_runner_spans(self):
+        agent = self._make_agent()
+        _mem_exporter.clear()
+        self._run(agent, session_id="s1")
+        self._run(agent, session_id="s2")
+
+        runner_spans = _spans_named("google_adk.runner.echo_agent")
+        assert len(runner_spans) == 2
