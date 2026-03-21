@@ -126,8 +126,8 @@ func TestExtractVirtualKey_Missing(t *testing.T) {
 
 func TestComputeProxyCost_KnownModel(t *testing.T) {
 	_, total := computeProxyCost(ProviderOpenAI, "gpt-4o", 1_000_000, 1_000_000)
-	// 1M input @ $2.50 + 1M output @ $10.00 = $12.50
-	assert.InDelta(t, 12.50, total, 0.01)
+	// 1M input @ $5.00 + 1M output @ $15.00 = $20.00
+	assert.InDelta(t, 20.00, total, 0.01)
 }
 
 func TestComputeProxyCost_UnknownModel(t *testing.T) {
@@ -139,6 +139,31 @@ func TestComputeProxyCost_VersionedModel(t *testing.T) {
 	// "gpt-4o-2024-08-06" should match the "gpt-4o" prefix entry.
 	_, total := computeProxyCost(ProviderOpenAI, "gpt-4o-2024-08-06", 1_000_000, 0)
 	assert.Greater(t, total, float64(0))
+}
+
+func TestComputeProxyCost_UsesConfiguredPricing(t *testing.T) {
+	require.NoError(t, configurePricing(`[{"provider":"openai","model_pattern":"gpt-4o","input_per_million":1.0,"output_per_million":2.0}]`))
+	t.Cleanup(func() {
+		require.NoError(t, configurePricing(""))
+	})
+
+	_, total := computeProxyCost(ProviderOpenAI, "gpt-4o", 1_000_000, 1_000_000)
+	assert.InDelta(t, 3.0, total, 0.01)
+}
+
+func TestRecordSpan_UsesCanonicalModelAttributeAndCost(t *testing.T) {
+	ms := &mockStore{}
+	lp := &LLMProxy{
+		store:  ms,
+		logger: zap.NewNop(),
+	}
+
+	lp.recordSpan("tenant-1", ProviderOpenAI, "gpt-4o-mini", "af-vk-12345678abcdef", 10, 5, 25*time.Millisecond)
+
+	require.Len(t, ms.spans, 1)
+	assert.Equal(t, "gpt-4o-mini", ms.spans[0].Attributes["gen_ai.request.model"])
+	assert.Equal(t, "gpt-4o-mini", ms.spans[0].Attributes["proxy.model"])
+	assert.Greater(t, ms.spans[0].CostUSD, float64(0))
 }
 
 // ─── LLMProxy HTTP handler ───────────────────────────────────────────────────

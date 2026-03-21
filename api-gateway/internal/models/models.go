@@ -68,18 +68,18 @@ type Run struct {
 // ─── Agent ───────────────────────────────────────────────────────────────────
 
 type Agent struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Framework   string    `json:"framework"`
-	FirstSeen   time.Time `json:"first_seen"`
-	LastSeen    time.Time `json:"last_seen"`
-	RunCount    int       `json:"run_count"`
-	TotalCost   float64   `json:"total_cost_usd"`
-	P50LatencyMs float64  `json:"p50_latency_ms"`
-	P95LatencyMs float64  `json:"p95_latency_ms"`
-	P99LatencyMs float64  `json:"p99_latency_ms"`
-	ErrorRate   float64   `json:"error_rate"`
-	TenantID    string    `json:"-"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Framework    string    `json:"framework"`
+	FirstSeen    time.Time `json:"first_seen"`
+	LastSeen     time.Time `json:"last_seen"`
+	RunCount     int       `json:"run_count"`
+	TotalCost    float64   `json:"total_cost_usd"`
+	P50LatencyMs float64   `json:"p50_latency_ms"`
+	P95LatencyMs float64   `json:"p95_latency_ms"`
+	P99LatencyMs float64   `json:"p99_latency_ms"`
+	ErrorRate    float64   `json:"error_rate"`
+	TenantID     string    `json:"-"`
 }
 
 // ─── Topology ────────────────────────────────────────────────────────────────
@@ -107,13 +107,13 @@ type TopologyGraph struct {
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
 type OverviewStats struct {
-	TotalTraces     int64   `json:"total_traces"`
-	ActiveAgents    int     `json:"active_agents"`
-	TotalCostUSD    float64 `json:"total_cost_usd"`
-	TotalTokens     int64   `json:"total_tokens"`
-	ErrorRate       float64 `json:"error_rate"`
-	AvgLatencyMs    float64 `json:"avg_latency_ms"`
-	SpansPerSecond  float64 `json:"spans_per_second"`
+	TotalTraces     int64            `json:"total_traces"`
+	ActiveAgents    int              `json:"active_agents"`
+	TotalCostUSD    float64          `json:"total_cost_usd"`
+	TotalTokens     int64            `json:"total_tokens"`
+	ErrorRate       float64          `json:"error_rate"`
+	AvgLatencyMs    float64          `json:"avg_latency_ms"`
+	SpansPerSecond  float64          `json:"spans_per_second"`
 	FrameworkCounts map[string]int64 `json:"framework_counts"`
 }
 
@@ -197,6 +197,16 @@ type UserRecord struct {
 	DisplayName  string
 	Role         string
 	PasswordHash string
+}
+
+type PricingRule struct {
+	ID               int64     `json:"id"`
+	Provider         string    `json:"provider"`
+	ModelPattern     string    `json:"model_pattern"`
+	InputPerMillion  float64   `json:"input_per_million"`
+	OutputPerMillion float64   `json:"output_per_million"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // ─── Live stream event ───────────────────────────────────────────────────────

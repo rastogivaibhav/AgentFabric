@@ -129,7 +129,8 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Budget pre-check.
 	if p.budgetEnforcer != nil {
-		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, 0)
+		_, estimatedCostUSD := ComputeEstimatedCost(provider, model, estimatedTokens)
+		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
 			http.Error(w, `{"error":{"message":"token budget exceeded","type":"budget_exceeded"}}`,
 				http.StatusTooManyRequests)
@@ -260,10 +261,11 @@ func (p *LLMProxy) recordSpan(tenantID, provider, model, vkPrefix string, inputT
 		TenantID:     tenantID,
 		ReceivedAt:   now,
 		Attributes: map[string]string{
-			"proxy.provider":    provider,
-			"proxy.model":       model,
-			"proxy.virtual_key": maskedVK,
-			"gen_ai.system":     provider,
+			"proxy.provider":       provider,
+			"proxy.model":          model,
+			"proxy.virtual_key":    maskedVK,
+			"gen_ai.system":        provider,
+			"gen_ai.request.model": model,
 		},
 	}
 
@@ -308,38 +310,6 @@ func newID() string {
 	b := make([]byte, 16)
 	rand.Read(b) //nolint:errcheck
 	return hex.EncodeToString(b)
-}
-
-// computeProxyCost returns (inputCostUSD, totalCostUSD) using built-in pricing.
-// Only covers the most common models; unknown models return 0.
-func computeProxyCost(provider, model string, inputTokens, outputTokens int64) (float64, float64) {
-	type pricing struct{ in, out float64 } // per million tokens
-	table := map[string]pricing{
-		"gpt-4o":                {2.50, 10.00},
-		"gpt-4o-mini":           {0.15, 0.60},
-		"gpt-4-turbo":           {10.00, 30.00},
-		"gpt-3.5-turbo":         {0.50, 1.50},
-		"claude-3-5-sonnet":     {3.00, 15.00},
-		"claude-3-5-haiku":      {0.80, 4.00},
-		"claude-3-opus":         {15.00, 75.00},
-	}
-	p, ok := table[model]
-	if !ok {
-		// Prefix match for versioned model names.
-		for k, v := range table {
-			if strings.HasPrefix(model, k) {
-				p = v
-				ok = true
-				break
-			}
-		}
-	}
-	if !ok {
-		return 0, 0
-	}
-	inCost := float64(inputTokens) / 1_000_000 * p.in
-	outCost := float64(outputTokens) / 1_000_000 * p.out
-	return inCost, inCost + outCost
 }
 
 func min(a, b int) int {

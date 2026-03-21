@@ -39,13 +39,11 @@ const revokeKey = (virtualKey: string) =>
 const PROVIDER_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
-  google: 'Google',
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
   openai: '#10a37f',
   anthropic: '#c96a3a',
-  google: '#4285f4',
 }
 
 export default function ApiKeysPage() {
@@ -176,7 +174,6 @@ export default function ApiKeysPage() {
                 >
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic</option>
-                  <option value="google">Google</option>
                 </select>
               </label>
               <label style={{ fontSize: 12, color: '#9ca3af' }}>

@@ -5,6 +5,33 @@ import (
 	"testing"
 )
 
+func TestLoad_StrictProductionRequiresJWTSecret(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("AF_JWT_SECRET", "")
+	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected production config without AF_JWT_SECRET to fail")
+	}
+}
+
+func TestLoad_StrictProductionAcceptsJWTSecret(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("AF_JWT_SECRET", "collector-secret")
+	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected strict production config to load, got %v", err)
+	}
+	if cfg.Auth.JWTSecret != "collector-secret" {
+		t.Fatalf("expected AF_JWT_SECRET to be preserved, got %q", cfg.Auth.JWTSecret)
+	}
+}
+
 // TestLoad_Defaults verifies that Load() returns sensible defaults when no
 // config file is present and no env vars are set.
 func TestLoad_Defaults(t *testing.T) {

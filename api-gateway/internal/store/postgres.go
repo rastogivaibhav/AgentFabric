@@ -1087,15 +1087,86 @@ func (s *PostgresStore) ListBudgetAlerts(ctx context.Context, tenantID string, l
 			return nil, err
 		}
 		alerts = append(alerts, map[string]interface{}{
-			"id":               id,
-			"alert_type":       alertType,
-			"tokens_used":      tokensUsed,
-			"cost_used_usd":    costUsedUsd,
-			"budget_tokens":    budgetTokens,
-			"budget_cost_usd":  budgetCostUsd,
-			"triggered_at":     triggeredAt,
+			"id":              id,
+			"alert_type":      alertType,
+			"tokens_used":     tokensUsed,
+			"cost_used_usd":   costUsedUsd,
+			"budget_tokens":   budgetTokens,
+			"budget_cost_usd": budgetCostUsd,
+			"triggered_at":    triggeredAt,
 		})
 	}
 
 	return alerts, rows.Err()
+}
+
+func (s *PostgresStore) ListPricingRules(ctx context.Context) ([]models.PricingRule, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, provider, model_pattern, input_per_million, output_per_million, created_at, updated_at
+		FROM pricing_rules
+		ORDER BY provider ASC, model_pattern ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rules []models.PricingRule
+	for rows.Next() {
+		var rule models.PricingRule
+		if err := rows.Scan(
+			&rule.ID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
+			&rule.OutputPerMillion, &rule.CreatedAt, &rule.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		rules = append(rules, rule)
+	}
+	if rules == nil {
+		rules = []models.PricingRule{}
+	}
+	return rules, rows.Err()
+}
+
+func (s *PostgresStore) UpsertPricingRule(ctx context.Context, rule models.PricingRule) (models.PricingRule, error) {
+	rule.Provider = strings.ToLower(strings.TrimSpace(rule.Provider))
+	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
+
+	if rule.ID > 0 {
+		err := s.pool.QueryRow(ctx, `
+			UPDATE pricing_rules
+			SET provider = $2,
+			    model_pattern = $3,
+			    input_per_million = $4,
+			    output_per_million = $5,
+			    updated_at = NOW()
+			WHERE id = $1
+			RETURNING id, provider, model_pattern, input_per_million, output_per_million, created_at, updated_at
+		`, rule.ID, rule.Provider, rule.ModelPattern, rule.InputPerMillion, rule.OutputPerMillion).Scan(
+			&rule.ID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
+			&rule.OutputPerMillion, &rule.CreatedAt, &rule.UpdatedAt,
+		)
+		return rule, err
+	}
+
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO pricing_rules (provider, model_pattern, input_per_million, output_per_million)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, provider, model_pattern, input_per_million, output_per_million, created_at, updated_at
+	`, rule.Provider, rule.ModelPattern, rule.InputPerMillion, rule.OutputPerMillion).Scan(
+		&rule.ID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
+		&rule.OutputPerMillion, &rule.CreatedAt, &rule.UpdatedAt,
+	)
+	return rule, err
+}
+
+func (s *PostgresStore) DeletePricingRule(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM pricing_rules WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }

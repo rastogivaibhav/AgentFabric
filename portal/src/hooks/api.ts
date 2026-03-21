@@ -241,6 +241,16 @@ export interface BudgetUsage {
   budget?: Budget
 }
 
+export interface PricingRule {
+  id?: number
+  provider: string
+  model_pattern: string
+  input_per_million: number
+  output_per_million: number
+  created_at?: string
+  updated_at?: string
+}
+
 export async function apiMutate<T>(path: string, method: string, body?: unknown): Promise<T> {
   const res = await fetch(BASE + '/api/v1' + path, {
     method,
@@ -290,6 +300,34 @@ export function useDeleteBudget(tenantId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['budget', tenantId] })
       qc.invalidateQueries({ queryKey: ['budget-usage', tenantId] })
+    },
+  })
+}
+
+export function usePricingRules() {
+  return useQuery<{ items: PricingRule[]; count: number }>({
+    queryKey: ['pricing-rules'],
+    queryFn: () => apiFetch('/pricing'),
+    retry: false,
+  })
+}
+
+export function useUpsertPricingRule() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (rule: PricingRule) => apiMutate<PricingRule>('/pricing', 'PUT', rule),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pricing-rules'] })
+    },
+  })
+}
+
+export function useDeletePricingRule() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => apiMutate<void>(`/pricing/${id}`, 'DELETE'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pricing-rules'] })
     },
   })
 }

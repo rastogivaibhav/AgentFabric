@@ -59,9 +59,9 @@ type Config struct {
 	} `mapstructure:"discovery"`
 
 	PII struct {
-		Enabled    bool     `mapstructure:"enabled"`
-		Patterns   []string `mapstructure:"patterns"`
-		Redact     bool     `mapstructure:"redact"`
+		Enabled  bool     `mapstructure:"enabled"`
+		Patterns []string `mapstructure:"patterns"`
+		Redact   bool     `mapstructure:"redact"`
 	} `mapstructure:"pii"`
 }
 
@@ -115,10 +115,34 @@ func Load() (*Config, error) {
 		cfg.Auth.JWTSecret = os.Getenv("AF_JWT_SECRET")
 	}
 
+	if err := validateConfig(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }
 
 func hostname() string {
 	h, _ := os.Hostname()
 	return h
+}
+
+func validateConfig(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if !strictConfigEnabled() {
+		return nil
+	}
+	if cfg.Auth.RequireAuth && strings.TrimSpace(cfg.Auth.JWTSecret) == "" {
+		return fmt.Errorf("AF_JWT_SECRET is required when auth.require_auth=true in production")
+	}
+	return nil
+}
+
+func strictConfigEnabled() bool {
+	if os.Getenv("AF_STRICT_CONFIG") == "true" {
+		return true
+	}
+	return strings.EqualFold(os.Getenv("AF_ENV"), "production")
 }

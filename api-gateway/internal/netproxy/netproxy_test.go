@@ -220,6 +220,8 @@ func TestHandleIntercepted_RawKey_Forwarded_SpanRecorded(t *testing.T) {
 	assert.Equal(t, "3", spans[0].Attributes["netproxy.layer"])
 	assert.Equal(t, "openai", spans[0].Attributes["netproxy.provider"])
 	assert.Equal(t, "gpt-4o-mini", spans[0].Attributes["netproxy.model"])
+	assert.Equal(t, "gpt-4o-mini", spans[0].Attributes["gen_ai.request.model"])
+	assert.Greater(t, spans[0].CostUSD, float64(0))
 }
 
 func TestHandleIntercepted_NoKey_ForwardedWithoutSpan(t *testing.T) {
@@ -415,5 +417,7 @@ func TestMITMConnect_TLSHandshake_SpanRecorded(t *testing.T) {
 		assert.Equal(t, "netproxy", spans[0].Framework)
 		assert.Equal(t, "3", spans[0].Attributes["netproxy.layer"])
 		assert.Equal(t, "openai", spans[0].Attributes["netproxy.provider"])
+		assert.Equal(t, "gpt-4o-mini", spans[0].Attributes["gen_ai.request.model"])
+		assert.Greater(t, spans[0].CostUSD, float64(0))
 	}
 }

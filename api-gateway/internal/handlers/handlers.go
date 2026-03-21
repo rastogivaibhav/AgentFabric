@@ -6,11 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
 	"github.com/go-chi/chi/v5"
@@ -19,12 +21,12 @@ import (
 )
 
 type Handler struct {
-	pg              *store.PostgresStore
-	redis           *store.RedisClient
-	hub             *ws.Hub
-	logger          *zap.Logger
-	jwtSecret       string
-	budgetEnforcer  *budget.BudgetEnforcer
+	pg             *store.PostgresStore
+	redis          *store.RedisClient
+	hub            *ws.Hub
+	logger         *zap.Logger
+	jwtSecret      string
+	budgetEnforcer *budget.BudgetEnforcer
 }
 
 func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer) *Handler {
@@ -135,6 +137,7 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		if req.Spans[i].ReceivedAt.IsZero() {
 			req.Spans[i].ReceivedAt = time.Now()
 		}
+		h.repriceSpan(&req.Spans[i])
 	}
 
 	// Budget enforcement — check before writing to DB.
@@ -692,6 +695,100 @@ func parseIntOr(s string, def int) int {
 		return v
 	}
 	return def
+}
+
+func (h *Handler) repriceSpan(sp *models.Span) {
+	if sp == nil {
+		return
+	}
+	model := strings.TrimSpace(sp.Attributes["gen_ai.request.model"])
+	if model == "" {
+		model = strings.TrimSpace(sp.Attributes["proxy.model"])
+	}
+	if model == "" {
+		model = strings.TrimSpace(sp.Attributes["netproxy.model"])
+	}
+
+	provider := strings.TrimSpace(sp.Attributes["gen_ai.system"])
+	inputCost, totalCost := proxy.ComputeExactCost(provider, model, sp.InputTokens, sp.OutputTokens)
+	sp.CostUSD = totalCost
+
+	if sp.Attributes == nil {
+		sp.Attributes = map[string]string{}
+	}
+	if model != "" {
+		sp.Attributes["gen_ai.request.model"] = model
+	}
+	if provider != "" {
+		sp.Attributes["gen_ai.system"] = strings.ToLower(provider)
+	}
+	sp.Attributes["af.cost.input_usd"] = strconv.FormatFloat(inputCost, 'f', 8, 64)
+	sp.Attributes["af.cost.output_usd"] = strconv.FormatFloat(totalCost-inputCost, 'f', 8, 64)
+	sp.Attributes["af.cost.total_usd"] = strconv.FormatFloat(totalCost, 'f', 8, 64)
+}
+
+func (h *Handler) ListPricingRules(w http.ResponseWriter, r *http.Request) {
+	rules, err := h.pg.ListPricingRules(r.Context())
+	if err != nil {
+		h.logger.Error("list pricing rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": rules, "count": len(rules)})
+}
+
+func (h *Handler) UpsertPricingRule(w http.ResponseWriter, r *http.Request) {
+	var rule models.PricingRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	rule.Provider = strings.ToLower(strings.TrimSpace(rule.Provider))
+	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
+	if rule.ModelPattern == "" {
+		writeError(w, http.StatusBadRequest, "model_pattern is required")
+		return
+	}
+	if rule.InputPerMillion < 0 || rule.OutputPerMillion < 0 {
+		writeError(w, http.StatusBadRequest, "pricing values must be non-negative")
+		return
+	}
+
+	updated, err := h.pg.UpsertPricingRule(r.Context(), rule)
+	if err != nil {
+		h.logger.Error("upsert pricing rule", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	if err := proxy.LoadPricingRules(r.Context(), h.pg); err != nil {
+		h.logger.Error("reload pricing rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "reload failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) DeletePricingRule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "ruleId"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid rule id")
+		return
+	}
+	if err := h.pg.DeletePricingRule(r.Context(), id); err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "pricing rule not found")
+			return
+		}
+		h.logger.Error("delete pricing rule", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	if err := proxy.LoadPricingRules(r.Context(), h.pg); err != nil {
+		h.logger.Error("reload pricing rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "reload failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // sumSpanUsage totals tokens and cost across a batch of spans.

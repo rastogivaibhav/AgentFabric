@@ -85,6 +85,21 @@ func TestComputeCost_InputOutputAreIndependent(t *testing.T) {
 	}
 }
 
+func TestComputeCost_UsesConfiguredPricing(t *testing.T) {
+	if err := configurePricing(`[{"provider":"openai","model_pattern":"gpt-4o","input_per_million":1.0,"output_per_million":2.0}]`); err != nil {
+		t.Fatalf("configurePricing(): %v", err)
+	}
+	t.Cleanup(func() {
+		if err := configurePricing(""); err != nil {
+			t.Fatalf("reset configurePricing(): %v", err)
+		}
+	})
+
+	inputCost, outputCost := computeCostWithProvider("openai", "gpt-4o", 1_000_000, 1_000_000)
+	assertAlmost(t, 1.0, inputCost, "configured input cost")
+	assertAlmost(t, 2.0, outputCost, "configured output cost")
+}
+
 // ─── Framework Detection ─────────────────────────────────────────────────────
 
 func TestDetectFramework_CrewAIByAttribute(t *testing.T) {

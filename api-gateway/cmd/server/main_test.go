@@ -171,3 +171,33 @@ func TestParseSecrets_SkipsEmptySegments(t *testing.T) {
 		t.Errorf("want [a b], got %v", got)
 	}
 }
+
+func TestValidateProductionConfig_StrictDisabled(t *testing.T) {
+	t.Setenv("AF_ENV", "")
+	t.Setenv("AF_STRICT_CONFIG", "false")
+
+	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "admin", "")
+	if err != nil {
+		t.Fatalf("expected nil when strict config disabled, got %v", err)
+	}
+}
+
+func TestValidateProductionConfig_RejectsUnsafeDefaults(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+
+	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "admin", "")
+	if err == nil {
+		t.Fatal("expected unsafe production config to be rejected")
+	}
+}
+
+func TestValidateProductionConfig_AcceptsSafeValues(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+
+	err := validateProductionConfig(false, []string{"super-secret"}, "strong-password", strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatalf("expected safe production config to pass, got %v", err)
+	}
+}

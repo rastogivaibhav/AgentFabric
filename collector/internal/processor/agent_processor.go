@@ -55,49 +55,37 @@ const (
 
 // Attribute key constants — server-side computed, NEVER trusted from incoming spans
 const (
-	AttrFramework         = "af.agent.framework"       // computed server-side
-	AttrRunID             = "af.agent.run_id"           // computed if missing
-	AttrCollectorNode     = "af.collector.node"
-	AttrCollectorTS       = "af.collector.received_ns"
-	AttrPolicyTrusted     = "af.policy.trusted"         // always set to "false" on ingestion; recomputed by af-core
-	AttrCostInputUSD      = "af.cost.input_usd"
-	AttrCostOutputUSD     = "af.cost.output_usd"
-	AttrCostTotalUSD      = "af.cost.total_usd"
+	AttrFramework     = "af.agent.framework" // computed server-side
+	AttrRunID         = "af.agent.run_id"    // computed if missing
+	AttrCollectorNode = "af.collector.node"
+	AttrCollectorTS   = "af.collector.received_ns"
+	AttrPolicyTrusted = "af.policy.trusted" // always set to "false" on ingestion; recomputed by af-core
+	AttrCostInputUSD  = "af.cost.input_usd"
+	AttrCostOutputUSD = "af.cost.output_usd"
+	AttrCostTotalUSD  = "af.cost.total_usd"
 
 	// SDK-emitted keys used only for detection (not trusted for policy)
-	sdkCrewRole    = "crewai.agent.role"
-	sdkLangNode    = "langgraph.node.name"
-	sdkADKAgent    = "google.adk.agent.name"
-	sdkOpenAIRun   = "openai.run.id"
-	sdkAnthropicM  = "anthropic.model"
-	sdkGenAISystem = "gen_ai.system"
-	sdkGenAIModel  = "gen_ai.request.model"
-	sdkInputTokens = "gen_ai.usage.input_tokens"
+	sdkCrewRole     = "crewai.agent.role"
+	sdkLangNode     = "langgraph.node.name"
+	sdkADKAgent     = "google.adk.agent.name"
+	sdkOpenAIRun    = "openai.run.id"
+	sdkAnthropicM   = "anthropic.model"
+	sdkGenAISystem  = "gen_ai.system"
+	sdkGenAIModel   = "gen_ai.request.model"
+	sdkInputTokens  = "gen_ai.usage.input_tokens"
 	sdkOutputTokens = "gen_ai.usage.output_tokens"
 )
 
 // Model pricing table (USD per 1M tokens) — update via config/price feed
-var modelPricing = map[string][2]float64{
-	"claude-3-5-sonnet":        {3.0, 15.0},
-	"claude-3-opus":            {15.0, 75.0},
-	"claude-3-haiku":           {0.25, 1.25},
-	"gpt-4o":                   {5.0, 15.0},
-	"gpt-4o-mini":              {0.15, 0.60},
-	"gpt-4-turbo":              {10.0, 30.0},
-	"gemini-1.5-pro":           {3.5, 10.5},
-	"gemini-1.5-flash":         {0.35, 1.05},
-	"llama-3.1-405b":           {5.0, 15.0},
-}
-
 // PII patterns — production set (UK-focused for JLP)
 var piiPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b`),                          // UK postcode
-	regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`),                             // Card number
-	regexp.MustCompile(`\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b`),                   // Email
-	regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key|apikey)\s*[:=]\s*\S+`),          // Credentials
-	regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`),                                                   // SSN
-	regexp.MustCompile(`(?i)\b(mr|mrs|ms|dr)\.?\s+[A-Z][a-z]+\s+[A-Z][a-z]+\b`),                 // Name
-	regexp.MustCompile(`(?:^|[\s,\(])(?:\+44|0)[\s\-]?(?:\d[\s\-]?){9,10}\b`),                    // UK phone
+	regexp.MustCompile(`(?i)\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b`),                   // UK postcode
+	regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`),                     // Card number
+	regexp.MustCompile(`\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b`),           // Email
+	regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key|apikey)\s*[:=]\s*\S+`), // Credentials
+	regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`),                                          // SSN
+	regexp.MustCompile(`(?i)\b(mr|mrs|ms|dr)\.?\s+[A-Z][a-z]+\s+[A-Z][a-z]+\b`),          // Name
+	regexp.MustCompile(`(?:^|[\s,\(])(?:\+44|0)[\s\-]?(?:\d[\s\-]?){9,10}\b`),            // UK phone
 }
 
 // ─── Batch ──────────────────────────────────────────────────────────────────
@@ -124,11 +112,11 @@ type EnrichedSpan struct {
 	ReceivedNs    int64             `json:"received_ns"`
 	RunID         string            `json:"run_id"`
 	// Cost fields — collector computes all three; downstream must not recompute
-	InputTokens    int64   `json:"input_tokens,omitempty"`
-	OutputTokens   int64   `json:"output_tokens,omitempty"`
-	InputCostUSD   float64 `json:"input_cost_usd,omitempty"`
-	OutputCostUSD  float64 `json:"output_cost_usd,omitempty"`
-	CostUSD        float64 `json:"cost_usd,omitempty"`
+	InputTokens   int64   `json:"input_tokens,omitempty"`
+	OutputTokens  int64   `json:"output_tokens,omitempty"`
+	InputCostUSD  float64 `json:"input_cost_usd,omitempty"`
+	OutputCostUSD float64 `json:"output_cost_usd,omitempty"`
+	CostUSD       float64 `json:"cost_usd,omitempty"`
 }
 
 type SpanEvent struct {
@@ -258,7 +246,7 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 	inputTokens := parseInt64(attrs[sdkInputTokens])
 	outputTokens := parseInt64(attrs[sdkOutputTokens])
 	model := attrs[sdkGenAIModel]
-	inputCost, outputCost := computeCost(model, inputTokens, outputTokens)
+	inputCost, outputCost := computeCostWithProvider(attrs[sdkGenAISystem], model, inputTokens, outputTokens)
 
 	// 6. Run ID (ensure present)
 	runID := attrs["af.agent.run_id"]
@@ -410,22 +398,7 @@ func detectFramework(attrs map[string]string, spanName string) Framework {
 }
 
 func computeCost(model string, inputTokens, outputTokens int64) (float64, float64) {
-	model = strings.ToLower(model)
-	// Exact-match first — prevents "gpt-4o" prefix from shadowing "gpt-4o-mini".
-	if pricing, ok := modelPricing[model]; ok {
-		inputCost := float64(inputTokens) / 1_000_000 * pricing[0]
-		outputCost := float64(outputTokens) / 1_000_000 * pricing[1]
-		return inputCost, outputCost
-	}
-	// Fallback: prefix match for versioned model names (e.g. "gpt-4o-2024-08-06").
-	for key, pricing := range modelPricing {
-		if strings.HasPrefix(model, key) {
-			inputCost := float64(inputTokens) / 1_000_000 * pricing[0]
-			outputCost := float64(outputTokens) / 1_000_000 * pricing[1]
-			return inputCost, outputCost
-		}
-	}
-	return 0, 0
+	return computeCostWithProvider("", model, inputTokens, outputTokens)
 }
 
 func extractAttrs(res *resourcepb.Resource) map[string]string {

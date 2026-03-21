@@ -36,6 +36,9 @@ func main() {
 		logger, _ = zap.NewDevelopment()
 	}
 	defer logger.Sync()
+	if err := processor.ConfigurePricingFromEnv(); err != nil {
+		logger.Fatal("invalid pricing configuration", zap.Error(err))
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

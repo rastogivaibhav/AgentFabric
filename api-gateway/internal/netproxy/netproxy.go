@@ -216,7 +216,8 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 
 	// 4. Budget pre-check (only when tenant is known from vault).
 	if p.budgetEnforcer != nil && tenantID != "" {
-		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, 0)
+		_, estimatedCostUSD := proxy.ComputeEstimatedCost(provider, model, estimatedTokens)
+		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
 			http.Error(w,
 				`{"error":{"message":"token budget exceeded","type":"budget_exceeded"}}`,
@@ -345,6 +346,8 @@ func (p *NetProxy) recordSpan(tenantID, provider, model, rawKey string, inputTok
 		maskedKey = maskedKey[:14] + "..."
 	}
 
+	_, totalCostUSD := proxy.ComputeExactCost(provider, model, inputTokens, outputTokens)
+
 	span := models.Span{
 		ID:           spanID,
 		TraceID:      traceID,
@@ -356,14 +359,16 @@ func (p *NetProxy) recordSpan(tenantID, provider, model, rawKey string, inputTok
 		StatusCode:   200,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
+		CostUSD:      totalCostUSD,
 		TenantID:     tenantID,
 		ReceivedAt:   now,
 		Attributes: map[string]string{
-			"netproxy.provider": provider,
-			"netproxy.model":    model,
-			"netproxy.key":      maskedKey,
-			"netproxy.layer":    "3",
-			"gen_ai.system":     provider,
+			"netproxy.provider":    provider,
+			"netproxy.model":       model,
+			"netproxy.key":         maskedKey,
+			"netproxy.layer":       "3",
+			"gen_ai.system":        provider,
+			"gen_ai.request.model": model,
 		},
 	}
 	if tenantID == "" {

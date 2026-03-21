@@ -25,8 +25,8 @@ func NewKeyHandler(v *vault.Vault, logger *zap.Logger) *KeyHandler {
 // ─── POST /api/v1/keys ───────────────────────────────────────────────────────
 
 type registerKeyRequest struct {
-	Provider    string `json:"provider"`    // openai | anthropic | google
-	RealKey     string `json:"real_key"`    // sk-... or sk-ant-...
+	Provider    string `json:"provider"` // openai | anthropic
+	RealKey     string `json:"real_key"` // sk-... or sk-ant-...
 	DisplayName string `json:"display_name"`
 	TeamID      string `json:"team_id,omitempty"`
 }
@@ -59,10 +59,10 @@ func (h *KeyHandler) RegisterKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch req.Provider {
-	case "openai", "anthropic", "google":
+	case "openai", "anthropic":
 		// valid
 	default:
-		http.Error(w, "provider must be one of: openai, anthropic, google", http.StatusBadRequest)
+		http.Error(w, "provider must be one of: openai, anthropic", http.StatusBadRequest)
 		return
 	}
 

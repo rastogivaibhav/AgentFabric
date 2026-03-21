@@ -43,17 +43,29 @@ func main() {
 
 	// TLS configuration — fail-secure: if AF_TLS_ENABLED=true the server will
 	// refuse to start as plain HTTP when cert/key paths are absent.
-	tlsEnabled  := os.Getenv("AF_TLS_ENABLED") == "true"
+	tlsEnabled := os.Getenv("AF_TLS_ENABLED") == "true"
 	tlsCertFile := os.Getenv("AF_TLS_CERT_FILE")
-	tlsKeyFile  := os.Getenv("AF_TLS_KEY_FILE")
+	tlsKeyFile := os.Getenv("AF_TLS_KEY_FILE")
 
 	// AF_JWT_SECRETS: comma-separated list for zero-downtime key rotation.
 	// First entry = active signing key. All entries accepted for verification.
 	// Falls back to AF_JWT_SECRET when not set.
 	jwtSecrets := parseSecrets(envOr("AF_JWT_SECRETS", jwtSecret))
 
+	if err := validateProductionConfig(authDisabled, jwtSecrets, envOr("AF_ADMIN_PASSWORD", "admin"), os.Getenv("AF_VAULT_KEY")); err != nil {
+		logger.Fatal("unsafe production configuration", zap.Error(err))
+	}
+
 	if authDisabled {
 		logger.Warn("AF_AUTH_DISABLED=true — JWT authentication is OFF (dev mode only)")
+	}
+	// Pricing precedence:
+	// 1. Bootstrap from AF_MODEL_PRICING_FILE / AF_MODEL_PRICING_JSON when present.
+	// 2. Otherwise use built-in defaults.
+	// 3. After migrations and store init, DB pricing rules override bootstrap pricing
+	//    when the pricing_rules table contains rows.
+	if err := proxy.ConfigurePricingFromEnv(); err != nil {
+		logger.Fatal("invalid pricing configuration", zap.Error(err))
 	}
 
 	// ─── Database migrations ──────────────────────────────────────────────────
@@ -69,6 +81,9 @@ func main() {
 		logger.Fatal("postgres init failed", zap.Error(err))
 	}
 	defer pgStore.Close()
+	if err := proxy.LoadPricingRules(context.Background(), pgStore); err != nil {
+		logger.Fatal("pricing rules load failed", zap.Error(err))
+	}
 
 	redisClient, err := store.NewRedisClient(redisAddr)
 	if err != nil {
@@ -268,6 +283,12 @@ func main() {
 			r.With(middleware.RequireRole("admin")).Delete("/", h.DeleteBudget)
 		})
 
+		r.Route("/pricing", func(r chi.Router) {
+			r.With(middleware.RequireRole("admin")).Get("/", h.ListPricingRules)
+			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertPricingRule)
+			r.With(middleware.RequireRole("admin")).Delete("/{ruleId}", h.DeletePricingRule)
+		})
+
 		// Virtual keys (Layer 2) — register real LLM keys, receive af-vk-* virtual keys
 		r.Route("/keys", func(r chi.Router) {
 			r.Get("/", keyHandler.ListKeys)
@@ -309,8 +330,8 @@ func main() {
 	// ─── Layer 3: Net proxy server on :8443 ──────────────────────────────────
 	netProxyAddr := envOr("AF_NETPROXY_ADDR", ":8443")
 	netProxySrv := &http.Server{
-		Addr:        netProxyAddr,
-		Handler:     np,
+		Addr:    netProxyAddr,
+		Handler: np,
 		// No write timeout — CONNECT tunnels are long-lived bidirectional streams.
 		ReadTimeout: 60 * time.Second,
 		IdleTimeout: 120 * time.Second,
@@ -343,7 +364,7 @@ func serve(srv *http.Server, tlsEnabled bool, certFile, keyFile string, logger *
 	if tlsEnabled {
 		if certFile == "" || keyFile == "" {
 			return fmt.Errorf(
-				"AF_TLS_ENABLED=true but AF_TLS_CERT_FILE or AF_TLS_KEY_FILE is not set — "+
+				"AF_TLS_ENABLED=true but AF_TLS_CERT_FILE or AF_TLS_KEY_FILE is not set — " +
 					"refusing to fall back to plain HTTP (fail-secure); set both env vars or disable TLS",
 			)
 		}
@@ -425,4 +446,30 @@ func parseSecrets(raw string) []string {
 		return []string{"dev-secret-change-in-production"}
 	}
 	return out
+}
+
+func validateProductionConfig(authDisabled bool, jwtSecrets []string, adminPassword, vaultKey string) error {
+	if !strictConfigEnabled() {
+		return nil
+	}
+	if authDisabled {
+		return fmt.Errorf("AF_AUTH_DISABLED=true is not allowed when AF_ENV=production or AF_STRICT_CONFIG=true")
+	}
+	if len(jwtSecrets) == 0 || strings.TrimSpace(jwtSecrets[0]) == "" || jwtSecrets[0] == "dev-secret-change-in-production" {
+		return fmt.Errorf("AF_JWT_SECRET/AF_JWT_SECRETS must be set to a non-default value")
+	}
+	if adminPassword == "admin" || strings.TrimSpace(adminPassword) == "" {
+		return fmt.Errorf("AF_ADMIN_PASSWORD must be set to a non-default value")
+	}
+	if strings.TrimSpace(vaultKey) == "" || vaultKey == strings.Repeat("0", 64) {
+		return fmt.Errorf("AF_VAULT_KEY must be set to a non-default value")
+	}
+	return nil
+}
+
+func strictConfigEnabled() bool {
+	if os.Getenv("AF_STRICT_CONFIG") == "true" {
+		return true
+	}
+	return strings.EqualFold(os.Getenv("AF_ENV"), "production")
 }
