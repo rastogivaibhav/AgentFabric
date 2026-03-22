@@ -1,0 +1,24 @@
+# import config
+importmap golang.org/x/net/dns/dnsmessage=vendor/golang.org/x/net/dns/dnsmessage
+packagefile cmp=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b042\_pkg_.a
+packagefile context=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b059\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b006\_pkg_.a
+packagefile vendor/golang.org/x/net/dns/dnsmessage=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b182\_pkg_.a
+packagefile internal/bytealg=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b013\_pkg_.a
+packagefile internal/godebug=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b049\_pkg_.a
+packagefile internal/nettrace=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b183\_pkg_.a
+packagefile internal/poll=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b091\_pkg_.a
+packagefile internal/singleflight=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b184\_pkg_.a
+packagefile internal/strconv=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b033\_pkg_.a
+packagefile internal/stringslite=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b035\_pkg_.a
+packagefile internal/syscall/windows=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b084\_pkg_.a
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b005\_pkg_.a
+packagefile io/fs=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b089\_pkg_.a
+packagefile net/netip=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b185\_pkg_.a
+packagefile os=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b087\_pkg_.a
+packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b012\_pkg_.a
+packagefile slices=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b041\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b037\_pkg_.a
+packagefile sync/atomic=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b039\_pkg_.a
+packagefile syscall=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b053\_pkg_.a
+packagefile time=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b048\_pkg_.a

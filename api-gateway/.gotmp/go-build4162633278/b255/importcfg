@@ -1,0 +1,7 @@
+# import config
+packagefile context=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b059\_pkg_.a
+packagefile github.com/agentfabric/api-gateway/internal/models=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b002\_pkg_.a
+packagefile regexp=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b213\_pkg_.a
+packagefile sort=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b056\_pkg_.a
+packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b046\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b037\_pkg_.a

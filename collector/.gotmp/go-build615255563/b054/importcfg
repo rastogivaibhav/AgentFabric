@@ -1,0 +1,5 @@
+# import config
+packagefile internal/bisect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b055\_pkg_.a
+packagefile internal/godebugs=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b015\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b040\_pkg_.a
+packagefile sync/atomic=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b042\_pkg_.a

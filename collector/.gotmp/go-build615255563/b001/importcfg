@@ -1,0 +1,7 @@
+# import config
+packagefile os=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b002\_pkg_.a
+packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b060\_pkg_.a
+packagefile testing=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b064\_pkg_.a
+packagefile testing/internal/testdeps=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b077\_pkg_.a
+packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b009\_pkg_.a
+packagefile github.com/agentfabric/collector/internal/processor=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b127\_pkg_.a

@@ -1,0 +1,14 @@
+# import config
+packagefile bufio=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b078\_pkg_.a
+packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b066\_pkg_.a
+packagefile internal/fuzz=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b079\_pkg_.a
+packagefile internal/testlog=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b059\_pkg_.a
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b051\_pkg_.a
+packagefile os=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b002\_pkg_.a
+packagefile os/signal=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b119\_pkg_.a
+packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b060\_pkg_.a
+packagefile regexp=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b120\_pkg_.a
+packagefile runtime/pprof=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b122\_pkg_.a
+packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b071\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b040\_pkg_.a
+packagefile time=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b053\_pkg_.a

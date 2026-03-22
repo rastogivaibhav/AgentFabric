@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 )
 
@@ -37,7 +38,7 @@ type openAIStreamChunk struct {
 	Usage  openAIUsage `json:"usage"` // only in the final chunk with stream_options.include_usage
 }
 
-func (p *openAIParser) ParseRequest(body []byte) (model string, streaming bool, estimatedTokens int64, err error) {
+func (p *openAIParser) ParseRequest(_ *http.Request, body []byte) (model string, streaming bool, estimatedTokens int64, err error) {
 	var req openAIRequest
 	if err = json.Unmarshal(body, &req); err != nil {
 		return "", false, 0, err

@@ -64,8 +64,8 @@ func defaultPricingRules() []pricingRule {
 		{Provider: ProviderOpenAI, ModelPattern: "gpt-4o-mini", InputPerMillion: 0.15, OutputPerMillion: 0.60, Active: true, Priority: 100},
 		{Provider: ProviderOpenAI, ModelPattern: "gpt-4-turbo", InputPerMillion: 10.0, OutputPerMillion: 30.0, Active: true, Priority: 100},
 		{Provider: ProviderOpenAI, ModelPattern: "gpt-3.5-turbo", InputPerMillion: 0.50, OutputPerMillion: 1.50, Active: true, Priority: 100},
-		{Provider: "google", ModelPattern: "gemini-1.5-pro", InputPerMillion: 3.5, OutputPerMillion: 10.5, Active: true, Priority: 100},
-		{Provider: "google", ModelPattern: "gemini-1.5-flash", InputPerMillion: 0.35, OutputPerMillion: 1.05, Active: true, Priority: 100},
+		{Provider: ProviderGoogle, ModelPattern: "gemini-1.5-pro", InputPerMillion: 3.5, OutputPerMillion: 10.5, Active: true, Priority: 100},
+		{Provider: ProviderGoogle, ModelPattern: "gemini-1.5-flash", InputPerMillion: 0.35, OutputPerMillion: 1.05, Active: true, Priority: 100},
 		{Provider: "meta", ModelPattern: "llama-3.1-405b", InputPerMillion: 5.0, OutputPerMillion: 15.0, Active: true, Priority: 100},
 	}
 }
@@ -109,7 +109,7 @@ func SetPricingRules(rules []models.PricingRule) {
 		normalized = append(normalized, pricingRule{
 			ID:               rule.ID,
 			TenantID:         tenantID,
-			Provider:         strings.ToLower(strings.TrimSpace(rule.Provider)),
+			Provider:         NormalizeProvider(rule.Provider),
 			ModelPattern:     strings.ToLower(strings.TrimSpace(rule.ModelPattern)),
 			InputPerMillion:  rule.InputPerMillion,
 			OutputPerMillion: rule.OutputPerMillion,
@@ -151,7 +151,7 @@ func parsePricingRules(raw string) ([]pricingRule, error) {
 
 	normalized := make([]pricingRule, 0, len(rules))
 	for _, rule := range rules {
-		rule.Provider = strings.ToLower(strings.TrimSpace(rule.Provider))
+		rule.Provider = NormalizeProvider(rule.Provider)
 		rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
 		if rule.ModelPattern == "" {
 			return nil, fmt.Errorf("parse pricing config: model_pattern is required")
@@ -188,7 +188,7 @@ func currentPricingRules() []pricingRule {
 }
 
 func ResolvePricing(provider, model, tenantID string, at time.Time) (PricingMatch, bool) {
-	normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
+	normalizedProvider := NormalizeProvider(provider)
 	normalizedModel := strings.ToLower(strings.TrimSpace(model))
 	normalizedTenant := strings.TrimSpace(tenantID)
 	if normalizedModel == "" {

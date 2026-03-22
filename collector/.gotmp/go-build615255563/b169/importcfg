@@ -1,0 +1,22 @@
+# import config
+importmap golang.org/x/crypto/cryptobyte=vendor/golang.org/x/crypto/cryptobyte
+importmap golang.org/x/crypto/cryptobyte/asn1=vendor/golang.org/x/crypto/cryptobyte/asn1
+packagefile crypto=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b081\_pkg_.a
+packagefile crypto/ecdh=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b164\_pkg_.a
+packagefile crypto/elliptic=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b170\_pkg_.a
+packagefile crypto/internal/boring=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b083\_pkg_.a
+packagefile crypto/internal/boring/bbig=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b171\_pkg_.a
+packagefile crypto/internal/fips140/ecdsa=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b172\_pkg_.a
+packagefile crypto/internal/fips140/nistec=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b166\_pkg_.a
+packagefile crypto/internal/fips140cache=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b174\_pkg_.a
+packagefile crypto/internal/fips140hash=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b175\_pkg_.a
+packagefile crypto/internal/fips140only=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b104\_pkg_.a
+packagefile crypto/internal/rand=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b157\_pkg_.a
+packagefile crypto/sha512=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b177\_pkg_.a
+packagefile crypto/subtle=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b106\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile vendor/golang.org/x/crypto/cryptobyte=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b178\_pkg_.a
+packagefile vendor/golang.org/x/crypto/cryptobyte/asn1=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b181\_pkg_.a
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b051\_pkg_.a
+packagefile math/big=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b160\_pkg_.a
+packagefile math/rand/v2=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b159\_pkg_.a

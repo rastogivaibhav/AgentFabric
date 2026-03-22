@@ -1,0 +1,4 @@
+# import config
+packagefile crypto=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b062\_pkg_.a
+packagefile crypto/internal/fips140/sha3=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b076\_pkg_.a
+packagefile hash=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b063\_pkg_.a

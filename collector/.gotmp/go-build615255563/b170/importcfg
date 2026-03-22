@@ -1,0 +1,6 @@
+# import config
+packagefile crypto/internal/fips140/nistec=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b166\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b051\_pkg_.a
+packagefile math/big=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b160\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b040\_pkg_.a

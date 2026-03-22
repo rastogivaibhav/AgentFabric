@@ -222,6 +222,12 @@ func (s *PostgresStore) GetTraceSpans(ctx context.Context, traceID, tenantID str
 		}
 		json.Unmarshal(attrsJSON, &sp.Attributes)
 		json.Unmarshal(eventsJSON, &sp.Events)
+		if sp.Attributes == nil {
+			sp.Attributes = map[string]string{}
+		}
+		if sp.Events == nil {
+			sp.Events = []models.SpanEvent{}
+		}
 		spans = append(spans, sp)
 	}
 	return spans, nil
@@ -262,6 +268,12 @@ func (s *PostgresStore) GetSpansForTraces(ctx context.Context, traceIDs []string
 		}
 		json.Unmarshal(attrsJSON, &sp.Attributes)
 		json.Unmarshal(eventsJSON, &sp.Events)
+		if sp.Attributes == nil {
+			sp.Attributes = map[string]string{}
+		}
+		if sp.Events == nil {
+			sp.Events = []models.SpanEvent{}
+		}
 		spans = append(spans, sp)
 	}
 	return spans, nil

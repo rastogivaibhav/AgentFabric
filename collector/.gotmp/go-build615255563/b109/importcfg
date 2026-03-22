@@ -1,0 +1,17 @@
+# import config
+packagefile bytes=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b065\_pkg_.a
+packagefile cmp=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b046\_pkg_.a
+packagefile encoding=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b068\_pkg_.a
+packagefile encoding/base64=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b110\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile fmt=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b069\_pkg_.a
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b051\_pkg_.a
+packagefile math=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b061\_pkg_.a
+packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b060\_pkg_.a
+packagefile slices=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b045\_pkg_.a
+packagefile strconv=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b062\_pkg_.a
+packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b071\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b040\_pkg_.a
+packagefile unicode=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b063\_pkg_.a
+packagefile unicode/utf16=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b048\_pkg_.a
+packagefile unicode/utf8=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b049\_pkg_.a

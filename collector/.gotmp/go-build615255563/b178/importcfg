@@ -1,0 +1,9 @@
+# import config
+importmap golang.org/x/crypto/cryptobyte/asn1=vendor/golang.org/x/crypto/cryptobyte/asn1
+packagefile encoding/asn1=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b179\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile fmt=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b069\_pkg_.a
+packagefile vendor/golang.org/x/crypto/cryptobyte/asn1=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b181\_pkg_.a
+packagefile math/big=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b160\_pkg_.a
+packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b060\_pkg_.a
+packagefile time=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b053\_pkg_.a

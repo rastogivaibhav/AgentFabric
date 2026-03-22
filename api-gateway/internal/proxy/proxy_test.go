@@ -39,7 +39,7 @@ func (m *mockStore) CreatePolicyAuditEntry(_ context.Context, _ models.PolicyDec
 func TestOpenAIParser_ParseRequest(t *testing.T) {
 	body := `{"model":"gpt-4o","stream":false,"messages":[{"role":"user","content":"hello"}]}`
 	p := &openAIParser{}
-	model, streaming, tokens, err := p.ParseRequest([]byte(body))
+	model, streaming, tokens, err := p.ParseRequest(httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil), []byte(body))
 	require.NoError(t, err)
 	assert.Equal(t, "gpt-4o", model)
 	assert.False(t, streaming)
@@ -49,7 +49,7 @@ func TestOpenAIParser_ParseRequest(t *testing.T) {
 func TestOpenAIParser_ParseRequest_Streaming(t *testing.T) {
 	body := `{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`
 	p := &openAIParser{}
-	_, streaming, _, err := p.ParseRequest([]byte(body))
+	_, streaming, _, err := p.ParseRequest(httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil), []byte(body))
 	require.NoError(t, err)
 	assert.True(t, streaming)
 }
@@ -78,7 +78,7 @@ func TestOpenAIParser_ParseStreamingUsage(t *testing.T) {
 func TestAnthropicParser_ParseRequest(t *testing.T) {
 	body := `{"model":"claude-3-5-sonnet-20241022","stream":false,"messages":[{"role":"user","content":"hi"}],"max_tokens":100}`
 	p := &anthropicParser{}
-	model, streaming, tokens, err := p.ParseRequest([]byte(body))
+	model, streaming, tokens, err := p.ParseRequest(httptest.NewRequest(http.MethodPost, "/v1/messages", nil), []byte(body))
 	require.NoError(t, err)
 	assert.Equal(t, "claude-3-5-sonnet-20241022", model)
 	assert.False(t, streaming)
@@ -260,6 +260,10 @@ func TestParserFor_Known(t *testing.T) {
 	_, ok := ParserFor(ProviderOpenAI)
 	assert.True(t, ok)
 	_, ok = ParserFor(ProviderAnthropic)
+	assert.True(t, ok)
+	_, ok = ParserFor(ProviderGoogle)
+	assert.True(t, ok)
+	_, ok = ParserFor("gemini")
 	assert.True(t, ok)
 }
 

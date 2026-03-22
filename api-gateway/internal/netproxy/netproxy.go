@@ -101,7 +101,7 @@ func (p *NetProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *NetProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	host := r.Host // "api.openai.com:443"
 	hostname := stripPort(host)
-	provider, isLLM := knownLLMHosts[hostname]
+	provider, isLLM := proxy.ProviderForHost(hostname)
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -187,10 +187,12 @@ func (p *NetProxy) passthroughConnect(clientConn net.Conn, host string) {
 // handleIntercepted is called after TLS termination with a proper http.Request.
 // It applies vault key substitution, budget enforcement, and span recording.
 func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, host, provider string) {
+	provider = proxy.NormalizeProvider(provider)
 	// 1. Get a parser for this provider (Gemini has no parser yet → passthrough).
 	parser, hasParser := proxy.ParserFor(provider)
 	if !hasParser {
-		p.forwardRaw(w, r, host)
+		p.logger.Warn("netproxy: intercepted provider missing parser", zap.String("provider", provider), zap.String("host", host))
+		http.Error(w, "unsupported provider", http.StatusBadGateway)
 		return
 	}
 
@@ -222,7 +224,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 	}
 	r.Body.Close()
 
-	model, streaming, estimatedTokens, _ := parser.ParseRequest(body)
+	model, streaming, estimatedTokens, _ := parser.ParseRequest(r, body)
 	traceID := newID()
 	spanID := newID()
 	environment := proxyEnvironmentFromRequest(r)
@@ -383,7 +385,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 	}
 }
 
-// forwardRaw proxies requests for providers without a parser (e.g. Gemini stub).
+// forwardRaw is retained as an emergency passthrough helper for unexpected hosts.
 func (p *NetProxy) forwardRaw(w http.ResponseWriter, r *http.Request, host string) {
 	upstreamURL := "https://" + host + r.URL.RequestURI()
 	upReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, r.Body)

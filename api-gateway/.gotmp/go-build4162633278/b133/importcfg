@@ -1,0 +1,5 @@
+# import config
+packagefile crypto/cipher=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b064\_pkg_.a
+packagefile crypto/internal/boring=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b061\_pkg_.a
+packagefile crypto/internal/fips140/aes=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b066\_pkg_.a
+packagefile strconv=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b044\_pkg_.a

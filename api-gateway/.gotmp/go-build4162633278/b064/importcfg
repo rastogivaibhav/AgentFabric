@@ -1,0 +1,10 @@
+# import config
+packagefile bytes=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b065\_pkg_.a
+packagefile crypto/internal/fips140/aes=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b066\_pkg_.a
+packagefile crypto/internal/fips140/aes/gcm=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b080\_pkg_.a
+packagefile crypto/internal/fips140/alias=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b069\_pkg_.a
+packagefile crypto/internal/fips140only=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b095\_pkg_.a
+packagefile crypto/subtle=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b097\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b006\_pkg_.a
+packagefile internal/byteorder=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b004\_pkg_.a
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b005\_pkg_.a

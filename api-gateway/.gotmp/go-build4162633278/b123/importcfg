@@ -1,0 +1,5 @@
+# import config
+packagefile go.uber.org/zap/buffer=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b118\_pkg_.a
+packagefile go.uber.org/zap/internal/bufferpool=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b120\_pkg_.a
+packagefile go.uber.org/zap/internal/pool=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b119\_pkg_.a
+packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b012\_pkg_.a

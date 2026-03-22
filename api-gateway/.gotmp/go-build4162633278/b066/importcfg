@@ -1,0 +1,13 @@
+# import config
+packagefile bytes=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b065\_pkg_.a
+packagefile crypto/internal/fips140=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b067\_pkg_.a
+packagefile crypto/internal/fips140/alias=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b069\_pkg_.a
+packagefile crypto/internal/fips140/check=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b070\_pkg_.a
+packagefile crypto/internal/fips140/subtle=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b077\_pkg_.a
+packagefile crypto/internal/fips140deps/byteorder=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b073\_pkg_.a
+packagefile crypto/internal/fips140deps/cpu=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b074\_pkg_.a
+packagefile crypto/internal/fips140deps/godebug=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b068\_pkg_.a
+packagefile crypto/internal/impl=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b075\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b006\_pkg_.a
+packagefile math/bits=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b034\_pkg_.a
+packagefile strconv=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b044\_pkg_.a

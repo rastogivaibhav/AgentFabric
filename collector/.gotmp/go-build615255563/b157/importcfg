@@ -1,0 +1,6 @@
+# import config
+packagefile crypto/internal/boring=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b083\_pkg_.a
+packagefile crypto/internal/fips140/drbg=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b100\_pkg_.a
+packagefile crypto/internal/randutil=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b158\_pkg_.a
+packagefile internal/godebug=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b054\_pkg_.a
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b051\_pkg_.a

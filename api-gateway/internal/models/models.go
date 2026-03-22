@@ -5,39 +5,45 @@ import "time"
 // ─── Span ────────────────────────────────────────────────────────────────────
 
 type Span struct {
-	ID              string            `json:"span_id" db:"span_id"`
-	TraceID         string            `json:"trace_id" db:"trace_id"`
-	ParentID        string            `json:"parent_span_id,omitempty" db:"parent_span_id"`
-	RunID           string            `json:"run_id" db:"run_id"`
-	Name            string            `json:"name" db:"name"`
-	Framework       string            `json:"framework" db:"framework"`
-	StartTimeNs     int64             `json:"start_time_ns" db:"start_time_ns"`
-	DurationNs      int64             `json:"duration_ns" db:"duration_ns"`
-	StatusCode      int               `json:"status_code" db:"status_code"`
-	StatusMsg       string            `json:"status_msg,omitempty" db:"status_msg"`
-	Attributes      map[string]string `json:"attributes" db:"-"`
-	Events          []SpanEvent       `json:"events,omitempty" db:"-"`
-	InputTokens     int64             `json:"input_tokens,omitempty" db:"input_tokens"`
-	OutputTokens    int64             `json:"output_tokens,omitempty" db:"output_tokens"`
-	CostUSD         float64           `json:"cost_usd,omitempty" db:"cost_usd"`
-	Depth           int               `json:"depth,omitempty" db:"-"`
-	StepType        string            `json:"step_type,omitempty" db:"-"`
-	Provider        string            `json:"provider,omitempty" db:"-"`
-	Model           string            `json:"model,omitempty" db:"-"`
-	AppName         string            `json:"app_name,omitempty" db:"-"`
-	Environment     string            `json:"environment,omitempty" db:"-"`
-	UserID          string            `json:"user_id,omitempty" db:"-"`
-	SessionID       string            `json:"session_id,omitempty" db:"-"`
-	ErrorClass      string            `json:"error_class,omitempty" db:"-"`
-	PromptPreview   string            `json:"prompt_preview,omitempty" db:"-"`
-	ResponsePreview string            `json:"response_preview,omitempty" db:"-"`
-	RetryCount      int               `json:"retry_count,omitempty" db:"-"`
-	Blocked         bool              `json:"blocked,omitempty" db:"-"`
-	BlockedReason   string            `json:"blocked_reason,omitempty" db:"-"`
-	PricingRuleID   int64             `json:"pricing_rule_id,omitempty" db:"-"`
-	PricingScope    string            `json:"pricing_scope,omitempty" db:"-"`
-	TenantID        string            `json:"-" db:"tenant_id"`
-	ReceivedAt      time.Time         `json:"received_at" db:"received_at"`
+	ID                    string            `json:"span_id" db:"span_id"`
+	TraceID               string            `json:"trace_id" db:"trace_id"`
+	ParentID              string            `json:"parent_span_id,omitempty" db:"parent_span_id"`
+	RunID                 string            `json:"run_id" db:"run_id"`
+	Name                  string            `json:"name" db:"name"`
+	Framework             string            `json:"framework" db:"framework"`
+	StartTimeNs           int64             `json:"start_time_ns" db:"start_time_ns"`
+	DurationNs            int64             `json:"duration_ns" db:"duration_ns"`
+	StatusCode            int               `json:"status_code" db:"status_code"`
+	StatusMsg             string            `json:"status_msg,omitempty" db:"status_msg"`
+	Attributes            map[string]string `json:"attributes" db:"-"`
+	Events                []SpanEvent       `json:"events,omitempty" db:"-"`
+	InputTokens           int64             `json:"input_tokens,omitempty" db:"input_tokens"`
+	OutputTokens          int64             `json:"output_tokens,omitempty" db:"output_tokens"`
+	CostUSD               float64           `json:"cost_usd,omitempty" db:"cost_usd"`
+	Depth                 int               `json:"depth,omitempty" db:"-"`
+	StepType              string            `json:"step_type,omitempty" db:"-"`
+	Provider              string            `json:"provider,omitempty" db:"-"`
+	Model                 string            `json:"model,omitempty" db:"-"`
+	AppName               string            `json:"app_name,omitempty" db:"-"`
+	Environment           string            `json:"environment,omitempty" db:"-"`
+	UserID                string            `json:"user_id,omitempty" db:"-"`
+	SessionID             string            `json:"session_id,omitempty" db:"-"`
+	ErrorClass            string            `json:"error_class,omitempty" db:"-"`
+	PromptPreview         string            `json:"prompt_preview,omitempty" db:"-"`
+	ResponsePreview       string            `json:"response_preview,omitempty" db:"-"`
+	RetryCount            int               `json:"retry_count,omitempty" db:"-"`
+	Blocked               bool              `json:"blocked,omitempty" db:"-"`
+	BlockedReason         string            `json:"blocked_reason,omitempty" db:"-"`
+	ParentName            string            `json:"parent_name,omitempty" db:"-"`
+	Lineage               []string          `json:"lineage,omitempty" db:"-"`
+	FailureSummary        string            `json:"failure_summary,omitempty" db:"-"`
+	RedactionCount        int               `json:"redaction_count,omitempty" db:"-"`
+	PolicyDecisionCount   int               `json:"policy_decision_count,omitempty" db:"-"`
+	PolicyDecisionSummary []string          `json:"policy_decision_summary,omitempty" db:"-"`
+	PricingRuleID         int64             `json:"pricing_rule_id,omitempty" db:"-"`
+	PricingScope          string            `json:"pricing_scope,omitempty" db:"-"`
+	TenantID              string            `json:"-" db:"tenant_id"`
+	ReceivedAt            time.Time         `json:"received_at" db:"received_at"`
 }
 
 type SpanEvent struct {
@@ -66,17 +72,21 @@ type Trace struct {
 }
 
 type TraceInsights struct {
-	Models       []string       `json:"models,omitempty"`
-	Providers    []string       `json:"providers,omitempty"`
-	Apps         []string       `json:"apps,omitempty"`
-	Environments []string       `json:"environments,omitempty"`
-	StepTypes    map[string]int `json:"step_types,omitempty"`
-	ErrorClasses map[string]int `json:"error_classes,omitempty"`
-	LLMCalls     int            `json:"llm_calls,omitempty"`
-	ToolCalls    int            `json:"tool_calls,omitempty"`
-	BlockedSpans int            `json:"blocked_spans,omitempty"`
-	RetryCount   int            `json:"retry_count,omitempty"`
-	MaxDepth     int            `json:"max_depth,omitempty"`
+	Models          []string       `json:"models,omitempty"`
+	Providers       []string       `json:"providers,omitempty"`
+	Apps            []string       `json:"apps,omitempty"`
+	Environments    []string       `json:"environments,omitempty"`
+	StepTypes       map[string]int `json:"step_types,omitempty"`
+	ErrorClasses    map[string]int `json:"error_classes,omitempty"`
+	PolicyResults   map[string]int `json:"policy_results,omitempty"`
+	LLMCalls        int            `json:"llm_calls,omitempty"`
+	ToolCalls       int            `json:"tool_calls,omitempty"`
+	BlockedSpans    int            `json:"blocked_spans,omitempty"`
+	RedactedSpans   int            `json:"redacted_spans,omitempty"`
+	FailedSpans     int            `json:"failed_spans,omitempty"`
+	RetryCount      int            `json:"retry_count,omitempty"`
+	MaxDepth        int            `json:"max_depth,omitempty"`
+	WorkflowSummary []string       `json:"workflow_summary,omitempty"`
 }
 
 // ─── Run ─────────────────────────────────────────────────────────────────────

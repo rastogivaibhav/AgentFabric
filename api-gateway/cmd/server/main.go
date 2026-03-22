@@ -323,11 +323,11 @@ func main() {
 	// ─── LLM Proxy (Layer 2) — virtual key → real key, budget check, span record ──
 	// Routes: /proxy/{provider}/v1/*  (no JWT auth — virtual key IS the auth)
 	r.Route("/proxy/{provider}", func(r chi.Router) {
-		r.HandleFunc("/v1/*", func(w http.ResponseWriter, r *http.Request) {
+		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			provider := chi.URLParam(r, "provider")
 			r = proxy.WithProvider(r, provider)
-			// Strip /proxy/{provider} prefix so the upstream sees /v1/...
-			r.URL.Path = "/v1/" + chi.URLParam(r, "*")
+			tail := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
+			r.URL.Path = "/" + tail
 			llmProxy.ServeHTTP(w, r)
 		})
 	})

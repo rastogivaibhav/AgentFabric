@@ -1,0 +1,7 @@
+# import config
+packagefile crypto/internal/fips140=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b067\_pkg_.a
+packagefile crypto/internal/fips140/hmac=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b071\_pkg_.a
+packagefile crypto/internal/fips140/sha256=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b072\_pkg_.a
+packagefile crypto/internal/fips140deps/byteorder=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b073\_pkg_.a
+packagefile crypto/internal/fips140deps/godebug=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b068\_pkg_.a
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b005\_pkg_.a

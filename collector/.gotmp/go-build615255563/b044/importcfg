@@ -1,0 +1,15 @@
+# import config
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile internal/asan=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b025\_pkg_.a
+packagefile internal/bytealg=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b010\_pkg_.a
+packagefile internal/msan=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b026\_pkg_.a
+packagefile internal/oserror=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b037\_pkg_.a
+packagefile internal/race=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b027\_pkg_.a
+packagefile internal/strconv=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b031\_pkg_.a
+packagefile internal/syscall/windows/sysdll=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b038\_pkg_.a
+packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b009\_pkg_.a
+packagefile slices=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b045\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b040\_pkg_.a
+packagefile sync/atomic=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b042\_pkg_.a
+packagefile unicode/utf16=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b048\_pkg_.a
+packagefile unicode/utf8=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b049\_pkg_.a

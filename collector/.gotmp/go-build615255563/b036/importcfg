@@ -1,0 +1,9 @@
+# import config
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile internal/oserror=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b037\_pkg_.a
+packagefile internal/runtime/syscall/windows=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b030\_pkg_.a
+packagefile internal/syscall/windows/sysdll=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b038\_pkg_.a
+packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b009\_pkg_.a
+packagefile structs=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b039\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b040\_pkg_.a
+packagefile syscall=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b044\_pkg_.a

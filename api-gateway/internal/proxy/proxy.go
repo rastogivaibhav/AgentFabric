@@ -30,12 +30,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// provider names as stored in the virtual_keys table.
-const (
-	ProviderOpenAI    = "openai"
-	ProviderAnthropic = "anthropic"
-)
-
 // spanStore is the minimal store interface the proxy needs to record spans.
 type spanStore interface {
 	BulkInsertSpans(ctx context.Context, spans []models.Span) error
@@ -49,7 +43,7 @@ type eventBroadcaster interface {
 // ProviderParser abstracts the differences between LLM provider APIs.
 // Exported so the netproxy package can reuse parsers without duplicating logic.
 type ProviderParser interface {
-	ParseRequest(body []byte) (model string, streaming bool, estimatedTokens int64, err error)
+	ParseRequest(r *http.Request, body []byte) (model string, streaming bool, estimatedTokens int64, err error)
 	ParseUsage(body []byte) (inputTokens, outputTokens int64, err error)
 	ParseStreamingUsage(chunks [][]byte) (inputTokens, outputTokens int64)
 	Upstream() string
@@ -99,7 +93,7 @@ func New(v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, policyEngin
 // The router strips /proxy/{provider} before calling ServeHTTP, leaving the
 // path that the upstream API expects (e.g. /v1/chat/completions).
 func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	provider := r.Context().Value(ctxKeyProvider{}).(string)
+	provider := canonicalProviderFromRequest(r)
 	parser, ok := parserFor(provider)
 	if !ok {
 		http.Error(w, "unsupported provider: "+provider, http.StatusBadRequest)
@@ -120,6 +114,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid or revoked key", http.StatusUnauthorized)
 		return
 	}
+	resolvedProvider = NormalizeProvider(resolvedProvider)
 	if resolvedProvider != provider {
 		http.Error(w, fmt.Sprintf("key is for provider %q, not %q", resolvedProvider, provider), http.StatusUnauthorized)
 		return
@@ -131,7 +126,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		return
 	}
-	model, streaming, estimatedTokens, err := parser.ParseRequest(body)
+	model, streaming, estimatedTokens, err := parser.ParseRequest(r, body)
 	if err != nil {
 		// Non-fatal: proceed without model info.
 		p.logger.Debug("request parse failed", zap.Error(err))
@@ -465,17 +460,7 @@ type ctxKeyProvider struct{}
 // WithProvider stores the provider string in the request context.
 // Called by the router before handing off to ServeHTTP.
 func WithProvider(r *http.Request, provider string) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), ctxKeyProvider{}, provider))
-}
-
-func parserFor(provider string) (ProviderParser, bool) {
-	switch provider {
-	case ProviderOpenAI:
-		return &openAIParser{}, true
-	case ProviderAnthropic:
-		return &anthropicParser{}, true
-	}
-	return nil, false
+	return r.WithContext(context.WithValue(r.Context(), ctxKeyProvider{}, NormalizeProvider(provider)))
 }
 
 // extractVirtualKey pulls the virtual key from Authorization: Bearer or x-api-key.

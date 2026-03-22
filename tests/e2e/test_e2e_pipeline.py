@@ -31,6 +31,7 @@ Test coverage:
   21. Users CRUD lifecycle — create, read, update, delete (integration)
   22. Users create validates required fields (integration)
   23. Users get nonexistent returns 404 (integration)
+  24. Google/Gemini seeded trace cost coverage
 """
 import json
 import os
@@ -522,6 +523,42 @@ def test_cost_computation_accurate(mock_api_gateway, tenant_a_headers):
 
 
 # ─── Test 13: Trace appears in API Gateway ────────────────────────────────────
+
+def test_cost_computation_google_gemini_spot_check(mock_api_gateway, tenant_a_headers):
+    """
+    gemini-1.5-pro pricing in the gateway defaults:
+      input  = $3.50/1M
+      output = $10.50/1M
+    """
+    input_tokens = 2000
+    output_tokens = 500
+    expected_cost = (input_tokens * 3.50 / 1_000_000) + (output_tokens * 10.50 / 1_000_000)
+
+    trace_id = uuid.uuid4().hex + uuid.uuid4().hex
+    mock_api_gateway.clear()
+    mock_api_gateway.seed_trace({
+        "id": trace_id,
+        "tenant_id": "tenant-alpha",
+        "framework": "google_adk",
+        "provider": "google",
+        "model": "gemini-1.5-pro",
+        "total_cost_usd": expected_cost,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    })
+
+    gw_status, body = _get_json(
+        f"{mock_api_gateway.url}/api/v1/traces/{trace_id}",
+        headers=tenant_a_headers,
+    )
+    assert gw_status == 200
+    actual_cost = body.get("total_cost_usd", 0.0)
+    tolerance = expected_cost * 0.01
+    assert abs(actual_cost - expected_cost) <= tolerance, (
+        f"gemini-1.5-pro cost mismatch: expected ~{expected_cost:.8f}, got {actual_cost:.8f} "
+        f"(tolerance Â±{tolerance:.10f})"
+    )
+
 
 def test_trace_appears_in_api_gateway(mock_collector, mock_api_gateway, tenant_a_headers):
     """

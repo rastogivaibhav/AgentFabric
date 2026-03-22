@@ -2,6 +2,34 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
+export interface SupportedProviderOption {
+  value: string
+  label: string
+  route_hint: string
+  key_placeholder: string
+}
+
+export const SUPPORTED_KEY_PROVIDERS: SupportedProviderOption[] = [
+  {
+    value: 'openai',
+    label: 'OpenAI',
+    route_hint: '/proxy/openai/v1/chat/completions',
+    key_placeholder: 'sk-...',
+  },
+  {
+    value: 'anthropic',
+    label: 'Anthropic',
+    route_hint: '/proxy/anthropic/v1/messages',
+    key_placeholder: 'sk-ant-...',
+  },
+  {
+    value: 'google',
+    label: 'Google Gemini',
+    route_hint: '/proxy/google/v1beta/models/gemini-1.5-pro:generateContent',
+    key_placeholder: 'AIza...',
+  },
+]
+
 // apiFetch uses credentials:'include' so the browser automatically sends the
 // af_token HttpOnly cookie on every request. The raw token is never read by JS.
 // The api-gateway JWTAuth middleware accepts this cookie as a valid auth source.
@@ -49,6 +77,12 @@ export interface Span {
   retry_count?: number
   blocked?: boolean
   blocked_reason?: string
+  parent_name?: string
+  lineage?: string[]
+  failure_summary?: string
+  redaction_count?: number
+  policy_decision_count?: number
+  policy_decision_summary?: string[]
   pricing_rule_id?: number
   pricing_scope?: string
   received_at: string
@@ -71,21 +105,27 @@ export interface Trace {
   total_cost_usd: number
   total_tokens: number
   status: 'ok' | 'error' | 'partial'
-  insights?: {
-    models?: string[]
-    providers?: string[]
-    apps?: string[]
-    environments?: string[]
-    step_types?: Record<string, number>
-    error_classes?: Record<string, number>
-    llm_calls?: number
-    tool_calls?: number
-    blocked_spans?: number
-    retry_count?: number
-    max_depth?: number
-  }
+  insights?: TraceInsights
   spans?: Span[]
   policy_events?: PolicyEvent[]
+}
+
+export interface TraceInsights {
+  models?: string[]
+  providers?: string[]
+  apps?: string[]
+  environments?: string[]
+  step_types?: Record<string, number>
+  error_classes?: Record<string, number>
+  policy_results?: Record<string, number>
+  llm_calls?: number
+  tool_calls?: number
+  blocked_spans?: number
+  redacted_spans?: number
+  failed_spans?: number
+  retry_count?: number
+  max_depth?: number
+  workflow_summary?: string[]
 }
 
 export interface Page<T> {

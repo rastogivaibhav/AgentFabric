@@ -1,0 +1,16 @@
+# import config
+packagefile fmt=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b069\_pkg_.a
+packagefile google.golang.org/protobuf/encoding/protowire=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b286\_pkg_.a
+packagefile google.golang.org/protobuf/internal/encoding/messageset=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b301\_pkg_.a
+packagefile google.golang.org/protobuf/internal/errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b287\_pkg_.a
+packagefile google.golang.org/protobuf/internal/flags=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b299\_pkg_.a
+packagefile google.golang.org/protobuf/internal/genid=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b302\_pkg_.a
+packagefile google.golang.org/protobuf/internal/order=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b304\_pkg_.a
+packagefile google.golang.org/protobuf/internal/pragma=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b290\_pkg_.a
+packagefile google.golang.org/protobuf/internal/strs=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b300\_pkg_.a
+packagefile google.golang.org/protobuf/reflect/protoreflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b285\_pkg_.a
+packagefile google.golang.org/protobuf/reflect/protoregistry=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b305\_pkg_.a
+packagefile google.golang.org/protobuf/runtime/protoiface=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b306\_pkg_.a
+packagefile math=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b061\_pkg_.a
+packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b060\_pkg_.a
+packagefile unicode/utf8=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b049\_pkg_.a

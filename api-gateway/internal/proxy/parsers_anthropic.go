@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 )
 
@@ -41,7 +42,7 @@ type anthropicStreamEvent struct {
 	} `json:"message,omitempty"`
 }
 
-func (p *anthropicParser) ParseRequest(body []byte) (model string, streaming bool, estimatedTokens int64, err error) {
+func (p *anthropicParser) ParseRequest(_ *http.Request, body []byte) (model string, streaming bool, estimatedTokens int64, err error) {
 	var req anthropicRequest
 	if err = json.Unmarshal(body, &req); err != nil {
 		return "", false, 0, err

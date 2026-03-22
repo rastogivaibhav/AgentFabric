@@ -1,0 +1,5 @@
+# import config
+packagefile github.com/stretchr/testify/assert=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build235300976\b208\_pkg_.a
+packagefile net/http=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\57\57593cb47a13e03e087b2cfc1e59d87e6bcbab99dcffb2e2887737448aad64df-d
+packagefile net/url=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\01\01e1a4875fa3325fe659bb638f3670b8cf9ea169a8c15e3a94c101e151ee57aa-d
+packagefile time=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\d2\d2c8c6a3dd898f5423875686736ab809019d14593a37bb543b1eb186aa7b8524-d

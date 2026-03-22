@@ -64,6 +64,11 @@ const (
 	AttrErrorClass    = "af.error.class"
 	AttrPromptPreview = "af.preview.prompt"
 	AttrResponsePrev  = "af.preview.response"
+	AttrAppName       = "af.app.name"
+	AttrEnvironment   = "af.environment"
+	AttrUserID        = "af.user.id"
+	AttrSessionID     = "af.session.id"
+	AttrRetryCount    = "af.retry.count"
 
 	// SDK-emitted keys used only for detection (not trusted for policy)
 	sdkCrewRole     = "crewai.agent.role"
@@ -259,6 +264,11 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 	attrs[AttrCollectorNode] = p.cfg.NodeName
 	attrs[AttrStepType] = deriveStepType(attrs, span.Name)
 	attrs[AttrErrorClass] = deriveErrorClass(attrs, span.Status.GetMessage())
+	attrs[AttrAppName] = firstNonEmptyAttr(attrs, "af.app.name", "service.name", "application.name")
+	attrs[AttrEnvironment] = firstNonEmptyAttr(attrs, "af.environment", "deployment.environment", "environment", "env")
+	attrs[AttrUserID] = firstNonEmptyAttr(attrs, "af.user.id", "enduser.id", "user.id")
+	attrs[AttrSessionID] = firstNonEmptyAttr(attrs, "af.session.id", "session.id")
+	attrs[AttrRetryCount] = fmt.Sprintf("%d", deriveRetryCount(attrs, span.Name, span.Events))
 	if preview := previewValue(attrs, []string{
 		"gen_ai.prompt", "input.value", "prompt", "llm.prompt", "gen_ai.request.prompt",
 	}); preview != "" {
@@ -492,4 +502,33 @@ func previewValue(attrs map[string]string, keys []string) string {
 		}
 	}
 	return ""
+}
+
+func firstNonEmptyAttr(attrs map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(attrs[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func deriveRetryCount(attrs map[string]string, spanName string, events []*tracepb.Span_Event) int {
+	for _, key := range []string{AttrRetryCount, "retry.count", "http.retry_count"} {
+		if value := strings.TrimSpace(attrs[key]); value != "" {
+			if parsed := parseInt64(value); parsed > 0 {
+				return int(parsed)
+			}
+		}
+	}
+	count := 0
+	if strings.Contains(strings.ToLower(spanName), "retry") {
+		count++
+	}
+	for _, event := range events {
+		if event != nil && strings.Contains(strings.ToLower(event.Name), "retry") {
+			count++
+		}
+	}
+	return count
 }

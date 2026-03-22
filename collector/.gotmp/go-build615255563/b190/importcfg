@@ -1,0 +1,10 @@
+# import config
+packagefile bytes=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b065\_pkg_.a
+packagefile crypto/internal/fips140=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b086\_pkg_.a
+packagefile crypto/internal/fips140/check=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b089\_pkg_.a
+packagefile crypto/internal/fips140/drbg=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b100\_pkg_.a
+packagefile crypto/internal/fips140/sha3=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b095\_pkg_.a
+packagefile crypto/internal/fips140/subtle=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b096\_pkg_.a
+packagefile crypto/internal/fips140deps/byteorder=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b092\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b040\_pkg_.a

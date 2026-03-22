@@ -1,0 +1,8 @@
+# import config
+packagefile bytes=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b065\_pkg_.a
+packagefile crypto/internal/fips140=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b086\_pkg_.a
+packagefile crypto/internal/fips140/sha256=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b091\_pkg_.a
+packagefile crypto/internal/fips140/sha3=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b095\_pkg_.a
+packagefile crypto/internal/fips140/sha512=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b098\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile hash=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b082\_pkg_.a

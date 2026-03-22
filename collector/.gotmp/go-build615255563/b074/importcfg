@@ -1,0 +1,11 @@
+# import config
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile internal/bytealg=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b010\_pkg_.a
+packagefile internal/filepathlite=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b035\_pkg_.a
+packagefile io/fs=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b050\_pkg_.a
+packagefile os=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b002\_pkg_.a
+packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b009\_pkg_.a
+packagefile slices=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b045\_pkg_.a
+packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b071\_pkg_.a
+packagefile syscall=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b044\_pkg_.a
+packagefile unicode/utf8=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b049\_pkg_.a

@@ -15,6 +15,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/observability"
 	"github.com/agentfabric/api-gateway/internal/policy"
 	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
@@ -276,18 +277,15 @@ func (h *Handler) GetTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spans, err := h.pg.GetTraceSpans(r.Context(), traceID, tenantID)
-	if err != nil || len(spans) == 0 {
+	inputs, err := h.pg.LoadTraceViewInputs(r.Context(), traceID, tenantID)
+	if err != nil || len(inputs.Spans) == 0 {
 		writeError(w, http.StatusNotFound, "trace not found")
 		return
 	}
 
-	trace = buildTrace(traceID, spans)
-	if err := h.attachTracePolicyEvents(r.Context(), tenantID, &trace); err != nil {
-		h.logger.Error("load trace policy events", zap.String("trace_id", traceID), zap.Error(err))
-		writeError(w, http.StatusInternalServerError, "failed to load trace policy evidence")
-		return
-	}
+	enrichedSpans := observability.EnrichSpans(inputs.Spans, nil)
+	policyEvents := auditEntriesToPolicyEvents(inputs.AuditEntries, enrichedSpans)
+	trace = observability.BuildTrace(traceID, inputs.Spans, policyEvents)
 	h.redis.SetJSON(r.Context(), cacheKey, trace, 5*time.Minute)
 	writeJSON(w, http.StatusOK, trace)
 }
@@ -306,18 +304,14 @@ func (h *Handler) GetTraceGraph(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetTraceTimeline(w http.ResponseWriter, r *http.Request) {
 	traceID := chi.URLParam(r, "traceId")
 	tenantID := tenantFromCtx(r)
-	spans, err := h.pg.GetTraceSpans(r.Context(), traceID, tenantID)
+	inputs, err := h.pg.LoadTraceViewInputs(r.Context(), traceID, tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	decorateSpans(spans)
-	policyEvents, err := h.tracePolicyEvents(r.Context(), tenantID, traceID, spans)
-	if err != nil {
-		h.logger.Error("load trace timeline policy events", zap.String("trace_id", traceID), zap.Error(err))
-		writeError(w, http.StatusInternalServerError, "failed to load trace policy evidence")
-		return
-	}
+	baseSpans := observability.EnrichSpans(inputs.Spans, nil)
+	policyEvents := auditEntriesToPolicyEvents(inputs.AuditEntries, baseSpans)
+	spans := observability.EnrichSpans(inputs.Spans, policyEvents)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"spans":         spans,
 		"policy_events": policyEvents,
@@ -331,7 +325,7 @@ func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	decorateSpans(spans)
+	spans = observability.EnrichSpans(spans, nil)
 	type costBreakdown struct {
 		SpanID    string  `json:"span_id"`
 		Name      string  `json:"name"`
@@ -347,7 +341,7 @@ func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {
 			breakdown = append(breakdown, costBreakdown{
 				SpanID:    sp.ID,
 				Name:      sp.Name,
-				Model:     sp.Attributes["gen_ai.request.model"],
+				Model:     sp.Model,
 				InputTok:  sp.InputTokens,
 				OutputTok: sp.OutputTokens,
 				CostUSD:   sp.CostUSD,
@@ -810,7 +804,7 @@ func (h *Handler) tracePolicyEvents(ctx context.Context, tenantID, traceID strin
 	if err != nil {
 		return nil, err
 	}
-	return auditEntriesToPolicyEvents(entries, spans), nil
+	return auditEntriesToPolicyEvents(entries, observability.EnrichSpans(spans, nil)), nil
 }
 
 func auditEntriesToPolicyEvents(entries []store.AuditEntry, spans []models.Span) []models.PolicyEvent {
@@ -1124,7 +1118,7 @@ func (h *Handler) UpsertPricingRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	rule.Provider = strings.ToLower(strings.TrimSpace(rule.Provider))
+	rule.Provider = proxy.NormalizeProvider(rule.Provider)
 	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
 	if rule.ModelPattern == "" {
 		writeError(w, http.StatusBadRequest, "model_pattern is required")
@@ -1238,7 +1232,7 @@ func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 	rule.Name = strings.TrimSpace(rule.Name)
 	rule.RuleType = strings.ToLower(strings.TrimSpace(rule.RuleType))
 	rule.Action = strings.ToLower(strings.TrimSpace(rule.Action))
-	rule.Provider = strings.ToLower(strings.TrimSpace(rule.Provider))
+	rule.Provider = proxy.NormalizeProvider(rule.Provider)
 	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
 	rule.Environment = strings.ToLower(strings.TrimSpace(rule.Environment))
 	rule.Detector = strings.ToLower(strings.TrimSpace(rule.Detector))
@@ -1336,7 +1330,7 @@ func (h *Handler) PreviewPolicyRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.Provider = strings.ToLower(strings.TrimSpace(req.Provider))
+	req.Provider = proxy.NormalizeProvider(req.Provider)
 	req.Model = strings.ToLower(strings.TrimSpace(req.Model))
 	req.Environment = strings.ToLower(strings.TrimSpace(req.Environment))
 

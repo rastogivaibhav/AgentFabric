@@ -1,0 +1,6 @@
+# import config
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
+packagefile internal/byteorder=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b012\_pkg_.a
+packagefile internal/chacha8rand=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b013\_pkg_.a
+packagefile math=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b061\_pkg_.a
+packagefile math/bits=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b032\_pkg_.a

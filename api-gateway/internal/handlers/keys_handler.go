@@ -3,10 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/vault"
 	"github.com/go-chi/chi/v5"
@@ -59,7 +61,7 @@ func (h *KeyHandler) writeAdminAudit(r *http.Request, action, targetID string, d
 // ─── POST /api/v1/keys ───────────────────────────────────────────────────────
 
 type registerKeyRequest struct {
-	Provider    string `json:"provider"` // openai | anthropic
+	Provider    string `json:"provider"` // openai | anthropic | google
 	RealKey     string `json:"real_key"` // sk-... or sk-ant-...
 	DisplayName string `json:"display_name"`
 	TeamID      string `json:"team_id,omitempty"`
@@ -83,7 +85,7 @@ func (h *KeyHandler) RegisterKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.Provider = strings.ToLower(strings.TrimSpace(req.Provider))
+	req.Provider = proxy.NormalizeProvider(req.Provider)
 	req.RealKey = strings.TrimSpace(req.RealKey)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
 
@@ -92,11 +94,10 @@ func (h *KeyHandler) RegisterKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch req.Provider {
-	case "openai", "anthropic":
-		// valid
-	default:
-		http.Error(w, "provider must be one of: openai, anthropic", http.StatusBadRequest)
+	if !proxy.IsSupportedProvider(req.Provider) {
+		supported := proxy.SupportedProviders()
+		sort.Strings(supported)
+		http.Error(w, "provider must be one of: "+strings.Join(supported, ", "), http.StatusBadRequest)
 		return
 	}
 

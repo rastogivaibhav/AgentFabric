@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Key, Plus, Trash2, Copy, Check, RefreshCw } from 'lucide-react'
-import { apiFetch, apiMutate } from '../hooks/api'
+import { apiFetch, apiMutate, SUPPORTED_KEY_PROVIDERS } from '../hooks/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,27 +29,31 @@ const fetchKeys = (): Promise<{ items: VirtualKey[]; count: number }> =>
   apiFetch('/keys')
 
 const registerKey = (form: RegisterKeyForm) =>
-  apiMutate<{ virtual_key: string }>('/keys', 'POST', form)
+  apiMutate<{ virtual_key: string; provider: string }>('/keys', 'POST', form)
 
 const revokeKey = (virtualKey: string) =>
   apiMutate<void>(`/keys/${virtualKey}`, 'DELETE')
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-const PROVIDER_LABELS: Record<string, string> = {
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-}
+const PROVIDER_LABELS: Record<string, string> = Object.fromEntries(
+  SUPPORTED_KEY_PROVIDERS.map((provider) => [provider.value, provider.label]),
+)
 
 const PROVIDER_COLORS: Record<string, string> = {
   openai: '#10a37f',
   anthropic: '#c96a3a',
+  google: '#4285f4',
 }
+
+const providerHintFor = (provider: string) =>
+  SUPPORTED_KEY_PROVIDERS.find((option) => option.value === provider) ?? SUPPORTED_KEY_PROVIDERS[0]
 
 export default function ApiKeysPage() {
   const qc = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [newVirtualKey, setNewVirtualKey] = useState<string | null>(null)
+  const [newVirtualKeyProvider, setNewVirtualKeyProvider] = useState('openai')
   const [copied, setCopied] = useState(false)
   const [form, setForm] = useState<RegisterKeyForm>({
     provider: 'openai',
@@ -67,8 +71,9 @@ export default function ApiKeysPage() {
 
   const registerMut = useMutation({
     mutationFn: registerKey,
-    onSuccess: (res: any) => {
+    onSuccess: (res) => {
       setNewVirtualKey(res.virtual_key)
+      setNewVirtualKeyProvider(res.provider)
       setShowForm(false)
       setForm({ provider: 'openai', real_key: '', display_name: '', team_id: '' })
       qc.invalidateQueries({ queryKey: ['virtual-keys'] })
@@ -91,6 +96,8 @@ export default function ApiKeysPage() {
   }
 
   const keys = data?.items ?? []
+  const selectedProviderHint = providerHintFor(form.provider)
+  const newKeyProviderHint = providerHintFor(newVirtualKeyProvider)
 
   return (
     <div style={{ padding: '24px', maxWidth: 900 }}>
@@ -146,8 +153,8 @@ export default function ApiKeysPage() {
             </button>
           </div>
           <p style={{ margin: '10px 0 0', fontSize: 12, color: '#6b7280' }}>
-            Use it as: <code style={{ fontSize: 11 }}>OPENAI_API_KEY={newVirtualKey}</code> with{' '}
-            <code style={{ fontSize: 11 }}>OPENAI_BASE_URL=http://localhost:8080/proxy/openai/v1</code>
+            Use it against <code style={{ fontSize: 11 }}>http://localhost:8080{newKeyProviderHint.route_hint}</code> with{' '}
+            <code style={{ fontSize: 11 }}>{newVirtualKey}</code> as your API key.
           </p>
         </div>
       )}
@@ -172,8 +179,11 @@ export default function ApiKeysPage() {
                     color: '#f9fafb', padding: '7px 10px', fontSize: 13,
                   }}
                 >
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
+                  {SUPPORTED_KEY_PROVIDERS.map((provider) => (
+                    <option key={provider.value} value={provider.value}>
+                      {provider.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label style={{ fontSize: 12, color: '#9ca3af' }}>
@@ -196,7 +206,7 @@ export default function ApiKeysPage() {
                 type="password"
                 value={form.real_key}
                 onChange={e => setForm(f => ({ ...f, real_key: e.target.value }))}
-                placeholder="sk-... or sk-ant-..."
+                placeholder={selectedProviderHint.key_placeholder}
                 style={{
                   display: 'block', width: '100%', marginTop: 4, boxSizing: 'border-box',
                   background: '#1f2937', border: '1px solid #374151', borderRadius: 4,
@@ -346,8 +356,8 @@ export default function ApiKeysPage() {
           fontSize: 12, color: '#93c5fd',
         }}>
           <strong>How to use:</strong> Set{' '}
-          <code>OPENAI_BASE_URL=http://localhost:8080/proxy/openai/v1</code> and use your{' '}
-          <code>af-vk-*</code> key as <code>OPENAI_API_KEY</code>. No other code changes needed.
+          <code>http://localhost:8080/proxy/&lt;provider&gt;/...</code> as your upstream base and use your{' '}
+          <code>af-vk-*</code> key in place of the provider API key. Supported providers: {SUPPORTED_KEY_PROVIDERS.map((provider) => provider.label).join(', ')}.
         </div>
       )}
     </div>
