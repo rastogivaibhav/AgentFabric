@@ -1,21 +1,26 @@
 # High Availability Guide
 
+## Purpose
+
+This guide describes the minimum high-availability posture for running AgentFabric as a serious production candidate.
+
+Use it to answer:
+
+- what should be replicated
+- which components are stateless
+- where the critical failure domains are
+- how upgrades should be performed safely
+
 ## Baseline HA Shape
+
+Recommended baseline:
 
 - 2+ `api-gateway` replicas
 - 2+ `portal` replicas
-- 1+ `collector` replica, scale horizontally for volume
+- 1+ `collector` replica, scaled horizontally for volume
 - managed PostgreSQL with PITR enabled
-- managed Redis with replication / failover
+- managed Redis with replication and failover
 - external ingress or load balancer
-
-## Kubernetes Controls
-
-Use:
-
-- pod disruption budgets from [runtime-stack.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/runtime-stack.yaml)
-- network isolation from [networkpolicies.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/networkpolicies.yaml)
-- readiness and liveness probes already defined in the chart
 
 ## Failure Domains
 
@@ -25,7 +30,24 @@ Use:
 - PostgreSQL is the critical stateful dependency
 - Redis affects performance and some runtime coordination, but not long-term evidence storage
 
+## Kubernetes Controls
+
+Use:
+
+- pod disruption budgets from [../deploy/helm/templates/runtime-stack.yaml](../deploy/helm/templates/runtime-stack.yaml)
+- network isolation from [../deploy/helm/templates/networkpolicies.yaml](../deploy/helm/templates/networkpolicies.yaml)
+- readiness and liveness probes defined in the chart
+
+Recommended additional posture:
+
+- anti-affinity or topology spread for gateway and portal
+- externalized secrets
+- managed ingress or load balancer
+- database monitoring and PITR validation
+
 ## Upgrade Approach
+
+Recommended sequence:
 
 1. back up PostgreSQL
 2. apply migrations
@@ -34,10 +56,39 @@ Use:
 5. roll `portal`
 6. run readiness, proxy, and GA gate checks
 
+This keeps the control plane upgrade path predictable and auditable.
+
 ## Minimum Production Targets
 
 - no single replica for gateway or portal
 - database backups tested
 - TLS termination defined
-- OIDC / password-login policy agreed
+- OIDC or password-login policy agreed
 - network policy enabled
+
+## Operational Expectations
+
+A high-availability posture should also include:
+
+- documented rollback ownership
+- clear backup and restore ownership
+- staging validation before production rollout
+- release artifacts attached to change review
+
+## What Good Looks Like
+
+A production-ready HA posture has:
+
+- redundant gateway and portal instances
+- resilient PostgreSQL and Redis services
+- tested backup and restore
+- validated rollout procedure
+- release evidence captured before each production change
+
+## Related Documents
+
+Use this guide with:
+
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
+- [REFERENCE_DEPLOYMENT.md](REFERENCE_DEPLOYMENT.md)
+- [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)

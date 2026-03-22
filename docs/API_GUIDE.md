@@ -1,173 +1,309 @@
 # API Guide
 
-## Canonical API References
+## Purpose
 
-The authoritative machine-readable API description lives in:
+This guide explains the API surface of AgentFabric at a product and integration level.
 
-- [openapi.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/openapi.yaml)
+It is designed to help:
 
-The gateway also serves:
+- platform teams integrating the gateway
+- application teams sending proxied or instrumented traffic
+- administrators managing governance and prompts
+- architects reviewing capability boundaries
 
-- `GET /docs/openapi.yaml`
-- `GET /docs/swagger`
+## API Model
 
-This guide is the operator-facing overview of the current API surface.
+AgentFabric exposes a control-plane API rather than a single narrow service API.
 
-## Authentication Model
+The API surface is organized around these domains:
 
-The gateway supports multiple auth patterns.
+- authentication and session management
+- traces and observability
+- live runtime events
+- pricing and cost governance
+- budgets and usage controls
+- policy, guardrails, and simulation
+- prompts and releases
+- evals and regressions
+- administrative and audit workflows
+- provider key and runtime mediation
 
-### Browser and portal usage
+## Canonical API Definition
 
-- login through `/auth/login`
-- session established through an `HttpOnly` cookie
-- portal uses browser credentials for authenticated API access
+The OpenAPI specification should be treated as the canonical low-level contract.
 
-### API clients
+Use:
 
-- can use `Authorization: Bearer <jwt>` on authenticated routes
+- `docs/openapi.yaml` for the current route-level contract
+- this guide for product-level workflow understanding
 
-### Proxy traffic
+## Authentication
 
-- uses AgentFabric virtual keys
-- does not use the normal control-plane JWT path
+Most administrative and control-plane APIs require authenticated access.
 
-### Collector ingest
+Common patterns:
 
-- uses the internal ingest path and collector auth configuration
+- admin login for portal and admin workflows
+- bearer token or session-backed access for authenticated routes
+- controlled provider access for proxy traffic
 
-## Major API Areas
+Recommended principle:
 
-### Health and readiness
+- separate administrative identities from runtime application identities
 
-- `GET /healthz`
-- `GET /readyz`
+## Core API Domains
 
-### Authentication
+### 1. Traces and Observability
 
-- `POST /auth/login`
-- `GET /auth/login`
-- `GET /auth/callback`
-- `GET /auth/logout`
-- `GET /auth/me`
-- `POST /auth/refresh`
+These APIs support runtime inspection and debugging.
 
-### Traces and live operations
+Typical capabilities:
 
-- `GET /api/v1/traces`
-- `GET /api/v1/traces/{id}`
-- `GET /api/v1/traces/{id}/timeline`
-- `GET /api/v1/traces/{id}/graph`
-- `GET /api/v1/traces/compare`
-- `GET /api/v1/traces/saved-views`
-- `GET /api/v1/stream/live`
+- list traces
+- filter traces
+- fetch trace detail
+- inspect spans and lineage
+- inspect trace-level cost, policy, and prompt context
+- compare traces
 
-### Agents, runs, and analytics
+Typical use cases:
 
-- `GET /api/v1/agents`
-- `GET /api/v1/runs`
-- analytics endpoints under `/api/v1/analytics/...`
+- debugging a failed runtime path
+- reviewing policy and pricing effects on a request
+- comparing two release behaviors
 
-### Environments and users
+### 2. Live Runtime Events
 
-- `GET /api/v1/environments`
-- user APIs under `/api/v1/users`
+These APIs support live operational visibility.
 
-### Audit
+Typical capabilities:
 
-- `/api/v1/audit`
-- `/api/v1/audit/control`
-- `/api/v1/audit/verify`
+- subscribe to live runtime events
+- inspect near-real-time traffic and operator signals
 
-### Budgets and pricing
+Typical use cases:
 
-- `/api/v1/budgets/{tenant_id}`
-- `/api/v1/pricing`
-- `/api/v1/pricing/preview`
+- monitoring active traffic during a rollout
+- observing incidents or policy spikes in real time
 
-### Policies and guardrails
+### 3. Pricing and Cost Governance
 
-- `/api/v1/policies`
-- `/api/v1/policies/preview`
+These APIs support pricing rules, cost explanation, and tenant-aware cost control.
 
-### Keys
+Typical capabilities:
 
-- `/api/v1/keys`
+- list pricing rules
+- preview pricing behavior
+- inspect cost breakdowns
+- analyze rule matches and cost provenance
 
-### Evals and regressions
+Typical use cases:
 
-- `/api/v1/evals`
-- `POST /api/v1/evals/score`
-- `POST /api/v1/evals/regressions`
+- validating provider cost attribution
+- creating tenant-specific pricing behavior
+- explaining why a request cost what it did
 
-### Prompts and releases
+### 4. Budgets and Usage Controls
 
-- prompt endpoints under `/api/v1/prompts`
+These APIs support budget configuration and usage visibility.
 
-### Proxy
+Typical capabilities:
 
-- `/proxy/{provider}/...`
-- `GET /api/v1/netproxy/ca.crt`
+- configure budget limits
+- inspect usage
+- review enforcement or alert conditions
 
-### Internal ingest
+Typical use cases:
 
-- `POST /internal/ingest`
+- per-tenant budget governance
+- release and platform cost oversight
 
-## Typical API Workflows
+### 5. Policy and Guardrails
 
-### Operator workflow
+These APIs support runtime governance and policy explainability.
 
-1. log in
-2. inspect traces
-3. review live stream
-4. review policy or audit evidence
+Typical capabilities:
 
-### Governance workflow
+- create and update policies
+- preview decisions
+- inspect explanation output
+- simulate policy behavior
+- inspect guardrail actions
+
+Typical use cases:
+
+- validating a new policy before rollout
+- explaining why allow, deny, redact, or warn happened
+- comparing policy behavior across environments
+
+### 6. Prompt Lifecycle
+
+These APIs support prompt versioning and release linkage.
+
+Typical capabilities:
+
+- list prompts
+- create or update prompt versions
+- promote releases across environments
+- link prompt identifiers to runtime traces
+
+Typical use cases:
+
+- tracing a production issue back to a prompt release
+- managing prompt changes with environment-aware control
+
+### 7. Evaluations and Regressions
+
+These APIs support release-readiness and runtime quality workflows.
+
+Typical capabilities:
+
+- score traces
+- create eval runs
+- compare release tags
+- inspect regression outcomes
+- review policy effectiveness metrics
+
+Typical use cases:
+
+- determining whether a release is better or worse than baseline
+- validating policy and cost effects before rollout
+
+### 8. Provider Keys and Runtime Mediation
+
+These APIs support governed access to upstream model providers.
+
+Typical capabilities:
+
+- register provider access
+- inspect provider metadata
+- route traffic through governed provider paths
+
+Typical use cases:
+
+- centralizing provider access
+- avoiding unmanaged direct model usage
+- enforcing policy, pricing, and audit through one runtime path
+
+### 9. Audit and Administrative Workflows
+
+These APIs support governance visibility and platform operations.
+
+Typical capabilities:
+
+- inspect audit records
+- review administrative actions
+- validate release and readiness workflows
+
+Typical use cases:
+
+- compliance review
+- internal governance evidence
+- platform operations review
+
+## Common Integration Flows
+
+### Flow A: Application sends proxied runtime traffic
+
+1. application authenticates to the gateway
+2. request is routed through provider mediation
+3. pricing and policy logic run
+4. trace and cost data are persisted
+5. portal surfaces runtime outcome
+
+### Flow B: Team promotes a prompt release
+
+1. create or update a prompt version
+2. assign release metadata
+3. promote to target environment
+4. runtime traces carry prompt release context
+5. compare behavior across releases if needed
+
+### Flow C: Administrator validates policy
 
 1. create or update a policy
-2. run policy preview or simulation
-3. route traffic through the proxy
-4. review resulting trace and audit evidence
+2. preview the policy decision
+3. simulate policy against sample requests
+4. review explanation output
+5. promote to active use
 
-### Cost workflow
+### Flow D: Operator evaluates release readiness
 
-1. review pricing rules
-2. run a pricing preview
-3. inspect trace-level cost breakdown
-4. review budget behavior
+1. score relevant traces
+2. compare candidate versus baseline release tags
+3. review regressions and policy effectiveness
+4. run validation scripts and GA gate
+5. make go or no-go decision
 
-### Prompt lifecycle workflow
+## API Design Principles
 
-1. create prompt metadata
-2. create a new version or release
-3. promote it to the target environment
-4. verify prompt linkage in the trace
+The AgentFabric API is designed around these principles:
 
-## Provider Scope
+- control-plane first, not just data retrieval
+- explainability over opaque outcomes
+- enterprise governance as a first-class concern
+- product workflows reflected in API structure
+- separation between runtime mediation and administrative control
 
-The current provider registry in code includes:
+## Integration Recommendations
 
-- `openai`
-- `anthropic`
-- `google`
-- `vertexai`
-- `bedrock`
+### For application teams
 
-Release and support claims should remain aligned with:
-- [RELEASE_BOUNDARIES.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/RELEASE_BOUNDARIES.md)
+- prefer governed runtime paths over unmanaged direct provider calls
+- include clear service and environment metadata
+- propagate prompt metadata where available
 
-## API Usage Guidance
+### For platform teams
 
-Recommended operator guidance:
+- define a standard tenant, service, and release-tag convention
+- use pricing, policy, and prompt APIs together
+- validate new environments with proof scripts, not only manual checks
 
-- use the OpenAPI spec for generated clients or endpoint details
-- use this document for workflow-level understanding
-- use the portal for investigation before building custom control-plane clients
+### For security and governance teams
 
-## Validation
+- treat audit, policy simulation, and budget APIs as a single governance surface
+- use preview and simulation before enabling stricter policies globally
 
-Before depending on an API flow in production, validate with:
+## Error Handling Expectations
 
-- [run_release_candidate_validation.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_release_candidate_validation.ps1)
-- [probe_stack_health.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_stack_health.ps1)
-- [probe_proxy_path.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_proxy_path.ps1)
+Clients should expect normal API failure patterns such as:
+
+- authentication or authorization failures
+- validation failures
+- policy denials or redactions
+- missing configuration errors
+- budget or governance enforcement responses
+- upstream provider failures surfaced through controlled runtime paths
+
+Consumers should treat responses as explainable control-plane outcomes, not just pass or fail transport events.
+
+## Versioning Guidance
+
+Use the versioned API path structure exposed by the gateway.
+
+For stable integrations:
+
+- pin to documented route versions
+- validate against the OpenAPI contract
+- treat release-boundary docs as the supportability boundary
+
+## What This API Is Not
+
+The AgentFabric API is not primarily designed as:
+
+- an end-user chat API
+- a generic playground API
+- a research notebook interface
+- a standalone model abstraction library
+
+It is designed as an enterprise operational API for governed AI runtime systems.
+
+## Related Documents
+
+Use this guide with:
+
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [SETUP_AND_ONBOARDING.md](SETUP_AND_ONBOARDING.md)
+- [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)
+- [RELEASE_BOUNDARIES.md](RELEASE_BOUNDARIES.md)
+- [openapi.yaml](openapi.yaml)

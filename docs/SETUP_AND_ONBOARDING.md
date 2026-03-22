@@ -1,201 +1,301 @@
 # Setup and Onboarding
 
-## Audience
+## Purpose
 
-This document is for:
+This guide helps platform teams, administrators, and application teams get AgentFabric running and onboard their first workloads.
 
-- platform engineers standing up AgentFabric
-- administrators configuring the control plane
-- application teams onboarding their first workload
+It covers:
+
+- environment setup
+- admin bootstrap
+- provider and policy setup
+- workload onboarding
+- trace and governance validation
+
+## Who Should Use This Guide
+
+- platform engineering
+- enterprise architecture
+- AI platform teams
+- security and governance teams
+- application teams onboarding AI workloads
 
 ## Choose Your Starting Path
 
 Use this guide based on your goal:
 
-- local evaluation: [QUICKSTART.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/QUICKSTART.md)
-- single-team or single-program production deployment: [INSTALL_SINGLE_TENANT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/INSTALL_SINGLE_TENANT.md)
-- shared platform deployment: [INSTALL_MULTI_TENANT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/INSTALL_MULTI_TENANT.md)
+- local evaluation: [QUICKSTART.md](QUICKSTART.md)
+- single-team or single-program deployment: [INSTALL_SINGLE_TENANT.md](INSTALL_SINGLE_TENANT.md)
+- shared platform deployment: [INSTALL_MULTI_TENANT.md](INSTALL_MULTI_TENANT.md)
+
+## Deployment Paths
+
+### Local evaluation
+Use this when you want to:
+
+- evaluate the platform quickly
+- test instrumentation
+- validate traces, policies, and prompts locally
+
+Recommended path:
+
+- Docker Compose
+
+### Production-like evaluation
+Use this when you want to:
+
+- validate operational behavior
+- exercise readiness scripts
+- test multi-user or multi-tenant flows
+
+Recommended path:
+
+- Helm or production Compose
 
 ## Prerequisites
 
-### Local evaluation
+Before starting, make sure you have:
 
-Required:
-- Docker Desktop or Docker Engine
-- Docker Compose
-- PowerShell on Windows, or Bash and curl on macOS or Linux
+- Docker and Docker Compose, or Kubernetes and Helm
+- PostgreSQL and Redis connectivity
+- environment secrets ready
+- a browser for portal access
+- at least one provider credential for proxied runtime traffic
 
-### Production-oriented setup
+## Step 1: Deploy the Platform
 
-Required:
-- PostgreSQL
-- Redis
-- gateway, collector, and portal deployment target
-- TLS termination plan
-- secret-management plan
-- admin authentication plan
+### Option A: Local Docker Compose
+Bring up the stack, apply migrations, and verify service health.
 
-## Local Setup
+Expected outcomes:
 
-### Windows PowerShell
+- portal is reachable
+- API gateway is reachable
+- collector is reachable
+- database migrations are applied
+- admin login is available
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap_local.ps1
-```
+### Option B: Helm / Kubernetes
+Deploy the runtime stack, apply configuration, expose ingress, and validate readiness.
 
-### macOS or Linux
+Expected outcomes:
 
-```bash
-bash scripts/setup-local.sh
-```
+- gateway readiness checks pass
+- collector readiness checks pass
+- database and Redis connectivity is healthy
+- required secrets are present
 
-These commands:
-- create `.env.local` if needed
-- start the local stack
-- wait for health and readiness
-- seed demo pricing and policy rules
+## Step 2: Configure Core Environment Settings
 
-Local URLs:
-- Portal: `http://localhost:3000`
-- Gateway: `http://localhost:8080`
-- Collector: `http://localhost:4318`
-- Swagger UI: `http://localhost:8080/docs/swagger`
+At minimum, configure:
 
-## Production Setup Checklist
+- authentication mode
+- admin credentials
+- database connection
+- Redis connection
+- encryption or vault key material
+- portal base URL and API base URL
+- environment label such as `dev`, `staging`, or `prod`
 
-Before onboarding teams, confirm:
+For production-like environments, also configure:
 
-- PostgreSQL and Redis are reachable
-- secrets are configured
-- gateway and collector readiness probes return `200`
-- admin auth is configured
-- CORS is restricted to the portal origin
-- pricing and policy defaults are loaded
+- TLS
+- ingress or reverse proxy
+- CORS allowlist
+- password policy or SSO path
+- backup destination and retention approach
 
-Use:
-- [PRODUCTION_CHECKLIST.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/PRODUCTION_CHECKLIST.md)
-- [REFERENCE_DEPLOYMENT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/REFERENCE_DEPLOYMENT.md)
+## Step 3: Sign In as Administrator
 
-## First Administrator Tasks
+Use the initial admin account to access the portal.
 
-After the stack is up:
+As an administrator, validate the following first:
 
-1. Log in through the portal or `/auth/login`.
-2. Confirm `/auth/me` returns the expected identity.
-3. Review pricing defaults.
-4. Review policy defaults.
-5. Register one provider key.
-6. Create or confirm a tenant budget.
-7. Verify one trace appears in the portal.
+- login works
+- system health pages load
+- traces page loads
+- policies page loads
+- cost page loads
+- prompts page loads
+- evals page loads
 
-## Onboarding a Workload
+## Step 4: Register Provider Access
 
-AgentFabric supports three primary onboarding paths.
+Add provider credentials or managed access through the API gateway.
 
-### Path 1: Python SDK
+Typical onboarding flow:
 
-Best for:
-- Python agent or application workloads
-- teams that want auto-instrumentation
-
-High-level flow:
-1. install and initialize the SDK
-2. point telemetry at the collector
-3. optionally attach prompt metadata
-4. send traffic and verify traces in the portal
-
-### Path 2: OTLP Export
-
-Best for:
-- services already using OpenTelemetry
-- polyglot environments
-
-High-level flow:
-1. configure OTLP export to the collector
-2. send spans
-3. confirm spans arrive in the gateway and portal
-
-### Path 3: Proxy or Netproxy
-
-Best for:
-- teams that want governed model access
-- workloads needing pricing, policy, and budget controls inline
-
-High-level flow:
 1. register a provider key
-2. route LLM traffic through `/proxy/{provider}/...` or the netproxy path
-3. verify cost, policy, and trace records appear in the portal
+2. choose provider scope
+3. validate provider metadata
+4. send a test proxied request
+5. verify trace and cost capture
 
-## Recommended Onboarding Sequence for a Team
+You should confirm:
 
-1. Confirm tenant and user access.
-2. Choose one provider and one model path.
-3. Register the provider key.
-4. Apply a basic budget.
-5. Apply baseline pricing rules.
-6. Apply baseline policies or guardrails.
-7. Onboard one application through SDK, OTLP, or proxy.
-8. Run one success scenario and one controlled policy scenario.
-9. Review trace, cost, and audit evidence in the portal.
+- requests succeed through the controlled path
+- provider, model, and usage details are captured
+- cost attribution appears in trace detail
 
-## Prompt Lifecycle Onboarding
+## Step 5: Configure Governance Baseline
 
-If the team wants prompt-governed operations:
+Before onboarding users broadly, create a minimum governance baseline:
 
-1. create a prompt record
-2. create a version and release tag
-3. promote it to the target environment
-4. attach prompt identifiers in application instrumentation
-5. verify prompt metadata appears in trace detail
+- one budget rule
+- one pricing rule
+- one policy or guardrail
+- one audit validation path
+- one prompt lifecycle object for testing
 
-## Evaluation Onboarding
+Suggested first controls:
 
-If the team wants release or governance scoring:
+- deny or warn on clearly disallowed content
+- configure a low test budget
+- create one prompt version and release tag
+- validate trace-to-prompt linkage
 
-1. generate candidate traces
-2. run eval scoring through the eval APIs or portal
-3. compare candidate and baseline release tags
-4. review policy-effectiveness and regression results
+## Step 6: Onboard the First Workload
 
-## Validation After Onboarding
+There are two primary onboarding patterns.
 
-At minimum, validate:
+### Pattern A: Instrumented workloads
+Use the SDK or telemetry path to emit runtime traces.
 
-- one successful trace
-- one proxied request with cost
-- one policy decision visible in trace detail
-- one audit event visible in the portal
-- one prompt-linked trace, if prompt lifecycle is enabled
+Expected metadata to capture:
 
-Use these scripts:
+- tenant or team identity
+- service name
+- prompt metadata where available
+- runtime model and provider context
 
-- [run_release_candidate_validation.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_release_candidate_validation.ps1)
-- [probe_stack_health.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_stack_health.ps1)
-- [probe_proxy_path.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_proxy_path.ps1)
+### Pattern B: Proxied workloads
+Send model traffic through the gateway.
 
-## Coverage Reality
+Expected outcomes:
 
-Be explicit with onboarding teams:
+- policy is enforced
+- pricing is calculated
+- usage is attributed
+- audit and trace detail are visible
 
-- SDK-instrumented workloads are covered
-- OTLP-emitting services are covered
-- proxied LLM traffic is covered
-- unmanaged hosts are not automatically covered
+## Step 7: Validate Trace, Cost, and Policy Behavior
 
-## Troubleshooting Guideposts
+Once your first workload is live, validate:
 
-Start with:
+- traces appear in the portal
+- span detail is readable and enriched
+- cost breakdown is visible
+- policy decisions are explainable
+- audit records are present
+- prompt linkage appears where configured
 
-- gateway `/healthz`
-- gateway `/readyz`
-- collector `/healthz`
-- collector `/readyz`
-- portal login flow
-- provider key registration
-- one proxy request
-- one trace lookup in the portal
+Recommended checks:
 
-If production onboarding is blocked, continue with:
-- [BACKUP_RESTORE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/BACKUP_RESTORE.md)
-- [HA_GUIDE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/HA_GUIDE.md)
-- [SSO_RBAC_PLAN.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/SSO_RBAC_PLAN.md)
+- compare two traces
+- preview a policy decision
+- simulate a guardrail
+- inspect a cost rule match
+- review prompt release linkage
+
+## Step 8: Run Environment Proof Scripts
+
+For staging or production-like setups, run the operational validation scripts.
+
+Use them to validate:
+
+- stack health
+- proxy path
+- release-candidate validation
+- governance scenarios
+- GA gate readiness
+
+This turns setup into evidence, not assumption.
+
+## Step 9: Onboard Additional Teams
+
+For broader rollout, define a repeatable team onboarding pattern.
+
+Recommended onboarding packet:
+
+- tenant or environment assignment
+- provider access policy
+- prompt lifecycle convention
+- trace naming convention
+- budget threshold
+- ownership contacts
+- release approval flow
+
+## Onboarding Checklist
+
+### Platform team checklist
+
+- environment deployed
+- migrations applied
+- secrets configured
+- readiness checks passing
+- provider route verified
+- backup approach documented
+
+### Governance checklist
+
+- pricing rule exists
+- budget rule exists
+- at least one active policy exists
+- audit trail verified
+- policy simulation tested
+
+### Application team checklist
+
+- workload instrumented or proxied
+- service metadata visible
+- traces flowing
+- prompt metadata visible where applicable
+- cost attribution visible
+- expected guardrails validated
+
+## Recommended First Pilot
+
+For a first real pilot, start with:
+
+- one team
+- one tenant
+- one provider path
+- one governed prompt lifecycle
+- one budget policy
+- one reporting cadence
+
+Success criteria:
+
+- trace visibility works end to end
+- governance behavior is explainable
+- cost can be attributed clearly
+- onboarding takes hours or days, not weeks
+
+## Common Setup Mistakes
+
+- deploying services without applying migrations
+- testing proxy flows before registering provider keys
+- enabling policy without validating baseline rules
+- treating prompt lifecycle as optional metadata and not wiring it early
+- running a production-like environment without readiness proof scripts
+- broad rollout before one tenant is proven end to end
+
+## What Good Looks Like
+
+A healthy first deployment has:
+
+- one working proxied or instrumented workload
+- visible traces and cost breakdown
+- at least one explainable policy decision
+- one prompt release linked to runtime traces
+- one successful staging or pilot validation run
+
+## Next Documents
+
+After this guide, use:
+
+- [API_GUIDE.md](API_GUIDE.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [INSTALL_SINGLE_TENANT.md](INSTALL_SINGLE_TENANT.md)
+- [INSTALL_MULTI_TENANT.md](INSTALL_MULTI_TENANT.md)
+- [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)

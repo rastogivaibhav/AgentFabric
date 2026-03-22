@@ -1,6 +1,6 @@
 # Multi-Tenant Installation
 
-## When to Use This Model
+## When To Use This Model
 
 Use the multi-tenant model when:
 
@@ -12,16 +12,15 @@ This is the strategic shared-platform deployment shape for AgentFabric.
 
 ## Target Topology
 
-```text
-shared portal
-  -> shared api-gateway
-shared collector
-  -> shared api-gateway
-shared api-gateway
-  -> PostgreSQL
-  -> Redis
-multiple onboarded teams
-  -> SDK and/or OTLP and/or proxy and/or netproxy
+```mermaid
+flowchart TB
+    A["Multiple Teams / Tenants"] --> B["SDK, OTLP, Proxy, or Netproxy"]
+    B --> C["Shared Collector"]
+    B --> D["Shared API Gateway"]
+    C --> D
+    E["Shared Portal"] --> D
+    D --> F["PostgreSQL"]
+    D --> G["Redis"]
 ```
 
 ## Multi-Tenant Operating Model
@@ -53,6 +52,7 @@ The platform team owns:
 - Redis
 
 Strongly recommended:
+
 - Kubernetes or another orchestrated environment
 - ingress and TLS
 - OIDC-based authentication
@@ -62,13 +62,15 @@ Strongly recommended:
 ## Recommended Deployment Path
 
 Preferred:
-- [deploy/helm](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm)
+
+- [../deploy/helm](../deploy/helm)
 
 Important files:
-- [values.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/values.yaml)
-- [runtime-stack.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/runtime-stack.yaml)
-- [networkpolicies.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/networkpolicies.yaml)
-- [backup-cronjob.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/backup-cronjob.yaml)
+
+- [../deploy/helm/values.yaml](../deploy/helm/values.yaml)
+- [../deploy/helm/templates/runtime-stack.yaml](../deploy/helm/templates/runtime-stack.yaml)
+- [../deploy/helm/templates/networkpolicies.yaml](../deploy/helm/templates/networkpolicies.yaml)
+- [../deploy/helm/templates/backup-cronjob.yaml](../deploy/helm/templates/backup-cronjob.yaml)
 
 ## Core Configuration
 
@@ -84,6 +86,7 @@ At minimum, configure:
 - `AF_GATEWAY_AUTH_TOKEN`
 
 For enterprise auth:
+
 - `AF_OIDC_ISSUER`
 - `AF_OIDC_CLIENT_ID`
 - `AF_OIDC_CLIENT_SECRET`
@@ -91,6 +94,7 @@ For enterprise auth:
 - `AF_SSO_REQUIRED=true`
 
 After full SSO cutover:
+
 - `AF_PASSWORD_LOGIN_DISABLED=true`
 
 ## Installation Sequence
@@ -144,9 +148,10 @@ A multi-tenant platform should standardize:
 Multi-tenant installations must treat backup and restore as mandatory.
 
 Use:
-- [BACKUP_RESTORE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/BACKUP_RESTORE.md)
-- [HA_GUIDE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/HA_GUIDE.md)
-- [SSO_RBAC_PLAN.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/SSO_RBAC_PLAN.md)
+
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
+- [HA_GUIDE.md](HA_GUIDE.md)
+- [SSO_RBAC_PLAN.md](SSO_RBAC_PLAN.md)
 
 ## Validation and Release Gate
 
@@ -154,14 +159,25 @@ A shared multi-tenant rollout should not proceed on architecture intent alone.
 
 Run:
 
-- [probe_stack_health.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_stack_health.ps1)
-- [probe_proxy_path.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_proxy_path.ps1)
-- [run_release_candidate_validation.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_release_candidate_validation.ps1)
-- [run_ga_gate.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_ga_gate.ps1)
+- [../scripts/probe_stack_health.ps1](../scripts/probe_stack_health.ps1)
+- [../scripts/probe_proxy_path.ps1](../scripts/probe_proxy_path.ps1)
+- [../scripts/run_release_candidate_validation.ps1](../scripts/run_release_candidate_validation.ps1)
+- [../scripts/run_ga_gate.ps1](../scripts/run_ga_gate.ps1)
 
-For market-facing or broader internal rollout, also include:
-- [PILOT_PLAYBOOK.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/PILOT_PLAYBOOK.md)
-- [CUSTOMER_VALUE_SCORECARD.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/CUSTOMER_VALUE_SCORECARD.md)
+For broader internal or market-facing rollout, also include:
+
+- [PILOT_PLAYBOOK.md](PILOT_PLAYBOOK.md)
+- [CUSTOMER_VALUE_SCORECARD.md](CUSTOMER_VALUE_SCORECARD.md)
+
+## What Good Looks Like
+
+A healthy multi-tenant deployment has:
+
+- a central platform owner
+- standard tenant onboarding patterns
+- validated tenant-scoped policy and pricing behavior
+- backup and restore tested
+- release and governance proof captured as evidence
 
 ## Recommended Fit
 

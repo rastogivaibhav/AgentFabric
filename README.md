@@ -1,124 +1,203 @@
 # AgentFabric
 
-AgentFabric is a self-hosted AI runtime governance, observability, and control plane for LLM and agent workloads.
+**Enterprise AI runtime governance, observability, and control plane for production LLM and agent workloads.**
 
-It is designed for enterprises that want to centralize:
-- model and provider mediation
-- runtime tracing and live operations
-- policy and guardrail enforcement
-- budget and pricing governance
-- auditability of AI traffic and admin activity
-- prompt release linkage and evaluation workflows
+Self-hosted. Policy-driven. Cost-aware. Deployment-ready.
 
-## What AgentFabric Does
+![Maturity](https://img.shields.io/badge/maturity-beta-blue)
+![Deployment](https://img.shields.io/badge/deployment-self--hosted-2ea44f)
+![Architecture](https://img.shields.io/badge/architecture-control%20plane-6f42c1)
+![License](https://img.shields.io/badge/license-proprietary-lightgrey)
 
-AgentFabric combines several product surfaces into one control plane:
+## What Is AgentFabric?
 
-- `api-gateway`: central API, auth, policy, pricing, budget, key, prompt, eval, and proxy service
-- `collector`: OTLP ingest and enrichment service for agent and application traces
-- `portal`: operator and administrator UI
-- `agent-sdk`: Python SDK and auto-instrumentation entrypoint for application onboarding
-- `proxy` and `netproxy`: controlled model-access paths for routed LLM traffic
-- PostgreSQL and Redis: required backing services for persistence and runtime coordination
+AgentFabric is a self-hosted platform for teams that need to **observe, govern, and control AI runtime traffic** across applications, services, and autonomous agents.
 
-## Current Product Scope
+It brings together three enterprise capability areas in one platform:
 
-Implemented product areas in the current codebase:
+- **Observability** for traces, spans, execution lineage, live runtime activity, failures, and cost provenance
+- **Governance** for policy enforcement, guardrails, DLP-style controls, auditability, and release checks
+- **Runtime control** for model mediation, provider management, pricing, budgets, prompt lifecycle, and evaluation workflows
 
-- OTLP ingest over HTTP and gRPC
-- trace, run, agent, environment, and live-stream views
-- trace timelines, trace comparison, and saved views
-- policy enforcement and policy simulation
-- DLP-style request and response handling
-- configurable pricing and budget governance
-- virtual API key registration and management
-- LLM proxy and transparent network proxy support
-- evaluation scoring and regression comparison
-- prompt versioning, promotion, and trace linkage
-- control-plane and runtime audit trails
-- OIDC or password-based browser authentication
-- single shared or multi-tenant control-plane deployment models
+Think of AgentFabric as a **control plane for enterprise AI operations**.
+
+## Why AgentFabric?
+
+As AI workloads move from experimentation to production, enterprise teams run into the same problems:
+
+- model access becomes fragmented across teams and applications
+- token usage and spend are difficult to attribute
+- prompt and release changes are hard to trace
+- policy decisions are not visible at runtime
+- security, platform, and architecture teams lack one operational surface
+- governance becomes reactive instead of enforced
+
+AgentFabric addresses that by placing AI runtime behavior behind a governed operational layer.
+
+## What The Platform Can Do
+
+### Runtime observability
+- trace LLM and agent execution across requests, spans, retries, failures, and handoffs
+- inspect lineage, blocked spans, redactions, token usage, and pricing provenance
+- compare traces side by side
+- stream live runtime events to operators
+
+### Governance and guardrails
+- enforce traffic and DLP rules
+- apply policy-driven guardrails
+- preview and simulate policy decisions before rollout
+- maintain audit trails for runtime and administrative actions
+
+### Cost and FinOps
+- compute per-request and per-span cost
+- apply pricing rules with tenant-aware overrides
+- break down input, output, cache, and reasoning cost categories
+- support budget and release-governance workflows
+
+### Prompt and release lifecycle
+- version prompts
+- promote prompts across environments
+- link traces back to prompt versions and releases
+- support evaluation and regression analysis across release tags
+
+### Enterprise deployment
+- self-hosted Docker Compose deployment
+- Kubernetes / Helm deployment path
+- on-premise-friendly operating model
+- staging validation and GA gate workflows
+
+## Architecture
+
+### High-Level Architecture
+
+```mermaid
+flowchart TB
+    A["Applications / Agents / Services"] --> B["Agent SDK / OTLP Telemetry"]
+    B --> C["Collector<br/>Telemetry ingest + enrichment"]
+    C --> D["API Gateway / Control Plane<br/>Policy, pricing, prompts, evals, budgets, audit"]
+    D --> E["PostgreSQL<br/>Traces, rules, prompts, evals, audit"]
+    D --> F["Redis<br/>Cache, rate-state, coordination"]
+    D --> G["Portal UI<br/>Operators, architects, admins"]
+    G --> D
+```
+
+### Runtime Flow
+
+```mermaid
+sequenceDiagram
+    participant App as App / Agent
+    participant SDK as SDK / OTLP
+    participant Col as Collector
+    participant GW as API Gateway
+    participant DB as PostgreSQL
+    participant UI as Portal
+
+    App->>SDK: Emit runtime telemetry or proxied traffic
+    SDK->>Col: OTLP spans and metadata
+    Col->>GW: Enriched runtime events
+    GW->>GW: Apply policy, pricing, budgets, prompts, eval logic
+    GW->>DB: Persist traces, decisions, cost, audit, releases
+    UI->>GW: Query traces, policies, costs, prompts, evals
+    GW->>UI: Operational views and admin workflows
+```
+
+For the full architecture view, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Core Components
+
+| Component | Role |
+|---|---|
+| `api-gateway/` | Central governance, policy, pricing, budget, prompt, eval, and audit control plane |
+| `collector/` | OTLP ingestion and telemetry enrichment |
+| `portal/` | Operator and administrator UI |
+| `agent-sdk/` | Python instrumentation and runtime linkage |
+| `PostgreSQL` | Primary system of record |
+| `Redis` | Supporting cache and coordination layer |
+
+## Best-Fit Use Cases
+
+AgentFabric is best suited for:
+
+- enterprise AI platform teams
+- architecture teams standardizing AI runtime controls
+- security and governance organizations
+- internal developer platforms
+- regulated environments that need auditability and runtime control
+- delivery teams operating LLM-backed applications in production
+
+## Deployment Modes
+
+- local development with Docker Compose
+- single-tenant deployment for one platform or business unit
+- multi-tenant deployment for shared internal platform use
+- Kubernetes / Helm deployment for production environments
+- enterprise-friendly on-premise deployment model
+
+Installation guides:
+
+- [docs/SETUP_AND_ONBOARDING.md](docs/SETUP_AND_ONBOARDING.md)
+- [docs/INSTALL_SINGLE_TENANT.md](docs/INSTALL_SINGLE_TENANT.md)
+- [docs/INSTALL_MULTI_TENANT.md](docs/INSTALL_MULTI_TENANT.md)
 
 ## Repository Layout
 
-- [agent-sdk](/C:/Users/vrast/Documents/Agentic%20Code/files/agent-sdk)
-  Python SDK, auto-instrumentation, and prompt metadata linkage.
-- [collector](/C:/Users/vrast/Documents/Agentic%20Code/files/collector)
-  OTLP receiver, enrichment path, and gateway exporter.
-- [api-gateway](/C:/Users/vrast/Documents/Agentic%20Code/files/api-gateway)
-  Primary control plane and proxy surface.
-- [portal](/C:/Users/vrast/Documents/Agentic%20Code/files/portal)
-  React-based operator UI.
-- [deploy](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy)
-  Migrations, Helm assets, Docker Compose overlays, and Kubernetes manifests.
-- [docs](/C:/Users/vrast/Documents/Agentic%20Code/files/docs)
-  Product, deployment, release, backup, and pilot documentation.
-- [scripts](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts)
-  Bootstrap, validation, backup, pilot, and release-gate automation.
-
-## Architecture at a Glance
-
-```mermaid
-flowchart LR
-    A["Applications / Agents"] --> B["Agent SDK or OTLP Export"]
-    A --> C["Proxy / Netproxy"]
-    B --> D["Collector"]
-    D --> E["API Gateway"]
-    C --> E
-    F["Portal"] --> E
-    E --> G["PostgreSQL"]
-    E --> H["Redis"]
+```text
+agent-sdk/        Python SDK and instrumentation
+api-gateway/      Go control plane and gateway logic
+collector/        Go telemetry collector
+portal/           React + TypeScript operations portal
+deploy/           Docker, Helm, manifests, migrations
+docs/             architecture, setup, API, and operations docs
+tests/            governance, eval, e2e, and validation suites
+scripts/          probes, pilot validation, release, and GA gate scripts
 ```
 
-Operationally:
-- the collector ingests telemetry and forwards enriched spans to the gateway
-- the gateway persists traces, enforces policy, resolves pricing, manages budgets, and exposes admin APIs
-- the proxy and netproxy route governed LLM traffic through the gateway
-- the portal consumes the gateway APIs for administration and investigation
+## Quick Start
 
-See the full architecture guide in [ARCHITECTURE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/ARCHITECTURE.md).
+### Local
+1. Start the stack with Docker Compose
+2. Apply migrations
+3. Sign in to the portal
+4. Register a provider key
+5. Send instrumented or proxied traffic
+6. Inspect traces, policies, prompts, evals, and costs
 
-## Portal Surfaces
+### Production
+1. Deploy with Helm or production Compose
+2. Configure auth, secrets, database, Redis, and ingress
+3. Apply migrations
+4. Run stack health and proxy probes
+5. Validate governance scenarios
+6. Run the GA gate
 
-The current portal includes:
+## Documentation
 
-- Dashboard
-- Traces
-- Trace Detail
-- Trace Compare
-- Live Stream
-- Agents
-- Cost
-- Environments
-- Users
-- Audit
-- API Keys
-- Pricing
-- Policies
-- Policy Decision Explorer
-- Policy Simulation
-- Evals
-- Regressions
-- Prompts
-- Prompt Release
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/SETUP_AND_ONBOARDING.md](docs/SETUP_AND_ONBOARDING.md)
+- [docs/API_GUIDE.md](docs/API_GUIDE.md)
+- [docs/INSTALL_SINGLE_TENANT.md](docs/INSTALL_SINGLE_TENANT.md)
+- [docs/INSTALL_MULTI_TENANT.md](docs/INSTALL_MULTI_TENANT.md)
+- [docs/PRODUCTION_CHECKLIST.md](docs/PRODUCTION_CHECKLIST.md)
+- [docs/RELEASE_BOUNDARIES.md](docs/RELEASE_BOUNDARIES.md)
+- [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md)
+- [docs/PILOT_PLAYBOOK.md](docs/PILOT_PLAYBOOK.md)
 
-## Deployment Models
+## Supported Product Shape
 
-AgentFabric supports two primary deployment shapes:
+AgentFabric is strongest as:
 
-1. `Single tenant`
-One shared control plane for one organization, program, or business unit.
+**AI runtime governance + observability + control plane**
 
-2. `Multi tenant`
-One shared control plane serving multiple onboarded teams, tenants, or environments with tenant-scoped governance and operations.
+It is not intended to be:
 
-See:
-- [INSTALL_SINGLE_TENANT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/INSTALL_SINGLE_TENANT.md)
-- [INSTALL_MULTI_TENANT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/INSTALL_MULTI_TENANT.md)
+- a prompt playground
+- a generic chatbot framework
+- a research experimentation lab
+- a consumer-facing AI app
 
 ## Provider Scope
 
-The codebase includes provider adapters or routing support for:
+The codebase currently includes provider adapters or routing support for:
 
 - `openai`
 - `anthropic`
@@ -126,100 +205,34 @@ The codebase includes provider adapters or routing support for:
 - `vertexai`
 - `bedrock`
 
-For production release positioning, keep release claims aligned with [RELEASE_BOUNDARIES.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/RELEASE_BOUNDARIES.md). The most release-ready path remains the central control-plane experience around `openai`, `anthropic`, and `google`, while newer adapters should be described carefully until fully field-proven.
-
-## Local Setup
-
-Fastest local start on Windows PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap_local.ps1
-```
-
-Fastest local start on macOS or Linux:
-
-```bash
-bash scripts/setup-local.sh
-```
-
-Common local endpoints:
-
-- Portal: `http://localhost:3000`
-- Gateway: `http://localhost:8080`
-- Collector OTLP HTTP: `http://localhost:4318`
-- Swagger UI: `http://localhost:8080/docs/swagger`
-
-For full onboarding flows, see [SETUP_AND_ONBOARDING.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/SETUP_AND_ONBOARDING.md).
-
-## Production Deployment
-
-Production-oriented assets in this repository include:
-
-- [docker-compose.prod.yml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/docker/docker-compose.prod.yml)
-- [values.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/values.yaml)
-- [runtime-stack.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/runtime-stack.yaml)
-- [networkpolicies.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/networkpolicies.yaml)
-- [backup-cronjob.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/backup-cronjob.yaml)
-
-Supporting operational documents:
-
-- [REFERENCE_DEPLOYMENT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/REFERENCE_DEPLOYMENT.md)
-- [PRODUCTION_CHECKLIST.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/PRODUCTION_CHECKLIST.md)
-- [BACKUP_RESTORE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/BACKUP_RESTORE.md)
-- [HA_GUIDE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/HA_GUIDE.md)
-- [SSO_RBAC_PLAN.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/SSO_RBAC_PLAN.md)
-
-## API and Integration Surfaces
-
-Primary gateway endpoints:
-
-- health and readiness: `/healthz`, `/readyz`
-- auth: `/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/me`, `/auth/refresh`
-- traces and live operations: `/api/v1/traces`, `/api/v1/stream/live`
-- pricing, budgets, and policies: `/api/v1/pricing`, `/api/v1/budgets`, `/api/v1/policies`
-- keys, prompts, and evals: `/api/v1/keys`, `/api/v1/prompts`, `/api/v1/evals`
-- proxy: `/proxy/{provider}/...`
-- collector ingest: `/internal/ingest`
-
-API references:
-
-- [openapi.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/openapi.yaml)
-- [API_GUIDE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/API_GUIDE.md)
+Release claims should stay aligned with [docs/RELEASE_BOUNDARIES.md](docs/RELEASE_BOUNDARIES.md), especially for providers that are newer or less field-proven.
 
 ## Validation and Release Gating
 
-The repository includes release and pilot validation scripts:
+The repository includes environment proof and release validation scripts:
 
-- [run_release_candidate_validation.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_release_candidate_validation.ps1)
-- [probe_stack_health.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_stack_health.ps1)
-- [probe_proxy_path.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_proxy_path.ps1)
-- [run_ga_gate.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_ga_gate.ps1)
-- [run_local_pilot_validation.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_local_pilot_validation.ps1)
+- `scripts/probe_stack_health.ps1`
+- `scripts/probe_proxy_path.ps1`
+- `scripts/run_release_candidate_validation.ps1`
+- `scripts/run_local_pilot_validation.ps1`
+- `scripts/run_ga_gate.ps1`
 
-Use the shell equivalents in [scripts](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts) for macOS or Linux environments.
+Shell equivalents are available in the same [scripts/](scripts) directory for macOS and Linux environments.
 
-## Current Maturity
+## Maturity
+
+AgentFabric is a serious platform foundation intended for:
+
+- internal platform evaluation
+- controlled pilots
+- enterprise architecture review
+- governed rollout of AI runtime capabilities
 
 Recommended positioning today:
 
-`pre-GA / controlled beta`
-
-The codebase is substantial and production-directed, but release claims should remain aligned with:
-- validated deployment evidence
-- provider maturity
-- staging and pilot proof
-- the current release boundary documents
-
-## Documentation Guide
-
-Start here:
-
-- [ARCHITECTURE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/ARCHITECTURE.md)
-- [SETUP_AND_ONBOARDING.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/SETUP_AND_ONBOARDING.md)
-- [API_GUIDE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/API_GUIDE.md)
-- [INSTALL_SINGLE_TENANT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/INSTALL_SINGLE_TENANT.md)
-- [INSTALL_MULTI_TENANT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/INSTALL_MULTI_TENANT.md)
-- [QUICKSTART.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/QUICKSTART.md)
+- enterprise beta
+- internal pilot
+- controlled production candidate
 
 ## License
 

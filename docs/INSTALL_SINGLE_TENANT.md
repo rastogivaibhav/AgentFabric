@@ -1,6 +1,6 @@
 # Single-Tenant Installation
 
-## When to Use This Model
+## When To Use This Model
 
 Use the single-tenant model when:
 
@@ -8,20 +8,19 @@ Use the single-tenant model when:
 - one operations team manages the deployment
 - tenant separation inside the control plane is not the primary design goal
 
-This is the simplest production shape for AgentFabric.
+This is the simplest production shape for AgentFabric and the recommended starting point for first serious rollout.
 
 ## Target Topology
 
-```text
-portal
-  -> api-gateway
-collector
-  -> api-gateway
-api-gateway
-  -> PostgreSQL
-  -> Redis
-applications
-  -> collector and/or proxy and/or netproxy
+```mermaid
+flowchart TB
+    A["Applications / Agents"] --> B["SDK, OTLP, Proxy, or Netproxy"]
+    B --> C["Collector"]
+    B --> D["API Gateway"]
+    C --> D
+    E["Portal"] --> D
+    D --> F["PostgreSQL"]
+    D --> G["Redis"]
 ```
 
 ## Required Components
@@ -33,6 +32,7 @@ applications
 - Redis
 
 Recommended:
+
 - ingress or reverse proxy
 - TLS
 - external secret management
@@ -41,16 +41,16 @@ Recommended:
 ## Deployment Options
 
 ### Option 1: Production-like Docker
-
 Use:
-- [docker-compose.yml](/C:/Users/vrast/Documents/Agentic%20Code/files/docker-compose.yml)
-- [docker-compose.prod.yml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/docker/docker-compose.prod.yml)
+
+- [../docker-compose.yml](../docker-compose.yml)
+- [../deploy/docker/docker-compose.prod.yml](../deploy/docker/docker-compose.prod.yml)
 
 ### Option 2: Helm or Kubernetes
-
 Use:
-- [values.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/values.yaml)
-- [runtime-stack.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/runtime-stack.yaml)
+
+- [../deploy/helm/values.yaml](../deploy/helm/values.yaml)
+- [../deploy/helm/templates/runtime-stack.yaml](../deploy/helm/templates/runtime-stack.yaml)
 
 ## Core Configuration
 
@@ -65,12 +65,14 @@ At minimum, configure:
 - `AF_GATEWAY_AUTH_TOKEN`
 
 If using OIDC:
+
 - `AF_OIDC_ISSUER`
 - `AF_OIDC_CLIENT_ID`
 - `AF_OIDC_CLIENT_SECRET`
 - `AF_OIDC_REDIRECT_URI`
 
 If enforcing SSO:
+
 - `AF_SSO_REQUIRED=true`
 - `AF_PASSWORD_LOGIN_DISABLED=true` after cutover
 
@@ -99,6 +101,23 @@ After the platform is live:
 6. run one proxy request
 7. verify one trace, one cost record, and one audit event
 
+## Governance Baseline
+
+Before onboarding the first real workload, configure:
+
+- one budget rule
+- one pricing rule
+- one policy or guardrail
+- one audit validation path
+- one prompt lifecycle object for testing
+
+Suggested first controls:
+
+- deny or warn on clearly disallowed content
+- configure a low test budget
+- create one prompt version and release tag
+- validate trace-to-prompt linkage
+
 ## Backup and Recovery
 
 Single-tenant installations should still include:
@@ -108,20 +127,34 @@ Single-tenant installations should still include:
 - retention settings
 
 Use:
-- [backup-cronjob.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/backup-cronjob.yaml)
-- [BACKUP_RESTORE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/BACKUP_RESTORE.md)
-- [backup_postgres.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/backup_postgres.ps1)
+
+- [../deploy/helm/templates/backup-cronjob.yaml](../deploy/helm/templates/backup-cronjob.yaml)
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
+- [../scripts/backup_postgres.ps1](../scripts/backup_postgres.ps1)
+- [../scripts/backup-postgres.sh](../scripts/backup-postgres.sh)
 
 ## Validation Before Use
 
 Run:
 
-- [probe_stack_health.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_stack_health.ps1)
-- [probe_proxy_path.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_proxy_path.ps1)
-- [run_release_candidate_validation.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_release_candidate_validation.ps1)
+- [../scripts/probe_stack_health.ps1](../scripts/probe_stack_health.ps1)
+- [../scripts/probe_proxy_path.ps1](../scripts/probe_proxy_path.ps1)
+- [../scripts/run_release_candidate_validation.ps1](../scripts/run_release_candidate_validation.ps1)
 
 And use:
-- [PRODUCTION_CHECKLIST.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/PRODUCTION_CHECKLIST.md)
+
+- [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)
+- [REFERENCE_DEPLOYMENT.md](REFERENCE_DEPLOYMENT.md)
+
+## What Good Looks Like
+
+A healthy single-tenant deployment has:
+
+- one working proxied or instrumented workload
+- visible traces and cost breakdown
+- at least one explainable policy decision
+- one prompt release linked to runtime traces
+- one successful staging or pilot validation run
 
 ## Recommended Fit
 

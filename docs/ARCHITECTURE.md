@@ -1,157 +1,208 @@
 # AgentFabric Architecture
 
-## Purpose
+## Overview
 
-AgentFabric is a central control-plane architecture for governed AI runtime operations. It is built to sit between enterprise applications and external model providers while also ingesting runtime telemetry from instrumented services.
+AgentFabric is a self-hosted AI runtime governance, observability, and control-plane platform for production LLM and agent workloads.
 
-The architecture is optimized around five concerns:
+Its architectural purpose is to place enterprise AI traffic behind a governed operational layer that can:
 
-- observability of agent and LLM workflows
-- control of routed model traffic
-- policy and guardrail enforcement
-- pricing, budget, and usage governance
-- auditability of both runtime and administrative actions
+- observe runtime behavior
+- enforce policy and guardrails
+- attribute cost and usage
+- manage prompt and release lifecycle
+- support evaluation and release decisions
+- provide operators with one control surface
+
+AgentFabric is not a generic AI application framework. It is an infrastructure and operations platform for teams running AI workloads in production.
+
+## Architectural Principles
+
+### 1. Control plane first
+AgentFabric is designed as a centralized control plane for AI runtime operations rather than a set of isolated monitoring utilities.
+
+### 2. Self-hosted by default
+The system is optimized for environments that require deployment control, network control, and enterprise data handling.
+
+### 3. Governance is runtime-native
+Policy, audit, pricing, budget, prompt release, and evaluation concerns are treated as runtime concerns, not after-the-fact reporting.
+
+### 4. Observability must explain operations
+The platform is designed to make traces useful for debugging, policy inspection, and spend visibility, not just telemetry collection.
+
+### 5. Product boundaries are intentional
+AgentFabric focuses on governance, observability, and runtime control rather than trying to become a prompt IDE, experimentation lab, or chatbot builder.
+
+## High-Level Architecture
+
+```mermaid
+flowchart TB
+    A["Applications / Agents / Services"] --> B["Agent SDK / OTLP Telemetry"]
+    B --> C["Collector<br/>Telemetry ingest + enrichment"]
+    C --> D["API Gateway / Control Plane<br/>Policy, pricing, prompts, evals, budgets, audit, proxy mediation"]
+    D --> E["PostgreSQL<br/>Traces, rules, prompts, evals, audit"]
+    D --> F["Redis<br/>Cache, rate-state, coordination"]
+    D --> G["Portal UI<br/>Operators, architects, admins"]
+    G --> D
+```
+
+## Runtime Flow
+
+```mermaid
+sequenceDiagram
+    participant App as App / Agent
+    participant SDK as SDK / OTLP
+    participant Col as Collector
+    participant GW as API Gateway
+    participant DB as PostgreSQL
+    participant UI as Portal
+
+    App->>SDK: Emit runtime telemetry or proxied traffic
+    SDK->>Col: OTLP spans and metadata
+    Col->>GW: Enriched runtime events
+    GW->>GW: Apply policy, pricing, budgets, prompts, eval logic
+    GW->>DB: Persist traces, decisions, cost, audit, releases
+    UI->>GW: Query traces, policies, costs, prompts, evals
+    GW->>UI: Operational views and admin workflows
+```
 
 ## Core Components
 
-### 1. Agent SDK
-
-Location:
-- [agent-sdk](/C:/Users/vrast/Documents/Agentic%20Code/files/agent-sdk)
+### API Gateway
+The API Gateway is the central control-plane service.
 
 Responsibilities:
-- Python auto-instrumentation
-- framework patching and span creation
-- prompt metadata attachment
-- application-side onboarding for trace collection
 
-### 2. Collector
+- authentication and authorization
+- policy evaluation entry points
+- pricing and budget logic
+- prompt lifecycle APIs
+- evaluation and regression APIs
+- audit and governance workflows
+- proxy and model mediation
+- release and readiness control paths
 
-Location:
-- [collector](/C:/Users/vrast/Documents/Agentic%20Code/files/collector)
-
-Responsibilities:
-- OTLP HTTP and gRPC ingest
-- telemetry normalization and enrichment
-- forwarding batches into the gateway ingest path
-- readiness validation of gateway export configuration
-
-Exposed endpoints:
-- `/v1/traces`
-- `/metrics`
-- `/healthz`
-- `/readyz`
-
-### 3. API Gateway
-
-Location:
-- [api-gateway](/C:/Users/vrast/Documents/Agentic%20Code/files/api-gateway)
+### Collector
+The Collector ingests telemetry and prepares runtime data for the control plane.
 
 Responsibilities:
-- browser and API authentication
-- tenant-aware control-plane APIs
-- trace, run, analytics, prompt, eval, and governance APIs
-- pricing rule loading and resolution
-- budget enforcement
-- key management
-- policy and guardrail evaluation
-- audit recording
-- LLM proxy and transparent network proxy handling
 
-Exposed surfaces include:
-- health and readiness
-- auth endpoints
-- admin APIs
-- proxy path
-- internal collector ingest
+- OTLP ingestion
+- span enrichment
+- runtime metadata normalization
+- observability data shaping
+- cost and usage context propagation
 
-### 4. Portal
-
-Location:
-- [portal](/C:/Users/vrast/Documents/Agentic%20Code/files/portal)
+### Portal
+The Portal is the operational UI for administrators, platform teams, and operators.
 
 Responsibilities:
-- trace investigation
-- live operations monitoring
-- pricing, policies, budgets, and keys management
-- audit and administrative review
-- prompt lifecycle and evaluation UI
 
-### 5. Data Stores
+- trace and live runtime visibility
+- policy management and simulation
+- pricing and cost analysis
+- prompt version and release management
+- eval and regression review
+- administrative workflows and audit visibility
 
-Required backing services:
-- PostgreSQL
-- Redis
+### Agent SDK
+The SDK provides workload onboarding and runtime linkage.
 
-PostgreSQL is the system of record for:
-- traces and runs
+Responsibilities:
+
+- instrumentation
+- runtime metadata propagation
+- prompt and release linkage
+- trace context propagation
+
+### PostgreSQL
+Primary system of record for:
+
+- traces and spans
+- policy rules
 - pricing rules
-- policies and guardrails
-- audits
-- prompts and releases
-- evals and regressions
-- users and tenant-scoped metadata
+- prompt versions and prompt releases
+- eval runs and regressions
+- audit records
+- supporting control-plane metadata
 
-Redis is used for runtime coordination and low-latency support paths used by the gateway.
+### Redis
+Supporting runtime subsystem for:
 
-## High-Level Topology
+- cache and coordination
+- transient state
+- rate and state support
+- performance-sensitive control-plane operations
 
-```mermaid
-flowchart LR
-    APP["Applications and Agents"]
-    SDK["SDK / Auto-Instrumentation"]
-    OTLP["OTLP Export"]
-    COL["Collector"]
-    GW["API Gateway"]
-    PX["Proxy / Netproxy"]
-    UI["Portal"]
-    PG["PostgreSQL"]
-    RD["Redis"]
-    EXT["Model Providers"]
+## Capability Domains
 
-    APP --> SDK
-    APP --> OTLP
-    SDK --> COL
-    OTLP --> COL
-    APP --> PX
-    COL --> GW
-    PX --> GW
-    UI --> GW
-    GW --> PG
-    GW --> RD
-    GW --> EXT
-```
+### Observability
 
-## Main Runtime Flows
+- trace detail
+- span lineage
+- live event views
+- cost provenance
+- policy visibility inside traces
+- trace comparison
 
-### Trace ingestion flow
+### Governance
 
-1. An application emits spans through the SDK or OTLP.
-2. The collector receives, enriches, and forwards those spans.
-3. The gateway stores and exposes them through trace and analytics APIs.
-4. The portal renders traces, comparisons, timelines, and live views.
+- policy enforcement
+- guardrails
+- DLP-style protections
+- simulation and preview
+- auditability
 
-### Proxy enforcement flow
+### FinOps
 
-1. A workload sends LLM traffic through `/proxy/{provider}/...` or the transparent netproxy path.
-2. The gateway resolves the provider adapter and pricing behavior.
-3. Policy and guardrail evaluation runs inline.
-4. Usage, cost, policy events, and audit records are attached to the resulting trace.
-5. The portal exposes the request outcome for operators.
+- pricing rules
+- category-level cost attribution
+- budget workflows
+- release-readiness evidence
 
-### Prompt lifecycle flow
+### Prompt Lifecycle
 
-1. Prompt versions and releases are created in the control plane.
-2. Applications attach prompt identifiers or versions through instrumentation.
-3. Those prompt identifiers are linked to runtime spans and traces.
-4. Operators can navigate from traces to prompt releases.
+- prompt versions
+- release promotion
+- trace-to-prompt linkage
 
-### Evaluation flow
+### Evaluation
 
-1. The gateway scores enriched traces using built-in eval scorers.
-2. Eval runs are persisted.
-3. Candidate and baseline release tags can be compared.
-4. Regressions and policy-effectiveness summaries are exposed in the portal.
+- eval scoring
+- release regressions
+- governance validation support
+
+## Deployment Topologies
+
+### Single-Tenant
+Best for:
+
+- one platform team
+- one business unit
+- one environment boundary
+
+Characteristics:
+
+- simplest operational model
+- easier onboarding
+- lower governance complexity
+
+### Multi-Tenant
+Best for:
+
+- shared internal platform
+- multiple teams or business units
+- centralized governance with scoped separation
+
+Characteristics:
+
+- tenant-scoped policy and pricing overrides
+- stronger platform governance model
+- higher operational discipline required
+
+See:
+
+- [INSTALL_SINGLE_TENANT.md](INSTALL_SINGLE_TENANT.md)
+- [INSTALL_MULTI_TENANT.md](INSTALL_MULTI_TENANT.md)
 
 ## Authentication and Access Model
 
@@ -171,8 +222,7 @@ Production-relevant controls include:
 - `AF_JWT_SECRET`
 - `AF_JWT_SECRETS`
 
-See:
-- [SSO_RBAC_PLAN.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/SSO_RBAC_PLAN.md)
+See [SSO_RBAC_PLAN.md](SSO_RBAC_PLAN.md).
 
 ## Tenancy Model
 
@@ -191,10 +241,6 @@ In practice, the tenancy boundary affects:
 - key management
 - prompt catalogs
 - traces and analytics access
-
-For deployment guidance, see:
-- [INSTALL_SINGLE_TENANT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/INSTALL_SINGLE_TENANT.md)
-- [INSTALL_MULTI_TENANT.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/INSTALL_MULTI_TENANT.md)
 
 ## Provider and Proxy Model
 
@@ -215,46 +261,32 @@ The proxy path is where AgentFabric combines:
 - pricing resolution
 - audit and trace linkage
 
-Release claims should stay aligned with [RELEASE_BOUNDARIES.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/RELEASE_BOUNDARIES.md).
+Release claims should stay aligned with [RELEASE_BOUNDARIES.md](RELEASE_BOUNDARIES.md).
 
 ## Readiness and Operational Checks
 
 Gateway:
+
 - `/healthz`
 - `/readyz`
 
 Collector:
+
 - `/healthz`
 - `/readyz`
 
 The readiness path is intended to be meaningful, not just process-up. Current checks include backing-service and startup-state dependencies such as pricing and policy availability.
 
-## Deployment Shapes
-
-### Single tenant
-
-Recommended when:
-- one org or one program owns the full platform
-- one admin model is sufficient
-- the operational boundary is simple
-
-### Multi tenant
-
-Recommended when:
-- several teams or business units share one platform
-- tenant-specific controls are required
-- one central platform team operates the service
-
 ## Operational Assets
 
 Key deployment and operations assets:
 
-- [docker-compose.prod.yml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/docker/docker-compose.prod.yml)
-- [values.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/values.yaml)
-- [networkpolicies.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/networkpolicies.yaml)
-- [backup-cronjob.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/backup-cronjob.yaml)
-- [BACKUP_RESTORE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/BACKUP_RESTORE.md)
-- [HA_GUIDE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/HA_GUIDE.md)
+- [../deploy/docker/docker-compose.prod.yml](../deploy/docker/docker-compose.prod.yml)
+- [../deploy/helm/values.yaml](../deploy/helm/values.yaml)
+- [../deploy/helm/templates/networkpolicies.yaml](../deploy/helm/templates/networkpolicies.yaml)
+- [../deploy/helm/templates/backup-cronjob.yaml](../deploy/helm/templates/backup-cronjob.yaml)
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
+- [HA_GUIDE.md](HA_GUIDE.md)
 
 ## Architecture Constraints
 
@@ -264,3 +296,17 @@ Important boundaries to communicate clearly:
 - Coverage depends on onboarding through SDK, OTLP, proxy, or netproxy paths.
 - The platform is a governed AI runtime control plane, not a generic infrastructure monitoring product.
 - Production readiness depends on deployment validation, release-gate evidence, and pilot proof, not code presence alone.
+
+## Current Maturity
+
+The architecture supports serious pilot and controlled rollout scenarios.
+
+Recommended maturity positioning:
+
+- enterprise beta
+- internal pilot
+- controlled production candidate
+
+Not yet:
+
+- broad market GA claim without live pilot proof and broader operating evidence

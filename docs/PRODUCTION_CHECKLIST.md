@@ -1,9 +1,9 @@
 # AgentFabric Production Checklist
 
-**Audience**: release managers, platform owners, security reviewers  
-**Applies to**: the current central deployment model of `api-gateway + collector + portal + PostgreSQL + Redis`
+**Audience:** release managers, platform owners, security reviewers  
+**Applies to:** the current central deployment model of `api-gateway + collector + portal + PostgreSQL + Redis`
 
-Use this checklist before every production deployment and before declaring the platform GA-ready for a shared org or department rollout.
+Use this checklist before every production deployment and before declaring the platform GA-ready for a shared organization or department rollout.
 
 ## 1. Release Scope
 
@@ -11,7 +11,7 @@ Use this checklist before every production deployment and before declaring the p
   - `openai`
   - `anthropic`
   - `google`
-- [ ] Release notes do not advertise unsupported gateway capabilities or research/eval features that are not in the product boundary.
+- [ ] Release notes do not advertise unsupported gateway capabilities or product areas outside the current release boundary.
 - [ ] Deployment topology matches the supported reference shape:
   - shared `api-gateway`
   - shared `collector`
@@ -22,12 +22,12 @@ Use this checklist before every production deployment and before declaring the p
 ## 2. Production Configuration
 
 - [ ] `AF_AUTH_DISABLED` is absent or `false`
-- [ ] `AF_JWT_SECRET` is not the development sentinel
+- [ ] `AF_JWT_SECRET` is not a development sentinel
 - [ ] `AF_ADMIN_PASSWORD` is not `admin`
 - [ ] `AF_VAULT_KEY` is set to a 64-character hex value
 - [ ] `DATABASE_URL` points to the production PostgreSQL instance
 - [ ] `REDIS_URL` points to the production Redis instance
-- [ ] `AF_CORS_ORIGINS` is restricted to the deployed portal origin(s)
+- [ ] `AF_CORS_ORIGINS` is restricted to the deployed portal origin or origins
 - [ ] If `AF_TLS_ENABLED=true`, both `AF_TLS_CERT_FILE` and `AF_TLS_KEY_FILE` are present
 - [ ] If `AF_SSO_REQUIRED=true`, OIDC settings are complete:
   - `AF_OIDC_ISSUER`
@@ -55,11 +55,11 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] Focused Go test suites pass in CI
 - [ ] Portal tests pass in CI
 - [ ] Portal production build passes in CI
-- [ ] Swagger/OpenAPI checks pass
+- [ ] Swagger and OpenAPI checks pass
 - [ ] Packaging validation passes for:
   - local Docker Compose
   - production Docker Compose overlay
-  - Helm render/lint
+  - Helm render or lint
 - [ ] Stack probe passes:
   - `scripts/probe_stack_health.ps1`
   - `scripts/probe-stack-health.sh`
@@ -74,7 +74,7 @@ Use this checklist before every production deployment and before declaring the p
 ## 5. Runtime Smoke
 
 - [ ] Admin login works
-- [ ] `/auth/me` works with the browser/session flow
+- [ ] `/auth/me` works with the browser or session flow
 - [ ] Pricing preview works
 - [ ] Policy preview works
 - [ ] API key registration works for supported providers
@@ -101,7 +101,7 @@ Use this checklist before every production deployment and before declaring the p
   - proxied LLM traffic is covered
 - [ ] Stakeholders understand what is not automatic:
   - arbitrary hosts without onboarding are not covered
-  - generic host/process monitoring is not the product goal
+  - generic host or process monitoring is not the product goal
 - [ ] Tenant onboarding defaults are prepared:
   - pricing defaults
   - policy defaults
@@ -112,7 +112,7 @@ Use this checklist before every production deployment and before declaring the p
 
 - [ ] Pricing rule changes are auditable
 - [ ] Policy rule changes are auditable
-- [ ] Key create/rotate/delete actions are auditable
+- [ ] Key create, rotate, and delete actions are auditable
 - [ ] Admin actions are auditable
 - [ ] DLP enforcement is visible in traces and audit when exercised
 - [ ] Secret material is not exposed through admin list APIs
@@ -133,13 +133,13 @@ Only declare GA when all of the following are true:
 
 ## 9. Final GA Gate
 
-Use the GA gate scripts for the final objective release decision. `ci` mode is for GitHub Actions and merge evidence. `ga` mode is the actual release decision and must be run with explicit blocker counts plus staging credentials.
+Use the GA gate scripts for the final objective release decision. `ci` mode is for CI evidence. `ga` mode is the actual release decision and must be run with explicit blocker counts plus staging credentials.
 
 - [ ] `scripts/run_ga_gate.ps1` passes in `ga` mode
 - [ ] or `scripts/run-ga-gate.sh` passes in `ga` mode
 - [ ] GA gate summary is attached to the release review and shows `GO`
 
-Windows PowerShell:
+### Windows PowerShell
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run_ga_gate.ps1 `
@@ -154,7 +154,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_ga_gate.ps1 `
   -OpenP1Count 0
 ```
 
-macOS / Linux:
+### macOS / Linux
 
 ```bash
 GA_GATE_MODE=ga \
@@ -171,7 +171,7 @@ bash scripts/run-ga-gate.sh
 
 ## 10. Validation Commands
 
-Windows PowerShell:
+### Windows PowerShell
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\probe_stack_health.ps1 `
@@ -190,7 +190,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_release_candidate_validat
   -AdminPassword <admin-password>
 ```
 
-macOS / Linux:
+### macOS / Linux
 
 ```bash
 BASE_URL=http://<gateway-host>:8080 \
@@ -207,3 +207,12 @@ ADMIN_USER=<admin-user> \
 ADMIN_PASSWORD=<admin-password> \
 bash scripts/run-release-candidate-validation.sh
 ```
+
+## Related Documents
+
+Use this checklist with:
+
+- [REFERENCE_DEPLOYMENT.md](REFERENCE_DEPLOYMENT.md)
+- [SETUP_AND_ONBOARDING.md](SETUP_AND_ONBOARDING.md)
+- [RELEASE_BOUNDARIES.md](RELEASE_BOUNDARIES.md)
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
