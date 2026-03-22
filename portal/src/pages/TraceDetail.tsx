@@ -97,6 +97,7 @@ export default function TraceDetail() {
 
   const tree = buildSpanTree(spans)
   const flatSpans = flattenTree(tree)
+  const insights = trace.insights ?? {}
 
   return (
     <div style={{ padding:24, display:'flex', gap:16, height:'100%', overflow:'hidden' }}>
@@ -113,12 +114,33 @@ export default function TraceDetail() {
               ['Errors', String(trace.error_count), trace.error_count > 0 ? '#EF4444' : '#10B981'],
               ['Tokens', trace.total_tokens.toLocaleString(), '#94A3B8'],
               ['Cost', `$${trace.total_cost_usd.toFixed(6)}`, '#F59E0B'],
+              ['LLM Calls', String(insights.llm_calls ?? 0), '#60A5FA'],
+              ['Blocked', String(insights.blocked_spans ?? 0), (insights.blocked_spans ?? 0) > 0 ? '#EF4444' : '#10B981'],
             ].map(([k, v, c]) => (
               <div key={k} style={{ background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:6, padding:'8px 14px' }}>
                 <div style={{ fontSize:9, color:'#334155', letterSpacing:'0.1em' }}>{k}</div>
                 <div style={{ fontSize:13, color:c, fontWeight:600 }}>{v}</div>
               </div>
             ))}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:12, marginTop:12 }}>
+            <div style={{ background:'#071525', border:'1px solid #0F1F35', borderRadius:8, padding:12 }}>
+              <div style={{ fontSize:9, color:'#334155', letterSpacing:'0.1em', marginBottom:6 }}>MODELS</div>
+              <div style={{ fontSize:11, color:'#CBD5E1' }}>{(insights.models ?? []).join(', ') || '—'}</div>
+            </div>
+            <div style={{ background:'#071525', border:'1px solid #0F1F35', borderRadius:8, padding:12 }}>
+              <div style={{ fontSize:9, color:'#334155', letterSpacing:'0.1em', marginBottom:6 }}>PROVIDERS / ENV</div>
+              <div style={{ fontSize:11, color:'#CBD5E1' }}>
+                {(insights.providers ?? []).join(', ') || '—'}
+                {(insights.environments?.length ?? 0) > 0 ? ` · ${(insights.environments ?? []).join(', ')}` : ''}
+              </div>
+            </div>
+            <div style={{ background:'#071525', border:'1px solid #0F1F35', borderRadius:8, padding:12 }}>
+              <div style={{ fontSize:9, color:'#334155', letterSpacing:'0.1em', marginBottom:6 }}>STEP MIX</div>
+              <div style={{ fontSize:11, color:'#CBD5E1' }}>
+                {Object.entries(insights.step_types ?? {}).map(([k, v]) => `${k}:${v}`).join(' · ') || '—'}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -157,7 +179,7 @@ export default function TraceDetail() {
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
               <thead>
                 <tr style={{ borderBottom:'1px solid #0F1F35' }}>
-                  {['Span ID','Name','Framework','Duration','Status','Tokens','Cost'].map(h => (
+                  {['Span ID','Name','Step','Framework','Duration','Status','Tokens','Cost'].map(h => (
                     <th key={h} style={{ padding:'9px 12px', textAlign:'left', color:'#334155', fontSize:10, letterSpacing:'0.08em', fontWeight:700 }}>{h}</th>
                   ))}
                 </tr>
@@ -167,6 +189,7 @@ export default function TraceDetail() {
                   <tr key={sp.id} onClick={() => setSelected(selected?.id === sp.id ? null : sp)} style={{ borderBottom:'1px solid #0A1020', cursor:'pointer', background: i%2===0?'transparent':'#060A1430' }}>
                     <td style={{ padding:'7px 12px', color:'#3B82F6', fontFamily:'monospace' }}>{sp.id.substring(0,12)}…</td>
                     <td style={{ padding:'7px 12px', color:'#CBD5E1' }}>{sp.name}</td>
+                    <td style={{ padding:'7px 12px', color:'#60A5FA' }}>{sp.step_type ?? '—'}</td>
                     <td style={{ padding:'7px 12px' }}>
                       <span style={{ fontSize:9, color: FW_COLORS[sp.framework]??'#475569' }}>{sp.framework}</span>
                     </td>
@@ -202,6 +225,37 @@ export default function TraceDetail() {
         <div style={{ width:300, background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:8, overflow:'auto', padding:16, flexShrink:0 }}>
           <div style={{ fontSize:10, color:'#334155', letterSpacing:'0.1em', marginBottom:12 }}>SPAN DETAIL</div>
           <div style={{ fontSize:12, fontWeight:600, color:'#F0F9FF', marginBottom:12 }}>{selected.name}</div>
+          <div style={{ display:'grid', gap:8, marginBottom:14 }}>
+            {[
+              ['Step', selected.step_type],
+              ['Model', selected.model],
+              ['Provider', selected.provider],
+              ['App', selected.app_name],
+              ['Environment', selected.environment],
+              ['User', selected.user_id],
+              ['Session', selected.session_id],
+              ['Retry Count', selected.retry_count != null ? String(selected.retry_count) : undefined],
+              ['Blocked', selected.blocked ? `yes${selected.blocked_reason ? ` · ${selected.blocked_reason}` : ''}` : 'no'],
+              ['Pricing Rule', selected.pricing_rule_id ? `${selected.pricing_rule_id} (${selected.pricing_scope ?? 'global'})` : undefined],
+            ].filter(([,v]) => v !== undefined).map(([k,v]) => (
+              <div key={k}>
+                <div style={{ fontSize:9, color:'#3B82F6' }}>{k}</div>
+                <div style={{ fontSize:10, color:'#CBD5E1', wordBreak:'break-word' }}>{v || '—'}</div>
+              </div>
+            ))}
+          </div>
+          {selected.prompt_preview && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:9, color:'#3B82F6' }}>Prompt Preview</div>
+              <div style={{ fontSize:10, color:'#94A3B8', whiteSpace:'pre-wrap' }}>{selected.prompt_preview}</div>
+            </div>
+          )}
+          {selected.response_preview && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:9, color:'#3B82F6' }}>Response Preview</div>
+              <div style={{ fontSize:10, color:'#94A3B8', whiteSpace:'pre-wrap' }}>{selected.response_preview}</div>
+            </div>
+          )}
           {Object.entries(selected.attributes ?? {}).slice(0, 30).map(([k,v]) => (
             <div key={k} style={{ marginBottom:6 }}>
               <div style={{ fontSize:9, color:'#3B82F6' }}>{k}</div>

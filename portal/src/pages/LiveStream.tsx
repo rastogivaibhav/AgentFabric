@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { useLiveStream, Span, LiveEvent } from '../hooks/api'
-import { Pause, Play, Trash2, Download, Filter } from 'lucide-react'
+import { useLiveStream, Span, LiveEvent, PolicyLiveEventData } from '../hooks/api'
+import { Pause, Play, Trash2, Download } from 'lucide-react'
 
 const FRAMEWORK_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
@@ -8,6 +8,7 @@ const FRAMEWORK_COLORS: Record<string, string> = {
   google_adk: '#4285F4',
   openai_agents: '#10A37F',
   claude_agents: '#D97706',
+  policy: '#F59E0B',
   unknown: '#475569',
 }
 
@@ -21,7 +22,7 @@ const EVENT_TYPE_COLOR: Record<string, string> = {
 
 function fmtDuration(ns: number) {
   if (ns < 1_000) return `${ns}ns`
-  if (ns < 1_000_000) return `${(ns / 1_000).toFixed(1)}µs`
+  if (ns < 1_000_000) return `${(ns / 1_000).toFixed(1)}us`
   if (ns < 1_000_000_000) return `${(ns / 1_000_000).toFixed(1)}ms`
   return `${(ns / 1_000_000_000).toFixed(2)}s`
 }
@@ -51,11 +52,15 @@ export default function LiveStream() {
 
   const filtered = filter
     ? events.filter(e => {
-        const s = e.data as Span
+        const span = e.data as Span
+        const policy = e.data as PolicyLiveEventData
+        const name = e.type === 'policy' ? policy.policy_name : span.name
+        const framework = e.type === 'policy' ? 'policy' : span.framework
+        const traceID = e.type === 'policy' ? policy.trace_id : span.trace_id
         return (
-          s.name?.toLowerCase().includes(filter.toLowerCase()) ||
-          s.framework?.includes(filter.toLowerCase()) ||
-          s.trace_id?.includes(filter) ||
+          name?.toLowerCase().includes(filter.toLowerCase()) ||
+          framework?.toLowerCase().includes(filter.toLowerCase()) ||
+          traceID?.includes(filter) ||
           e.type.includes(filter.toLowerCase())
         )
       })
@@ -65,20 +70,28 @@ export default function LiveStream() {
     const rows = [
       'timestamp,type,trace_id,span_id,name,framework,duration_ns,status,cost_usd',
       ...filtered.map(e => {
-        const s = e.data as Span
-        return `${e.ts},${e.type},${s.trace_id ?? ''},${s.id ?? ''},${s.name ?? ''},${s.framework ?? ''},${s.duration_ns ?? 0},${s.status_code ?? 0},${s.cost_usd ?? 0}`
-      })
+        const span = e.data as Span
+        const policy = e.data as PolicyLiveEventData
+        const traceID = e.type === 'policy' ? (policy.trace_id ?? '') : (span.trace_id ?? '')
+        const spanID = e.type === 'policy' ? (policy.span_id ?? '') : (span.id ?? '')
+        const name = e.type === 'policy' ? policy.policy_name : (span.name ?? '')
+        const framework = e.type === 'policy' ? 'policy' : (span.framework ?? '')
+        const duration = e.type === 'policy' ? 0 : (span.duration_ns ?? 0)
+        const status = e.type === 'policy' ? policy.result : (span.status_code ?? 0)
+        const cost = e.type === 'policy' ? 0 : (span.cost_usd ?? 0)
+        return `${e.ts},${e.type},${traceID},${spanID},${name},${framework},${duration},${status},${cost}`
+      }),
     ].join('\n')
     const blob = new Blob([rows], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `agentfabric-stream-${Date.now()}.csv`
+    a.href = url
+    a.download = `agentfabric-stream-${Date.now()}.csv`
     a.click()
   }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', padding:24, gap:16 }}>
-      {/* Header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
         <div style={{ display:'flex', alignItems:'center', gap:12 }}>
           <h1 style={{ fontSize:20, fontWeight:700, color:'#F0F9FF', margin:0 }}>Live Stream</h1>
@@ -92,7 +105,6 @@ export default function LiveStream() {
         </div>
 
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          {/* Filter */}
           <input
             value={filter}
             onChange={e => setFilter(e.target.value)}
@@ -113,22 +125,14 @@ export default function LiveStream() {
           <button onClick={exportCSV} style={btnStyle('#3B82F6')}>
             <Download size={12} /> Export
           </button>
-          <button
-            onClick={() => setAutoScroll(a => !a)}
-            style={btnStyle(autoScroll ? '#8B5CF6' : '#475569')}
-          >
+          <button onClick={() => setAutoScroll(a => !a)} style={btnStyle(autoScroll ? '#8B5CF6' : '#475569')}>
             Auto-scroll {autoScroll ? 'ON' : 'OFF'}
           </button>
         </div>
       </div>
 
       <div style={{ display:'flex', gap:16, flex:1, overflow:'hidden' }}>
-        {/* Stream table */}
-        <div ref={tableRef} style={{
-          flex:1, overflow:'auto',
-          background:'#060A14', border:'1px solid #0F1F35', borderRadius:8,
-        }}>
-          {/* Column headers — Wireshark style */}
+        <div ref={tableRef} style={{ flex:1, overflow:'auto', background:'#060A14', border:'1px solid #0F1F35', borderRadius:8 }}>
           <div style={{
             display:'grid',
             gridTemplateColumns:'90px 70px 140px 130px 1fr 100px 70px 90px',
@@ -142,8 +146,16 @@ export default function LiveStream() {
 
           {filtered.map((ev, i) => {
             const span = ev.data as Span
+            const policy = ev.data as PolicyLiveEventData
             const isSelected = selectedEvent === ev
             const isError = span.status_code === 2
+            const traceID = ev.type === 'policy' ? (policy.trace_id ?? '') : (span.trace_id ?? '')
+            const spanID = ev.type === 'policy' ? (policy.span_id ?? '') : (span.id ?? '')
+            const rowName = ev.type === 'policy' ? policy.policy_name : (span.name ?? ev.type)
+            const framework = ev.type === 'policy' ? 'policy' : (span.framework ?? '—')
+            const duration = ev.type === 'policy' ? '—' : (span.duration_ns ? fmtDuration(span.duration_ns) : '—')
+            const cost = ev.type === 'policy' ? '—' : (span.cost_usd ? `$${span.cost_usd.toFixed(6)}` : '—')
+            const frameworkColor = ev.type === 'policy' ? FRAMEWORK_COLORS.policy : (FRAMEWORK_COLORS[span.framework ?? 'unknown'] ?? '#475569')
             return (
               <div
                 key={i}
@@ -156,52 +168,42 @@ export default function LiveStream() {
                   transition:'background 0.1s',
                 }}
               >
-                <div style={{ padding:'5px 12px', fontSize:10, color:'#334155', fontFamily:'monospace' }}>
-                  {fmtTime(ev.ts)}
-                </div>
+                <div style={{ padding:'5px 12px', fontSize:10, color:'#334155', fontFamily:'monospace' }}>{fmtTime(ev.ts)}</div>
                 <div style={{ padding:'5px 12px' }}>
                   <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background: (EVENT_TYPE_COLOR[ev.type] ?? '#475569') + '20', color: EVENT_TYPE_COLOR[ev.type] ?? '#475569' }}>
                     {ev.type}
                   </span>
                 </div>
                 <div style={{ padding:'5px 12px', fontSize:10, color:'#3B82F6', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {(span.trace_id ?? '').substring(0, 16)}
+                  {traceID.substring(0, 16)}
                 </div>
                 <div style={{ padding:'5px 12px', fontSize:10, color:'#475569', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {(span.id ?? '').substring(0, 16)}
+                  {spanID.substring(0, 16)}
                 </div>
                 <div style={{ padding:'5px 12px', fontSize:11, color: isError ? '#EF4444' : '#CBD5E1', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {span.name ?? ev.type}
+                  {rowName}
                 </div>
                 <div style={{ padding:'5px 12px' }}>
-                  <span style={{ fontSize:9, color: FRAMEWORK_COLORS[span.framework ?? 'unknown'] ?? '#475569' }}>
-                    {span.framework ?? '—'}
+                  <span style={{ fontSize:9, color: frameworkColor }}>
+                    {framework}
                   </span>
                 </div>
-                <div style={{ padding:'5px 12px', fontSize:10, color:'#64748B' }}>
-                  {span.duration_ns ? fmtDuration(span.duration_ns) : '—'}
-                </div>
-                <div style={{ padding:'5px 12px', fontSize:10, color:'#F59E0B' }}>
-                  {span.cost_usd ? `$${span.cost_usd.toFixed(6)}` : '—'}
-                </div>
+                <div style={{ padding:'5px 12px', fontSize:10, color:'#64748B' }}>{duration}</div>
+                <div style={{ padding:'5px 12px', fontSize:10, color:'#F59E0B' }}>{cost}</div>
               </div>
             )
           })}
 
           {filtered.length === 0 && (
             <div style={{ padding:48, textAlign:'center', color:'#334155', fontSize:13 }}>
-              {connected ? 'Waiting for agent activity…' : 'Connecting to stream…'}
+              {connected ? 'Waiting for agent activity...' : 'Connecting to stream...'}
             </div>
           )}
         </div>
 
-        {/* Detail panel */}
         {selectedEvent && (
-          <div style={{
-            width:340, background:'#0D1B2A', border:'1px solid #0F1F35',
-            borderRadius:8, overflow:'auto', flexShrink:0,
-          }}>
-            <SpanDetail event={selectedEvent} />
+          <div style={{ width:340, background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:8, overflow:'auto', flexShrink:0 }}>
+            {selectedEvent.type === 'policy' ? <PolicyDetail event={selectedEvent} /> : <SpanDetail event={selectedEvent} />}
           </div>
         )}
       </div>
@@ -255,6 +257,42 @@ function SpanDetail({ event }: { event: LiveEvent }) {
               <div style={{ fontSize:10, color:'#94A3B8', fontWeight:600 }}>{ev.name}</div>
               <div style={{ fontSize:9, color:'#334155' }}>{new Date(ev.time_ns / 1_000_000).toISOString()}</div>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PolicyDetail({ event }: { event: LiveEvent }) {
+  const data = event.data as PolicyLiveEventData
+  return (
+    <div style={{ padding:16 }}>
+      <div style={{ fontSize:11, color:'#475569', letterSpacing:'0.1em', marginBottom:12 }}>POLICY EVENT</div>
+      <div style={{ fontSize:12, fontWeight:600, color:'#F0F9FF', marginBottom:16, wordBreak:'break-all' }}>{data.policy_name}</div>
+
+      {[
+        ['Result', data.result],
+        ['Reason', data.reason],
+        ['Provider', data.provider],
+        ['Model', data.model],
+        ['Scope', data.scope],
+        ['Decision ID', data.decision_id],
+        ['Trace ID', data.trace_id],
+        ['Span ID', data.span_id],
+        ['Redactions', data.redactions],
+      ].filter(([, v]) => v != null && v !== '').map(([k, v]) => (
+        <div key={String(k)} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #060A14', fontSize:11, gap:8 }}>
+          <span style={{ color:'#475569' }}>{k}</span>
+          <span style={{ color:'#CBD5E1', fontFamily:'monospace', maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', textAlign:'right' }}>{String(v)}</span>
+        </div>
+      ))}
+
+      {(data.matched ?? []).length > 0 && (
+        <div style={{ marginTop:16 }}>
+          <div style={{ fontSize:10, color:'#334155', letterSpacing:'0.1em', marginBottom:8 }}>MATCHED DETECTORS</div>
+          {(data.matched ?? []).map(item => (
+            <div key={item} style={{ fontSize:10, color:'#64748B', padding:'4px 0' }}>{item}</div>
           ))}
         </div>
       )}

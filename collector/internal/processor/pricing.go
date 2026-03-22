@@ -118,9 +118,6 @@ func lookupPricing(provider, model string) ([2]float64, bool) {
 		if rule.Provider != "" && normalizedProvider != "" && rule.Provider != normalizedProvider {
 			continue
 		}
-		if rule.Provider != "" && normalizedProvider == "" {
-			continue
-		}
 		return [2]float64{rule.InputPerMillion, rule.OutputPerMillion}, true
 	}
 
@@ -129,9 +126,6 @@ func lookupPricing(provider, model string) ([2]float64, bool) {
 	found := false
 	for _, rule := range rules {
 		if rule.Provider != "" && normalizedProvider != "" && rule.Provider != normalizedProvider {
-			continue
-		}
-		if rule.Provider != "" && normalizedProvider == "" {
 			continue
 		}
 		if strings.HasPrefix(normalizedModel, rule.ModelPattern) && len(rule.ModelPattern) > longestPrefixLen {

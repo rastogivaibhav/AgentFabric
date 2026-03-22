@@ -30,6 +30,10 @@ func (m *mockStore) BulkInsertSpans(_ context.Context, spans []models.Span) erro
 	return nil
 }
 
+func (m *mockStore) CreatePolicyAuditEntry(_ context.Context, _ models.PolicyDecisionAudit) error {
+	return nil
+}
+
 // ─── Parser unit tests ───────────────────────────────────────────────────────
 
 func TestOpenAIParser_ParseRequest(t *testing.T) {
@@ -158,7 +162,7 @@ func TestRecordSpan_UsesCanonicalModelAttributeAndCost(t *testing.T) {
 		logger: zap.NewNop(),
 	}
 
-	lp.recordSpan("tenant-1", ProviderOpenAI, "gpt-4o-mini", "af-vk-12345678abcdef", 10, 5, 25*time.Millisecond)
+	lp.recordSpan("", "", "tenant-1", ProviderOpenAI, "gpt-4o-mini", "af-vk-12345678abcdef", 10, 5, 25*time.Millisecond, nil)
 
 	require.Len(t, ms.spans, 1)
 	assert.Equal(t, "gpt-4o-mini", ms.spans[0].Attributes["gen_ai.request.model"])

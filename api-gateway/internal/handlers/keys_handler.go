@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/agentfabric/api-gateway/internal/middleware"
+	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/vault"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -15,11 +17,43 @@ import (
 // Mounted at /api/v1/keys inside the JWT-auth route group.
 type KeyHandler struct {
 	vault  *vault.Vault
+	pg     *store.PostgresStore
 	logger *zap.Logger
 }
 
-func NewKeyHandler(v *vault.Vault, logger *zap.Logger) *KeyHandler {
-	return &KeyHandler{vault: v, logger: logger}
+func NewKeyHandler(v *vault.Vault, pg *store.PostgresStore, logger *zap.Logger) *KeyHandler {
+	return &KeyHandler{vault: v, pg: pg, logger: logger}
+}
+
+func (h *KeyHandler) writeAdminAudit(r *http.Request, action, targetID string, details any) {
+	detailsJSON := "{}"
+	if details != nil {
+		if b, err := json.Marshal(details); err == nil {
+			detailsJSON = string(b)
+		}
+	}
+	claims := middleware.ClaimsFromCtx(r.Context())
+	actor := ""
+	if claims != nil {
+		switch {
+		case strings.TrimSpace(claims.Name) != "":
+			actor = strings.TrimSpace(claims.Name)
+		case strings.TrimSpace(claims.Email) != "":
+			actor = strings.TrimSpace(claims.Email)
+		default:
+			actor = strings.TrimSpace(claims.Subject)
+		}
+	}
+	_ = h.pg.CreateAdminAuditEntry(r.Context(), models.AdminAuditEntry{
+		TenantID:   middleware.TenantIDFromCtx(r.Context()),
+		Actor:      actor,
+		Category:   "keys",
+		Action:     action,
+		TargetType: "virtual_key",
+		TargetID:   targetID,
+		Outcome:    "success",
+		Details:    detailsJSON,
+	})
 }
 
 // ─── POST /api/v1/keys ───────────────────────────────────────────────────────
@@ -85,6 +119,11 @@ func (h *KeyHandler) RegisterKey(w http.ResponseWriter, r *http.Request) {
 		Provider:    req.Provider,
 		DisplayName: req.DisplayName,
 		KeyID:       keyID,
+	})
+	h.writeAdminAudit(r, "create", vk, map[string]any{
+		"provider":     req.Provider,
+		"display_name": req.DisplayName,
+		"key_id":       keyID,
 	})
 }
 
@@ -153,4 +192,5 @@ func (h *KeyHandler) RevokeKey(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "revoked", "virtual_key": vk}) //nolint:errcheck
+	h.writeAdminAudit(r, "revoke", vk, map[string]any{"virtual_key": vk})
 }

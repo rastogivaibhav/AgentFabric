@@ -8,7 +8,7 @@ Observes CrewAI, LangGraph, OpenAI Agents, Google ADK, and Claude Agents via Ope
 - **Collector** (Go 1.22): OTLP receiver (gRPC :4317, HTTP :4318), framework detection, PII scrub, exports to api-gateway
 - **af-core** (Rust): Kafka consumer, policy engine, audit log, writes to PostgreSQL + ClickHouse
 - **api-gateway** (Go): Chi router REST API + WebSocket, reads PostgreSQL + Redis
-- **portal** (React 18 + TypeScript, Vite): Dashboard with Dashboard/LiveStream/Traces/TraceDetail/Agents/Cost/Environments pages
+- **portal** (React 18 + TypeScript, Vite): Dashboard with Dashboard/LiveStream/Traces/TraceDetail/Agents/Cost/Environments/Users/Audit/API Keys/Pricing pages
 - **agent-sdk** (Python): Auto-instrumentation for all 5 frameworks
 
 ## Repo Structure (at workspace root)
@@ -24,7 +24,7 @@ portal/            React app
     App.tsx        Router (30 lines)
     components/    Layout.tsx
     hooks/         api.ts (React Query + WebSocket)
-    pages/         Dashboard, LiveStream, Traces, TraceDetail, Agents, Cost, Environments
+    pages/         Dashboard, LiveStream, Traces, TraceDetail, Agents, Cost, Environments, Users, Audit, API Keys, Pricing
 deploy/
   docker/          Minimal production compose (uses ../../ relative paths)
   helm/            Helm chart
@@ -88,10 +88,21 @@ docker-compose.yml Full dev stack (all 12 services including Kafka, ClickHouse, 
 - [x] Existing sitecustomize.py is preserved (merge, not overwrite)
 - [x] All test_auto_instrument.py tests pass (21/21)
 
-## Production Readiness: ~70%
-**Done**: Multi-service architecture, OTLP ingestion, framework detection, PII scrubbing, JWT auth, WebSocket live stream, React dashboard with 7 pages, Docker Compose, Kubernetes manifests, Helm chart, PostgreSQL + Redis + ClickHouse schemas, **Layer 1a auto-instrumentation**, (Layer 1b starting).
+## Production Readiness: pre-GA, improving
+**Done now in code**: Multi-service architecture, OTLP ingestion, framework detection, PII scrubbing, JWT auth, WebSocket live stream, React portal with dashboard/traces/live/agents/cost/environments/users/audit/keys/pricing pages, Docker Compose, Kubernetes manifests, Helm chart, Layer 1a auto-instrumentation, budget enforcement, Layer 2 virtual key proxy, Layer 3 network proxy, DB-backed pricing rules, and strict production config validation.
 
-**Missing before prod**: Layer 1b budget enforcement, Layer 2 virtual key proxy, Layer 3 network proxy, comprehensive tests, mTLS in collector, per-tenant rate limiting, secret rotation, hash-chained audit log completion, monitoring dashboards.
+**Still missing before GA**: full release smoke confidence, broader automated test coverage across store/collector paths, pricing governance depth (effective dates/priority/audit/preview), stronger policy/security controls, mTLS maturity in collector deployments, and tighter operational validation in CI/staging.
 
-## Next: Layer 1b — Budget Hard-Limit Enforcement
-Starting now. Database migrations, budget.go, budget checks in ingest handler, REST endpoints.
+## Current Product Shape
+AgentFabric is now best described as an enterprise AI observability and control platform:
+- observe agent and LLM activity
+- control traffic through proxy/netproxy and virtual keys
+- track tokens, budgets, and configurable pricing
+- operate the platform through the portal
+
+## Recommended Next Build
+Focus next on policy and governance:
+- provider/model allowlists and request caps
+- pricing governance enhancements
+- proxy policy enforcement and DLP-style controls
+- release-grade smoke automation

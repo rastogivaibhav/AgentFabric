@@ -30,8 +30,6 @@
 #   openssl rand -base64 24   # for POSTGRES_PASSWORD
 # ──────────────────────────────────────────────────────────────────────────────
 
-version: '3.9'
-
 services:
 
   # ─── PostgreSQL: enforce SSL, change default password ──────────────────────
@@ -62,9 +60,11 @@ services:
   api-gateway:
     environment:
       AF_AUTH_DISABLED: "false"             # JWT auth is MANDATORY in production
+      AF_STRICT_CONFIG: "true"
       AF_JWT_SECRET: ${AF_JWT_SECRET:?AF_JWT_SECRET must be set for production}
       AF_JWT_SECRETS: "${AF_JWT_SECRETS:-}"
       AF_ADMIN_PASSWORD: ${AF_ADMIN_PASSWORD:?AF_ADMIN_PASSWORD must be set for production}
+      AF_VAULT_KEY: ${AF_VAULT_KEY:?AF_VAULT_KEY must be set for production}
       AF_ADMIN_USER: "${AF_ADMIN_USER:-admin}"
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set for production}
       REDIS_URL: ${REDIS_URL:?REDIS_URL must be set for production}
@@ -80,14 +80,6 @@ services:
     restart: always
 
   # ─── af-core: production Rust core ─────────────────────────────────────────
-  af-core:
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set for production}
-      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set for production}
-      KAFKA_ENABLED: "${KAFKA_ENABLED:-false}"
-      RUST_LOG: "${RUST_LOG:-af_core=info}"
-    restart: always
-
   # ─── Portal: production build pointing at the live API ─────────────────────
   portal:
     build:

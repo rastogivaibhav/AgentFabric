@@ -12,7 +12,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: dev prod-up down build test lint certs e2e migrate/up migrate/down migrate/status \
-        test/integration integration/up integration/down
+        test/integration integration/up integration/down bootstrap seed-demo validate-release
 
 COMPOSE       := docker compose -f docker-compose.yml
 COMPOSE_PROD  := $(COMPOSE) -f deploy/docker/docker-compose.prod.yml
@@ -32,6 +32,15 @@ dev:
 	@echo "  Prometheus    → http://localhost:9090"
 	@echo "  Grafana       → http://localhost:9091"
 	@echo "  Jaeger        → http://localhost:16686"
+
+bootstrap:
+	bash scripts/setup-local.sh
+
+seed-demo:
+	bash scripts/seed-demo-data.sh
+
+validate-release:
+	powershell -ExecutionPolicy Bypass -File .\scripts\run_release_candidate_validation.ps1
 
 prod-up:
 	@echo "Starting AgentFabric with production hardening overlay..."

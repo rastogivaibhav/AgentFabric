@@ -10,11 +10,26 @@ Any unchecked box is a deployment blocker unless a named engineer signs off with
 
 ---
 
+## Current-State Note (2026-03-21)
+
+This checklist remains the production gate, but the codebase has moved since the original March 16 review:
+- auth is now cookie-based for browsers
+- pricing is now configurable via DB-backed `pricing_rules`
+- the portal now includes admin pages for API keys, audit, users, and pricing
+- current managed-key launch scope is `openai` and `anthropic`
+
+Recommended additional smoke for the current codebase:
+- validate pricing-rule CRUD and verify changed pricing affects cost reporting
+- validate proxy and ingest budget behavior after pricing changes
+- validate admin-only access to `/api/v1/pricing`
+- validate admin-only access to `/api/v1/policies` and `/api/v1/audit/control`
+- run `scripts/run_release_candidate_validation.ps1` against the candidate environment
+
 ## 1. Pre-Deploy Gate
 
 ### 1.1 Code Quality
 - [ ] `make build` passes on CI (Go binary + portal bundle — zero compile errors)
-- [ ] `make test` passes (all Go unit tests + 113 portal vitest tests)
+- [ ] `make test` passes (all Go unit tests + all portal Vitest tests)
 - [ ] `make lint` passes (`golangci-lint` + `npx tsc --noEmit` + ESLint — zero warnings)
 - [ ] No `TODO(prod)` or `FIXME` comments introduced since last release
 - [ ] PR has ≥ 1 peer review approval from a team member other than the author

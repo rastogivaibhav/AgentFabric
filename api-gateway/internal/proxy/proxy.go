@@ -25,6 +25,7 @@ import (
 
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/policy"
 	"github.com/agentfabric/api-gateway/internal/vault"
 	"go.uber.org/zap"
 )
@@ -38,6 +39,11 @@ const (
 // spanStore is the minimal store interface the proxy needs to record spans.
 type spanStore interface {
 	BulkInsertSpans(ctx context.Context, spans []models.Span) error
+	CreatePolicyAuditEntry(ctx context.Context, entry models.PolicyDecisionAudit) error
+}
+
+type eventBroadcaster interface {
+	Broadcast(tenantID string, event interface{})
 }
 
 // ProviderParser abstracts the differences between LLM provider APIs.
@@ -56,6 +62,8 @@ type LLMProxy struct {
 	vault          *vault.Vault
 	budgetEnforcer *budget.BudgetEnforcer // may be nil (budget disabled)
 	store          spanStore
+	policyEngine   *policy.Engine
+	broadcaster    eventBroadcaster
 	httpClient     *http.Client
 	logger         *zap.Logger
 }
@@ -67,11 +75,13 @@ func ParserFor(provider string) (ProviderParser, bool) {
 }
 
 // New creates an LLMProxy.
-func New(v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, logger *zap.Logger) *LLMProxy {
+func New(v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, policyEngine *policy.Engine, broadcaster eventBroadcaster, logger *zap.Logger) *LLMProxy {
 	return &LLMProxy{
 		vault:          v,
 		budgetEnforcer: be,
 		store:          store,
+		policyEngine:   policyEngine,
+		broadcaster:    broadcaster,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Minute, // generous for long streaming responses
 		},
@@ -126,10 +136,61 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Non-fatal: proceed without model info.
 		p.logger.Debug("request parse failed", zap.Error(err))
 	}
+	traceID := newID()
+	spanID := newID()
+	environment := environmentFromRequest(r)
+
+	if p.policyEngine != nil {
+		trafficDecision := p.policyEngine.EvaluateTraffic(policy.TrafficInput{
+			TenantID:        tenantID,
+			Provider:        provider,
+			Model:           model,
+			Environment:     environment,
+			EstimatedTokens: estimatedTokens,
+		})
+		if trafficDecision.Matched {
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", trafficDecision)
+			if trafficDecision.Action == "deny" {
+				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, 0, 0, 0, map[string]string{
+					"af.policy.blocked":  "true",
+					"af.policy.reason":   trafficDecision.Reason,
+					"af.policy.decision": trafficDecision.Action,
+					"af.span.step_type":  "policy",
+				})
+				http.Error(w, `{"error":{"message":"request blocked by policy","type":"policy_denied"}}`, http.StatusForbidden)
+				return
+			}
+		}
+
+		dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
+			TenantID:    tenantID,
+			Provider:    provider,
+			Model:       model,
+			Environment: environment,
+			Scope:       "request",
+			Body:        body,
+		})
+		if dlpDecision.Matched {
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", dlpDecision)
+			switch dlpDecision.Action {
+			case "deny":
+				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, 0, 0, 0, map[string]string{
+					"af.policy.blocked":  "true",
+					"af.policy.reason":   dlpDecision.Reason,
+					"af.policy.decision": dlpDecision.Action,
+					"af.span.step_type":  "policy",
+				})
+				http.Error(w, `{"error":{"message":"request blocked by DLP policy","type":"policy_denied"}}`, http.StatusForbidden)
+				return
+			case "redact":
+				body = dlpDecision.RedactedBody
+			}
+		}
+	}
 
 	// 4. Budget pre-check.
 	if p.budgetEnforcer != nil {
-		_, estimatedCostUSD := ComputeEstimatedCost(provider, model, estimatedTokens)
+		_, _, estimatedCostUSD := ComputeEstimatedCostForTenant(provider, model, tenantID, time.Now().UTC(), estimatedTokens)
 		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
 			http.Error(w, `{"error":{"message":"token budget exceeded","type":"budget_exceeded"}}`,
@@ -173,31 +234,60 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer upResp.Body.Close()
 
-	// Copy response headers to the client.
-	for k, vv := range upResp.Header {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(upResp.StatusCode)
-
 	var inputTokens, outputTokens int64
+	extraAttrs := map[string]string{}
 
 	if streaming && upResp.StatusCode == http.StatusOK {
+		for k, vv := range upResp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(upResp.StatusCode)
 		inputTokens, outputTokens = p.handleStreaming(w, upResp, parser)
 	} else {
 		respBody, _ := io.ReadAll(upResp.Body)
-		w.Write(respBody) //nolint:errcheck
 		if upResp.StatusCode == http.StatusOK {
 			inputTokens, outputTokens, _ = parser.ParseUsage(respBody)
+			if p.policyEngine != nil {
+				dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
+					TenantID:    tenantID,
+					Provider:    provider,
+					Model:       model,
+					Environment: environment,
+					Scope:       "response",
+					Body:        respBody,
+				})
+				if dlpDecision.Matched {
+					p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", dlpDecision)
+					extraAttrs["af.policy.reason"] = dlpDecision.Reason
+					extraAttrs["af.policy.decision"] = dlpDecision.Action
+					if dlpDecision.Action == "deny" {
+						extraAttrs["af.policy.blocked"] = "true"
+						respBody = []byte(`{"error":{"message":"response blocked by DLP policy","type":"policy_denied"}}`)
+						upResp.StatusCode = http.StatusForbidden
+					} else if dlpDecision.Action == "redact" {
+						respBody = dlpDecision.RedactedBody
+						extraAttrs["af.policy.redacted"] = "true"
+					}
+				}
+			}
 		}
+		for k, vv := range upResp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.Header().Del("Content-Length")
+		w.WriteHeader(upResp.StatusCode)
+		w.Write(respBody) //nolint:errcheck
 	}
 
 	duration := time.Since(start)
 
 	// 7. Record span (non-blocking, best-effort).
 	if upResp.StatusCode == http.StatusOK {
-		go p.recordSpan(tenantID, provider, model, vk, inputTokens, outputTokens, duration)
+		go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, inputTokens, outputTokens, duration, extraAttrs)
 	}
 }
 
@@ -233,10 +323,14 @@ func (p *LLMProxy) handleStreaming(w http.ResponseWriter, resp *http.Response, p
 }
 
 // recordSpan writes a single proxy span to PostgreSQL.
-func (p *LLMProxy) recordSpan(tenantID, provider, model, vkPrefix string, inputTokens, outputTokens int64, duration time.Duration) {
+func (p *LLMProxy) recordSpan(traceID, spanID, tenantID, provider, model, vkPrefix string, inputTokens, outputTokens int64, duration time.Duration, extraAttrs map[string]string) {
 	now := time.Now()
-	traceID := newID()
-	spanID := newID()
+	if traceID == "" {
+		traceID = newID()
+	}
+	if spanID == "" {
+		spanID = newID()
+	}
 
 	// Mask the virtual key: show only the first 14 chars (af-vk- + 8 chars).
 	maskedVK := vkPrefix
@@ -244,7 +338,7 @@ func (p *LLMProxy) recordSpan(tenantID, provider, model, vkPrefix string, inputT
 		maskedVK = maskedVK[:14] + "..."
 	}
 
-	_, costUSD := computeProxyCost(provider, model, inputTokens, outputTokens)
+	match, _, costUSD := ComputeExactCostForTenant(provider, model, tenantID, now, inputTokens, outputTokens)
 
 	span := models.Span{
 		ID:           spanID,
@@ -264,15 +358,75 @@ func (p *LLMProxy) recordSpan(tenantID, provider, model, vkPrefix string, inputT
 			"proxy.provider":       provider,
 			"proxy.model":          model,
 			"proxy.virtual_key":    maskedVK,
+			"af.span.step_type":    "llm",
 			"gen_ai.system":        provider,
 			"gen_ai.request.model": model,
 		},
+	}
+	for key, value := range extraAttrs {
+		if strings.TrimSpace(value) != "" {
+			span.Attributes[key] = value
+		}
+	}
+	if match.RuleID > 0 {
+		span.Attributes["af.pricing.rule_id"] = fmt.Sprintf("%d", match.RuleID)
+		span.Attributes["af.pricing.model_pattern"] = match.ModelPattern
+		span.Attributes["af.pricing.scope"] = match.Scope
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := p.store.BulkInsertSpans(ctx, []models.Span{span}); err != nil {
 		p.logger.Warn("failed to record proxy span", zap.Error(err))
+	}
+}
+
+func (p *LLMProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, framework string, decision policy.Decision) {
+	if !decision.Matched {
+		return
+	}
+	tenantID = normalizeTenantID(tenantID)
+	result := decision.Action
+	if result == "redact" {
+		result = "sanitize"
+	}
+	decisionID := newUUID()
+	now := time.Now().UTC()
+	if err := p.store.CreatePolicyAuditEntry(context.Background(), models.PolicyDecisionAudit{
+		DecisionID:  decisionID,
+		TraceID:     traceID,
+		SpanID:      spanID,
+		PolicyName:  decision.PolicyName,
+		Result:      result,
+		Reason:      decision.Reason,
+		TenantID:    tenantID,
+		EvaluatedAt: now,
+		Framework:   framework,
+		Model:       model,
+		Environment: environment,
+	}); err != nil {
+		p.logger.Warn("failed to write policy audit entry", zap.Error(err))
+	}
+	if p.broadcaster != nil {
+		p.broadcaster.Broadcast(tenantID, &models.LiveEvent{
+			Type:      "policy",
+			Timestamp: now.UnixMilli(),
+			TenantID:  tenantID,
+			Data: models.PolicyEvent{
+				DecisionID: decisionID,
+				TraceID:    traceID,
+				SpanID:     spanID,
+				PolicyName: decision.PolicyName,
+				Result:     result,
+				Reason:     decision.Reason,
+				TenantID:   tenantID,
+				Provider:   provider,
+				Model:      model,
+				Scope:      decision.Scope,
+				Matched:    decision.MatchedNames,
+				Redactions: decision.Redactions,
+			},
+		})
 	}
 }
 
@@ -317,6 +471,32 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func environmentFromRequest(r *http.Request) string {
+	if r == nil {
+		return "unknown"
+	}
+	for _, value := range []string{r.Header.Get("X-AF-Environment"), r.Header.Get("X-Environment")} {
+		if trimmed := strings.ToLower(strings.TrimSpace(value)); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "unknown"
+}
+
+func normalizeTenantID(tenantID string) string {
+	if strings.TrimSpace(tenantID) == "" {
+		return "00000000-0000-0000-0000-000000000001"
+	}
+	return tenantID
+}
+
+func newUUID() string {
+	b := make([]byte, 16)
+	rand.Read(b) //nolint:errcheck
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // EncodeJSON is a small helper used by the key handler.

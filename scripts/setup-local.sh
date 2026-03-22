@@ -1,59 +1,73 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "╔══════════════════════════════════════════════════════╗"
-echo "║   AgentFabric - Local Development Setup             ║"
-echo "╚══════════════════════════════════════════════════════╝"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE="docker compose -f ${REPO_ROOT}/docker-compose.yml"
+ENV_FILE="${REPO_ROOT}/.env.local"
+WAIT_SECONDS="${WAIT_SECONDS:-120}"
 
-# Deps check
-for cmd in docker docker-compose go node; do
-  if ! command -v $cmd &>/dev/null; then
-    echo "ERROR: $cmd is required but not installed."
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
     exit 1
   fi
-done
+}
 
-echo ""
-echo "→ Generating JWT secret..."
-JWT_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -d '=+/' | head -c 32)
+wait_for_http() {
+  local name="$1"
+  local url="$2"
+  local elapsed=0
+  printf "Waiting for %-12s" "${name}"
+  until curl -fsS "${url}" >/dev/null 2>&1; do
+    if [ "${elapsed}" -ge "${WAIT_SECONDS}" ]; then
+      echo " timeout"
+      echo "Timed out waiting for ${name} at ${url}" >&2
+      exit 1
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+    printf "."
+  done
+  echo " ready"
+}
 
-cat > .env << EOF
-AF_JWT_SECRET=${JWT_SECRET}
-POSTGRES_PASSWORD=fabricdev
-PORTAL_API_URL=http://localhost:8080
+require_cmd docker
+require_cmd curl
+
+if [ ! -f "${ENV_FILE}" ]; then
+  cat > "${ENV_FILE}" <<'EOF'
+AF_ENV=development
+AF_AUTH_DISABLED=true
+AF_JWT_SECRET=dev-secret-change-in-production
+AF_ADMIN_PASSWORD=admin
+AF_VAULT_KEY=0000000000000000000000000000000000000000000000000000000000000000
+AF_CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 EOF
-echo "  .env created with JWT_SECRET=${JWT_SECRET:0:8}..."
+  echo "Created ${ENV_FILE}"
+fi
 
-echo ""
-echo "→ Starting infrastructure..."
-cd deploy/docker
-docker-compose up -d postgres redis
-echo "  Waiting for postgres..."
-sleep 5
+echo "Starting AgentFabric local stack..."
+cd "${REPO_ROOT}"
+${COMPOSE} --env-file "${ENV_FILE}" up -d --build
 
-echo ""
-echo "→ Building and starting services..."
-docker-compose up -d --build
+wait_for_http "gateway" "http://localhost:8080/healthz"
+wait_for_http "collector" "http://localhost:4318/healthz"
 
-echo ""
-echo "→ Portal dependencies..."
-cd ../../portal
-npm install --silent
+echo "Applying demo pricing and policy seeds..."
+"${REPO_ROOT}/scripts/seed-demo-data.sh"
 
-echo ""
-echo "════════════════════════════════════════════════════════"
-echo "  AgentFabric is running!"
-echo ""
-echo "  Portal:         http://localhost:3000"
-echo "  API Gateway:    http://localhost:8080"
-echo "  OTLP (gRPC):    localhost:4317"
-echo "  OTLP (HTTP):    localhost:4318"
-echo "  Metrics:        http://localhost:9090/metrics"
-echo ""
-echo "  Quick test (send a test span):"
-echo "  curl -X POST http://localhost:4318/v1/traces \\"
-echo "    -H 'Content-Type: application/json' \\"
-echo "    -d '{\"resourceSpans\":[]}'"
-echo ""
-echo "  Stop: docker-compose -f deploy/docker/docker-compose.yml down"
-echo "════════════════════════════════════════════════════════"
+cat <<'EOF'
+
+AgentFabric local stack is ready.
+
+Gateway:      http://localhost:8080
+Portal:       http://localhost:3000
+Collector:    http://localhost:4318
+Swagger UI:   http://localhost:8080/docs/swagger
+Prometheus:   http://localhost:9090
+Grafana:      http://localhost:9091
+Jaeger:       http://localhost:16686
+
+Stop the stack:
+  docker compose -f docker-compose.yml down
+EOF

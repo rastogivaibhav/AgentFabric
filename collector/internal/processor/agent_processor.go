@@ -60,9 +60,10 @@ const (
 	AttrCollectorNode = "af.collector.node"
 	AttrCollectorTS   = "af.collector.received_ns"
 	AttrPolicyTrusted = "af.policy.trusted" // always set to "false" on ingestion; recomputed by af-core
-	AttrCostInputUSD  = "af.cost.input_usd"
-	AttrCostOutputUSD = "af.cost.output_usd"
-	AttrCostTotalUSD  = "af.cost.total_usd"
+	AttrStepType      = "af.span.step_type"
+	AttrErrorClass    = "af.error.class"
+	AttrPromptPreview = "af.preview.prompt"
+	AttrResponsePrev  = "af.preview.response"
 
 	// SDK-emitted keys used only for detection (not trusted for policy)
 	sdkCrewRole     = "crewai.agent.role"
@@ -242,11 +243,9 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 		}
 	}
 
-	// 5. Cost attribution
+	// 5. Usage forwarding â€” the gateway is authoritative for final cost.
 	inputTokens := parseInt64(attrs[sdkInputTokens])
 	outputTokens := parseInt64(attrs[sdkOutputTokens])
-	model := attrs[sdkGenAIModel]
-	inputCost, outputCost := computeCostWithProvider(attrs[sdkGenAISystem], model, inputTokens, outputTokens)
 
 	// 6. Run ID (ensure present)
 	runID := attrs["af.agent.run_id"]
@@ -258,6 +257,18 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 	attrs[AttrFramework] = string(fw)
 	attrs[AttrPolicyTrusted] = "false" // always false at collector; af-core sets this
 	attrs[AttrCollectorNode] = p.cfg.NodeName
+	attrs[AttrStepType] = deriveStepType(attrs, span.Name)
+	attrs[AttrErrorClass] = deriveErrorClass(attrs, span.Status.GetMessage())
+	if preview := previewValue(attrs, []string{
+		"gen_ai.prompt", "input.value", "prompt", "llm.prompt", "gen_ai.request.prompt",
+	}); preview != "" {
+		attrs[AttrPromptPreview] = preview
+	}
+	if preview := previewValue(attrs, []string{
+		"gen_ai.response", "output.value", "response", "llm.response", "gen_ai.response.text",
+	}); preview != "" {
+		attrs[AttrResponsePrev] = preview
+	}
 
 	// 8. Build events
 	events := make([]SpanEvent, 0, len(span.Events))
@@ -290,14 +301,7 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 		RunID:         runID,
 		InputTokens:   inputTokens,
 		OutputTokens:  outputTokens,
-		InputCostUSD:  inputCost,
-		OutputCostUSD: outputCost,
-		CostUSD:       inputCost + outputCost,
 	}
-
-	attrs[AttrCostInputUSD] = fmt.Sprintf("%.8f", inputCost)
-	attrs[AttrCostOutputUSD] = fmt.Sprintf("%.8f", outputCost)
-	attrs[AttrCostTotalUSD] = fmt.Sprintf("%.8f", inputCost+outputCost)
 
 	processedSpans.WithLabelValues(string(fw), "ok").Inc()
 	return e
@@ -444,4 +448,48 @@ func parseInt64(s string) int64 {
 	var v int64
 	fmt.Sscan(s, &v)
 	return v
+}
+
+func deriveStepType(attrs map[string]string, spanName string) string {
+	if v := strings.TrimSpace(attrs[AttrStepType]); v != "" {
+		return v
+	}
+	lowerName := strings.ToLower(spanName)
+	model := strings.TrimSpace(attrs[sdkGenAIModel])
+	switch {
+	case model != "", attrs[sdkGenAISystem] != "":
+		return "llm"
+	case strings.Contains(lowerName, "tool"), strings.Contains(lowerName, "function"):
+		return "tool"
+	case strings.Contains(lowerName, "retry"):
+		return "retry"
+	case strings.Contains(lowerName, "policy"), strings.Contains(lowerName, "guard"):
+		return "policy"
+	default:
+		return "agent"
+	}
+}
+
+func deriveErrorClass(attrs map[string]string, statusMsg string) string {
+	for _, key := range []string{"error.type", "exception.type", AttrErrorClass} {
+		if v := strings.TrimSpace(attrs[key]); v != "" {
+			return v
+		}
+	}
+	if strings.TrimSpace(statusMsg) != "" {
+		return "runtime_error"
+	}
+	return ""
+}
+
+func previewValue(attrs map[string]string, keys []string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(attrs[key]); v != "" {
+			if len(v) > 220 {
+				return v[:220] + "..."
+			}
+			return v
+		}
+	}
+	return ""
 }

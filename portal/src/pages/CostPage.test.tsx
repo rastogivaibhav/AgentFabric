@@ -5,6 +5,7 @@ import React from 'react'
 vi.mock('../hooks/api', () => ({
   useOverview: vi.fn(),
   useFrameworkStats: vi.fn(),
+  useCostReport: vi.fn(),
   useTraces: vi.fn(),
   useBudget: vi.fn(),
   useBudgetUsage: vi.fn(),
@@ -23,10 +24,11 @@ vi.mock('recharts', () => ({
 }))
 
 import CostPage from './CostPage'
-import { useOverview, useFrameworkStats, useTraces, useBudget, useBudgetUsage, useUpsertBudget, useDeleteBudget } from '../hooks/api'
+import { useOverview, useFrameworkStats, useCostReport, useTraces, useBudget, useBudgetUsage, useUpsertBudget, useDeleteBudget } from '../hooks/api'
 
 const mockUseOverview = vi.mocked(useOverview)
 const mockUseFrameworkStats = vi.mocked(useFrameworkStats)
+const mockUseCostReport = vi.mocked(useCostReport)
 const mockUseTraces = vi.mocked(useTraces)
 const mockUseBudget = vi.mocked(useBudget)
 const mockUseBudgetUsage = vi.mocked(useBudgetUsage)
@@ -41,6 +43,9 @@ const MOCK_OVERVIEW = {
   error_rate: 0.02,
   avg_latency_ms: 400,
   spans_per_second: 8,
+  blocked_requests: 3,
+  llm_calls: 12,
+  tool_calls: 4,
   framework_counts: {
     crewai: 100,
     langgraph: 60,
@@ -66,6 +71,7 @@ describe('CostPage', () => {
     mockUseBudgetUsage.mockReturnValue({ data: undefined, isLoading: false } as any)
     mockUseUpsertBudget.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
     mockUseDeleteBudget.mockReturnValue({ mutate: vi.fn() } as any)
+    mockUseCostReport.mockReturnValue({ data: [], isLoading: false } as any)
   })
 
   it('renders Total Cost stat card', () => {
@@ -178,6 +184,9 @@ describe('CostPage', () => {
       error_rate: 0,
       avg_latency_ms: 0,
       spans_per_second: 0,
+      blocked_requests: 0,
+      llm_calls: 0,
+      tool_calls: 0,
       framework_counts: {},
     }
     mockUseOverview.mockReturnValue({ data: zeroOverview, isLoading: false } as any)

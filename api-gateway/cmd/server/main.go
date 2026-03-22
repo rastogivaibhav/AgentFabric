@@ -16,6 +16,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/handlers"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/netproxy"
+	"github.com/agentfabric/api-gateway/internal/policy"
 	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/vault"
@@ -40,6 +41,7 @@ func main() {
 	listenAddr := envOr("LISTEN_ADDR", ":8080")
 	authDisabled := os.Getenv("AF_AUTH_DISABLED") == "true"
 	rateLimitRPM := int64(parseIntEnv("AF_RATE_LIMIT_RPM", 1000))
+	openapiSpecPath := envOr("AF_OPENAPI_SPEC_PATH", "docs/openapi.yaml")
 
 	// TLS configuration — fail-secure: if AF_TLS_ENABLED=true the server will
 	// refuse to start as plain HTTP when cert/key paths are absent.
@@ -83,6 +85,10 @@ func main() {
 	defer pgStore.Close()
 	if err := proxy.LoadPricingRules(context.Background(), pgStore); err != nil {
 		logger.Fatal("pricing rules load failed", zap.Error(err))
+	}
+	policyEngine := policy.NewEngine()
+	if err := policyEngine.LoadRules(context.Background(), pgStore); err != nil {
+		logger.Fatal("policy rules load failed", zap.Error(err))
 	}
 
 	redisClient, err := store.NewRedisClient(redisAddr)
@@ -133,8 +139,8 @@ func main() {
 		logger.Fatal("vault init failed", zap.Error(err))
 	}
 
-	keyHandler := handlers.NewKeyHandler(llmVault, logger)
-	llmProxy := proxy.New(llmVault, budgetEnforcer, pgStore, logger)
+	keyHandler := handlers.NewKeyHandler(llmVault, pgStore, logger)
+	llmProxy := proxy.New(llmVault, budgetEnforcer, pgStore, policyEngine, hub, logger)
 
 	// ─── NetProxy (Layer 3: transparent HTTPS MITM proxy) ────────────────────
 	// Listens on AF_NETPROXY_ADDR (:8443) and handles HTTP CONNECT tunnelling.
@@ -144,10 +150,10 @@ func main() {
 	if err != nil {
 		logger.Fatal("netproxy CA init failed", zap.Error(err))
 	}
-	np := netproxy.New(netProxyCA, llmVault, budgetEnforcer, pgStore, logger)
+	np := netproxy.New(netProxyCA, llmVault, budgetEnforcer, pgStore, policyEngine, hub, logger)
 
 	// Wire handlers
-	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer)
+	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer, policyEngine)
 
 	r := chi.NewRouter()
 
@@ -176,6 +182,11 @@ func main() {
 	// ─── Health & metrics ────────────────────────────────────────────────────
 	r.Get("/healthz", h.Health)
 	r.Handle("/metrics", promhttp.Handler())
+	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/docs/swagger", http.StatusFound)
+	})
+	r.Get("/docs/openapi.yaml", serveOpenAPISpec(openapiSpecPath))
+	r.Get("/docs/swagger", serveSwaggerUI("/docs/openapi.yaml"))
 
 	// ─── NetProxy CA cert download (no auth required) ─────────────────────────
 	// GET /api/v1/netproxy/ca.crt — download the MITM CA certificate in PEM format.
@@ -260,6 +271,7 @@ func main() {
 		// Audit log (Principle 4: immutable audit trail)
 		r.Get("/audit", h.ListAudit)
 		r.Get("/audit/verify", h.VerifyAuditChain)
+		r.With(middleware.RequireRole("admin")).Get("/audit/control", h.ListControlAudit)
 
 		// Users CRUD — RBAC + ABAC enforced per operation:
 		//   GET  (list/read):   any authenticated user
@@ -286,7 +298,16 @@ func main() {
 		r.Route("/pricing", func(r chi.Router) {
 			r.With(middleware.RequireRole("admin")).Get("/", h.ListPricingRules)
 			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertPricingRule)
+			r.With(middleware.RequireRole("admin")).Post("/preview", h.PreviewPricingRule)
+			r.With(middleware.RequireRole("admin")).Get("/audit", h.ListPricingAudit)
+			r.With(middleware.RequireRole("admin")).Get("/export", h.ExportPricingRules)
 			r.With(middleware.RequireRole("admin")).Delete("/{ruleId}", h.DeletePricingRule)
+		})
+
+		r.Route("/policies", func(r chi.Router) {
+			r.With(middleware.RequireRole("admin")).Get("/", h.ListPolicyRules)
+			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertPolicyRule)
+			r.With(middleware.RequireRole("admin")).Delete("/{ruleId}", h.DeletePolicyRule)
 		})
 
 		// Virtual keys (Layer 2) — register real LLM keys, receive af-vk-* virtual keys
@@ -472,4 +493,43 @@ func strictConfigEnabled() bool {
 		return true
 	}
 	return strings.EqualFold(os.Getenv("AF_ENV"), "production")
+}
+
+func serveOpenAPISpec(specPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		http.ServeFile(w, r, specPath)
+	}
+}
+
+func serveSwaggerUI(specURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>AgentFabric API Docs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+    <style>
+      body { margin: 0; background: #fafafa; }
+      .topbar { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.ui = SwaggerUIBundle({
+        url: %q,
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        docExpansion: 'list',
+        persistAuthorization: true
+      });
+    </script>
+  </body>
+</html>`, specURL)
+	}
 }

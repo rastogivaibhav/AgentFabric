@@ -277,13 +277,16 @@ func (s *PostgresStore) GetOverview(ctx context.Context, tenantID string, since 
 			COALESCE(SUM(cost_usd), 0),
 			COALESCE(SUM(input_tokens + output_tokens), 0),
 			COALESCE(AVG(CASE WHEN status_code = 2 THEN 1.0 ELSE 0.0 END), 0),
-			COALESCE(AVG(duration_ns) / 1e6, 0)
+			COALESCE(AVG(duration_ns) / 1e6, 0),
+			COALESCE(SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN COALESCE(attributes->>'af.span.step_type', '') = 'llm' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN COALESCE(attributes->>'af.span.step_type', '') = 'tool' THEN 1 ELSE 0 END), 0)
 		FROM spans
 		WHERE tenant_id = $1 AND start_time_ns >= $2`,
 		tenantID, cutoff,
 	).Scan(
 		&stats.TotalTraces, &stats.TotalCostUSD, &stats.TotalTokens,
-		&stats.ErrorRate, &stats.AvgLatencyMs,
+		&stats.ErrorRate, &stats.AvgLatencyMs, &stats.BlockedRequests, &stats.LLMCalls, &stats.ToolCalls,
 	)
 	if err != nil {
 		return nil, err
@@ -515,27 +518,35 @@ func (s *PostgresStore) GetAgentByName(ctx context.Context, tenantID, agentName 
 // ─── Reports ──────────────────────────────────────────────────────────────────
 
 type CostReportRow struct {
+	AppName      string  `json:"app_name"`
+	Environment  string  `json:"environment"`
+	Provider     string  `json:"provider"`
 	Model        string  `json:"model"`
 	Framework    string  `json:"framework"`
 	TotalCost    float64 `json:"total_cost_usd"`
 	InputTokens  int64   `json:"input_tokens"`
 	OutputTokens int64   `json:"output_tokens"`
 	TraceCount   int64   `json:"trace_count"`
+	BlockedCount int64   `json:"blocked_count"`
 }
 
 func (s *PostgresStore) GetCostReport(ctx context.Context, tenantID string, since time.Duration) ([]CostReportRow, error) {
 	cutoff := time.Now().Add(-since).UnixNano()
 	rows, err := s.pool.Query(ctx, `
 		SELECT
+		    COALESCE(NULLIF(attributes->>'service.name', ''), NULLIF(attributes->>'af.app.name', ''), 'unknown') AS app_name,
+		    COALESCE(NULLIF(attributes->>'deployment.environment', ''), NULLIF(attributes->>'environment', ''), 'unknown') AS environment,
+		    COALESCE(NULLIF(attributes->>'gen_ai.system', ''), 'unknown') AS provider,
 		    COALESCE(attributes->>'gen_ai.request.model', 'unknown') AS model,
 		    framework,
 		    SUM(cost_usd)                  AS total_cost,
 		    SUM(input_tokens)              AS input_tokens,
 		    SUM(output_tokens)             AS output_tokens,
-		    COUNT(DISTINCT trace_id)       AS trace_count
+		    COUNT(DISTINCT trace_id)       AS trace_count,
+		    SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END) AS blocked_count
 		FROM spans
 		WHERE tenant_id = $1 AND start_time_ns >= $2 AND cost_usd > 0
-		GROUP BY model, framework
+		GROUP BY app_name, environment, provider, model, framework
 		ORDER BY total_cost DESC
 		LIMIT 100`,
 		tenantID, cutoff,
@@ -548,7 +559,7 @@ func (s *PostgresStore) GetCostReport(ctx context.Context, tenantID string, sinc
 	var result []CostReportRow
 	for rows.Next() {
 		var r CostReportRow
-		if err := rows.Scan(&r.Model, &r.Framework, &r.TotalCost, &r.InputTokens, &r.OutputTokens, &r.TraceCount); err != nil {
+		if err := rows.Scan(&r.AppName, &r.Environment, &r.Provider, &r.Model, &r.Framework, &r.TotalCost, &r.InputTokens, &r.OutputTokens, &r.TraceCount, &r.BlockedCount); err != nil {
 			continue
 		}
 		result = append(result, r)
@@ -656,6 +667,106 @@ type ChainVerification struct {
 	EntriesChecked int    `json:"entries_checked"`
 	FirstBrokenAt  *int   `json:"first_broken_at,omitempty"`
 	Message        string `json:"message"`
+}
+
+func (s *PostgresStore) CreatePolicyAuditEntry(ctx context.Context, entry models.PolicyDecisionAudit) error {
+	evaluatedAt := entry.EvaluatedAt.UTC()
+	if evaluatedAt.IsZero() {
+		evaluatedAt = time.Now().UTC()
+	}
+	evaluatedNs := evaluatedAt.UnixNano()
+
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	previousHash := "genesis"
+	_ = tx.QueryRow(ctx, `
+		SELECT entry_hash
+		FROM policy_audit_log
+		WHERE tenant_id = $1
+		ORDER BY id DESC
+		LIMIT 1
+	`, entry.TenantID).Scan(&previousHash)
+
+	payload := fmt.Sprintf("%s:%s:%s:%s:%d:%s",
+		entry.DecisionID, entry.TraceID, entry.PolicyName, normalizeAuditResult(entry.Result), evaluatedNs, previousHash)
+	sum := sha256.Sum256([]byte(payload))
+	entryHash := fmt.Sprintf("%x", sum)
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO policy_audit_log (
+			decision_id, tenant_id, trace_id, span_id, policy_name, result, reason,
+			evaluated_at, evaluated_ns, previous_hash, entry_hash, framework, model, cloud_region, environment
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+	`, entry.DecisionID, entry.TenantID, entry.TraceID, entry.SpanID, entry.PolicyName, normalizeAuditResult(entry.Result), entry.Reason,
+		evaluatedAt, evaluatedNs, previousHash, entryHash, entry.Framework, entry.Model, entry.CloudRegion, entry.Environment)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func normalizeAuditResult(result string) string {
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "redact":
+		return "sanitize"
+	case "block":
+		return "deny"
+	default:
+		return strings.ToLower(strings.TrimSpace(result))
+	}
+}
+
+func (s *PostgresStore) CreateAdminAuditEntry(ctx context.Context, entry models.AdminAuditEntry) error {
+	detailsJSON := "{}"
+	if strings.TrimSpace(entry.Details) != "" {
+		detailsJSON = entry.Details
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO control_plane_audit (
+			tenant_id, actor, category, action, target_type, target_id, outcome, details
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+	`, entry.TenantID, entry.Actor, entry.Category, entry.Action, entry.TargetType, entry.TargetID, entry.Outcome, detailsJSON)
+	return err
+}
+
+func (s *PostgresStore) ListAdminAuditEntries(ctx context.Context, tenantID string, limit int) ([]models.AdminAuditEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, actor, category, action, target_type, target_id, outcome, details::text, created_at
+		FROM control_plane_audit
+		WHERE tenant_id = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT $2
+	`, tenantID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []models.AdminAuditEntry
+	for rows.Next() {
+		var entry models.AdminAuditEntry
+		if err := rows.Scan(
+			&entry.ID, &entry.TenantID, &entry.Actor, &entry.Category, &entry.Action,
+			&entry.TargetType, &entry.TargetID, &entry.Outcome, &entry.Details, &entry.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	if entries == nil {
+		entries = []models.AdminAuditEntry{}
+	}
+	return entries, rows.Err()
 }
 
 // ListAuditEntries returns paginated audit log entries for a tenant, oldest first.
@@ -1102,9 +1213,10 @@ func (s *PostgresStore) ListBudgetAlerts(ctx context.Context, tenantID string, l
 
 func (s *PostgresStore) ListPricingRules(ctx context.Context) ([]models.PricingRule, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, provider, model_pattern, input_per_million, output_per_million, created_at, updated_at
+		SELECT id, tenant_id, provider, model_pattern, input_per_million, output_per_million,
+		       active, priority, effective_from, effective_to, description, created_at, updated_at
 		FROM pricing_rules
-		ORDER BY provider ASC, model_pattern ASC
+		ORDER BY COALESCE(tenant_id, '') ASC, provider ASC, priority DESC, model_pattern ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -1114,12 +1226,15 @@ func (s *PostgresStore) ListPricingRules(ctx context.Context) ([]models.PricingR
 	var rules []models.PricingRule
 	for rows.Next() {
 		var rule models.PricingRule
+		var tenantID *string
 		if err := rows.Scan(
-			&rule.ID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
-			&rule.OutputPerMillion, &rule.CreatedAt, &rule.UpdatedAt,
+			&rule.ID, &tenantID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
+			&rule.OutputPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
+			&rule.EffectiveTo, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
+		rule.TenantID = tenantID
 		rules = append(rules, rule)
 	}
 	if rules == nil {
@@ -1128,36 +1243,188 @@ func (s *PostgresStore) ListPricingRules(ctx context.Context) ([]models.PricingR
 	return rules, rows.Err()
 }
 
+func (s *PostgresStore) ListPolicyRules(ctx context.Context) ([]models.PolicyRule, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
+		       environment, max_tokens, detector, scope, description, created_at, updated_at
+		FROM policy_rules
+		ORDER BY priority DESC, id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rules []models.PolicyRule
+	for rows.Next() {
+		var rule models.PolicyRule
+		var tenantID *string
+		if err := rows.Scan(
+			&rule.ID, &tenantID, &rule.Name, &rule.RuleType, &rule.Enabled, &rule.Priority, &rule.Action,
+			&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
+			&rule.Scope, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		rule.TenantID = tenantID
+		rules = append(rules, rule)
+	}
+	if rules == nil {
+		rules = []models.PolicyRule{}
+	}
+	return rules, rows.Err()
+}
+
+func (s *PostgresStore) GetPolicyRule(ctx context.Context, id int64) (*models.PolicyRule, error) {
+	var rule models.PolicyRule
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
+		       environment, max_tokens, detector, scope, description, created_at, updated_at
+		FROM policy_rules
+		WHERE id = $1
+	`, id).Scan(
+		&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.Enabled, &rule.Priority, &rule.Action,
+		&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
+		&rule.Scope, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
+func (s *PostgresStore) UpsertPolicyRule(ctx context.Context, rule models.PolicyRule) (models.PolicyRule, error) {
+	if rule.Priority == 0 {
+		rule.Priority = 100
+	}
+	if rule.Scope == "" {
+		rule.Scope = "both"
+	}
+	if rule.ID > 0 {
+		err := s.pool.QueryRow(ctx, `
+			UPDATE policy_rules
+			SET tenant_id = $2,
+			    name = $3,
+			    rule_type = $4,
+			    enabled = $5,
+			    priority = $6,
+			    action = $7,
+			    provider = $8,
+			    model_pattern = $9,
+			    environment = $10,
+			    max_tokens = $11,
+			    detector = $12,
+			    scope = $13,
+			    description = $14,
+			    updated_at = NOW()
+			WHERE id = $1
+			RETURNING id, tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
+			          environment, max_tokens, detector, scope, description, created_at, updated_at
+		`, rule.ID, rule.TenantID, rule.Name, rule.RuleType, rule.Enabled, rule.Priority, rule.Action,
+			rule.Provider, rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope,
+			rule.Description).Scan(
+			&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.Enabled, &rule.Priority, &rule.Action,
+			&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
+			&rule.Scope, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+		)
+		return rule, err
+	}
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO policy_rules (
+			tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
+			environment, max_tokens, detector, scope, description
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		RETURNING id, tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
+		          environment, max_tokens, detector, scope, description, created_at, updated_at
+	`, rule.TenantID, rule.Name, rule.RuleType, rule.Enabled, rule.Priority, rule.Action, rule.Provider,
+		rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope, rule.Description).Scan(
+		&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.Enabled, &rule.Priority, &rule.Action,
+		&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
+		&rule.Scope, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+	)
+	return rule, err
+}
+
+func (s *PostgresStore) DeletePolicyRule(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM policy_rules WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (s *PostgresStore) UpsertPricingRule(ctx context.Context, rule models.PricingRule) (models.PricingRule, error) {
 	rule.Provider = strings.ToLower(strings.TrimSpace(rule.Provider))
 	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
+	if rule.Priority == 0 {
+		rule.Priority = 100
+	}
+	if rule.ID == 0 && !rule.Active {
+		rule.Active = true
+	}
 
 	if rule.ID > 0 {
 		err := s.pool.QueryRow(ctx, `
 			UPDATE pricing_rules
-			SET provider = $2,
-			    model_pattern = $3,
-			    input_per_million = $4,
-			    output_per_million = $5,
+			SET tenant_id = $2,
+			    provider = $3,
+			    model_pattern = $4,
+			    input_per_million = $5,
+			    output_per_million = $6,
+			    active = $7,
+			    priority = $8,
+			    effective_from = $9,
+			    effective_to = $10,
+			    description = $11,
 			    updated_at = NOW()
 			WHERE id = $1
-			RETURNING id, provider, model_pattern, input_per_million, output_per_million, created_at, updated_at
-		`, rule.ID, rule.Provider, rule.ModelPattern, rule.InputPerMillion, rule.OutputPerMillion).Scan(
-			&rule.ID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
-			&rule.OutputPerMillion, &rule.CreatedAt, &rule.UpdatedAt,
+			RETURNING id, tenant_id, provider, model_pattern, input_per_million, output_per_million,
+			          active, priority, effective_from, effective_to, description, created_at, updated_at
+		`, rule.ID, rule.TenantID, rule.Provider, rule.ModelPattern, rule.InputPerMillion, rule.OutputPerMillion,
+			rule.Active, rule.Priority, rule.EffectiveFrom, rule.EffectiveTo, rule.Description).Scan(
+			&rule.ID, &rule.TenantID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
+			&rule.OutputPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
+			&rule.EffectiveTo, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 		)
 		return rule, err
 	}
-
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO pricing_rules (provider, model_pattern, input_per_million, output_per_million)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, provider, model_pattern, input_per_million, output_per_million, created_at, updated_at
-	`, rule.Provider, rule.ModelPattern, rule.InputPerMillion, rule.OutputPerMillion).Scan(
-		&rule.ID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
-		&rule.OutputPerMillion, &rule.CreatedAt, &rule.UpdatedAt,
+		INSERT INTO pricing_rules (
+			tenant_id, provider, model_pattern, input_per_million, output_per_million,
+			active, priority, effective_from, effective_to, description
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, tenant_id, provider, model_pattern, input_per_million, output_per_million,
+		          active, priority, effective_from, effective_to, description, created_at, updated_at
+	`, rule.TenantID, rule.Provider, rule.ModelPattern, rule.InputPerMillion, rule.OutputPerMillion,
+		rule.Active, rule.Priority, rule.EffectiveFrom, rule.EffectiveTo, rule.Description).Scan(
+		&rule.ID, &rule.TenantID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
+		&rule.OutputPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
+		&rule.EffectiveTo, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 	)
 	return rule, err
+}
+
+func (s *PostgresStore) GetPricingRule(ctx context.Context, id int64) (*models.PricingRule, error) {
+	var rule models.PricingRule
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, provider, model_pattern, input_per_million, output_per_million,
+		       active, priority, effective_from, effective_to, description, created_at, updated_at
+		FROM pricing_rules
+		WHERE id = $1
+	`, id).Scan(
+		&rule.ID, &rule.TenantID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
+		&rule.OutputPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
+		&rule.EffectiveTo, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
 }
 
 func (s *PostgresStore) DeletePricingRule(ctx context.Context, id int64) error {
@@ -1169,4 +1436,53 @@ func (s *PostgresStore) DeletePricingRule(ctx context.Context, id int64) error {
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (s *PostgresStore) CreatePricingRuleAudit(ctx context.Context, entry models.PricingAuditEntry) error {
+	beforeJSON := "null"
+	afterJSON := "null"
+	if strings.TrimSpace(entry.BeforeState) != "" {
+		beforeJSON = entry.BeforeState
+	}
+	if strings.TrimSpace(entry.AfterState) != "" {
+		afterJSON = entry.AfterState
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO pricing_rule_audit (rule_id, action, actor, tenant_id, before_state, after_state)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+	`, entry.RuleID, entry.Action, entry.Actor, entry.TenantID, beforeJSON, afterJSON)
+	return err
+}
+
+func (s *PostgresStore) ListPricingRuleAudit(ctx context.Context, limit int) ([]models.PricingAuditEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, rule_id, action, actor, tenant_id,
+		       before_state::text, after_state::text, created_at
+		FROM pricing_rule_audit
+		ORDER BY created_at DESC, id DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []models.PricingAuditEntry
+	for rows.Next() {
+		var entry models.PricingAuditEntry
+		if err := rows.Scan(
+			&entry.ID, &entry.RuleID, &entry.Action, &entry.Actor, &entry.TenantID,
+			&entry.BeforeState, &entry.AfterState, &entry.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	if entries == nil {
+		entries = []models.PricingAuditEntry{}
+	}
+	return entries, rows.Err()
 }

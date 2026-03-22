@@ -39,6 +39,10 @@ func (f *fakeStore) BulkInsertSpans(_ context.Context, spans []models.Span) erro
 	return nil
 }
 
+func (f *fakeStore) CreatePolicyAuditEntry(_ context.Context, _ models.PolicyDecisionAudit) error {
+	return nil
+}
+
 func (f *fakeStore) Spans() []models.Span {
 	f.mu.Lock()
 	defer f.mu.Unlock()

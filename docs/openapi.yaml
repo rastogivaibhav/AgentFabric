@@ -1,0 +1,1988 @@
+openapi: 3.0.3
+info:
+  title: AgentFabric API
+  version: 2026-03-21
+  description: |
+    OpenAPI description for the current AgentFabric gateway surface.
+
+    This spec is based on the implemented code paths in api-gateway/.
+    It covers the main control-plane APIs, auth endpoints, admin endpoints,
+    internal ingest, and the LLM proxy entrypoint.
+
+    Notes:
+    - Browser clients normally authenticate through the af_token HttpOnly cookie.
+    - API clients may also use Authorization: Bearer <jwt> for authenticated routes.
+    - Proxy routes authenticate with an AgentFabric virtual key, not a JWT.
+    - The WebSocket live stream route exists at /api/v1/stream/live, but is not fully modeled here as an HTTP response schema.
+servers:
+  - url: http://localhost:8080
+    description: Local development gateway
+tags:
+  - name: Health
+  - name: Auth
+  - name: Traces
+  - name: Agents
+  - name: Runs
+  - name: Analytics
+  - name: Environments
+  - name: Audit
+  - name: Users
+  - name: Budgets
+  - name: Pricing
+  - name: Keys
+  - name: Proxy
+  - name: Internal
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Checks PostgreSQL and Redis connectivity.
+      responses:
+        '200':
+          description: All dependencies reachable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: A required dependency is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DegradedHealthResponse'
+
+  /api/v1/netproxy/ca.crt:
+    get:
+      tags: [Proxy]
+      summary: Download netproxy CA certificate
+      description: Returns the PEM-encoded CA certificate used by the transparent MITM proxy.
+      responses:
+        '200':
+          description: PEM certificate
+          content:
+            application/x-pem-file:
+              schema:
+                type: string
+                format: binary
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Password login
+      description: |
+        Username/password login. On success the gateway sets an af_token
+        HttpOnly cookie and also returns the issued token in the JSON body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordLoginRequest'
+      responses:
+        '200':
+          description: Login succeeded
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: af_token HttpOnly session cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordLoginResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [Auth]
+      summary: Start OIDC login
+      description: Redirects the browser to the configured OIDC provider.
+      responses:
+        '302':
+          description: Redirect to identity provider
+
+  /auth/callback:
+    get:
+      tags: [Auth]
+      summary: OIDC callback
+      description: Receives the auth code from the configured OIDC provider and establishes a session.
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect after successful login
+        '400':
+          description: Invalid callback request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    get:
+      tags: [Auth]
+      summary: Logout
+      description: Clears the session cookie and logs out the current browser session.
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current identity
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current user identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Missing or invalid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh session token
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Token refreshed
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Rotated af_token HttpOnly cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          description: Missing, invalid, or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /internal/ingest:
+    post:
+      tags: [Internal]
+      summary: Internal collector ingest
+      description: |
+        Internal ingest endpoint used by the collector. In secured mode this route is protected by collector JWT auth.
+        The tenant can also be supplied with X-AF-Tenant.
+      security:
+        - collectorBearerAuth: []
+      parameters:
+        - name: X-AF-Tenant
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Tenant identifier; falls back to the default tenant when absent.
+        - name: X-AF-Source
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Collector source hint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestRequest'
+      responses:
+        '200':
+          description: Batch accepted
+        '400':
+          description: Invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Tenant budget exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Storage error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/traces:
+    get:
+      tags: [Traces]
+      summary: List traces
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/frameworkQuery'
+        - $ref: '#/components/parameters/modelQuery'
+        - name: agent
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ok, error, partial]
+        - name: start
+          in: query
+          description: Start time in Unix nanoseconds
+          schema:
+            type: integer
+            format: int64
+        - name: end
+          in: query
+          description: End time in Unix nanoseconds
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/limitQuery'
+        - $ref: '#/components/parameters/cursorQuery'
+      responses:
+        '200':
+          description: Trace page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TracePage'
+
+  /api/v1/traces/{traceId}:
+    get:
+      tags: [Traces]
+      summary: Get trace
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/traceIdPath'
+      responses:
+        '200':
+          description: Trace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trace'
+        '404':
+          description: Trace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/traces/{traceId}/graph:
+    get:
+      tags: [Traces]
+      summary: Get trace topology graph
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/traceIdPath'
+      responses:
+        '200':
+          description: Graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopologyGraph'
+
+  /api/v1/traces/{traceId}/timeline:
+    get:
+      tags: [Traces]
+      summary: Get trace timeline
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/traceIdPath'
+      responses:
+        '200':
+          description: Timeline spans
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceTimelineResponse'
+
+  /api/v1/traces/{traceId}/cost:
+    get:
+      tags: [Traces]
+      summary: Get trace cost breakdown
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/traceIdPath'
+      responses:
+        '200':
+          description: Trace cost breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceCostResponse'
+
+  /api/v1/agents:
+    get:
+      tags: [Agents]
+      summary: List agents
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Agent page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentPage'
+
+  /api/v1/agents/{agentId}:
+    get:
+      tags: [Agents]
+      summary: Get agent
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/agentIdPath'
+      responses:
+        '200':
+          description: Agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/agents/{agentId}/runs:
+    get:
+      tags: [Agents]
+      summary: List runs for an agent
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/agentIdPath'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Run page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunPage'
+
+  /api/v1/agents/{agentId}/metrics:
+    get:
+      tags: [Agents]
+      summary: Get agent metrics
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/agentIdPath'
+        - $ref: '#/components/parameters/sinceDurationQuery'
+      responses:
+        '200':
+          description: Overview-style metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OverviewStats'
+
+  /api/v1/agents/{agentId}/topology:
+    get:
+      tags: [Agents]
+      summary: Get agent topology graph
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/agentIdPath'
+      responses:
+        '200':
+          description: Graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopologyGraph'
+
+  /api/v1/runs:
+    get:
+      tags: [Runs]
+      summary: List runs
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: trace_id
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/frameworkQuery'
+        - name: agent
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limitQuery'
+        - $ref: '#/components/parameters/cursorQuery'
+      responses:
+        '200':
+          description: Run page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunPage'
+
+  /api/v1/runs/{runId}:
+    get:
+      tags: [Runs]
+      summary: Get run
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/runIdPath'
+      responses:
+        '200':
+          description: Run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Run'
+        '404':
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/runs/{runId}/children:
+    get:
+      tags: [Runs]
+      summary: Get child runs
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/runIdPath'
+      responses:
+        '200':
+          description: Child runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Run'
+
+  /api/v1/runs/{runId}/feedback:
+    post:
+      tags: [Runs]
+      summary: Submit run feedback
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/runIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunFeedbackRequest'
+      responses:
+        '201':
+          description: Feedback recorded
+        '400':
+          description: Invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/analytics/overview:
+    get:
+      tags: [Analytics]
+      summary: Get overview statistics
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/sinceDurationQuery'
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OverviewStats'
+
+  /api/v1/analytics/frameworks:
+    get:
+      tags: [Analytics]
+      summary: Get framework counts
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/sinceDurationQuery'
+      responses:
+        '200':
+          description: Framework counts
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+                  format: int64
+
+  /api/v1/analytics/cost:
+    get:
+      tags: [Analytics]
+      summary: Get cost report
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/sinceDurationQuery'
+      responses:
+        '200':
+          description: Cost report rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CostReportRow'
+
+  /api/v1/analytics/errors:
+    get:
+      tags: [Analytics]
+      summary: Get error report
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/sinceDurationQuery'
+      responses:
+        '200':
+          description: Error report rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ErrorReportRow'
+
+  /api/v1/stream/live:
+    get:
+      tags: [Analytics]
+      summary: Live stream WebSocket endpoint
+      description: |
+        WebSocket upgrade endpoint for real-time tenant-scoped events.
+        The connection is authenticated with the same JWT/session middleware used by /api/v1/*.
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '101':
+          description: Switching Protocols
+
+  /api/v1/environments:
+    get:
+      tags: [Environments]
+      summary: List environments
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Environments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Environment'
+
+  /api/v1/audit:
+    get:
+      tags: [Audit]
+      summary: List audit entries
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Audit page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditListResponse'
+
+  /api/v1/audit/verify:
+    get:
+      tags: [Audit]
+      summary: Verify audit hash chain
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Chain valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChainVerification'
+        '409':
+          description: Chain broken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChainVerification'
+
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List users
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: User page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+    post:
+      tags: [Users]
+      summary: Create user
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/{userId}:
+    get:
+      tags: [Users]
+      summary: Get user
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Users]
+      summary: Update user
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Users]
+      summary: Delete user
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      responses:
+        '204':
+          description: User deleted
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/budgets/{tenant_id}:
+    get:
+      tags: [Budgets]
+      summary: Get tenant budget
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/tenantIdPath'
+      responses:
+        '200':
+          description: Budget
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Budget'
+        '404':
+          description: No budget set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Budgets]
+      summary: Create or update tenant budget
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/tenantIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetUpsertRequest'
+      responses:
+        '200':
+          description: Budget saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Budget'
+    delete:
+      tags: [Budgets]
+      summary: Remove tenant budget limits
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/tenantIdPath'
+      responses:
+        '204':
+          description: Budget reset to unlimited
+
+  /api/v1/budgets/{tenant_id}/usage:
+    get:
+      tags: [Budgets]
+      summary: Get tenant budget usage
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/tenantIdPath'
+      responses:
+        '200':
+          description: Budget usage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetUsageResponse'
+
+  /api/v1/budgets/{tenant_id}/alerts:
+    get:
+      tags: [Budgets]
+      summary: List tenant budget alerts
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/tenantIdPath'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Alert list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetAlertListResponse'
+
+  /api/v1/pricing:
+    get:
+      tags: [Pricing]
+      summary: List pricing rules
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Pricing rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingRuleListResponse'
+    put:
+      tags: [Pricing]
+      summary: Create or update pricing rule
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PricingRule'
+      responses:
+        '200':
+          description: Pricing rule saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricingRule'
+        '400':
+          description: Invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/pricing/{ruleId}:
+    delete:
+      tags: [Pricing]
+      summary: Delete pricing rule
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Pricing rule deleted
+        '400':
+          description: Invalid rule id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Pricing rule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/keys:
+    get:
+      tags: [Keys]
+      summary: List virtual keys
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyListResponse'
+    post:
+      tags: [Keys]
+      summary: Register virtual key
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterKeyRequest'
+      responses:
+        '201':
+          description: Key registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterKeyResponse'
+        '400':
+          description: Invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/keys/{virtualKey}:
+    delete:
+      tags: [Keys]
+      summary: Revoke virtual key
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: virtualKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Key revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeKeyResponse'
+        '404':
+          description: Key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /proxy/{provider}/v1/{path}:
+    post:
+      tags: [Proxy]
+      summary: Proxy LLM request
+      description: |
+        Pass-through reverse-proxy endpoint for supported provider APIs.
+        Request and response bodies vary by provider and upstream endpoint.
+        Authentication uses an AgentFabric virtual key in the Bearer header.
+      security:
+        - virtualKeyAuth: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [openai, anthropic]
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Upstream provider path under /v1/
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Upstream provider response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          description: Invalid virtual key
+        '429':
+          description: Budget exceeded
+        '500':
+          description: Upstream or proxy error
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    collectorBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    virtualKeyAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token containing an AgentFabric virtual key (af-vk-*).
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: af_token
+  parameters:
+    traceIdPath:
+      name: traceId
+      in: path
+      required: true
+      schema:
+        type: string
+    agentIdPath:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: string
+    runIdPath:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+    userIdPath:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+    tenantIdPath:
+      name: tenant_id
+      in: path
+      required: true
+      schema:
+        type: string
+    frameworkQuery:
+      name: framework
+      in: query
+      schema:
+        type: string
+    modelQuery:
+      name: model
+      in: query
+      schema:
+        type: string
+    limitQuery:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 50
+    cursorQuery:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    sinceDurationQuery:
+      name: since
+      in: query
+      description: Go duration string such as 24h.
+      schema:
+        type: string
+        example: 24h
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+    DegradedHealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: degraded
+        error:
+          type: string
+    PasswordLoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+      example:
+        username: admin
+        password: admin
+    PasswordLoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT also set as HttpOnly cookie
+      example:
+        token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.signature
+    LogoutResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: logged_out
+    MeResponse:
+      type: object
+      properties:
+        sub:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        exp:
+          type: integer
+          format: int64
+    RefreshResponse:
+      type: object
+      properties:
+        exp:
+          type: integer
+          format: int64
+        expires_in:
+          type: integer
+    IngestRequest:
+      type: object
+      required: [spans]
+      properties:
+        spans:
+          type: array
+          items:
+            $ref: '#/components/schemas/Span'
+      example:
+        spans:
+          - span_id: span_001
+            trace_id: trace_001
+            run_id: run_001
+            name: llm.invoke
+            framework: proxy
+            start_time_ns: 1710000000000000000
+            duration_ns: 250000000
+            status_code: 0
+            attributes:
+              gen_ai.system: openai
+              gen_ai.request.model: gpt-4o
+            input_tokens: 120
+            output_tokens: 40
+            cost_usd: 0.001
+    Span:
+      type: object
+      required:
+        - span_id
+        - trace_id
+        - run_id
+        - name
+        - framework
+        - start_time_ns
+        - duration_ns
+        - status_code
+      properties:
+        span_id:
+          type: string
+        trace_id:
+          type: string
+        parent_span_id:
+          type: string
+        run_id:
+          type: string
+        name:
+          type: string
+        framework:
+          type: string
+        start_time_ns:
+          type: integer
+          format: int64
+        duration_ns:
+          type: integer
+          format: int64
+        status_code:
+          type: integer
+        status_msg:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpanEvent'
+        input_tokens:
+          type: integer
+          format: int64
+        output_tokens:
+          type: integer
+          format: int64
+        cost_usd:
+          type: number
+          format: double
+        received_at:
+          type: string
+          format: date-time
+    SpanEvent:
+      type: object
+      properties:
+        name:
+          type: string
+        time_ns:
+          type: integer
+          format: int64
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+    Trace:
+      type: object
+      properties:
+        id:
+          type: string
+        root_span_name:
+          type: string
+        framework:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        duration_ns:
+          type: integer
+          format: int64
+        span_count:
+          type: integer
+        error_count:
+          type: integer
+        total_cost_usd:
+          type: number
+          format: double
+        total_tokens:
+          type: integer
+          format: int64
+        status:
+          type: string
+        spans:
+          type: array
+          items:
+            $ref: '#/components/schemas/Span'
+    TracePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trace'
+        total:
+          type: integer
+          format: int64
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    TraceTimelineResponse:
+      type: object
+      properties:
+        spans:
+          type: array
+          items:
+            $ref: '#/components/schemas/Span'
+    TraceCostBreakdown:
+      type: object
+      properties:
+        span_id:
+          type: string
+        name:
+          type: string
+        model:
+          type: string
+        input_tokens:
+          type: integer
+          format: int64
+        output_tokens:
+          type: integer
+          format: int64
+        cost_usd:
+          type: number
+          format: double
+    TraceCostResponse:
+      type: object
+      properties:
+        total_usd:
+          type: number
+          format: double
+        breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/TraceCostBreakdown'
+    Run:
+      type: object
+      properties:
+        id:
+          type: string
+        trace_id:
+          type: string
+        parent_run_id:
+          type: string
+        framework:
+          type: string
+        agent_name:
+          type: string
+        model:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+        total_tokens:
+          type: integer
+          format: int64
+        total_cost_usd:
+          type: number
+          format: double
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    RunPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Run'
+        total:
+          type: integer
+          format: int64
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    RunFeedbackRequest:
+      type: object
+      properties:
+        score:
+          type: integer
+          format: int32
+          nullable: true
+        comment:
+          type: string
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        framework:
+          type: string
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        run_count:
+          type: integer
+        total_cost_usd:
+          type: number
+          format: double
+        p50_latency_ms:
+          type: number
+          format: double
+        p95_latency_ms:
+          type: number
+          format: double
+        p99_latency_ms:
+          type: number
+          format: double
+        error_rate:
+          type: number
+          format: double
+    AgentPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
+        total:
+          type: integer
+          format: int64
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    TopologyNode:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        framework:
+          type: string
+        span_count:
+          type: integer
+    TopologyEdge:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        edge_type:
+          type: string
+        call_count:
+          type: integer
+    TopologyGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyEdge'
+    OverviewStats:
+      type: object
+      properties:
+        total_traces:
+          type: integer
+          format: int64
+        active_agents:
+          type: integer
+        total_cost_usd:
+          type: number
+          format: double
+        total_tokens:
+          type: integer
+          format: int64
+        error_rate:
+          type: number
+          format: double
+        avg_latency_ms:
+          type: number
+          format: double
+        spans_per_second:
+          type: number
+          format: double
+        framework_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+    CostReportRow:
+      type: object
+      properties:
+        model:
+          type: string
+        framework:
+          type: string
+        total_cost_usd:
+          type: number
+          format: double
+        input_tokens:
+          type: integer
+          format: int64
+        output_tokens:
+          type: integer
+          format: int64
+        trace_count:
+          type: integer
+          format: int64
+    ErrorReportRow:
+      type: object
+      properties:
+        framework:
+          type: string
+        status_msg:
+          type: string
+        count:
+          type: integer
+          format: int64
+        affected_traces:
+          type: integer
+          format: int64
+    Environment:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        decision_id:
+          type: string
+        trace_id:
+          type: string
+        span_id:
+          type: string
+        policy_name:
+          type: string
+        result:
+          type: string
+        reason:
+          type: string
+        tenant_id:
+          type: string
+        evaluated_at:
+          type: string
+          format: date-time
+        previous_hash:
+          type: string
+        entry_hash:
+          type: string
+    AuditListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEntry'
+        limit:
+          type: integer
+        offset:
+          type: integer
+        count:
+          type: integer
+    ChainVerification:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        entries_checked:
+          type: integer
+        first_broken_at:
+          type: integer
+          nullable: true
+        message:
+          type: string
+    User:
+      type: object
+      properties:
+        user_id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          type: string
+        is_active:
+          type: boolean
+        last_login_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    UserPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        total:
+          type: integer
+          format: int64
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    CreateUserRequest:
+      type: object
+      required: [username, email]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [admin, editor, viewer]
+        password:
+          type: string
+          format: password
+      example:
+        username: jane.doe
+        email: jane@example.com
+        display_name: Jane Doe
+        role: editor
+        password: change-me
+    UpdateUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [admin, editor, viewer]
+        is_active:
+          type: boolean
+        password:
+          type: string
+          format: password
+    Budget:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+        monthly_tokens:
+          type: integer
+          format: int64
+        monthly_cost_usd:
+          type: number
+          format: double
+        alert_threshold:
+          type: number
+          format: double
+        hard_limit:
+          type: boolean
+        reset_day:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    BudgetUpsertRequest:
+      type: object
+      properties:
+        monthly_tokens:
+          type: integer
+          format: int64
+        monthly_cost_usd:
+          type: number
+          format: double
+        alert_threshold:
+          type: number
+          format: double
+          default: 0.8
+        hard_limit:
+          type: boolean
+        reset_day:
+          type: integer
+          minimum: 1
+          maximum: 28
+          default: 1
+      example:
+        monthly_tokens: 500000
+        monthly_cost_usd: 250
+        alert_threshold: 0.8
+        hard_limit: true
+        reset_day: 1
+    BudgetUsageResponse:
+      type: object
+      properties:
+        tokens_used:
+          type: integer
+          format: int64
+        cost_used_usd:
+          type: number
+          format: double
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        tokens_pct:
+          type: number
+          format: double
+        cost_pct:
+          type: number
+          format: double
+        budget:
+          $ref: '#/components/schemas/Budget'
+    BudgetAlert:
+      type: object
+      properties:
+        id:
+          oneOf:
+            - type: integer
+            - type: string
+        alert_type:
+          type: string
+        tokens_used:
+          oneOf:
+            - type: integer
+            - type: string
+        cost_used_usd:
+          oneOf:
+            - type: number
+            - type: string
+        budget_tokens:
+          oneOf:
+            - type: integer
+            - type: string
+        budget_cost_usd:
+          oneOf:
+            - type: number
+            - type: string
+        triggered_at:
+          type: string
+          format: date-time
+    BudgetAlertListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetAlert'
+        count:
+          type: integer
+    PricingRule:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        provider:
+          type: string
+        model_pattern:
+          type: string
+        input_per_million:
+          type: number
+          format: double
+        output_per_million:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      example:
+        provider: openai
+        model_pattern: gpt-4o
+        input_per_million: 5
+        output_per_million: 15
+    PricingRuleListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PricingRule'
+        count:
+          type: integer
+    RegisterKeyRequest:
+      type: object
+      required: [provider, real_key, display_name]
+      properties:
+        provider:
+          type: string
+          enum: [openai, anthropic]
+        real_key:
+          type: string
+        display_name:
+          type: string
+        team_id:
+          type: string
+      example:
+        provider: openai
+        real_key: sk-live-example
+        display_name: prod-openai
+    RegisterKeyResponse:
+      type: object
+      properties:
+        virtual_key:
+          type: string
+        provider:
+          type: string
+        display_name:
+          type: string
+        key_id:
+          type: string
+    KeyInfo:
+      type: object
+      properties:
+        virtual_key:
+          type: string
+        display_name:
+          type: string
+        provider:
+          type: string
+        key_id:
+          type: string
+        team_id:
+          type: string
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    KeyListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyInfo'
+        count:
+          type: integer
+    RevokeKeyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: revoked
+        virtual_key:
+          type: string

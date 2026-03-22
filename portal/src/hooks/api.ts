@@ -35,6 +35,22 @@ export interface Span {
   input_tokens?: number
   output_tokens?: number
   cost_usd?: number
+  depth?: number
+  step_type?: string
+  provider?: string
+  model?: string
+  app_name?: string
+  environment?: string
+  user_id?: string
+  session_id?: string
+  error_class?: string
+  prompt_preview?: string
+  response_preview?: string
+  retry_count?: number
+  blocked?: boolean
+  blocked_reason?: string
+  pricing_rule_id?: number
+  pricing_scope?: string
   received_at: string
 }
 
@@ -55,6 +71,19 @@ export interface Trace {
   total_cost_usd: number
   total_tokens: number
   status: 'ok' | 'error' | 'partial'
+  insights?: {
+    models?: string[]
+    providers?: string[]
+    apps?: string[]
+    environments?: string[]
+    step_types?: Record<string, number>
+    error_classes?: Record<string, number>
+    llm_calls?: number
+    tool_calls?: number
+    blocked_spans?: number
+    retry_count?: number
+    max_depth?: number
+  }
   spans?: Span[]
 }
 
@@ -73,13 +102,31 @@ export interface OverviewStats {
   error_rate: number
   avg_latency_ms: number
   spans_per_second: number
+  blocked_requests: number
+  llm_calls: number
+  tool_calls: number
   framework_counts: Record<string, number>
 }
 
 export interface LiveEvent {
   type: 'span' | 'run_start' | 'run_end' | 'error' | 'policy'
   ts: number
-  data: Span | Record<string, unknown>
+  data: Span | PolicyLiveEventData | Record<string, unknown>
+}
+
+export interface PolicyLiveEventData {
+  decision_id: string
+  trace_id?: string
+  span_id?: string
+  policy_name: string
+  result: 'allow' | 'deny' | 'warn' | 'sanitize'
+  reason: string
+  tenant_id: string
+  provider?: string
+  model?: string
+  scope?: string
+  matched?: string[]
+  redactions?: number
 }
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
@@ -241,14 +288,111 @@ export interface BudgetUsage {
   budget?: Budget
 }
 
+export interface CostReportRow {
+  app_name: string
+  environment: string
+  provider: string
+  model: string
+  framework: string
+  total_cost_usd: number
+  input_tokens: number
+  output_tokens: number
+  trace_count: number
+  blocked_count: number
+}
+
+export function useCostReport(since = '24h') {
+  return useQuery<CostReportRow[]>({
+    queryKey: ['cost-report', since],
+    queryFn: () => apiFetch('/analytics/cost', { since }),
+    refetchInterval: 60_000,
+  })
+}
+
 export interface PricingRule {
   id?: number
+  tenant_id?: string | null
   provider: string
   model_pattern: string
   input_per_million: number
   output_per_million: number
+  active?: boolean
+  priority?: number
+  effective_from?: string | null
+  effective_to?: string | null
+  description?: string
   created_at?: string
   updated_at?: string
+}
+
+export interface PricingPreviewRequest {
+  tenant_id?: string
+  provider: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  at?: string
+}
+
+export interface PricingPreviewResponse {
+  matched: boolean
+  rule_id?: number
+  provider?: string
+  model?: string
+  model_pattern?: string
+  pricing_scope?: string
+  input_per_million?: number
+  output_per_million?: number
+  input_tokens: number
+  output_tokens: number
+  input_cost_usd: number
+  output_cost_usd: number
+  total_cost_usd: number
+  effective_from?: string | null
+  effective_to?: string | null
+}
+
+export interface PricingAuditEntry {
+  id: number
+  rule_id: number
+  action: string
+  actor: string
+  tenant_id?: string
+  before_state?: string
+  after_state?: string
+  created_at: string
+}
+
+export interface PolicyRule {
+  id?: number
+  tenant_id?: string | null
+  name: string
+  rule_type: 'traffic' | 'dlp'
+  enabled?: boolean
+  priority?: number
+  action: 'allow' | 'warn' | 'redact' | 'deny'
+  provider?: string
+  model_pattern?: string
+  environment?: string
+  max_tokens?: number
+  detector?: string
+  scope?: 'request' | 'response' | 'both'
+  description?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AdminAuditEntry {
+  id: number
+  tenant_id?: string
+  actor?: string
+  category: string
+  action: string
+  target_type: string
+  target_id?: string
+  outcome: string
+  details?: string
+  created_at: string
 }
 
 export async function apiMutate<T>(path: string, method: string, body?: unknown): Promise<T> {
@@ -329,5 +473,57 @@ export function useDeletePricingRule() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pricing-rules'] })
     },
+  })
+}
+
+export function usePreviewPricingRule() {
+  return useMutation({
+    mutationFn: (req: PricingPreviewRequest) => apiMutate<PricingPreviewResponse>('/pricing/preview', 'POST', req),
+  })
+}
+
+export function usePricingRuleAudit(limit = 50) {
+  return useQuery<{ items: PricingAuditEntry[]; count: number }>({
+    queryKey: ['pricing-rule-audit', limit],
+    queryFn: () => apiFetch('/pricing/audit', { limit: String(limit) }),
+    retry: false,
+  })
+}
+
+export function usePolicyRules() {
+  return useQuery<{ items: PolicyRule[]; count: number }>({
+    queryKey: ['policy-rules'],
+    queryFn: () => apiFetch('/policies'),
+    retry: false,
+  })
+}
+
+export function useUpsertPolicyRule() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (rule: PolicyRule) => apiMutate<PolicyRule>('/policies', 'PUT', rule),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['policy-rules'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+    },
+  })
+}
+
+export function useDeletePolicyRule() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => apiMutate<void>(`/policies/${id}`, 'DELETE'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['policy-rules'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+    },
+  })
+}
+
+export function useControlAudit(limit = 50) {
+  return useQuery<{ items: AdminAuditEntry[]; count: number; limit: number }>({
+    queryKey: ['control-audit', limit],
+    queryFn: () => apiFetch('/audit/control', { limit: String(limit) }),
+    retry: false,
   })
 }

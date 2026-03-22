@@ -6,6 +6,26 @@
 
 ---
 
+## Current-State Update (2026-03-21)
+
+This report reflects the March 16 test and inspection pass. It should not be read as the latest code truth without this addendum.
+
+Closed since this report:
+- auth cookies are now `HttpOnly`, and the portal no longer persists JWTs in `localStorage`
+- password login now supports database-backed users
+- `parseIDTokenUnsafe(...)` is now referenced correctly in auth tests
+- portal cost-page drift has been fixed
+- the health endpoint now checks PostgreSQL and Redis
+- the ingest handler now enforces a request-body size cap
+- pricing is now DB-backed and GUI-editable through `pricing_rules`
+
+Still unresolved from a release perspective:
+- this repo still needs a clean, fully trusted end-to-end release smoke
+- some Go test execution remains environment-sensitive on the current Windows machine
+- gateway, collector, proxy, and portal still need stronger release-grade verification as a whole
+
+Treat the detailed findings below as historical baseline findings unless they are explicitly superseded by this update.
+
 ## 1. Test Suite Execution Results
 
 ### 1.1 Go — api-gateway (`go test ./... -count=1 -v`)

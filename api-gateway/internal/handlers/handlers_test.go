@@ -92,6 +92,45 @@ func TestBuildTrace_ErrorCountAndStatus(t *testing.T) {
 	}
 }
 
+func TestBuildTrace_DerivesInsights(t *testing.T) {
+	spans := []models.Span{
+		{
+			ID: "root", Name: "root", Framework: "proxy", StartTimeNs: 0, DurationNs: 1000, StatusCode: 0,
+			Attributes: map[string]string{
+				"gen_ai.system":          "openai",
+				"gen_ai.request.model":   "gpt-4o",
+				"af.span.step_type":      "llm",
+				"service.name":           "customer-support",
+				"deployment.environment": "prod",
+				"af.pricing.rule_id":     "12",
+			},
+		},
+		{
+			ID: "child", ParentID: "root", Name: "tool.search", Framework: "proxy", StartTimeNs: 100, DurationNs: 500, StatusCode: 2,
+			Attributes: map[string]string{
+				"af.span.step_type": "tool",
+				"af.error.class":    "timeout",
+				"af.policy.blocked": "true",
+				"af.policy.reason":  "model denied",
+				"retry.count":       "2",
+			},
+		},
+	}
+	tr := buildTrace("trace-1", spans)
+	if tr.Insights.LLMCalls != 1 || tr.Insights.ToolCalls != 1 {
+		t.Fatalf("unexpected step insights: %+v", tr.Insights)
+	}
+	if tr.Insights.BlockedSpans != 1 {
+		t.Fatalf("expected blocked spans to be tracked")
+	}
+	if tr.Insights.MaxDepth != 1 {
+		t.Fatalf("expected max depth 1, got %d", tr.Insights.MaxDepth)
+	}
+	if len(tr.Insights.Models) != 1 || tr.Insights.Models[0] != "gpt-4o" {
+		t.Fatalf("expected model insight to include gpt-4o")
+	}
+}
+
 func TestBuildTrace_Duration(t *testing.T) {
 	// root span starts at t=0, duration=1000ns
 	// child span starts at t=500, duration=1000ns — ends at t=1500

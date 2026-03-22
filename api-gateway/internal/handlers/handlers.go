@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/policy"
 	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
@@ -27,9 +31,10 @@ type Handler struct {
 	logger         *zap.Logger
 	jwtSecret      string
 	budgetEnforcer *budget.BudgetEnforcer
+	policyEngine   *policy.Engine
 }
 
-func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer) *Handler {
+func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, policyEngine *policy.Engine) *Handler {
 	return &Handler{
 		pg:             pg,
 		redis:          redis,
@@ -37,6 +42,7 @@ func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger 
 		logger:         logger,
 		jwtSecret:      jwtSecret,
 		budgetEnforcer: budgetEnforcer,
+		policyEngine:   policyEngine,
 	}
 }
 
@@ -60,6 +66,43 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func tenantFromCtx(r *http.Request) string {
 	return middleware.TenantIDFromCtx(r.Context())
+}
+
+func actorFromCtx(r *http.Request) string {
+	claims := middleware.ClaimsFromCtx(r.Context())
+	if claims == nil {
+		return ""
+	}
+	switch {
+	case strings.TrimSpace(claims.Name) != "":
+		return strings.TrimSpace(claims.Name)
+	case strings.TrimSpace(claims.Email) != "":
+		return strings.TrimSpace(claims.Email)
+	default:
+		return strings.TrimSpace(claims.Subject)
+	}
+}
+
+func (h *Handler) writeAdminAudit(r *http.Request, category, action, targetType, targetID, outcome string, details any) {
+	if h == nil || h.pg == nil {
+		return
+	}
+	detailsJSON := "{}"
+	if details != nil {
+		if b, err := json.Marshal(details); err == nil {
+			detailsJSON = string(b)
+		}
+	}
+	_ = h.pg.CreateAdminAuditEntry(r.Context(), models.AdminAuditEntry{
+		TenantID:   tenantFromCtx(r),
+		Actor:      actorFromCtx(r),
+		Category:   category,
+		Action:     action,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Outcome:    outcome,
+		Details:    detailsJSON,
+	})
 }
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -241,6 +284,7 @@ func (h *Handler) GetTraceTimeline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	decorateSpans(spans)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"spans": spans})
 }
 
@@ -251,6 +295,7 @@ func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	decorateSpans(spans)
 	type costBreakdown struct {
 		SpanID    string  `json:"span_id"`
 		Name      string  `json:"name"`
@@ -539,6 +584,22 @@ func (h *Handler) VerifyAuditChain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, result)
 }
 
+func (h *Handler) ListControlAudit(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromCtx(r)
+	limit := parseIntOr(r.URL.Query().Get("limit"), 100)
+
+	entries, err := h.pg.ListAdminAuditEntries(r.Context(), tenantID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query control-plane audit")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": entries,
+		"count": len(entries),
+		"limit": limit,
+	})
+}
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 // ListUsers returns all users for the current tenant.
@@ -627,9 +688,18 @@ func buildTrace(traceID string, spans []models.Span) models.Trace {
 	if len(spans) == 0 {
 		return t
 	}
+	decorateSpans(spans)
 	t.Framework = spans[0].Framework
 	t.RootSpanName = spans[0].Name
 	t.StartTime = time.Unix(0, spans[0].StartTimeNs)
+	t.Insights = models.TraceInsights{
+		StepTypes:    map[string]int{},
+		ErrorClasses: map[string]int{},
+	}
+	modelsSeen := map[string]struct{}{}
+	providersSeen := map[string]struct{}{}
+	appsSeen := map[string]struct{}{}
+	envsSeen := map[string]struct{}{}
 	var maxEnd int64
 	for _, sp := range spans {
 		end := sp.StartTimeNs + sp.DurationNs
@@ -638,10 +708,45 @@ func buildTrace(traceID string, spans []models.Span) models.Trace {
 		}
 		t.TotalCostUSD += sp.CostUSD
 		t.TotalTokens += sp.InputTokens + sp.OutputTokens
+		if sp.Model != "" {
+			modelsSeen[sp.Model] = struct{}{}
+		}
+		if sp.Provider != "" {
+			providersSeen[sp.Provider] = struct{}{}
+		}
+		if sp.AppName != "" {
+			appsSeen[sp.AppName] = struct{}{}
+		}
+		if sp.Environment != "" {
+			envsSeen[sp.Environment] = struct{}{}
+		}
+		if sp.StepType != "" {
+			t.Insights.StepTypes[sp.StepType]++
+		}
+		if sp.ErrorClass != "" {
+			t.Insights.ErrorClasses[sp.ErrorClass]++
+		}
+		if sp.StepType == "llm" {
+			t.Insights.LLMCalls++
+		}
+		if sp.StepType == "tool" {
+			t.Insights.ToolCalls++
+		}
+		if sp.Blocked {
+			t.Insights.BlockedSpans++
+		}
+		t.Insights.RetryCount += sp.RetryCount
+		if sp.Depth > t.Insights.MaxDepth {
+			t.Insights.MaxDepth = sp.Depth
+		}
 		if sp.StatusCode == 2 {
 			t.ErrorCount++
 		}
 	}
+	t.Insights.Models = appendSortedSet(modelsSeen)
+	t.Insights.Providers = appendSortedSet(providersSeen)
+	t.Insights.Apps = appendSortedSet(appsSeen)
+	t.Insights.Environments = appendSortedSet(envsSeen)
 	t.Duration = maxEnd - spans[0].StartTimeNs
 	t.SpanCount = len(spans)
 	if t.ErrorCount > 0 {
@@ -690,6 +795,135 @@ func buildTopologyGraph(spans []models.Span) models.TopologyGraph {
 	return g
 }
 
+func decorateSpans(spans []models.Span) {
+	byID := make(map[string]models.Span, len(spans))
+	for _, sp := range spans {
+		byID[sp.ID] = sp
+	}
+	depthMemo := map[string]int{}
+	for i := range spans {
+		decorateSpan(&spans[i], byID, depthMemo)
+	}
+}
+
+func decorateSpan(sp *models.Span, byID map[string]models.Span, depthMemo map[string]int) {
+	if sp == nil {
+		return
+	}
+	if sp.Attributes == nil {
+		sp.Attributes = map[string]string{}
+	}
+	sp.Depth = spanDepth(sp.ID, byID, depthMemo)
+	sp.Provider = firstNonEmpty(sp.Attributes["gen_ai.system"], sp.Attributes["proxy.provider"], sp.Attributes["netproxy.provider"])
+	sp.Model = firstNonEmpty(sp.Attributes["gen_ai.request.model"], sp.Attributes["proxy.model"], sp.Attributes["netproxy.model"])
+	sp.StepType = firstNonEmpty(sp.Attributes["af.span.step_type"], inferStepType(sp.Name, sp.Provider, sp.Model))
+	sp.AppName = firstNonEmpty(sp.Attributes["service.name"], sp.Attributes["af.app.name"], sp.Attributes["application.name"])
+	sp.Environment = firstNonEmpty(sp.Attributes["deployment.environment"], sp.Attributes["environment"], sp.Attributes["env"])
+	sp.UserID = firstNonEmpty(sp.Attributes["enduser.id"], sp.Attributes["user.id"], sp.Attributes["af.user.id"])
+	sp.SessionID = firstNonEmpty(sp.Attributes["session.id"], sp.Attributes["af.session.id"])
+	sp.ErrorClass = firstNonEmpty(sp.Attributes["af.error.class"], sp.Attributes["error.type"], sp.Attributes["exception.type"])
+	sp.PromptPreview = firstPreview(sp.Attributes, "af.preview.prompt", "gen_ai.prompt", "input.value", "prompt", "llm.prompt")
+	sp.ResponsePreview = firstPreview(sp.Attributes, "af.preview.response", "gen_ai.response", "output.value", "response", "llm.response")
+	sp.RetryCount = firstInt(sp.Attributes, "retry.count", "http.retry_count", "af.retry.count")
+	sp.BlockedReason = firstNonEmpty(sp.Attributes["af.policy.reason"], sp.Attributes["policy.reason"], sp.Attributes["budget.reason"])
+	sp.Blocked = isTrue(sp.Attributes["af.policy.blocked"]) || strings.EqualFold(sp.Attributes["af.policy.decision"], "deny") || sp.BlockedReason != ""
+	sp.PricingRuleID = firstInt64(sp.Attributes, "af.pricing.rule_id")
+	sp.PricingScope = sp.Attributes["af.pricing.scope"]
+}
+
+func spanDepth(spanID string, byID map[string]models.Span, memo map[string]int) int {
+	if spanID == "" {
+		return 0
+	}
+	if depth, ok := memo[spanID]; ok {
+		return depth
+	}
+	sp, ok := byID[spanID]
+	if !ok || sp.ParentID == "" {
+		memo[spanID] = 0
+		return 0
+	}
+	depth := 1 + spanDepth(sp.ParentID, byID, memo)
+	memo[spanID] = depth
+	return depth
+}
+
+func inferStepType(name, provider, model string) string {
+	lowerName := strings.ToLower(name)
+	switch {
+	case provider != "" || model != "":
+		return "llm"
+	case strings.Contains(lowerName, "tool"), strings.Contains(lowerName, "function"):
+		return "tool"
+	case strings.Contains(lowerName, "policy"), strings.Contains(lowerName, "guard"):
+		return "policy"
+	case strings.Contains(lowerName, "retry"):
+		return "retry"
+	default:
+		return "agent"
+	}
+}
+
+func firstPreview(attrs map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(attrs[key]); v != "" {
+			if len(v) > 220 {
+				return v[:220] + "..."
+			}
+			return v
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func firstInt(attrs map[string]string, keys ...string) int {
+	for _, key := range keys {
+		if v, err := strconv.Atoi(strings.TrimSpace(attrs[key])); err == nil {
+			return v
+		}
+	}
+	return 0
+}
+
+func firstInt64(attrs map[string]string, keys ...string) int64 {
+	for _, key := range keys {
+		if v, err := strconv.ParseInt(strings.TrimSpace(attrs[key]), 10, 64); err == nil {
+			return v
+		}
+	}
+	return 0
+}
+
+func isTrue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "blocked":
+		return true
+	default:
+		return false
+	}
+}
+
+func appendSortedSet(values map[string]struct{}) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func parseIntOr(s string, def int) int {
 	if v, err := strconv.Atoi(s); err == nil && v > 0 {
 		return v
@@ -710,7 +944,7 @@ func (h *Handler) repriceSpan(sp *models.Span) {
 	}
 
 	provider := strings.TrimSpace(sp.Attributes["gen_ai.system"])
-	inputCost, totalCost := proxy.ComputeExactCost(provider, model, sp.InputTokens, sp.OutputTokens)
+	match, inputCost, totalCost := proxy.ComputeExactCostForTenant(provider, model, sp.TenantID, sp.ReceivedAt, sp.InputTokens, sp.OutputTokens)
 	sp.CostUSD = totalCost
 
 	if sp.Attributes == nil {
@@ -725,6 +959,13 @@ func (h *Handler) repriceSpan(sp *models.Span) {
 	sp.Attributes["af.cost.input_usd"] = strconv.FormatFloat(inputCost, 'f', 8, 64)
 	sp.Attributes["af.cost.output_usd"] = strconv.FormatFloat(totalCost-inputCost, 'f', 8, 64)
 	sp.Attributes["af.cost.total_usd"] = strconv.FormatFloat(totalCost, 'f', 8, 64)
+	if match.RuleID > 0 {
+		sp.Attributes["af.pricing.rule_id"] = strconv.FormatInt(match.RuleID, 10)
+		sp.Attributes["af.pricing.model_pattern"] = match.ModelPattern
+		sp.Attributes["af.pricing.scope"] = match.Scope
+		sp.Attributes["af.pricing.input_per_million"] = strconv.FormatFloat(match.InputPerMillion, 'f', 4, 64)
+		sp.Attributes["af.pricing.output_per_million"] = strconv.FormatFloat(match.OutputPerMillion, 'f', 4, 64)
+	}
 }
 
 func (h *Handler) ListPricingRules(w http.ResponseWriter, r *http.Request) {
@@ -753,6 +994,26 @@ func (h *Handler) UpsertPricingRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "pricing values must be non-negative")
 		return
 	}
+	if rule.Priority == 0 {
+		rule.Priority = 100
+	}
+	if rule.EffectiveFrom != nil && rule.EffectiveTo != nil && rule.EffectiveTo.Before(*rule.EffectiveFrom) {
+		writeError(w, http.StatusBadRequest, "effective_to must be after effective_from")
+		return
+	}
+	if rule.TenantID != nil && strings.TrimSpace(*rule.TenantID) == "" {
+		rule.TenantID = nil
+	}
+
+	var beforeJSON string
+	if rule.ID > 0 {
+		existing, err := h.pg.GetPricingRule(r.Context(), rule.ID)
+		if err == nil {
+			if b, err := json.Marshal(existing); err == nil {
+				beforeJSON = string(b)
+			}
+		}
+	}
 
 	updated, err := h.pg.UpsertPricingRule(r.Context(), rule)
 	if err != nil {
@@ -765,6 +1026,17 @@ func (h *Handler) UpsertPricingRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "reload failed")
 		return
 	}
+	if after, err := json.Marshal(updated); err == nil {
+		_ = h.pg.CreatePricingRuleAudit(r.Context(), models.PricingAuditEntry{
+			RuleID:      updated.ID,
+			Action:      map[bool]string{true: "update", false: "create"}[rule.ID > 0],
+			Actor:       actorFromCtx(r),
+			TenantID:    tenantFromCtx(r),
+			BeforeState: beforeJSON,
+			AfterState:  string(after),
+		})
+	}
+	h.writeAdminAudit(r, "pricing", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "pricing_rule", strconv.FormatInt(updated.ID, 10), "success", updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -773,6 +1045,13 @@ func (h *Handler) DeletePricingRule(w http.ResponseWriter, r *http.Request) {
 	if err != nil || id <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid rule id")
 		return
+	}
+	var beforeJSON string
+	existing, err := h.pg.GetPricingRule(r.Context(), id)
+	if err == nil {
+		if b, err := json.Marshal(existing); err == nil {
+			beforeJSON = string(b)
+		}
 	}
 	if err := h.pg.DeletePricingRule(r.Context(), id); err != nil {
 		if isNotFound(err) {
@@ -788,7 +1067,207 @@ func (h *Handler) DeletePricingRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "reload failed")
 		return
 	}
+	_ = h.pg.CreatePricingRuleAudit(r.Context(), models.PricingAuditEntry{
+		RuleID:      id,
+		Action:      "delete",
+		Actor:       actorFromCtx(r),
+		TenantID:    tenantFromCtx(r),
+		BeforeState: beforeJSON,
+		AfterState:  "{}",
+	})
+	h.writeAdminAudit(r, "pricing", "delete", "pricing_rule", strconv.FormatInt(id, 10), "success", existing)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) ListPolicyRules(w http.ResponseWriter, r *http.Request) {
+	rules, err := h.pg.ListPolicyRules(r.Context())
+	if err != nil {
+		h.logger.Error("list policy rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": rules, "count": len(rules)})
+}
+
+func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
+	var rule models.PolicyRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	rule.Name = strings.TrimSpace(rule.Name)
+	rule.RuleType = strings.ToLower(strings.TrimSpace(rule.RuleType))
+	rule.Action = strings.ToLower(strings.TrimSpace(rule.Action))
+	rule.Provider = strings.ToLower(strings.TrimSpace(rule.Provider))
+	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
+	rule.Environment = strings.ToLower(strings.TrimSpace(rule.Environment))
+	rule.Detector = strings.ToLower(strings.TrimSpace(rule.Detector))
+	rule.Scope = strings.ToLower(strings.TrimSpace(rule.Scope))
+	if rule.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if rule.RuleType != "traffic" && rule.RuleType != "dlp" {
+		writeError(w, http.StatusBadRequest, "rule_type must be traffic or dlp")
+		return
+	}
+	if rule.Action != "allow" && rule.Action != "warn" && rule.Action != "redact" && rule.Action != "deny" {
+		writeError(w, http.StatusBadRequest, "action must be allow, warn, redact, or deny")
+		return
+	}
+	if rule.RuleType == "traffic" && rule.Action == "redact" {
+		writeError(w, http.StatusBadRequest, "traffic rules cannot use redact")
+		return
+	}
+	if rule.RuleType == "dlp" && rule.Scope == "" {
+		rule.Scope = "both"
+	}
+	if rule.RuleType == "traffic" {
+		rule.Scope = "both"
+		rule.Detector = ""
+	}
+	if rule.TenantID != nil && strings.TrimSpace(*rule.TenantID) == "" {
+		rule.TenantID = nil
+	}
+
+	var before any
+	if rule.ID > 0 {
+		existing, err := h.pg.GetPolicyRule(r.Context(), rule.ID)
+		if err == nil {
+			before = existing
+		}
+	}
+	updated, err := h.pg.UpsertPolicyRule(r.Context(), rule)
+	if err != nil {
+		h.logger.Error("upsert policy rule", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	if h.policyEngine != nil {
+		if err := h.policyEngine.LoadRules(r.Context(), h.pg); err != nil {
+			h.logger.Error("reload policy rules", zap.Error(err))
+			writeError(w, http.StatusInternalServerError, "reload failed")
+			return
+		}
+	}
+	h.writeAdminAudit(r, "policy", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "policy_rule", strconv.FormatInt(updated.ID, 10), "success", map[string]any{
+		"before": before,
+		"after":  updated,
+	})
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) DeletePolicyRule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "ruleId"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid rule id")
+		return
+	}
+	existing, _ := h.pg.GetPolicyRule(r.Context(), id)
+	if err := h.pg.DeletePolicyRule(r.Context(), id); err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "policy rule not found")
+			return
+		}
+		h.logger.Error("delete policy rule", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	if h.policyEngine != nil {
+		if err := h.policyEngine.LoadRules(r.Context(), h.pg); err != nil {
+			h.logger.Error("reload policy rules", zap.Error(err))
+			writeError(w, http.StatusInternalServerError, "reload failed")
+			return
+		}
+	}
+	h.writeAdminAudit(r, "policy", "delete", "policy_rule", strconv.FormatInt(id, 10), "success", existing)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) PreviewPricingRule(w http.ResponseWriter, r *http.Request) {
+	var req models.PricingPreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	at := time.Now().UTC()
+	if req.At != nil {
+		at = req.At.UTC()
+	}
+	match, inputCost, totalCost := proxy.ComputeExactCostForTenant(req.Provider, req.Model, req.TenantID, at, req.InputTokens, req.OutputTokens)
+	resp := models.PricingPreviewResponse{
+		Matched:          match.RuleID > 0 || match.ModelPattern != "",
+		RuleID:           match.RuleID,
+		Provider:         req.Provider,
+		Model:            req.Model,
+		ModelPattern:     match.ModelPattern,
+		PricingScope:     match.Scope,
+		InputPerMillion:  match.InputPerMillion,
+		OutputPerMillion: match.OutputPerMillion,
+		InputTokens:      req.InputTokens,
+		OutputTokens:     req.OutputTokens,
+		InputCostUSD:     inputCost,
+		OutputCostUSD:    totalCost - inputCost,
+		TotalCostUSD:     totalCost,
+		EffectiveFrom:    match.EffectiveFrom,
+		EffectiveTo:      match.EffectiveTo,
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) ListPricingAudit(w http.ResponseWriter, r *http.Request) {
+	limit := parseIntOr(r.URL.Query().Get("limit"), 100)
+	entries, err := h.pg.ListPricingRuleAudit(r.Context(), limit)
+	if err != nil {
+		h.logger.Error("list pricing rule audit", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": entries, "count": len(entries)})
+}
+
+func (h *Handler) ExportPricingRules(w http.ResponseWriter, r *http.Request) {
+	rules, err := h.pg.ListPricingRules(r.Context())
+	if err != nil {
+		h.logger.Error("export pricing rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	_ = cw.Write([]string{"id", "tenant_id", "provider", "model_pattern", "input_per_million", "output_per_million", "active", "priority", "effective_from", "effective_to", "description"})
+	for _, rule := range rules {
+		tenantID := ""
+		if rule.TenantID != nil {
+			tenantID = *rule.TenantID
+		}
+		effectiveFrom := ""
+		if rule.EffectiveFrom != nil {
+			effectiveFrom = rule.EffectiveFrom.Format(time.RFC3339)
+		}
+		effectiveTo := ""
+		if rule.EffectiveTo != nil {
+			effectiveTo = rule.EffectiveTo.Format(time.RFC3339)
+		}
+		_ = cw.Write([]string{
+			strconv.FormatInt(rule.ID, 10),
+			tenantID,
+			rule.Provider,
+			rule.ModelPattern,
+			strconv.FormatFloat(rule.InputPerMillion, 'f', 6, 64),
+			strconv.FormatFloat(rule.OutputPerMillion, 'f', 6, 64),
+			strconv.FormatBool(rule.Active),
+			strconv.Itoa(rule.Priority),
+			effectiveFrom,
+			effectiveTo,
+			rule.Description,
+		})
+	}
+	cw.Flush()
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", `attachment; filename="pricing-rules.csv"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
 }
 
 // sumSpanUsage totals tokens and cost across a batch of spans.

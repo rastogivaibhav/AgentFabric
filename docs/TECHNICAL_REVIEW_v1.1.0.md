@@ -7,6 +7,25 @@
 
 ---
 
+## Current-State Update (2026-03-21)
+
+This report is still useful as a historical review, but several findings are now outdated relative to the current codebase.
+
+Resolved since this report:
+- password login now checks the `users` table through `GetUserByUsername(...)`, with env-var admin fallback
+- browser auth now uses `HttpOnly` cookies; the portal no longer stores JWTs in `localStorage`
+- `/healthz` now checks PostgreSQL and Redis and returns `503` on dependency failure
+- the ingest handler now caps request bodies with `http.MaxBytesReader`
+- context keys were moved off plain strings to typed keys
+- model pricing is now configurable through DB-backed `pricing_rules`, admin APIs, and the portal pricing page
+
+Still materially true:
+- the platform is not yet GA-ready
+- schema/store complexity remains a real risk area and still deserves follow-up review
+- release confidence still depends on fuller automated coverage and end-to-end smoke validation
+
+Use this document as the March 16 baseline, then apply this update before making release decisions.
+
 ## Executive Summary
 
 AgentFabric v1.1.0 is a well-structured, multi-service observability platform with a sound core architecture. The sprint work added meaningful production hardening: constant-time auth, TLS fail-secure, JWT key rotation, schema migration tooling, RBAC/ABAC dual-layer enforcement, and a detailed production checklist. The codebase demonstrates consistent patterns and good engineering discipline.

@@ -181,6 +181,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Validate OpenAPI spec
+        run: go test ./cmd/server -run 'TestOpenAPI|TestServeSwaggerUI|TestServeOpenAPISpec' -count=1
+
       - name: Tests + coverage
         env:
           DATABASE_URL: postgres://fabric:fabric@localhost:5432/agentfabric_test?sslmode=disable
@@ -413,7 +416,7 @@ jobs:
           helm template agentfabric deploy/helm \
             --set collector.image.tag=ci \
             --set afCore.image.tag=ci \
-            --set apiGateway.image.tag=ci \
+            --set api.image.tag=ci \
             --set portal.image.tag=ci \
             | grep -c "^kind:" \
             | xargs -I {} sh -c '
@@ -428,12 +431,33 @@ jobs:
             --generate-name \
             --set collector.image.tag=ci \
             --set afCore.image.tag=ci \
-            --set apiGateway.image.tag=ci \
+            --set api.image.tag=ci \
             --set portal.image.tag=ci
 
   # ─── Secret scanning ─────────────────────────────────────────────────────────
   # Blocks merge if Gitleaks detects high-entropy secrets, API keys, or the
   # known dev-secret sentinel in any non-test source file.
+  packaging-smoke:
+    name: Packaging Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compose config (local)
+        run: docker compose -f docker-compose.yml config > /dev/null
+
+      - name: Compose config (production overlay)
+        run: docker compose -f docker-compose.yml -f deploy/docker/docker-compose.prod.yml --env-file deploy/docker/.env.production.example config > /dev/null
+
+      - name: Assert bootstrap and release scripts exist
+        run: |
+          test -f scripts/setup-local.sh
+          test -f scripts/bootstrap_local.ps1
+          test -f scripts/seed-demo-data.sh
+          test -f scripts/seed-demo-data.ps1
+          test -f scripts/run-release-candidate-validation.sh
+          test -f scripts/run_release_candidate_validation.ps1
+
   secret-scan:
     name: Secret Scan (Gitleaks)
     runs-on: ubuntu-latest
@@ -471,7 +495,7 @@ jobs:
   # ─── PR gate: all jobs must pass ────────────────────────────────────────────
   ci-gate:
     name: CI Gate
-    needs: [af-core, collector, api-gateway, portal, agent-sdk, helm-smoke, secret-scan, coverage-comment]
+    needs: [af-core, collector, api-gateway, portal, agent-sdk, helm-smoke, packaging-smoke, secret-scan, coverage-comment]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -483,12 +507,13 @@ jobs:
           PORTAL_RESULT: ${{ needs.portal.result }}
           SDK_RESULT: ${{ needs.agent-sdk.result }}
           HELM_RESULT: ${{ needs.helm-smoke.result }}
+          PACKAGING_RESULT: ${{ needs.packaging-smoke.result }}
           SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
           COVERAGE_COMMENT_RESULT: ${{ needs.coverage-comment.result }}
         run: |
           FAILED=0
           # coverage-comment is skipped on non-PR pushes — treat skipped as passing
-          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT" "$HELM_RESULT" "$SECRET_SCAN_RESULT"; do
+          for JOB in "$AF_CORE_RESULT" "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT" "$HELM_RESULT" "$PACKAGING_RESULT" "$SECRET_SCAN_RESULT"; do
             if [ "$JOB" != "success" ]; then
               FAILED=1
             fi

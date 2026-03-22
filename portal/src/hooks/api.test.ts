@@ -100,6 +100,9 @@ describe('API type contracts', () => {
       error_rate: 0.01,
       avg_latency_ms: 450,
       spans_per_second: 25,
+      blocked_requests: 0,
+      llm_calls: 12,
+      tool_calls: 4,
       framework_counts: { crewai: 400, langgraph: 600 },
     }
     expect(stats.total_traces).toBe(1000)

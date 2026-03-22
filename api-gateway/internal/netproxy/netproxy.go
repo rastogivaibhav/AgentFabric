@@ -17,6 +17,7 @@ import (
 
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/policy"
 	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/vault"
 	"go.uber.org/zap"
@@ -34,6 +35,11 @@ var knownLLMHosts = map[string]string{
 // spanStore is the minimal interface the netproxy needs to record spans.
 type spanStore interface {
 	BulkInsertSpans(ctx context.Context, spans []models.Span) error
+	CreatePolicyAuditEntry(ctx context.Context, entry models.PolicyDecisionAudit) error
+}
+
+type eventBroadcaster interface {
+	Broadcast(tenantID string, event interface{})
 }
 
 // NetProxy is an http.Handler that operates as an HTTP CONNECT forward proxy.
@@ -48,17 +54,21 @@ type NetProxy struct {
 	vault          *vault.Vault
 	budgetEnforcer *budget.BudgetEnforcer // nil = budget disabled
 	store          spanStore
+	policyEngine   *policy.Engine
+	broadcaster    eventBroadcaster
 	httpClient     *http.Client // dials the REAL upstream with system TLS roots
 	logger         *zap.Logger
 }
 
 // New creates a NetProxy. ca must be non-nil.
-func New(ca *CA, v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, logger *zap.Logger) *NetProxy {
+func New(ca *CA, v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, policyEngine *policy.Engine, broadcaster eventBroadcaster, logger *zap.Logger) *NetProxy {
 	return &NetProxy{
 		ca:             ca,
 		vault:          v,
 		budgetEnforcer: be,
 		store:          store,
+		policyEngine:   policyEngine,
+		broadcaster:    broadcaster,
 		// httpClient uses the default system root pool — it verifies the REAL
 		// upstream TLS cert, not our local CA.
 		httpClient: &http.Client{
@@ -213,10 +223,61 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 	r.Body.Close()
 
 	model, streaming, estimatedTokens, _ := parser.ParseRequest(body)
+	traceID := newID()
+	spanID := newID()
+	environment := proxyEnvironmentFromRequest(r)
+
+	if p.policyEngine != nil {
+		trafficDecision := p.policyEngine.EvaluateTraffic(policy.TrafficInput{
+			TenantID:        tenantID,
+			Provider:        provider,
+			Model:           model,
+			Environment:     environment,
+			EstimatedTokens: estimatedTokens,
+		})
+		if trafficDecision.Matched {
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", trafficDecision)
+			if trafficDecision.Action == "deny" {
+				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, 0, 0, 0, map[string]string{
+					"af.policy.blocked":  "true",
+					"af.policy.reason":   trafficDecision.Reason,
+					"af.policy.decision": trafficDecision.Action,
+					"af.span.step_type":  "policy",
+				})
+				http.Error(w, `{"error":{"message":"request blocked by policy","type":"policy_denied"}}`, http.StatusForbidden)
+				return
+			}
+		}
+
+		dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
+			TenantID:    tenantID,
+			Provider:    provider,
+			Model:       model,
+			Environment: environment,
+			Scope:       "request",
+			Body:        body,
+		})
+		if dlpDecision.Matched {
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", dlpDecision)
+			switch dlpDecision.Action {
+			case "deny":
+				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, 0, 0, 0, map[string]string{
+					"af.policy.blocked":  "true",
+					"af.policy.reason":   dlpDecision.Reason,
+					"af.policy.decision": dlpDecision.Action,
+					"af.span.step_type":  "policy",
+				})
+				http.Error(w, `{"error":{"message":"request blocked by DLP policy","type":"policy_denied"}}`, http.StatusForbidden)
+				return
+			case "redact":
+				body = dlpDecision.RedactedBody
+			}
+		}
+	}
 
 	// 4. Budget pre-check (only when tenant is known from vault).
 	if p.budgetEnforcer != nil && tenantID != "" {
-		_, estimatedCostUSD := proxy.ComputeEstimatedCost(provider, model, estimatedTokens)
+		_, _, estimatedCostUSD := proxy.ComputeEstimatedCostForTenant(provider, model, tenantID, time.Now().UTC(), estimatedTokens)
 		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
 			http.Error(w,
@@ -251,30 +312,59 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 	}
 	defer upResp.Body.Close()
 
-	// 7. Copy response headers and body back to client.
-	for k, vv := range upResp.Header {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(upResp.StatusCode)
-
 	var inputTokens, outputTokens int64
+	extraAttrs := map[string]string{}
 	if streaming && upResp.StatusCode == http.StatusOK {
+		for k, vv := range upResp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(upResp.StatusCode)
 		inputTokens, outputTokens = forwardStreaming(w, upResp, parser)
 	} else {
 		respBody, _ := io.ReadAll(upResp.Body)
-		w.Write(respBody) //nolint:errcheck
 		if upResp.StatusCode == http.StatusOK {
 			inputTokens, outputTokens, _ = parser.ParseUsage(respBody)
+			if p.policyEngine != nil {
+				dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
+					TenantID:    tenantID,
+					Provider:    provider,
+					Model:       model,
+					Environment: environment,
+					Scope:       "response",
+					Body:        respBody,
+				})
+				if dlpDecision.Matched {
+					p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", dlpDecision)
+					extraAttrs["af.policy.reason"] = dlpDecision.Reason
+					extraAttrs["af.policy.decision"] = dlpDecision.Action
+					if dlpDecision.Action == "deny" {
+						extraAttrs["af.policy.blocked"] = "true"
+						respBody = []byte(`{"error":{"message":"response blocked by DLP policy","type":"policy_denied"}}`)
+						upResp.StatusCode = http.StatusForbidden
+					} else if dlpDecision.Action == "redact" {
+						respBody = dlpDecision.RedactedBody
+						extraAttrs["af.policy.redacted"] = "true"
+					}
+				}
+			}
 		}
+		for k, vv := range upResp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.Header().Del("Content-Length")
+		w.WriteHeader(upResp.StatusCode)
+		w.Write(respBody) //nolint:errcheck
 	}
 
 	duration := time.Since(start)
 
 	// 8. Record span (best-effort, non-blocking) — only for successful requests.
 	if upResp.StatusCode == http.StatusOK && rawKey != "" {
-		go p.recordSpan(tenantID, provider, model, rawKey, inputTokens, outputTokens, duration)
+		go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, inputTokens, outputTokens, duration, extraAttrs)
 	}
 }
 
@@ -336,17 +426,21 @@ func forwardStreaming(w http.ResponseWriter, resp *http.Response, parser proxy.P
 
 // ─── Span recording ───────────────────────────────────────────────────────────
 
-func (p *NetProxy) recordSpan(tenantID, provider, model, rawKey string, inputTokens, outputTokens int64, duration time.Duration) {
+func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey string, inputTokens, outputTokens int64, duration time.Duration, extraAttrs map[string]string) {
 	now := time.Now()
-	traceID := newID()
-	spanID := newID()
+	if traceID == "" {
+		traceID = newID()
+	}
+	if spanID == "" {
+		spanID = newID()
+	}
 
 	maskedKey := rawKey
 	if len(maskedKey) > 14 {
 		maskedKey = maskedKey[:14] + "..."
 	}
 
-	_, totalCostUSD := proxy.ComputeExactCost(provider, model, inputTokens, outputTokens)
+	match, _, totalCostUSD := proxy.ComputeExactCostForTenant(provider, model, tenantID, now, inputTokens, outputTokens)
 
 	span := models.Span{
 		ID:           spanID,
@@ -367,9 +461,20 @@ func (p *NetProxy) recordSpan(tenantID, provider, model, rawKey string, inputTok
 			"netproxy.model":       model,
 			"netproxy.key":         maskedKey,
 			"netproxy.layer":       "3",
+			"af.span.step_type":    "llm",
 			"gen_ai.system":        provider,
 			"gen_ai.request.model": model,
 		},
+	}
+	for key, value := range extraAttrs {
+		if strings.TrimSpace(value) != "" {
+			span.Attributes[key] = value
+		}
+	}
+	if match.RuleID > 0 {
+		span.Attributes["af.pricing.rule_id"] = fmt.Sprintf("%d", match.RuleID)
+		span.Attributes["af.pricing.model_pattern"] = match.ModelPattern
+		span.Attributes["af.pricing.scope"] = match.Scope
 	}
 	if tenantID == "" {
 		span.TenantID = "00000000-0000-0000-0000-000000000001" // default tenant
@@ -379,6 +484,55 @@ func (p *NetProxy) recordSpan(tenantID, provider, model, rawKey string, inputTok
 	defer cancel()
 	if err := p.store.BulkInsertSpans(ctx, []models.Span{span}); err != nil {
 		p.logger.Warn("netproxy: failed to record span", zap.Error(err))
+	}
+}
+
+func (p *NetProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, framework string, decision policy.Decision) {
+	if !decision.Matched {
+		return
+	}
+	tenantID = normalizeTenantID(tenantID)
+	result := decision.Action
+	if result == "redact" {
+		result = "sanitize"
+	}
+	decisionID := newUUID()
+	now := time.Now().UTC()
+	if err := p.store.CreatePolicyAuditEntry(context.Background(), models.PolicyDecisionAudit{
+		DecisionID:  decisionID,
+		TraceID:     traceID,
+		SpanID:      spanID,
+		PolicyName:  decision.PolicyName,
+		Result:      result,
+		Reason:      decision.Reason,
+		TenantID:    tenantID,
+		EvaluatedAt: now,
+		Framework:   framework,
+		Model:       model,
+		Environment: environment,
+	}); err != nil {
+		p.logger.Warn("netproxy: failed to write policy audit entry", zap.Error(err))
+	}
+	if p.broadcaster != nil {
+		p.broadcaster.Broadcast(tenantID, &models.LiveEvent{
+			Type:      "policy",
+			Timestamp: now.UnixMilli(),
+			TenantID:  tenantID,
+			Data: models.PolicyEvent{
+				DecisionID: decisionID,
+				TraceID:    traceID,
+				SpanID:     spanID,
+				PolicyName: decision.PolicyName,
+				Result:     result,
+				Reason:     decision.Reason,
+				TenantID:   tenantID,
+				Provider:   provider,
+				Model:      model,
+				Scope:      decision.Scope,
+				Matched:    decision.MatchedNames,
+				Redactions: decision.Redactions,
+			},
+		})
 	}
 }
 
@@ -436,6 +590,32 @@ func stripPort(hostport string) string {
 		return hostport
 	}
 	return host
+}
+
+func proxyEnvironmentFromRequest(r *http.Request) string {
+	if r == nil {
+		return "unknown"
+	}
+	for _, value := range []string{r.Header.Get("X-AF-Environment"), r.Header.Get("X-Environment")} {
+		if trimmed := strings.ToLower(strings.TrimSpace(value)); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "unknown"
+}
+
+func normalizeTenantID(tenantID string) string {
+	if strings.TrimSpace(tenantID) == "" {
+		return "00000000-0000-0000-0000-000000000001"
+	}
+	return tenantID
+}
+
+func newUUID() string {
+	b := make([]byte, 16)
+	rand.Read(b) //nolint:errcheck
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // copyHeaders copies all headers from src to dst.

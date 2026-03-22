@@ -24,6 +24,7 @@ services:
       POSTGRES_PASSWORD: fabric_dev_only
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./deploy/sql:/seed:ro
       # Schema managed by golang-migrate (api-gateway runs migrations on startup).
     ports:
       - "5432:5432"

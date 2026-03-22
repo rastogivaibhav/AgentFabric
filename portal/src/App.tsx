@@ -12,6 +12,7 @@ import UsersPage from './pages/UsersPage'
 import AuditPage from './pages/AuditPage'
 import ApiKeysPage from './pages/ApiKeysPage'
 import PricingRulesPage from './pages/PricingRulesPage'
+import PoliciesPage from './pages/PoliciesPage'
 import LoginPage from './pages/LoginPage'
 import { useAuth, isAuthEnabled, hasRole } from './hooks/auth'
 
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="audit" element={<AuditPage />} />
             <Route path="keys" element={<ApiKeysPage />} />
             <Route path="pricing" element={<PricingRulesPage />} />
+            <Route path="policies" element={<PoliciesPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
