@@ -1,65 +1,55 @@
-// portal/src/pages/AuditPage.tsx
-//
-// Admin-only view of the immutable policy audit log.
-//
-// Access control:
-//   This page is gated to the "admin" role both here (UX) and at the API
-//   gateway (returns 403 for non-admins).  Editors and viewers see an
-//   "Access denied" message rather than a blank page or an unhandled error.
-//
-// Data shape (GET /api/v1/audit):
-//   AuditEntry[] — id, decision_id, trace_id, span_id, policy_name, result,
-//                  reason, tenant_id, evaluated_at, previous_hash, entry_hash
-
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ShieldCheck, ShieldX, AlertTriangle, Eraser, ChevronLeft, ChevronRight, RefreshCw, Lock } from 'lucide-react'
-import { useAuth, hasRole } from '../hooks/auth'
+import { AlertTriangle, ChevronLeft, ChevronRight, Eraser, Lock, RefreshCw, ShieldCheck, ShieldX } from 'lucide-react'
+import { hasRole, useAuth } from '../hooks/auth'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 const PAGE_SIZE = 100
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 interface AuditEntry {
-  id:            number
-  decision_id:   string
-  trace_id:      string
-  span_id:       string
-  policy_name:   string
-  result:        'allow' | 'deny' | 'warn' | 'sanitize'
-  reason:        string
-  tenant_id:     string
-  evaluated_at:  string
+  id: number
+  decision_id: string
+  trace_id: string
+  span_id: string
+  policy_name: string
+  result: 'allow' | 'deny' | 'warn' | 'sanitize'
+  reason: string
+  tenant_id: string
+  evaluated_at: string
   previous_hash: string
-  entry_hash:    string
+  entry_hash: string
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+interface AuditResponse {
+  items: AuditEntry[]
+  limit: number
+  offset: number
+  count: number
+}
 
-async function fetchAudit(offset: number): Promise<AuditEntry[]> {
+async function fetchAudit(offset: number): Promise<AuditResponse> {
   const url = `${BASE}/api/v1/audit?limit=${PAGE_SIZE}&offset=${offset}`
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include', // af_token HttpOnly cookie sent automatically
+    credentials: 'include',
   })
   if (!res.ok) throw new Error(`API ${res.status}: /audit`)
   return res.json()
 }
 
-function truncate(s: string, len = 8): string {
-  if (!s) return '—'
-  return s.length <= len ? s : s.slice(0, len) + '…'
+function truncate(value: string, len = 8): string {
+  if (!value) return '-'
+  return value.length <= len ? value : `${value.slice(0, len)}...`
 }
 
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {
-      year:   'numeric',
-      month:  'short',
-      day:    'numeric',
-      hour:   '2-digit',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
     })
@@ -68,19 +58,20 @@ function formatDate(iso: string): string {
   }
 }
 
-// ─── Result badge ─────────────────────────────────────────────────────────────
-
 const RESULT_CONFIG = {
-  allow:    { label: 'allow',    icon: ShieldCheck,   bg: 'bg-emerald-100',  text: 'text-emerald-700', border: 'border-emerald-200' },
-  deny:     { label: 'deny',     icon: ShieldX,       bg: 'bg-red-100',      text: 'text-red-700',     border: 'border-red-200'     },
-  warn:     { label: 'warn',     icon: AlertTriangle, bg: 'bg-amber-100',    text: 'text-amber-700',   border: 'border-amber-200'   },
-  sanitize: { label: 'sanitize', icon: Eraser,        bg: 'bg-blue-100',     text: 'text-blue-700',    border: 'border-blue-200'    },
+  allow: { label: 'allow', icon: ShieldCheck, bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+  deny: { label: 'deny', icon: ShieldX, bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
+  warn: { label: 'warn', icon: AlertTriangle, bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+  sanitize: { label: 'sanitize', icon: Eraser, bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
 } as const
 
 function ResultBadge({ result }: { result: string }) {
   const cfg = RESULT_CONFIG[result as keyof typeof RESULT_CONFIG] ?? {
-    label: result, icon: ShieldCheck,
-    bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200',
+    label: result,
+    icon: ShieldCheck,
+    bg: 'bg-slate-100',
+    text: 'text-slate-700',
+    border: 'border-slate-200',
   }
   const Icon = cfg.icon
   return (
@@ -91,21 +82,14 @@ function ResultBadge({ result }: { result: string }) {
   )
 }
 
-// ─── Hash cell (truncated with full value on hover) ──────────────────────────
-
 function HashCell({ hash }: { hash: string }) {
-  if (!hash) return <span className="text-slate-400 text-xs">—</span>
+  if (!hash) return <span className="text-slate-400 text-xs">-</span>
   return (
-    <span
-      title={hash}
-      className="font-mono text-xs text-slate-500 cursor-help"
-    >
+    <span title={hash} className="font-mono text-xs text-slate-500 cursor-help">
       {hash.slice(0, 12)}
     </span>
   )
 }
-
-// ─── Access denied ────────────────────────────────────────────────────────────
 
 function AccessDenied() {
   return (
@@ -117,28 +101,26 @@ function AccessDenied() {
   )
 }
 
-// ─── Main page ───────────────────────────────────────────────────────────────
-
 export default function AuditPage() {
   const { user } = useAuth()
   const [offset, setOffset] = useState(0)
+  const isAdmin = hasRole(user, ['admin'])
 
-  const { data: entries = [], isLoading, isError, refetch, isFetching } = useQuery<AuditEntry[]>({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<AuditResponse>({
     queryKey: ['audit', offset],
-    queryFn:  () => fetchAudit(offset),
+    queryFn: () => fetchAudit(offset),
     staleTime: 30_000,
-    enabled:   hasRole(user, ['admin']),
+    enabled: isAdmin,
   })
 
-  // Non-admin: show access denied immediately without firing a network request.
-  if (!hasRole(user, ['admin'])) return <AccessDenied />
+  if (!isAdmin) return <AccessDenied />
 
+  const entries = data?.items ?? []
   const hasPrev = offset > 0
   const hasNext = entries.length === PAGE_SIZE
 
   return (
     <div className="p-6 space-y-6">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Audit Log</h1>
@@ -157,14 +139,12 @@ export default function AuditPage() {
         </button>
       </div>
 
-      {/* ── Error ──────────────────────────────────────────────────────── */}
       {isError && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
           Failed to load audit log. Check your connection and ensure your session is still valid.
         </div>
       )}
 
-      {/* ── Table ──────────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -182,10 +162,10 @@ export default function AuditPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {isLoading
-                ? Array.from({ length: 10 }).map((_, i) => (
-                    <tr key={i} className="animate-pulse">
-                      {Array.from({ length: 8 }).map((_, j) => (
-                        <td key={j} className="px-4 py-3">
+                ? Array.from({ length: 10 }).map((_, index) => (
+                    <tr key={index} className="animate-pulse">
+                      {Array.from({ length: 8 }).map((__, cell) => (
+                        <td key={cell} className="px-4 py-3">
                           <div className="h-4 bg-slate-100 rounded w-20" />
                         </td>
                       ))}
@@ -199,80 +179,53 @@ export default function AuditPage() {
                       </td>
                     </tr>
                   )
-                  : entries.map((e) => (
-                    <tr key={e.id} className="hover:bg-slate-50 transition-colors">
-                      {/* Row # */}
-                      <td className="px-4 py-3 text-slate-400 font-mono text-xs">
-                        {e.id}
-                      </td>
-
-                      {/* Timestamp */}
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                        {formatDate(e.evaluated_at)}
-                      </td>
-
-                      {/* Policy name */}
+                  : entries.map(entry => (
+                    <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-slate-400 font-mono text-xs">{entry.id}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(entry.evaluated_at)}</td>
                       <td className="px-4 py-3">
-                        <span
-                          title={e.policy_name}
-                          className="font-medium text-slate-800 max-w-[160px] truncate block"
-                        >
-                          {e.policy_name || '—'}
+                        <span title={entry.policy_name} className="font-medium text-slate-800 max-w-[160px] truncate block">
+                          {entry.policy_name || '-'}
                         </span>
                       </td>
-
-                      {/* Result badge */}
                       <td className="px-4 py-3">
-                        <ResultBadge result={e.result} />
+                        <ResultBadge result={entry.result} />
                       </td>
-
-                      {/* Trace ID — links to TraceDetail */}
                       <td className="px-4 py-3">
-                        {e.trace_id
-                          ? (
-                            <Link
-                              to={`/traces/${e.trace_id}`}
-                              title={e.trace_id}
-                              className="font-mono text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
-                            >
-                              {truncate(e.trace_id, 12)}
-                            </Link>
-                          )
-                          : <span className="text-slate-400 text-xs">—</span>
-                        }
+                        {entry.trace_id ? (
+                          <Link
+                            to={`/traces/${entry.trace_id}`}
+                            title={entry.trace_id}
+                            className="font-mono text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
+                          >
+                            {truncate(entry.trace_id, 12)}
+                          </Link>
+                        ) : (
+                          <span className="text-slate-400 text-xs">-</span>
+                        )}
                       </td>
-
-                      {/* Span ID */}
                       <td className="px-4 py-3">
-                        <span title={e.span_id} className="font-mono text-xs text-slate-500">
-                          {truncate(e.span_id, 12)}
+                        <span title={entry.span_id} className="font-mono text-xs text-slate-500">
+                          {truncate(entry.span_id, 12)}
                         </span>
                       </td>
-
-                      {/* Reason */}
                       <td className="px-4 py-3 text-slate-600 max-w-xs">
-                        <span title={e.reason} className="line-clamp-2 block">
-                          {e.reason || '—'}
+                        <span title={entry.reason} className="line-clamp-2 block">
+                          {entry.reason || '-'}
                         </span>
                       </td>
-
-                      {/* Entry hash (chain integrity) */}
                       <td className="px-4 py-3">
-                        <HashCell hash={e.entry_hash} />
+                        <HashCell hash={entry.entry_hash} />
                       </td>
                     </tr>
-                  ))
-              }
+                  ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* ── Pagination ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between text-sm text-slate-500">
-        <span>
-          Showing rows {offset + 1}–{offset + entries.length}
-        </span>
+        <span>Showing rows {offset + 1}-{offset + entries.length}</span>
         <div className="flex gap-2">
           <button
             onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
@@ -291,9 +244,8 @@ export default function AuditPage() {
         </div>
       </div>
 
-      {/* ── Chain integrity note ───────────────────────────────────────── */}
       <p className="text-xs text-slate-400">
-        Each entry hash is SHA-256(previous_hash + decision fields).  Run{' '}
+        Each entry hash is SHA-256(previous_hash + decision fields). Run{' '}
         <code className="font-mono bg-slate-100 px-1 rounded">GET /api/v1/audit/verify</code>{' '}
         to replay and validate the full chain server-side.
       </p>

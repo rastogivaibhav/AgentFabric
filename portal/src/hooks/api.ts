@@ -85,6 +85,7 @@ export interface Trace {
     max_depth?: number
   }
   spans?: Span[]
+  policy_events?: PolicyEvent[]
 }
 
 export interface Page<T> {
@@ -120,6 +121,21 @@ export interface PolicyLiveEventData {
   span_id?: string
   policy_name: string
   result: 'allow' | 'deny' | 'warn' | 'sanitize'
+  reason: string
+  tenant_id: string
+  provider?: string
+  model?: string
+  scope?: string
+  matched?: string[]
+  redactions?: number
+}
+
+export interface PolicyEvent {
+  decision_id: string
+  trace_id?: string
+  span_id?: string
+  policy_name: string
+  result: 'allow' | 'deny' | 'warn' | 'sanitize' | 'redact'
   reason: string
   tenant_id: string
   provider?: string
@@ -382,6 +398,34 @@ export interface PolicyRule {
   updated_at?: string
 }
 
+export interface PolicyPreviewRequest {
+  tenant_id?: string
+  provider: string
+  model: string
+  environment?: string
+  estimated_tokens?: number
+  request_body?: string
+  response_body?: string
+}
+
+export interface PolicyPreviewDecision {
+  matched: boolean
+  rule_id?: number
+  policy_name?: string
+  action?: string
+  reason?: string
+  scope?: string
+  matched_names?: string[]
+  redactions?: number
+  redacted_preview?: string
+}
+
+export interface PolicyPreviewResponse {
+  traffic: PolicyPreviewDecision
+  request_dlp: PolicyPreviewDecision
+  response_dlp: PolicyPreviewDecision
+}
+
 export interface AdminAuditEntry {
   id: number
   tenant_id?: string
@@ -517,6 +561,12 @@ export function useDeletePolicyRule() {
       qc.invalidateQueries({ queryKey: ['policy-rules'] })
       qc.invalidateQueries({ queryKey: ['control-audit'] })
     },
+  })
+}
+
+export function usePreviewPolicyRule() {
+  return useMutation({
+    mutationFn: (req: PolicyPreviewRequest) => apiMutate<PolicyPreviewResponse>('/policies/preview', 'POST', req),
   })
 }
 

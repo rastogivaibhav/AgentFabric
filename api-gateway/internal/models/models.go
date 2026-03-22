@@ -61,6 +61,7 @@ type Trace struct {
 	Status       string        `json:"status"` // ok|error|partial
 	Insights     TraceInsights `json:"insights,omitempty"`
 	Spans        []Span        `json:"spans,omitempty"`
+	PolicyEvents []PolicyEvent `json:"policy_events,omitempty"`
 	TenantID     string        `json:"-"`
 }
 
@@ -334,6 +335,34 @@ type PolicyEvent struct {
 	Scope      string   `json:"scope,omitempty"`
 	Matched    []string `json:"matched,omitempty"`
 	Redactions int      `json:"redactions,omitempty"`
+}
+
+type PolicyPreviewRequest struct {
+	TenantID        string `json:"tenant_id,omitempty"`
+	Provider        string `json:"provider"`
+	Model           string `json:"model"`
+	Environment     string `json:"environment,omitempty"`
+	EstimatedTokens int64  `json:"estimated_tokens,omitempty"`
+	RequestBody     string `json:"request_body,omitempty"`
+	ResponseBody    string `json:"response_body,omitempty"`
+}
+
+type PolicyPreviewDecision struct {
+	Matched         bool     `json:"matched"`
+	RuleID          int64    `json:"rule_id,omitempty"`
+	PolicyName      string   `json:"policy_name,omitempty"`
+	Action          string   `json:"action,omitempty"`
+	Reason          string   `json:"reason,omitempty"`
+	Scope           string   `json:"scope,omitempty"`
+	MatchedNames    []string `json:"matched_names,omitempty"`
+	Redactions      int      `json:"redactions,omitempty"`
+	RedactedPreview string   `json:"redacted_preview,omitempty"`
+}
+
+type PolicyPreviewResponse struct {
+	Traffic     PolicyPreviewDecision `json:"traffic"`
+	RequestDLP  PolicyPreviewDecision `json:"request_dlp"`
+	ResponseDLP PolicyPreviewDecision `json:"response_dlp"`
 }
 
 type AdminAuditEntry struct {

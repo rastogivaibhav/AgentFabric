@@ -151,10 +151,11 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if trafficDecision.Matched {
 			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", trafficDecision)
 			if trafficDecision.Action == "deny" {
-				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, 0, 0, 0, map[string]string{
+				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusForbidden, 0, 0, 0, map[string]string{
 					"af.policy.blocked":  "true",
 					"af.policy.reason":   trafficDecision.Reason,
 					"af.policy.decision": trafficDecision.Action,
+					"af.error.type":      "policy_denied",
 					"af.span.step_type":  "policy",
 				})
 				http.Error(w, `{"error":{"message":"request blocked by policy","type":"policy_denied"}}`, http.StatusForbidden)
@@ -174,10 +175,11 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", dlpDecision)
 			switch dlpDecision.Action {
 			case "deny":
-				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, 0, 0, 0, map[string]string{
+				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusForbidden, 0, 0, 0, map[string]string{
 					"af.policy.blocked":  "true",
 					"af.policy.reason":   dlpDecision.Reason,
 					"af.policy.decision": dlpDecision.Action,
+					"af.error.type":      "policy_denied",
 					"af.span.step_type":  "policy",
 				})
 				http.Error(w, `{"error":{"message":"request blocked by DLP policy","type":"policy_denied"}}`, http.StatusForbidden)
@@ -193,6 +195,11 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _, estimatedCostUSD := ComputeEstimatedCostForTenant(provider, model, tenantID, time.Now().UTC(), estimatedTokens)
 		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
+			go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusTooManyRequests, 0, 0, 0, map[string]string{
+				"af.error.type":     "budget_exceeded",
+				"af.policy.blocked": "true",
+				"af.span.step_type": "policy",
+			})
 			http.Error(w, `{"error":{"message":"token budget exceeded","type":"budget_exceeded"}}`,
 				http.StatusTooManyRequests)
 			return
@@ -229,6 +236,11 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	upResp, err := p.httpClient.Do(upReq)
 	if err != nil {
 		p.logger.Warn("upstream request failed", zap.Error(err))
+		go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusBadGateway, 0, 0, time.Since(start), map[string]string{
+			"af.error.type":     "upstream_request_failed",
+			"af.error.message":  err.Error(),
+			"af.span.step_type": "llm",
+		})
 		http.Error(w, "upstream request failed", http.StatusBadGateway)
 		return
 	}
@@ -286,9 +298,10 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	duration := time.Since(start)
 
 	// 7. Record span (non-blocking, best-effort).
-	if upResp.StatusCode == http.StatusOK {
-		go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, inputTokens, outputTokens, duration, extraAttrs)
+	if upResp.StatusCode >= 400 {
+		extraAttrs["af.error.type"] = classifyProxyStatus(upResp.StatusCode)
 	}
+	go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, upResp.StatusCode, inputTokens, outputTokens, duration, extraAttrs)
 }
 
 // handleStreaming forwards SSE chunks as they arrive, buffering them for usage parsing.
@@ -323,7 +336,7 @@ func (p *LLMProxy) handleStreaming(w http.ResponseWriter, resp *http.Response, p
 }
 
 // recordSpan writes a single proxy span to PostgreSQL.
-func (p *LLMProxy) recordSpan(traceID, spanID, tenantID, provider, model, vkPrefix string, inputTokens, outputTokens int64, duration time.Duration, extraAttrs map[string]string) {
+func (p *LLMProxy) recordSpan(traceID, spanID, tenantID, provider, model, vkPrefix string, statusCode int, inputTokens, outputTokens int64, duration time.Duration, extraAttrs map[string]string) {
 	now := time.Now()
 	if traceID == "" {
 		traceID = newID()
@@ -348,7 +361,7 @@ func (p *LLMProxy) recordSpan(traceID, spanID, tenantID, provider, model, vkPref
 		Framework:    "proxy",
 		StartTimeNs:  now.Add(-duration).UnixNano(),
 		DurationNs:   duration.Nanoseconds(),
-		StatusCode:   200,
+		StatusCode:   statusCode,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
 		CostUSD:      costUSD,
@@ -378,6 +391,21 @@ func (p *LLMProxy) recordSpan(traceID, spanID, tenantID, provider, model, vkPref
 	defer cancel()
 	if err := p.store.BulkInsertSpans(ctx, []models.Span{span}); err != nil {
 		p.logger.Warn("failed to record proxy span", zap.Error(err))
+	}
+}
+
+func classifyProxyStatus(statusCode int) string {
+	switch {
+	case statusCode == http.StatusForbidden:
+		return "policy_denied"
+	case statusCode == http.StatusTooManyRequests:
+		return "budget_exceeded"
+	case statusCode >= 500:
+		return "upstream_error"
+	case statusCode >= 400:
+		return "client_error"
+	default:
+		return ""
 	}
 }
 

@@ -1,6 +1,6 @@
 """
 E2E Pipeline Tests — AgentFabric v1.0.0 GA
-Tests the full flow: Agent SDK -> Collector -> af-core -> API Gateway
+Tests the current central flow: Agent SDK -> Collector -> API Gateway
 
 In CI: services are mocked using pytest fixtures (see conftest.py).
 In staging: set AF_TEST_MODE=integration to hit real services.

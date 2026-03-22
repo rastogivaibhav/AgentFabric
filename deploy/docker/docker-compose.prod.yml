@@ -15,7 +15,9 @@
 # Required environment variables (fail-fast if missing):
 #   AF_JWT_SECRET          — minimum 32-byte random secret
 #   AF_ADMIN_PASSWORD      — strong admin password
+#   AF_VAULT_KEY           — 64-char hex key for provider-key encryption
 #   AF_CORS_ORIGINS        — your portal domain (e.g. https://app.agentfabric.io)
+#   AF_GATEWAY_AUTH_TOKEN  — collector -> gateway ingest bearer token
 #   DATABASE_URL           — production PostgreSQL DSN with sslmode=require
 #   REDIS_URL              — production Redis URL
 #   POSTGRES_PASSWORD      — PostgreSQL superuser password (for the DB container)
@@ -51,6 +53,7 @@ services:
       AF_DEBUG: "false"
       AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
       AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
+      AF_GATEWAY_AUTH_TOKEN: ${AF_GATEWAY_AUTH_TOKEN:?AF_GATEWAY_AUTH_TOKEN must be set for production}
       # Tighten rate limits for production load profile
       AF_RATE_LIMIT_SPANS_PER_SECOND: "${AF_RATE_LIMIT_SPANS_PER_SECOND:-10000}"
       AF_PROCESSOR_WORKERS: "${AF_PROCESSOR_WORKERS:-8}"
@@ -78,8 +81,6 @@ services:
       # AF_OIDC_REDIRECT_URI:  "${AF_OIDC_REDIRECT_URI:-}"
       # AF_OIDC_LOGOUT_URL:    "${AF_OIDC_LOGOUT_URL:-}"
     restart: always
-
-  # ─── af-core: production Rust core ─────────────────────────────────────────
   # ─── Portal: production build pointing at the live API ─────────────────────
   portal:
     build:

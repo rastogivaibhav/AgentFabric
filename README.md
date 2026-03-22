@@ -148,6 +148,21 @@ The gateway also supports:
 - JWT key rotation through `AF_JWT_SECRETS`
 - strict config validation through `AF_ENV=production` or `AF_STRICT_CONFIG=true`
 
+## Central Deployment Model
+
+AgentFabric is designed to be deployed centrally for an org, business unit, or department:
+- a shared `api-gateway`
+- one or more shared `collector` instances
+- a shared `portal`
+- shared PostgreSQL and Redis
+- many onboarded apps routing traffic through the SDK, OTLP, proxy, or netproxy
+
+Operational readiness endpoints:
+- gateway health: `GET /healthz`
+- gateway readiness: `GET /readyz`
+- collector health: `GET /healthz`
+- collector readiness: `GET /readyz`
+
 ## Provider Scope
 
 The current managed-key registration scope in the gateway is:
@@ -182,6 +197,15 @@ Common local endpoints:
 - collector OTLP HTTP: `http://localhost:4318`
 - portal: `http://localhost:3000`
 - hosted API docs: `http://localhost:8080/docs/swagger`
+
+## Coverage Model
+
+The platform gives centralized visibility for:
+- applications instrumented with the SDK
+- services emitting OTLP spans into the collector
+- LLM traffic routed through the proxy or netproxy
+
+It does not automatically observe every workstation or server in an organization without onboarding. This is an AI runtime governance platform, not a generic host-monitoring agent.
 
 ## Production Assets
 

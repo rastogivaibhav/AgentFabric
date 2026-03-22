@@ -22,6 +22,7 @@ func TestLoad_StrictProductionAcceptsJWTSecret(t *testing.T) {
 	t.Setenv("AF_STRICT_CONFIG", "")
 	t.Setenv("AF_JWT_SECRET", "collector-secret")
 	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
 
 	cfg, err := Load()
 	if err != nil {
@@ -29,6 +30,35 @@ func TestLoad_StrictProductionAcceptsJWTSecret(t *testing.T) {
 	}
 	if cfg.Auth.JWTSecret != "collector-secret" {
 		t.Fatalf("expected AF_JWT_SECRET to be preserved, got %q", cfg.Auth.JWTSecret)
+	}
+}
+
+func TestLoad_StrictProductionRequiresGatewayAuthToken(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("AF_JWT_SECRET", "collector-secret")
+	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected production config without AF_GATEWAY_AUTH_TOKEN to fail")
+	}
+}
+
+func TestLoad_StrictProductionRequiresTLSFilesWhenEnabled(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("AF_JWT_SECRET", "collector-secret")
+	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("AF_TLS_ENABLED", "true")
+	t.Setenv("AF_TLS_CERT_FILE", "")
+	t.Setenv("AF_TLS_KEY_FILE", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected production config with TLS enabled and no files to fail")
 	}
 }
 

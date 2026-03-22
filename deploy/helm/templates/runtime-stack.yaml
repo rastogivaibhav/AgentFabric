@@ -14,6 +14,7 @@ data:
   AF_AUTH_REQUIRE_AUTH: "true"
   AF_DEBUG: "false"
   AF_PROCESSOR_WORKERS: {{ .Values.collector.env.AF_PROCESSOR_WORKERS | default "4" | quote }}
+  AF_RATE_LIMIT_SPANS_PER_SECOND: {{ .Values.collector.env.AF_RATE_LIMIT_SPANS_PER_SECOND | default "10000" | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -49,8 +50,25 @@ spec:
             - name: AF_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: {{ .Values.secrets.name }}
                   key: jwt-secret
+            - name: AF_GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: gateway-auth-token
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: otlp-http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: otlp-http
+            initialDelaySeconds: 10
+            periodSeconds: 20
           resources:
             {{- toYaml .Values.collector.resources | nindent 12 }}
 ---
@@ -110,30 +128,47 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: {{ .Values.secrets.name }}
                   key: database-url
             - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: {{ .Values.secrets.name }}
                   key: redis-url
             - name: AF_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: {{ .Values.secrets.name }}
                   key: jwt-secret
             - name: AF_JWT_SECRETS
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: {{ .Values.secrets.name }}
                   key: jwt-secrets
             - name: AF_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: {{ .Values.secrets.name }}
                   key: admin-password
+            - name: AF_VAULT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: vault-key
             - name: AF_CORS_ORIGINS
               value: {{ join "," .Values.api.cors.allowedOrigins | quote }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
 ---
@@ -226,6 +261,18 @@ spec:
           ports:
             - name: http
               containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
           resources:
             {{- toYaml .Values.portal.resources | nindent 12 }}
 ---

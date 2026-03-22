@@ -807,6 +807,39 @@ func (s *PostgresStore) ListAuditEntries(ctx context.Context, tenantID string, l
 	return entries, nil
 }
 
+func (s *PostgresStore) ListAuditEntriesForTrace(ctx context.Context, tenantID, traceID string) ([]AuditEntry, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, decision_id, trace_id, span_id,
+		       policy_name, result, reason, tenant_id, evaluated_at,
+		       COALESCE(previous_hash,''), COALESCE(entry_hash,'')
+		FROM policy_audit_log
+		WHERE tenant_id = $1 AND trace_id = $2
+		ORDER BY id ASC
+		LIMIT 500
+	`, tenantID, traceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		if err := rows.Scan(
+			&e.ID, &e.DecisionID, &e.TraceID, &e.SpanID,
+			&e.PolicyName, &e.Result, &e.Reason, &e.TenantID, &e.EvaluatedAt,
+			&e.PreviousHash, &e.EntryHash,
+		); err != nil {
+			continue
+		}
+		entries = append(entries, e)
+	}
+	if entries == nil {
+		entries = []AuditEntry{}
+	}
+	return entries, rows.Err()
+}
+
 // VerifyAuditChain replays the SHA-256 hash chain for a tenant and reports
 // the first broken link, if any. This is the Go equivalent of af-core's
 // AuditWriter.verify_chain().

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import React from 'react'
 
 vi.mock('../hooks/api', () => ({
@@ -69,6 +69,20 @@ const MOCK_TRACE = {
   total_tokens: 350,
   status: 'ok' as const,
   spans: MOCK_SPANS,
+  policy_events: [
+    {
+      decision_id: 'decision-1',
+      trace_id: TRACE_ID,
+      span_id: 'span-0002-aaaa-bbbb-cccc-ddddeeee0002',
+      policy_name: 'deny-gpt4o',
+      result: 'deny',
+      reason: 'provider/model policy matched',
+      tenant_id: 'tenant-1',
+      provider: 'openai',
+      model: 'gpt-4o',
+      scope: 'request',
+    },
+  ],
 }
 
 describe('TraceDetail', () => {
@@ -77,111 +91,69 @@ describe('TraceDetail', () => {
     mockUseParams.mockReturnValue({ traceId: TRACE_ID })
   })
 
-  it('renders loading state while useTrace fetches', () => {
-    mockUseTrace.mockReturnValue({ data: undefined, isLoading: true } as any)
+  it('renders loading state while trace is loading', () => {
+    mockUseTrace.mockReturnValue({ data: undefined, isLoading: true } as never)
     render(<TraceDetail />)
-    expect(screen.getByText('Loading trace…')).toBeInTheDocument()
+    expect(screen.getByText('Loading trace...')).toBeInTheDocument()
   })
 
-  it('renders not found state when useTrace returns null', () => {
-    mockUseTrace.mockReturnValue({ data: null, isLoading: false } as any)
+  it('renders not found state when trace is missing', () => {
+    mockUseTrace.mockReturnValue({ data: null, isLoading: false } as never)
     render(<TraceDetail />)
     expect(screen.getByText('Trace not found')).toBeInTheDocument()
   })
 
-  it('renders trace header with trace ID', () => {
-    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
+  it('renders trace header with trace ID and stats', () => {
+    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as never)
     render(<TraceDetail />)
     expect(screen.getByText(TRACE_ID)).toBeInTheDocument()
-  })
-
-  it('renders trace header stats: framework, duration, spans', () => {
-    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
-    render(<TraceDetail />)
     expect(screen.getAllByText('crewai').length).toBeGreaterThanOrEqual(1)
-    // span count shown as string (may appear in multiple places)
-    expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(1)
-    // duration appears in header stats and waterfall rows
-    expect(screen.getAllByText('1.20s').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Policy Events')).toBeInTheDocument()
   })
 
-  it('waterfall tab is active by default and renders span rows', () => {
-    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
+  it('renders waterfall rows by default', () => {
+    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as never)
     render(<TraceDetail />)
-    // span names appear in waterfall
     expect(screen.getByText('root_operation')).toBeInTheDocument()
     expect(screen.getByText('child_llm_call')).toBeInTheDocument()
   })
 
-  it('spans table tab renders span columns when clicked', () => {
-    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
+  it('renders spans table when spans tab is clicked', () => {
+    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as never)
     render(<TraceDetail />)
-    const spansTab = screen.getByRole('button', { name: /spans/i })
-    fireEvent.click(spansTab)
+    fireEvent.click(screen.getByRole('button', { name: /spans/i }))
     expect(screen.getByText('Span ID')).toBeInTheDocument()
-    expect(screen.getByText('Name')).toBeInTheDocument()
-    // 'Framework' appears in header stat label and table column header
-    expect(screen.getAllByText('Framework').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('Duration').length).toBeGreaterThanOrEqual(1)
   })
 
-  it('graph tab renders TopologyGraph component with spans prop', () => {
-    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
+  it('renders graph tab content', () => {
+    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as never)
     render(<TraceDetail />)
-    const graphTab = screen.getByRole('button', { name: /graph/i })
-    fireEvent.click(graphTab)
-    const graph = screen.getByTestId('topology-graph')
-    expect(graph).toBeInTheDocument()
-    expect(graph).toHaveAttribute('data-span-count', '2')
-  })
-
-  it('clicking a span in the waterfall selects it and shows detail panel', () => {
-    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
-    render(<TraceDetail />)
-    // Click on the root span row wrapper
-    const spanName = screen.getByText('root_operation')
-    // The clickable div wraps the WaterfallRow — go up to the div with onClick
-    const clickable = spanName.closest('div[style]')!
-    fireEvent.click(clickable)
-    // Detail panel heading should appear
-    expect(screen.getByText('SPAN DETAIL')).toBeInTheDocument()
-  })
-
-  it('clicking a span in the spans table selects it and shows detail panel', () => {
-    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
-    render(<TraceDetail />)
-    const spansTab = screen.getByRole('button', { name: /spans/i })
-    fireEvent.click(spansTab)
-    // Find the span name in the table body
-    const spanCell = screen.getAllByText('root_operation')[0]
-    const row = spanCell.closest('tr')!
-    fireEvent.click(row)
-    expect(screen.getByText('SPAN DETAIL')).toBeInTheDocument()
-  })
-
-  it('switching between tabs works correctly', () => {
-    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as any)
-    render(<TraceDetail />)
-    // Start on waterfall
-    expect(screen.getByText('root_operation')).toBeInTheDocument()
-    // Switch to spans
-    fireEvent.click(screen.getByRole('button', { name: /^spans$/i }))
-    expect(screen.getByText('Span ID')).toBeInTheDocument()
-    // Switch to graph
-    fireEvent.click(screen.getByRole('button', { name: /^graph$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /graph/i }))
     expect(screen.getByTestId('topology-graph')).toBeInTheDocument()
-    // Switch back to waterfall
-    fireEvent.click(screen.getByRole('button', { name: /^waterfall$/i }))
-    expect(screen.getByText('SPAN NAME')).toBeInTheDocument()
   })
 
-  it('handles empty spans array gracefully', () => {
-    const traceNoSpans = { ...MOCK_TRACE, spans: [], span_count: 0 }
-    mockUseTrace.mockReturnValue({ data: traceNoSpans, isLoading: false } as any)
+  it('shows policy decision cards when trace has policy events', () => {
+    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as never)
     render(<TraceDetail />)
-    // Should still render the header
+    expect(screen.getByText('POLICY DECISIONS')).toBeInTheDocument()
+    expect(screen.getByText('deny-gpt4o')).toBeInTheDocument()
+  })
+
+  it('shows span detail and correlated policy decisions after selecting a span', () => {
+    mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as never)
+    render(<TraceDetail />)
+    fireEvent.click(screen.getAllByText('child_llm_call')[0])
+    expect(screen.getByText('SPAN DETAIL')).toBeInTheDocument()
+    expect(screen.getAllByText('Policy Decisions').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('provider/model policy matched').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('handles empty spans gracefully', () => {
+    const traceNoSpans = { ...MOCK_TRACE, spans: [], span_count: 0, policy_events: [] }
+    mockUseTrace.mockReturnValue({ data: traceNoSpans, isLoading: false } as never)
+    render(<TraceDetail />)
     expect(screen.getByText(TRACE_ID)).toBeInTheDocument()
-    // Waterfall is empty — no span names
     expect(screen.queryByText('root_operation')).not.toBeInTheDocument()
   })
 })

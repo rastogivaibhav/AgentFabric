@@ -23,7 +23,7 @@ bash scripts/setup-local.sh
 Both commands:
 - create `.env.local` if needed
 - start the local Docker stack
-- wait for gateway and collector health
+- wait for gateway and collector health/readiness
 - seed demo pricing and policy rules
 
 ## Local URLs
@@ -35,6 +35,8 @@ Both commands:
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:9091`
 - Jaeger: `http://localhost:16686`
+- Gateway readiness: `http://localhost:8080/readyz`
+- Collector readiness: `http://localhost:4318/readyz`
 
 ## Demo seed content
 
@@ -87,3 +89,12 @@ macOS / Linux:
 ```bash
 bash scripts/run-release-candidate-validation.sh
 ```
+
+## What gets covered
+
+You will see centralized AI traffic only for workloads you onboard through one of these paths:
+- Python SDK auto-instrumentation
+- OTLP spans sent to the collector
+- LLM calls sent through proxy or netproxy
+
+The local stack is validating AI runtime observability and governance, not full machine monitoring.

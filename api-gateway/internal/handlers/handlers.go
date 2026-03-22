@@ -111,26 +111,47 @@ func (h *Handler) writeAdminAudit(r *http.Request, category, action, targetType,
 // Returns 200 {"status":"ok"} when all deps are reachable.
 // Returns 503 {"status":"degraded","error":"..."} if any dep fails.
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
+	h.writeReadiness(w, r, false)
+}
+
+func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
+	h.writeReadiness(w, r, true)
+}
+
+func (h *Handler) writeReadiness(w http.ResponseWriter, r *http.Request, ready bool) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
+	response := map[string]any{
+		"status": "ok",
+		"checks": map[string]string{
+			"postgres": "ok",
+			"redis":    "ok",
+		},
+	}
+
 	if err := h.pg.Ping(ctx); err != nil {
-		h.logger.Warn("healthz: postgres ping failed", zap.Error(err))
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"status": "degraded",
-			"error":  "postgres unavailable",
-		})
+		h.logger.Warn("readiness: postgres ping failed", zap.Error(err), zap.Bool("ready", ready))
+		response["status"] = "degraded"
+		response["error"] = "postgres unavailable"
+		response["checks"].(map[string]string)["postgres"] = "unavailable"
+		writeJSON(w, http.StatusServiceUnavailable, response)
 		return
 	}
 	if err := h.redis.Ping(ctx); err != nil {
-		h.logger.Warn("healthz: redis ping failed", zap.Error(err))
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"status": "degraded",
-			"error":  "redis unavailable",
-		})
+		h.logger.Warn("readiness: redis ping failed", zap.Error(err), zap.Bool("ready", ready))
+		response["status"] = "degraded"
+		response["error"] = "redis unavailable"
+		response["checks"].(map[string]string)["redis"] = "unavailable"
+		writeJSON(w, http.StatusServiceUnavailable, response)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	if ready {
+		response["mode"] = "ready"
+	} else {
+		response["mode"] = "health"
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 // ─── Ingest (internal, called by collector) ──────────────────────────────────
@@ -262,6 +283,11 @@ func (h *Handler) GetTrace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	trace = buildTrace(traceID, spans)
+	if err := h.attachTracePolicyEvents(r.Context(), tenantID, &trace); err != nil {
+		h.logger.Error("load trace policy events", zap.String("trace_id", traceID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to load trace policy evidence")
+		return
+	}
 	h.redis.SetJSON(r.Context(), cacheKey, trace, 5*time.Minute)
 	writeJSON(w, http.StatusOK, trace)
 }
@@ -279,13 +305,23 @@ func (h *Handler) GetTraceGraph(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetTraceTimeline(w http.ResponseWriter, r *http.Request) {
 	traceID := chi.URLParam(r, "traceId")
-	spans, err := h.pg.GetTraceSpans(r.Context(), traceID, tenantFromCtx(r))
+	tenantID := tenantFromCtx(r)
+	spans, err := h.pg.GetTraceSpans(r.Context(), traceID, tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	decorateSpans(spans)
-	writeJSON(w, http.StatusOK, map[string]interface{}{"spans": spans})
+	policyEvents, err := h.tracePolicyEvents(r.Context(), tenantID, traceID, spans)
+	if err != nil {
+		h.logger.Error("load trace timeline policy events", zap.String("trace_id", traceID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to load trace policy evidence")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"spans":         spans,
+		"policy_events": policyEvents,
+	})
 }
 
 func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {
@@ -757,6 +793,62 @@ func buildTrace(traceID string, spans []models.Span) models.Trace {
 	return t
 }
 
+func (h *Handler) attachTracePolicyEvents(ctx context.Context, tenantID string, trace *models.Trace) error {
+	if trace == nil || trace.ID == "" {
+		return nil
+	}
+	policyEvents, err := h.tracePolicyEvents(ctx, tenantID, trace.ID, trace.Spans)
+	if err != nil {
+		return err
+	}
+	trace.PolicyEvents = policyEvents
+	return nil
+}
+
+func (h *Handler) tracePolicyEvents(ctx context.Context, tenantID, traceID string, spans []models.Span) ([]models.PolicyEvent, error) {
+	entries, err := h.pg.ListAuditEntriesForTrace(ctx, tenantID, traceID)
+	if err != nil {
+		return nil, err
+	}
+	return auditEntriesToPolicyEvents(entries, spans), nil
+}
+
+func auditEntriesToPolicyEvents(entries []store.AuditEntry, spans []models.Span) []models.PolicyEvent {
+	if len(entries) == 0 {
+		return nil
+	}
+	spanByID := make(map[string]models.Span, len(spans))
+	for _, span := range spans {
+		spanByID[span.ID] = span
+	}
+
+	events := make([]models.PolicyEvent, 0, len(entries))
+	for _, entry := range entries {
+		event := models.PolicyEvent{
+			DecisionID: entry.DecisionID,
+			TraceID:    entry.TraceID,
+			SpanID:     entry.SpanID,
+			PolicyName: entry.PolicyName,
+			Result:     entry.Result,
+			Reason:     entry.Reason,
+			TenantID:   entry.TenantID,
+		}
+		if span, ok := spanByID[entry.SpanID]; ok {
+			event.Provider = span.Provider
+			event.Model = span.Model
+			event.Scope = firstNonEmpty(span.Attributes["af.policy.scope"], span.Attributes["policy.scope"])
+			if matched := firstNonEmpty(span.Attributes["af.policy.matched"], span.Attributes["policy.matched"]); matched != "" {
+				event.Matched = splitCSV(matched)
+			}
+			if redactions := firstInt(span.Attributes, "af.policy.redactions", "policy.redactions"); redactions > 0 {
+				event.Redactions = redactions
+			}
+		}
+		events = append(events, event)
+	}
+	return events
+}
+
 func buildTopologyGraph(spans []models.Span) models.TopologyGraph {
 	nodes := map[string]models.TopologyNode{}
 	edges := map[string]*models.TopologyEdge{}
@@ -922,6 +1014,54 @@ func appendSortedSet(values map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func splitCSV(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func previewPolicyDecision(decision policy.Decision) models.PolicyPreviewDecision {
+	preview := models.PolicyPreviewDecision{
+		Matched:      decision.Matched,
+		RuleID:       decision.RuleID,
+		PolicyName:   decision.PolicyName,
+		Action:       decision.Action,
+		Reason:       decision.Reason,
+		Scope:        decision.Scope,
+		MatchedNames: append([]string(nil), decision.MatchedNames...),
+		Redactions:   decision.Redactions,
+	}
+	if len(decision.RedactedBody) > 0 {
+		preview.RedactedPreview = previewString(decision.RedactedBody, 220)
+	}
+	return preview
+}
+
+func previewString(body []byte, limit int) string {
+	if len(body) == 0 {
+		return ""
+	}
+	text := strings.TrimSpace(string(body))
+	if text == "" {
+		return ""
+	}
+	if len(text) <= limit {
+		return text
+	}
+	return text[:limit] + "..."
 }
 
 func parseIntOr(s string, def int) int {
@@ -1182,6 +1322,51 @@ func (h *Handler) DeletePolicyRule(w http.ResponseWriter, r *http.Request) {
 	}
 	h.writeAdminAudit(r, "policy", "delete", "policy_rule", strconv.FormatInt(id, 10), "success", existing)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) PreviewPolicyRule(w http.ResponseWriter, r *http.Request) {
+	if h.policyEngine == nil {
+		writeError(w, http.StatusServiceUnavailable, "policy engine unavailable")
+		return
+	}
+
+	var req models.PolicyPreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	req.Provider = strings.ToLower(strings.TrimSpace(req.Provider))
+	req.Model = strings.ToLower(strings.TrimSpace(req.Model))
+	req.Environment = strings.ToLower(strings.TrimSpace(req.Environment))
+
+	resp := models.PolicyPreviewResponse{
+		Traffic: previewPolicyDecision(h.policyEngine.EvaluateTraffic(policy.TrafficInput{
+			TenantID:        strings.TrimSpace(req.TenantID),
+			Provider:        req.Provider,
+			Model:           req.Model,
+			Environment:     req.Environment,
+			EstimatedTokens: req.EstimatedTokens,
+		})),
+		RequestDLP: previewPolicyDecision(h.policyEngine.EvaluateDLP(policy.DLPInput{
+			TenantID:    strings.TrimSpace(req.TenantID),
+			Provider:    req.Provider,
+			Model:       req.Model,
+			Environment: req.Environment,
+			Scope:       "request",
+			Body:        []byte(req.RequestBody),
+		})),
+		ResponseDLP: previewPolicyDecision(h.policyEngine.EvaluateDLP(policy.DLPInput{
+			TenantID:    strings.TrimSpace(req.TenantID),
+			Provider:    req.Provider,
+			Model:       req.Model,
+			Environment: req.Environment,
+			Scope:       "response",
+			Body:        []byte(req.ResponseBody),
+		})),
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) PreviewPricingRule(w http.ResponseWriter, r *http.Request) {

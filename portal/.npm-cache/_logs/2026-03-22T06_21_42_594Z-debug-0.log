@@ -1,0 +1,24 @@
+0 verbose cli C:\nvm4w\nodejs\node.exe C:\nvm4w\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.8.0
+2 info using node@v24.13.1
+3 silly config load:file:C:\Users\vrast\AppData\Local\nvm\v24.13.1\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\88e587945ba79cc7\.npmrc
+5 silly config load:file:C:\Users\vrast\.npmrc
+6 silly config load:file:C:\Users\vrast\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm test --run
+8 verbose argv "test" "--" "--run"
+9 verbose logfile logs-max:10 dir:C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\88e587945ba79cc7\.npm-cache\_logs\2026-03-22T06_21_42_594Z-
+10 verbose logfile C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\88e587945ba79cc7\.npm-cache\_logs\2026-03-22T06_21_42_594Z-debug-0.log
+11 silly logfile done cleaning log files
+12 http fetch GET 200 https://registry.npmjs.org/npm 371ms
+13 verbose cwd C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\88e587945ba79cc7
+14 verbose os Windows_NT 10.0.26200
+15 verbose node v24.13.1
+16 verbose npm  v11.8.0
+17 notice
+17 notice New minor version of npm available! 11.8.0 -> 11.12.0
+17 notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.0
+17 notice To update run: npm install -g npm@11.12.0
+17 notice  { force: true, Symbol(proc-log.meta): true }
+18 verbose exit 1
+19 verbose code 1

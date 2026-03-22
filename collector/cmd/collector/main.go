@@ -83,10 +83,12 @@ func main() {
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/v1/traces", receiver.NewHTTPOTLPHandler(spanProcessor, jwtValidator, logger))
 	httpMux.Handle("/metrics", promhttp.Handler())
-	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok","version":"1.0.0"}`))
-	})
+		w.Write([]byte(`{"status":"ok","version":"1.0.0","checks":{"gateway_export":"configured"}}`))
+	}
+	httpMux.HandleFunc("/healthz", healthHandler)
+	httpMux.HandleFunc("/readyz", healthHandler)
 
 	httpServer := &http.Server{
 		Addr:         cfg.HTTP.Addr,

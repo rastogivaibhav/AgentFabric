@@ -29,6 +29,7 @@ Required production inputs:
 - `AF_JWT_SECRET`
 - `AF_ADMIN_PASSWORD`
 - `AF_VAULT_KEY`
+- `AF_GATEWAY_AUTH_TOKEN`
 - `DATABASE_URL`
 - `REDIS_URL`
 - `AF_CORS_ORIGINS`
@@ -48,14 +49,31 @@ For the current release scope, treat PostgreSQL and Redis as required backing se
 ```text
 portal -> api-gateway -> postgres
                     -> redis
-collector -> api-gateway
-clients -> proxy/netproxy -> api-gateway
+collector ---------> api-gateway
+apps --------------> collector (OTLP)
+apps --------------> api-gateway proxy / netproxy
 ```
+
+This is a central deployment model. One shared control plane can serve many teams, environments, and onboarded workloads inside the same org or department.
+
+## Coverage boundaries
+
+The current product gives centralized visibility for:
+- apps instrumented with the SDK
+- services exporting OTLP spans
+- LLM traffic routed through proxy or netproxy
+
+It does not automatically monitor every host in an enterprise without onboarding those workloads into the telemetry or proxy path.
+
+## Readiness endpoints
+
+- gateway: `GET /healthz`, `GET /readyz`
+- collector: `GET /healthz`, `GET /readyz`
 
 ## Minimum release validation
 
 Run:
-- health checks
+- health and readiness checks
 - portal build
 - focused Go test suite
 - release candidate validation script

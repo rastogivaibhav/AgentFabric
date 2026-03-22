@@ -1,109 +1,16 @@
 global:
   image:
-    registry: ghcr.io/agentfabric
     pullPolicy: IfNotPresent
-  tenantId: "default"
   environment: "production"
 
-# ─── Image SHA pinning (SOC 2 / supply-chain security) ───────────────────────
-# All first-party images MUST have digest set before promoting to production.
-# To obtain a digest:
-#   docker pull ghcr.io/agentfabric/collector:1.0.0
-#   docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/agentfabric/collector:1.0.0
-# CI sets these automatically via scripts/pin-image-digests.sh on every release.
-# When digest is non-empty the rendered image ref becomes: repository:tag@sha256:...
-
-# ─── Collector DaemonSet ─────────────────────────────────────────────────────
 collector:
   enabled: true
   image:
     repository: ghcr.io/agentfabric/collector
     tag: "1.0.0"
-    # digest: "sha256:<set-by-ci>"  # uncomment and fill before production deploy
-
-  # RT-003: mTLS required in production
-  tls:
-    enabled: true
-    certSecretName: "agentfabric-collector-tls"
-    caSecretName: "agentfabric-ca"
-
-  # RT-001: SPIFFE/SPIRE workload identity
-  spiffe:
-    enabled: true
-    socketPath: "/run/spiffe/sockets/agent.sock"
-
-  ports:
-    otlpGRPC: 4317
-    otlpHTTP: 4318
-    metrics: 8888
-
-  resources:
-    requests:
-      cpu: 200m
-      memory: 256Mi
-    limits:
-      cpu: 1000m
-      memory: 1Gi
-
-  # Security context — principle of least privilege
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 10001
-    runAsGroup: 10001
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]
-      # eBPF requires NET_ADMIN and BPF — only add if eBPF enabled
-      # add: ["NET_ADMIN", "BPF", "PERFMON"]
-
-  # RT-006: Kafka buffer for durability
-  kafka:
-    enabled: true
-    brokers: "kafka:9092"
-    topic: "af.spans"
-
-  nodeSelector: {}
-  tolerations:
-    - operator: Exists  # DaemonSet on all nodes
-
   env:
-    AF_LOG_LEVEL: "info"
-    AF_BATCH_SIZE: "500"
-    AF_RATE_LIMIT_RPS: "10000"
-
-  envFromSecret:
-    AF_DATABASE_URL: "agentfabric-secrets"
-    AF_API_TOKENS: "agentfabric-secrets"
-
-  # NetworkPolicy — RT-003: isolate OTLP ports
-  networkPolicy:
-    enabled: true
-    ingressRules:
-      - from:
-          - namespaceSelector:
-              matchLabels:
-                agentfabric.io/allowed: "true"
-        ports:
-          - port: 4317
-          - port: 4318
-
-# ─── Processing Core (af-core) ───────────────────────────────────────────────
-afCore:
-  enabled: true
-  image:
-    repository: ghcr.io/agentfabric/af-core
-    tag: "1.0.0"
-    # digest: "sha256:<set-by-ci>"
-
-  # CONSTRAINT (v1.1.x): af-core MUST run as a single replica.
-  # AuditWriter.last_hash is held in process memory (Mutex<String>). Running
-  # more than one replica produces independent, diverged hash chains that
-  # break tamper-evidence guarantees on the audit log.
-  # v1.2.0 roadmap: migrate last_hash to PostgreSQL (advisory lock) so
-  # multi-replica deployments are safe.  See docs/runbooks/AUDIT_CHAIN_SINGLE_REPLICA.md.
-  replicas: 1
-
+    AF_PROCESSOR_WORKERS: "4"
+    AF_RATE_LIMIT_SPANS_PER_SECOND: "10000"
   resources:
     requests:
       cpu: 200m
@@ -112,65 +19,21 @@ afCore:
       cpu: 1000m
       memory: 1Gi
 
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 10002
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]
-
-  # RT-004: Separate service account from collector
-  serviceAccount:
-    create: true
-    name: "agentfabric-af-core"
-
-  # HPA disabled until v1.2.0 fixes the single-replica audit chain constraint.
-  # DO NOT set minReplicas > 1 until last_hash is backed by PostgreSQL.
-  hpa:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 1
-    targetCPUUtilizationPercentage: 70
-
-  podDisruptionBudget:
-    enabled: true
-    minAvailable: 1
-
-# ─── API Gateway ─────────────────────────────────────────────────────────────
 api:
   enabled: true
   image:
-    repository: ghcr.io/agentfabric/api
+    repository: ghcr.io/agentfabric/api-gateway
     tag: "1.0.0"
-    # digest: "sha256:<set-by-ci>"
-  replicas: 3
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  podDisruptionBudget:
-    enabled: true
-    minAvailable: 1
-
+  replicas: 2
   service:
-    type: ClusterIP
     port: 8080
-
+  cors:
+    allowedOrigins:
+      - "https://app.agentfabric.io"
   ingress:
-    enabled: true
+    enabled: false
     className: nginx
-    annotations:
-      nginx.ingress.kubernetes.io/ssl-redirect: "true"
-      nginx.ingress.kubernetes.io/rate-limit: "100"
-      # cert-manager annotation — added automatically when certManager.enabled=true.
-      # Uncomment or set via --set if managing the annotation outside this chart.
-      # cert-manager.io/cluster-issuer: agentfabric-letsencrypt
+    annotations: {}
     hosts:
       - host: api.agentfabric.io
         paths:
@@ -180,30 +43,36 @@ api:
       - secretName: agentfabric-api-tls
         hosts:
           - api.agentfabric.io
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
-  cors:
-    allowedOrigins:
-      - "https://app.agentfabric.io"
-
-  # RT-010: Multi-tenancy JWT config
-  auth:
-    jwtIssuer: "https://auth.agentfabric.io"
-    jwtAudience: "agentfabric-api"
-    # Zero-downtime secret rotation: set jwtSecrets to "new-secret,old-secret".
-    # When set, the gateway accepts tokens signed by any listed secret and issues
-    # new tokens signed with the first (active) secret.
-    # Sourced from the agentfabric-secrets K8s Secret key: jwt-secrets
-    jwtSecrets: ""
-
-# ─── Portal (React dashboard) ────────────────────────────────────────────────
 portal:
   enabled: true
   image:
     repository: ghcr.io/agentfabric/portal
     tag: "1.0.0"
-    # digest: "sha256:<set-by-ci>"
   replicas: 2
-
+  ingress:
+    enabled: false
+    className: nginx
+    annotations: {}
+    hosts:
+      - host: app.agentfabric.io
+    tls:
+      - secretName: agentfabric-portal-tls
+        hosts:
+          - app.agentfabric.io
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
   resources:
     requests:
       cpu: 50m
@@ -212,100 +81,19 @@ portal:
       cpu: 200m
       memory: 128Mi
 
-  podDisruptionBudget:
-    enabled: true
-    minAvailable: 1
+secrets:
+  name: agentfabric-secrets
 
-  ingress:
-    enabled: true
-    className: nginx
-    annotations:
-      nginx.ingress.kubernetes.io/ssl-redirect: "true"
-      # cert-manager.io/cluster-issuer: agentfabric-letsencrypt
-    hosts:
-      - host: app.agentfabric.io
-    tls:
-      - secretName: agentfabric-portal-tls
-        hosts:
-          - app.agentfabric.io
-
-# ─── cert-manager auto-TLS ───────────────────────────────────────────────────
 certManager:
-  # Set enabled: true to have Helm create the ClusterIssuer and Certificate
-  # CRDs automatically.  Requires cert-manager ≥ v1.14 to be installed in
-  # the cluster before `helm install / upgrade`.
   enabled: false
-
-  # Contact email for Let's Encrypt ACME certificate notifications.
   email: ""
-
   issuer:
-    # Set create: false to point to a pre-existing issuer (e.g. corporate CA).
     create: true
-    # name is used for both the Issuer resource and the issuerRef in Certificates.
     name: agentfabric-letsencrypt
-    # ClusterIssuer is cluster-scoped (recommended).
-    # Use Issuer if you need namespace isolation.
     kind: ClusterIssuer
-    # Production endpoint — switch to the staging URL during initial testing:
-    #   https://acme-staging-v02.api.letsencrypt.org/directory
     server: https://acme-v02.api.letsencrypt.org/directory
 
-# ─── Storage ─────────────────────────────────────────────────────────────────
-postgresql:
-  enabled: true
-  auth:
-    existingSecret: "agentfabric-pg-secret"
-  primary:
-    persistence:
-      size: 100Gi
-    resources:
-      requests:
-        memory: 1Gi
-        cpu: 500m
-    # RT-009: Enable WAL archiving for audit trail
-    extendedConfiguration: |
-      wal_level = replica
-      archive_mode = on
-      archive_command = 'test ! -f /var/lib/postgresql/archive/%f && cp %p /var/lib/postgresql/archive/%f'
-
-clickhouse:
-  enabled: true
-  persistence:
-    size: 500Gi
-  replicaCount: 3  # Replication for HA
-
-redis:
-  enabled: true
-  architecture: standalone
-  auth:
-    existingSecret: "agentfabric-redis-secret"
-
-kafka:
-  enabled: true  # RT-006 fix
-  replicaCount: 3
-  persistence:
-    size: 50Gi
-  config:
-    offsets.topic.replication.factor: 3
-    min.insync.replicas: 2
-    log.retention.hours: 168  # 7 days
-
-# ─── Monitoring ──────────────────────────────────────────────────────────────
 monitoring:
-  serviceMonitor:
-    enabled: true
-    namespace: monitoring
   dashboards:
     enabled: true
-    grafanaNamespace: monitoring
-
-# ─── RBAC ────────────────────────────────────────────────────────────────────
-rbac:
-  create: true
-
-# Global PDB default — individual services can override via their own
-# podDisruptionBudget section (api, afCore, portal above).
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 1
+  grafanaNamespace: monitoring

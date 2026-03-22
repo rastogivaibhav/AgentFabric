@@ -181,6 +181,7 @@ func main() {
 
 	// ─── Health & metrics ────────────────────────────────────────────────────
 	r.Get("/healthz", h.Health)
+	r.Get("/readyz", h.Ready)
 	r.Handle("/metrics", promhttp.Handler())
 	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/docs/swagger", http.StatusFound)
@@ -307,6 +308,7 @@ func main() {
 		r.Route("/policies", func(r chi.Router) {
 			r.With(middleware.RequireRole("admin")).Get("/", h.ListPolicyRules)
 			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertPolicyRule)
+			r.With(middleware.RequireRole("admin")).Post("/preview", h.PreviewPolicyRule)
 			r.With(middleware.RequireRole("admin")).Delete("/{ruleId}", h.DeletePolicyRule)
 		})
 

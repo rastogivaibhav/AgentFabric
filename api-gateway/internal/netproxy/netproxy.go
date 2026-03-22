@@ -238,10 +238,11 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 		if trafficDecision.Matched {
 			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", trafficDecision)
 			if trafficDecision.Action == "deny" {
-				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, 0, 0, 0, map[string]string{
+				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusForbidden, 0, 0, 0, map[string]string{
 					"af.policy.blocked":  "true",
 					"af.policy.reason":   trafficDecision.Reason,
 					"af.policy.decision": trafficDecision.Action,
+					"af.error.type":      "policy_denied",
 					"af.span.step_type":  "policy",
 				})
 				http.Error(w, `{"error":{"message":"request blocked by policy","type":"policy_denied"}}`, http.StatusForbidden)
@@ -261,10 +262,11 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", dlpDecision)
 			switch dlpDecision.Action {
 			case "deny":
-				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, 0, 0, 0, map[string]string{
+				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusForbidden, 0, 0, 0, map[string]string{
 					"af.policy.blocked":  "true",
 					"af.policy.reason":   dlpDecision.Reason,
 					"af.policy.decision": dlpDecision.Action,
+					"af.error.type":      "policy_denied",
 					"af.span.step_type":  "policy",
 				})
 				http.Error(w, `{"error":{"message":"request blocked by DLP policy","type":"policy_denied"}}`, http.StatusForbidden)
@@ -280,6 +282,11 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 		_, _, estimatedCostUSD := proxy.ComputeEstimatedCostForTenant(provider, model, tenantID, time.Now().UTC(), estimatedTokens)
 		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
+			go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusTooManyRequests, 0, 0, 0, map[string]string{
+				"af.error.type":     "budget_exceeded",
+				"af.policy.blocked": "true",
+				"af.span.step_type": "policy",
+			})
 			http.Error(w,
 				`{"error":{"message":"token budget exceeded","type":"budget_exceeded"}}`,
 				http.StatusTooManyRequests)
@@ -307,6 +314,11 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 	if err != nil {
 		p.logger.Warn("netproxy: upstream request failed",
 			zap.String("host", host), zap.Error(err))
+		go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusBadGateway, 0, 0, time.Since(start), map[string]string{
+			"af.error.type":     "upstream_request_failed",
+			"af.error.message":  err.Error(),
+			"af.span.step_type": "llm",
+		})
 		http.Error(w, "upstream request failed", http.StatusBadGateway)
 		return
 	}
@@ -362,9 +374,12 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 
 	duration := time.Since(start)
 
-	// 8. Record span (best-effort, non-blocking) — only for successful requests.
-	if upResp.StatusCode == http.StatusOK && rawKey != "" {
-		go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, inputTokens, outputTokens, duration, extraAttrs)
+	// 8. Record span (best-effort, non-blocking) for all keyed requests.
+	if rawKey != "" {
+		if upResp.StatusCode >= 400 {
+			extraAttrs["af.error.type"] = classifyNetproxyStatus(upResp.StatusCode)
+		}
+		go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, upResp.StatusCode, inputTokens, outputTokens, duration, extraAttrs)
 	}
 }
 
@@ -426,7 +441,7 @@ func forwardStreaming(w http.ResponseWriter, resp *http.Response, parser proxy.P
 
 // ─── Span recording ───────────────────────────────────────────────────────────
 
-func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey string, inputTokens, outputTokens int64, duration time.Duration, extraAttrs map[string]string) {
+func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey string, statusCode int, inputTokens, outputTokens int64, duration time.Duration, extraAttrs map[string]string) {
 	now := time.Now()
 	if traceID == "" {
 		traceID = newID()
@@ -450,7 +465,7 @@ func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey
 		Framework:    "netproxy",
 		StartTimeNs:  now.Add(-duration).UnixNano(),
 		DurationNs:   duration.Nanoseconds(),
-		StatusCode:   200,
+		StatusCode:   statusCode,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
 		CostUSD:      totalCostUSD,
@@ -484,6 +499,21 @@ func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey
 	defer cancel()
 	if err := p.store.BulkInsertSpans(ctx, []models.Span{span}); err != nil {
 		p.logger.Warn("netproxy: failed to record span", zap.Error(err))
+	}
+}
+
+func classifyNetproxyStatus(statusCode int) string {
+	switch {
+	case statusCode == http.StatusForbidden:
+		return "policy_denied"
+	case statusCode == http.StatusTooManyRequests:
+		return "budget_exceeded"
+	case statusCode >= 500:
+		return "upstream_error"
+	case statusCode >= 400:
+		return "client_error"
+	default:
+		return ""
 	}
 }
 

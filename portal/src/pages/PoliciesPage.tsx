@@ -4,6 +4,7 @@ import {
   PolicyRule,
   useControlAudit,
   useDeletePolicyRule,
+  usePreviewPolicyRule,
   usePolicyRules,
   useUpsertPolicyRule,
 } from '../hooks/api'
@@ -31,7 +32,17 @@ export default function PoliciesPage() {
   const { data: audit } = useControlAudit(25)
   const upsert = useUpsertPolicyRule()
   const remove = useDeletePolicyRule()
+  const preview = usePreviewPolicyRule()
   const [form, setForm] = useState<PolicyRule>(emptyRule)
+  const [previewRequest, setPreviewRequest] = useState({
+    tenant_id: '',
+    provider: 'openai',
+    model: 'gpt-4o',
+    environment: 'production',
+    estimated_tokens: 128,
+    request_body: '',
+    response_body: '',
+  })
 
   const rules = useMemo(() => data?.items ?? [], [data])
 
@@ -210,6 +221,120 @@ export default function PoliciesPage() {
             </table>
           )}
         </div>
+      </div>
+
+      <div style={{ ...panelStyle, marginTop: 16 }}>
+        <div style={sectionLabel}>POLICY PREVIEW</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+          <label style={labelStyle}>
+            Tenant Override
+            <input
+              value={previewRequest.tenant_id}
+              onChange={e => setPreviewRequest(current => ({ ...current, tenant_id: e.target.value }))}
+              style={inputStyle}
+              placeholder="leave blank for global"
+            />
+          </label>
+          <label style={labelStyle}>
+            Provider
+            <input
+              value={previewRequest.provider}
+              onChange={e => setPreviewRequest(current => ({ ...current, provider: e.target.value }))}
+              style={inputStyle}
+            />
+          </label>
+          <label style={labelStyle}>
+            Model
+            <input
+              value={previewRequest.model}
+              onChange={e => setPreviewRequest(current => ({ ...current, model: e.target.value }))}
+              style={inputStyle}
+            />
+          </label>
+          <label style={labelStyle}>
+            Environment
+            <input
+              value={previewRequest.environment}
+              onChange={e => setPreviewRequest(current => ({ ...current, environment: e.target.value }))}
+              style={inputStyle}
+            />
+          </label>
+          <label style={labelStyle}>
+            Estimated Tokens
+            <input
+              type="number"
+              min={0}
+              value={previewRequest.estimated_tokens}
+              onChange={e => setPreviewRequest(current => ({ ...current, estimated_tokens: Number(e.target.value) }))}
+              style={inputStyle}
+            />
+          </label>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+          <label style={labelStyle}>
+            Request Body
+            <textarea
+              value={previewRequest.request_body}
+              onChange={e => setPreviewRequest(current => ({ ...current, request_body: e.target.value }))}
+              style={textareaStyle}
+              rows={4}
+            />
+          </label>
+          <label style={labelStyle}>
+            Response Body
+            <textarea
+              value={previewRequest.response_body}
+              onChange={e => setPreviewRequest(current => ({ ...current, response_body: e.target.value }))}
+              style={textareaStyle}
+              rows={4}
+            />
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <button
+            style={primaryBtn}
+            onClick={() =>
+              preview.mutate({
+                tenant_id: previewRequest.tenant_id.trim() || undefined,
+                provider: previewRequest.provider.trim().toLowerCase(),
+                model: previewRequest.model.trim().toLowerCase(),
+                environment: previewRequest.environment.trim().toLowerCase(),
+                estimated_tokens: previewRequest.estimated_tokens,
+                request_body: previewRequest.request_body,
+                response_body: previewRequest.response_body,
+              })
+            }
+            disabled={preview.isPending}
+          >
+            {preview.isPending ? 'Previewing...' : 'Preview Policy Match'}
+          </button>
+        </div>
+        {preview.isError && <div style={errorStyle}>Failed to preview policy decision.</div>}
+        {preview.data && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 16 }}>
+            {[
+              { label: 'Traffic', decision: preview.data.traffic },
+              { label: 'Request DLP', decision: preview.data.request_dlp },
+              { label: 'Response DLP', decision: preview.data.response_dlp },
+            ].map(({ label, decision }) => {
+              return (
+                <div key={label} style={{ border: '1px solid #0F1F35', borderRadius: 8, padding: 12, background: '#071525' }}>
+                  <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{label}</div>
+                  <div style={{ color: decision.matched ? '#10B981' : '#64748B', fontSize: 11, marginTop: 6 }}>
+                    {decision.matched ? `${decision.action || 'matched'}${decision.policy_name ? ` via ${decision.policy_name}` : ''}` : 'no matching rule'}
+                  </div>
+                  {decision.reason && <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 6 }}>{decision.reason}</div>}
+                  {decision.matched_names && decision.matched_names.length > 0 && (
+                    <div style={{ color: '#64748B', fontSize: 10, marginTop: 6 }}>detectors: {decision.matched_names.join(', ')}</div>
+                  )}
+                  {decision.redacted_preview && (
+                    <div style={{ color: '#CBD5E1', fontSize: 10, marginTop: 8, whiteSpace: 'pre-wrap' }}>{decision.redacted_preview}</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div style={{ ...panelStyle, marginTop: 16 }}>

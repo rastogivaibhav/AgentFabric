@@ -114,6 +114,9 @@ func Load() (*Config, error) {
 	if cfg.Auth.JWTSecret == "" {
 		cfg.Auth.JWTSecret = os.Getenv("AF_JWT_SECRET")
 	}
+	if cfg.Gateway.AuthToken == "" {
+		cfg.Gateway.AuthToken = os.Getenv("AF_GATEWAY_AUTH_TOKEN")
+	}
 
 	if err := validateConfig(&cfg); err != nil {
 		return nil, err
@@ -134,8 +137,22 @@ func validateConfig(cfg *Config) error {
 	if !strictConfigEnabled() {
 		return nil
 	}
+	if strings.TrimSpace(cfg.Gateway.Endpoint) == "" {
+		return fmt.Errorf("gateway.endpoint is required in production")
+	}
+	if strings.TrimSpace(cfg.Gateway.AuthToken) == "" {
+		return fmt.Errorf("gateway.auth_token is required in production")
+	}
 	if cfg.Auth.RequireAuth && strings.TrimSpace(cfg.Auth.JWTSecret) == "" {
 		return fmt.Errorf("AF_JWT_SECRET is required when auth.require_auth=true in production")
+	}
+	if cfg.TLS.Enabled {
+		if strings.TrimSpace(cfg.TLS.CertFile) == "" || strings.TrimSpace(cfg.TLS.KeyFile) == "" {
+			return fmt.Errorf("tls.cert_file and tls.key_file are required when tls.enabled=true in production")
+		}
+	}
+	if strings.TrimSpace(cfg.Auth.JWTSecret) == "dev-secret-change-in-production" {
+		return fmt.Errorf("AF_JWT_SECRET must not use the development sentinel in production")
 	}
 	return nil
 }
