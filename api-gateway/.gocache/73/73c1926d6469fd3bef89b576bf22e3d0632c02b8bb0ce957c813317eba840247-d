@@ -1,0 +1,71 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\proxy\rate_limits.go:1:1
+package proxy
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+type RateLimitError struct {
+	Scope string
+	Limit int
+}
+
+func (e *RateLimitError) Error() string {goCover_08ec89fa625c__98[0] = 1 ; goCover_08ec89fa625c__98[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__98[2] = 98 ; goCover_08ec89fa625c__98[3]++;
+	return fmt.Sprintf("%s rate limit exceeded (%d requests per minute)", e.Scope, e.Limit)
+}
+
+type rateLimitCounter struct {
+	Count   int
+	ResetAt time.Time
+}
+
+type requestRateLimiter struct {
+	mu       sync.Mutex
+	window   time.Duration
+	limits   map[string]int
+	counters map[string]rateLimitCounter
+}
+
+func newRequestRateLimiter() *requestRateLimiter {goCover_08ec89fa625c__99[0] = 1 ; goCover_08ec89fa625c__99[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__99[2] = 99 ; goCover_08ec89fa625c__99[3]++;
+	return &requestRateLimiter{
+		window: time.Minute,
+		limits: map[string]int{
+			"key":      120,
+			"user":     180,
+			"team":     300,
+			"tenant":   600,
+			"provider": 400,
+		},
+		counters: make(map[string]rateLimitCounter),
+	}
+}
+
+func (l *requestRateLimiter) Check(scopes map[string]string) error {goCover_08ec89fa625c__100[0] = 11 ; goCover_08ec89fa625c__100[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__100[2] = 100 ; goCover_08ec89fa625c__100[3]++;
+	if l == nil {goCover_08ec89fa625c__100[6]++;
+		return nil
+	}
+	goCover_08ec89fa625c__100[4]++;now := time.Now().UTC()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for scope, value := range scopes {goCover_08ec89fa625c__100[7]++;
+		limit := l.limits[scope]
+		trimmed := strings.TrimSpace(value)
+		if limit <= 0 || trimmed == "" {goCover_08ec89fa625c__100[11]++;
+			continue
+		}
+		goCover_08ec89fa625c__100[8]++;key := scope + ":" + trimmed
+		counter := l.counters[key]
+		if counter.ResetAt.IsZero() || now.After(counter.ResetAt) {goCover_08ec89fa625c__100[12]++;
+			counter = rateLimitCounter{ResetAt: now.Add(l.window)}
+		}
+		goCover_08ec89fa625c__100[9]++;if counter.Count >= limit {goCover_08ec89fa625c__100[13]++;
+			return &RateLimitError{Scope: scope, Limit: limit}
+		}
+		goCover_08ec89fa625c__100[10]++;counter.Count++
+		l.counters[key] = counter
+	}
+	goCover_08ec89fa625c__100[5]++;return nil
+}

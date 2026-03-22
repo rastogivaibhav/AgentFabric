@@ -1,0 +1,63 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\policy\guards_unsafe_content.go:1:1
+package policy
+
+import (
+	"regexp"
+	"strings"
+
+	"github.com/agentfabric/api-gateway/internal/models"
+)
+
+var unsafeCategoryPatterns = map[string]*regexp.Regexp{
+	"violence":  regexp.MustCompile(`(?i)(build a bomb|kill someone|weaponize|violent attack)`),
+	"self_harm": regexp.MustCompile(`(?i)(suicide plan|self-harm|overdose intentionally)`),
+	"hate":      regexp.MustCompile(`(?i)(hate speech|ethnic cleansing|racial superiority)`),
+	"sexual":    regexp.MustCompile(`(?i)(explicit sexual|pornographic content|sexual exploitation)`),
+	"malware":   regexp.MustCompile(`(?i)(ransomware|keylogger|steal passwords|exploit payload)`),
+}
+
+func evaluateUnsafeContentGuard(rule models.PolicyRule, input EvaluationInput) ([]string, []ConditionTrace, bool) {goCover_3b3dd7bb6bda__41[0] = 11 ; goCover_3b3dd7bb6bda__41[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__41[2] = 41 ; goCover_3b3dd7bb6bda__41[3]++;
+	if !hasGuardrail(rule, "unsafe_content") {goCover_3b3dd7bb6bda__41[7]++;
+		return nil, nil, false
+	}
+	goCover_3b3dd7bb6bda__41[4]++;enabledCategories := rule.UnsafeCategories
+	if len(enabledCategories) == 0 {goCover_3b3dd7bb6bda__41[8]++;
+		for category := range unsafeCategoryPatterns {goCover_3b3dd7bb6bda__41[9]++;
+			enabledCategories = append(enabledCategories, category)
+		}
+	}
+	goCover_3b3dd7bb6bda__41[5]++;body := strings.ToLower(string(decisionBody(input)))
+	traces := make([]ConditionTrace, 0, len(enabledCategories))
+	matched := false
+	matches := []string{}
+	for _, category := range enabledCategories {goCover_3b3dd7bb6bda__41[10]++;
+		pattern, ok := unsafeCategoryPatterns[strings.ToLower(strings.TrimSpace(category))]
+		if !ok {goCover_3b3dd7bb6bda__41[12]++;
+			continue
+		}
+		goCover_3b3dd7bb6bda__41[11]++;found := pattern.MatchString(body)
+		traces = append(traces, ConditionTrace{
+			Field:    "guard.unsafe_content." + category,
+			Operator: "match",
+			Expected: category,
+			Actual:   boolString(found),
+			Matched:  !found,
+			Source:   "guard.unsafe_content",
+		})
+		if found {goCover_3b3dd7bb6bda__41[13]++;
+			matched = true
+			matches = append(matches, category)
+		}
+	}
+	goCover_3b3dd7bb6bda__41[6]++;return matches, traces, matched
+}
+
+func hasGuardrail(rule models.PolicyRule, target string) bool {goCover_3b3dd7bb6bda__42[0] = 4 ; goCover_3b3dd7bb6bda__42[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__42[2] = 42 ; goCover_3b3dd7bb6bda__42[3]++;
+	target = strings.ToLower(strings.TrimSpace(target))
+	for _, guard := range rule.Guardrails {goCover_3b3dd7bb6bda__42[5]++;
+		if strings.ToLower(strings.TrimSpace(guard)) == target {goCover_3b3dd7bb6bda__42[6]++;
+			return true
+		}
+	}
+	goCover_3b3dd7bb6bda__42[4]++;return false
+}

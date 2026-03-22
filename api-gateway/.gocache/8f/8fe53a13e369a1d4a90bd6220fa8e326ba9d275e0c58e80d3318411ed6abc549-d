@@ -1,0 +1,238 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\vault\vault.go:1:1
+// Package vault manages virtual LLM API keys.
+//
+// Real keys are encrypted with AES-256-GCM using a master key loaded from the
+// AF_VAULT_KEY environment variable (64-char hex, 32 bytes). The nonce is
+// prepended to the ciphertext and stored as a single BYTEA column so the DB
+// never holds a plaintext credential.
+//
+// Virtual keys have the format: af-vk-<32 hex chars>
+package vault
+
+import (
+	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Sentinel errors returned by Resolve.
+var (
+	ErrInvalidKey = errors.New("virtual key not found or revoked")
+	ErrKeyExpired = errors.New("virtual key has expired")
+)
+
+// KeyInfo is the safe, non-secret view of a virtual key returned by List.
+type KeyInfo struct {
+	VirtualKey  string
+	DisplayName string
+	Provider    string
+	KeyID       string // first 8 chars of the real key — for display only
+	TeamID      string
+	CreatedBy   string
+	ExpiresAt   *time.Time
+	LastUsedAt  *time.Time
+	Revoked     bool
+	CreatedAt   time.Time
+}
+
+// Vault encrypts, stores, and resolves virtual LLM API keys.
+type Vault struct {
+	pool      *pgxpool.Pool
+	masterKey [32]byte
+}
+
+// New creates a Vault. masterKeyHex must be a 64-character hex string (32 bytes).
+func New(pool *pgxpool.Pool, masterKeyHex string) (*Vault, error) {goCover_ed109a8e1a5e__0[0] = 5 ; goCover_ed109a8e1a5e__0[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__0[2] = 0 ; goCover_ed109a8e1a5e__0[3]++;
+	if err := ValidateMasterKeyHex(masterKeyHex); err != nil {goCover_ed109a8e1a5e__0[6]++;
+		return nil, err
+	}
+	goCover_ed109a8e1a5e__0[4]++;b, err := hex.DecodeString(masterKeyHex)
+	if err != nil {goCover_ed109a8e1a5e__0[7]++;
+		return nil, fmt.Errorf("decode AF_VAULT_KEY: %w", err)
+	}
+	goCover_ed109a8e1a5e__0[5]++;v := &Vault{pool: pool}
+	copy(v.masterKey[:], b)
+	return v, nil
+}
+
+func ValidateMasterKeyHex(masterKeyHex string) error {goCover_ed109a8e1a5e__1[0] = 3 ; goCover_ed109a8e1a5e__1[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__1[2] = 1 ; goCover_ed109a8e1a5e__1[3]++;
+	b, err := hex.DecodeString(strings.TrimSpace(masterKeyHex))
+	if err != nil || len(b) != 32 {goCover_ed109a8e1a5e__1[5]++;
+		return fmt.Errorf("AF_VAULT_KEY must be a 64-char hex string (32 bytes): got %d bytes", len(b))
+	}
+	goCover_ed109a8e1a5e__1[4]++;return nil
+}
+
+// Store encrypts realKey and inserts a new virtual key row.
+// Returns the generated virtual key string (af-vk-...).
+// The real key is never returned after this point.
+func (v *Vault) Store(ctx context.Context, tenantID, provider, realKey, displayName string) (string, error) {goCover_ed109a8e1a5e__2[0] = 9 ; goCover_ed109a8e1a5e__2[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__2[2] = 2 ; goCover_ed109a8e1a5e__2[3]++;
+	vk, err := generateVirtualKey()
+	if err != nil {goCover_ed109a8e1a5e__2[8]++;
+		return "", fmt.Errorf("generate key: %w", err)
+	}
+
+	goCover_ed109a8e1a5e__2[4]++;enc, err := v.encrypt([]byte(realKey))
+	if err != nil {goCover_ed109a8e1a5e__2[9]++;
+		return "", fmt.Errorf("encrypt: %w", err)
+	}
+
+	goCover_ed109a8e1a5e__2[5]++;keyID := realKey
+	if len(keyID) > 8 {goCover_ed109a8e1a5e__2[10]++;
+		keyID = keyID[:8]
+	}
+
+	goCover_ed109a8e1a5e__2[6]++;_, err = v.pool.Exec(ctx, `
+		INSERT INTO virtual_keys
+		  (tenant_id, virtual_key, display_name, provider, real_key_enc, key_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, tenantID, vk, displayName, provider, enc, keyID)
+	if err != nil {goCover_ed109a8e1a5e__2[11]++;
+		return "", fmt.Errorf("insert: %w", err)
+	}
+	goCover_ed109a8e1a5e__2[7]++;return vk, nil
+}
+
+// Resolve looks up virtualKey, decrypts the real key, and stamps last_used_at.
+// Returns ErrInvalidKey when the key does not exist or is revoked.
+// Returns ErrKeyExpired when expires_at is set and in the past.
+func (v *Vault) Resolve(ctx context.Context, virtualKey string) (provider, realKey, tenantID string, err error) {goCover_ed109a8e1a5e__3[0] = 11 ; goCover_ed109a8e1a5e__3[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__3[2] = 3 ; goCover_ed109a8e1a5e__3[3]++;
+	if v.pool == nil {goCover_ed109a8e1a5e__3[8]++;
+		return "", "", "", ErrInvalidKey
+	}
+
+	goCover_ed109a8e1a5e__3[4]++;var enc []byte
+	var expiresAt *time.Time
+
+	err = v.pool.QueryRow(ctx, `
+		SELECT provider, real_key_enc, tenant_id, expires_at
+		FROM virtual_keys
+		WHERE virtual_key = $1 AND NOT revoked
+	`, virtualKey).Scan(&provider, &enc, &tenantID, &expiresAt)
+	if err != nil {goCover_ed109a8e1a5e__3[9]++;
+		if errors.Is(err, pgx.ErrNoRows) {goCover_ed109a8e1a5e__3[11]++;
+			return "", "", "", ErrInvalidKey
+		}
+		goCover_ed109a8e1a5e__3[10]++;return "", "", "", fmt.Errorf("resolve query: %w", err)
+	}
+
+	goCover_ed109a8e1a5e__3[5]++;if expiresAt != nil && time.Now().After(*expiresAt) {goCover_ed109a8e1a5e__3[12]++;
+		return "", "", "", ErrKeyExpired
+	}
+
+	goCover_ed109a8e1a5e__3[6]++;plain, err := v.decrypt(enc)
+	if err != nil {goCover_ed109a8e1a5e__3[13]++;
+		return "", "", "", fmt.Errorf("decrypt: %w", err)
+	}
+
+	// Stamp last_used_at asynchronously — a failure here is non-fatal.
+	goCover_ed109a8e1a5e__3[7]++;go v.pool.Exec(context.Background(), //nolint:errcheck
+		`UPDATE virtual_keys SET last_used_at = NOW() WHERE virtual_key = $1`,
+		virtualKey,
+	)
+
+	return provider, string(plain), tenantID, nil
+}
+
+// Revoke marks a virtual key as revoked for the given tenant.
+// Returns ErrInvalidKey if the key does not exist or belongs to a different tenant.
+func (v *Vault) Revoke(ctx context.Context, virtualKey, tenantID string) error {goCover_ed109a8e1a5e__4[0] = 5 ; goCover_ed109a8e1a5e__4[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__4[2] = 4 ; goCover_ed109a8e1a5e__4[3]++;
+	tag, err := v.pool.Exec(ctx, `
+		UPDATE virtual_keys SET revoked = true
+		WHERE virtual_key = $1 AND tenant_id = $2
+	`, virtualKey, tenantID)
+	if err != nil {goCover_ed109a8e1a5e__4[6]++;
+		return fmt.Errorf("revoke: %w", err)
+	}
+	goCover_ed109a8e1a5e__4[4]++;if tag.RowsAffected() == 0 {goCover_ed109a8e1a5e__4[7]++;
+		return ErrInvalidKey
+	}
+	goCover_ed109a8e1a5e__4[5]++;return nil
+}
+
+// List returns all virtual keys for a tenant. Real keys are never included.
+func (v *Vault) List(ctx context.Context, tenantID string) ([]KeyInfo, error) {goCover_ed109a8e1a5e__5[0] = 7 ; goCover_ed109a8e1a5e__5[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__5[2] = 5 ; goCover_ed109a8e1a5e__5[3]++;
+	rows, err := v.pool.Query(ctx, `
+		SELECT virtual_key, display_name, provider, key_id,
+		       COALESCE(team_id,''), COALESCE(created_by,''),
+		       expires_at, last_used_at, revoked, created_at
+		FROM virtual_keys
+		WHERE tenant_id = $1
+		ORDER BY created_at DESC
+	`, tenantID)
+	if err != nil {goCover_ed109a8e1a5e__5[6]++;
+		return nil, fmt.Errorf("list: %w", err)
+	}
+	goCover_ed109a8e1a5e__5[4]++;defer rows.Close()
+
+	var out []KeyInfo
+	for rows.Next() {goCover_ed109a8e1a5e__5[7]++;
+		var k KeyInfo
+		if err := rows.Scan(
+			&k.VirtualKey, &k.DisplayName, &k.Provider, &k.KeyID,
+			&k.TeamID, &k.CreatedBy,
+			&k.ExpiresAt, &k.LastUsedAt, &k.Revoked, &k.CreatedAt,
+		); err != nil {goCover_ed109a8e1a5e__5[9]++;
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		goCover_ed109a8e1a5e__5[8]++;out = append(out, k)
+	}
+	goCover_ed109a8e1a5e__5[5]++;return out, rows.Err()
+}
+
+// ─── Crypto helpers ───────────────────────────────────────────────────────────
+
+// encrypt seals plaintext with AES-256-GCM.
+// Output layout: [ nonce (12 bytes) || ciphertext+tag ]
+func (v *Vault) encrypt(plaintext []byte) ([]byte, error) {goCover_ed109a8e1a5e__6[0] = 7 ; goCover_ed109a8e1a5e__6[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__6[2] = 6 ; goCover_ed109a8e1a5e__6[3]++;
+	block, err := aes.NewCipher(v.masterKey[:])
+	if err != nil {goCover_ed109a8e1a5e__6[7]++;
+		return nil, err
+	}
+	goCover_ed109a8e1a5e__6[4]++;gcm, err := cipher.NewGCM(block)
+	if err != nil {goCover_ed109a8e1a5e__6[8]++;
+		return nil, err
+	}
+	goCover_ed109a8e1a5e__6[5]++;nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {goCover_ed109a8e1a5e__6[9]++;
+		return nil, err
+	}
+	// Seal appends ciphertext to nonce, so output is nonce||ciphertext.
+	goCover_ed109a8e1a5e__6[6]++;return gcm.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+// decrypt reverses encrypt. Expects nonce prepended to ciphertext.
+func (v *Vault) decrypt(data []byte) ([]byte, error) {goCover_ed109a8e1a5e__7[0] = 7 ; goCover_ed109a8e1a5e__7[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__7[2] = 7 ; goCover_ed109a8e1a5e__7[3]++;
+	block, err := aes.NewCipher(v.masterKey[:])
+	if err != nil {goCover_ed109a8e1a5e__7[7]++;
+		return nil, err
+	}
+	goCover_ed109a8e1a5e__7[4]++;gcm, err := cipher.NewGCM(block)
+	if err != nil {goCover_ed109a8e1a5e__7[8]++;
+		return nil, err
+	}
+	goCover_ed109a8e1a5e__7[5]++;ns := gcm.NonceSize()
+	if len(data) < ns {goCover_ed109a8e1a5e__7[9]++;
+		return nil, errors.New("ciphertext too short")
+	}
+	goCover_ed109a8e1a5e__7[6]++;return gcm.Open(nil, data[:ns], data[ns:], nil)
+}
+
+// generateVirtualKey returns a cryptographically random "af-vk-<32 hex chars>" string.
+func generateVirtualKey() (string, error) {goCover_ed109a8e1a5e__8[0] = 3 ; goCover_ed109a8e1a5e__8[1] = goCover_ed109a8e1a5e_P ; goCover_ed109a8e1a5e__8[2] = 8 ; goCover_ed109a8e1a5e__8[3]++;
+	b := make([]byte, 16) // 16 bytes → 32 hex chars
+	if _, err := io.ReadFull(rand.Reader, b); err != nil {goCover_ed109a8e1a5e__8[5]++;
+		return "", err
+	}
+	goCover_ed109a8e1a5e__8[4]++;return "af-vk-" + hex.EncodeToString(b), nil
+}

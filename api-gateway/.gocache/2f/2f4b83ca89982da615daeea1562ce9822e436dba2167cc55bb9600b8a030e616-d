@@ -1,0 +1,6 @@
+covervars.go
+promotion.cover.go
+releases.cover.go
+service.cover.go
+./promotion_test.go
+./releases_test.go

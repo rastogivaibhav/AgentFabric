@@ -1,0 +1,1847 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\handlers\handlers.go:1:1
+package handlers
+
+import (
+	"bytes"
+	"context"
+	"encoding/csv"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/agentfabric/api-gateway/internal/budget"
+	"github.com/agentfabric/api-gateway/internal/evals"
+	"github.com/agentfabric/api-gateway/internal/middleware"
+	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/observability"
+	"github.com/agentfabric/api-gateway/internal/policy"
+	"github.com/agentfabric/api-gateway/internal/pricing"
+	"github.com/agentfabric/api-gateway/internal/prompts"
+	"github.com/agentfabric/api-gateway/internal/proxy"
+	"github.com/agentfabric/api-gateway/internal/store"
+	"github.com/agentfabric/api-gateway/internal/ws"
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
+)
+
+type Handler struct {
+	pg             *store.PostgresStore
+	redis          *store.RedisClient
+	hub            *ws.Hub
+	logger         *zap.Logger
+	jwtSecret      string
+	budgetEnforcer *budget.BudgetEnforcer
+	policyEngine   *policy.Engine
+}
+
+func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, policyEngine *policy.Engine) *Handler {goCover_4258a3deb158__6[0] = 1 ; goCover_4258a3deb158__6[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__6[2] = 6 ; goCover_4258a3deb158__6[3]++;
+	return &Handler{
+		pg:             pg,
+		redis:          redis,
+		hub:            hub,
+		logger:         logger,
+		jwtSecret:      jwtSecret,
+		budgetEnforcer: budgetEnforcer,
+		policyEngine:   policyEngine,
+	}
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// isNotFound returns true when err is a pgx "no rows" sentinel,
+// used to translate DB misses into HTTP 404 responses.
+func isNotFound(err error) bool {goCover_4258a3deb158__7[0] = 1 ; goCover_4258a3deb158__7[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__7[2] = 7 ; goCover_4258a3deb158__7[3]++;
+	return errors.Is(err, pgx.ErrNoRows)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {goCover_4258a3deb158__8[0] = 1 ; goCover_4258a3deb158__8[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__8[2] = 8 ; goCover_4258a3deb158__8[3]++;
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {goCover_4258a3deb158__9[0] = 1 ; goCover_4258a3deb158__9[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__9[2] = 9 ; goCover_4258a3deb158__9[3]++;
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func parseBoolOr(raw string, def bool) bool {goCover_4258a3deb158__10[0] = 4 ; goCover_4258a3deb158__10[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__10[2] = 10 ; goCover_4258a3deb158__10[3]++;
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	switch raw {
+	case "1", "true", "yes", "on":goCover_4258a3deb158__10[4]++;
+		return true
+	case "0", "false", "no", "off":goCover_4258a3deb158__10[5]++;
+		return false
+	default:goCover_4258a3deb158__10[6]++;
+		return def
+	}
+}
+
+func tenantFromCtx(r *http.Request) string {goCover_4258a3deb158__11[0] = 1 ; goCover_4258a3deb158__11[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__11[2] = 11 ; goCover_4258a3deb158__11[3]++;
+	return middleware.TenantIDFromCtx(r.Context())
+}
+
+func actorFromCtx(r *http.Request) string {goCover_4258a3deb158__12[0] = 6 ; goCover_4258a3deb158__12[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__12[2] = 12 ; goCover_4258a3deb158__12[3]++;
+	claims := middleware.ClaimsFromCtx(r.Context())
+	if claims == nil {goCover_4258a3deb158__12[5]++;
+		return ""
+	}
+	goCover_4258a3deb158__12[4]++;switch {
+	case strings.TrimSpace(claims.Name) != "":goCover_4258a3deb158__12[6]++;
+		return strings.TrimSpace(claims.Name)
+	case strings.TrimSpace(claims.Email) != "":goCover_4258a3deb158__12[7]++;
+		return strings.TrimSpace(claims.Email)
+	default:goCover_4258a3deb158__12[8]++;
+		return strings.TrimSpace(claims.Subject)
+	}
+}
+
+func (h *Handler) writeAdminAudit(r *http.Request, category, action, targetType, targetID, outcome string, details any) {goCover_4258a3deb158__13[0] = 6 ; goCover_4258a3deb158__13[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__13[2] = 13 ; goCover_4258a3deb158__13[3]++;
+	if h == nil || h.pg == nil {goCover_4258a3deb158__13[6]++;
+		return
+	}
+	goCover_4258a3deb158__13[4]++;detailsJSON := "{}"
+	if details != nil {goCover_4258a3deb158__13[7]++;
+		if b, err := json.Marshal(details); err == nil {goCover_4258a3deb158__13[8]++;
+			detailsJSON = string(b)
+		}
+	}
+	goCover_4258a3deb158__13[5]++;_ = h.pg.CreateAdminAuditEntry(r.Context(), models.AdminAuditEntry{
+		TenantID:   tenantFromCtx(r),
+		Actor:      actorFromCtx(r),
+		Category:   category,
+		Action:     action,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Outcome:    outcome,
+		Details:    detailsJSON,
+	})
+}
+
+// ─── Health ──────────────────────────────────────────────────────────────────
+
+// Health checks both Postgres and Redis with a 2-second timeout each.
+// Returns 200 {"status":"ok"} when all deps are reachable.
+// Returns 503 {"status":"degraded","error":"..."} if any dep fails.
+func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__14[0] = 1 ; goCover_4258a3deb158__14[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__14[2] = 14 ; goCover_4258a3deb158__14[3]++;
+	h.writeReadiness(w, r, false)
+}
+
+func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__15[0] = 1 ; goCover_4258a3deb158__15[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__15[2] = 15 ; goCover_4258a3deb158__15[3]++;
+	h.writeReadiness(w, r, true)
+}
+
+func (h *Handler) writeReadiness(w http.ResponseWriter, r *http.Request, ready bool) {goCover_4258a3deb158__16[0] = 12 ; goCover_4258a3deb158__16[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__16[2] = 16 ; goCover_4258a3deb158__16[3]++;
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	checks := map[string]map[string]any{
+		"postgres": {"status": "ok"},
+		"redis":    {"status": "ok"},
+	}
+	response := map[string]any{
+		"status": "ok",
+		"checks": checks,
+	}
+
+	if err := h.pg.Ping(ctx); err != nil {goCover_4258a3deb158__16[7]++;
+		h.logger.Warn("readiness: postgres ping failed", zap.Error(err), zap.Bool("ready", ready))
+		response["status"] = "degraded"
+		response["error"] = "postgres unavailable"
+		checks["postgres"] = map[string]any{"status": "unavailable", "error": err.Error()}
+		writeJSON(w, http.StatusServiceUnavailable, response)
+		return
+	}
+	goCover_4258a3deb158__16[4]++;if err := h.redis.Ping(ctx); err != nil {goCover_4258a3deb158__16[8]++;
+		h.logger.Warn("readiness: redis ping failed", zap.Error(err), zap.Bool("ready", ready))
+		response["status"] = "degraded"
+		response["error"] = "redis unavailable"
+		checks["redis"] = map[string]any{"status": "unavailable", "error": err.Error()}
+		writeJSON(w, http.StatusServiceUnavailable, response)
+		return
+	}
+	goCover_4258a3deb158__16[5]++;if ready {goCover_4258a3deb158__16[9]++;
+		response["mode"] = "ready"
+		pricingRuleCount := proxy.ActivePricingRuleCount()
+		if pricingRuleCount <= 0 {goCover_4258a3deb158__16[12]++;
+			h.logger.Warn("readiness: no pricing rules active")
+			response["status"] = "degraded"
+			response["error"] = "pricing rules not loaded"
+			checks["pricing_rules"] = map[string]any{"status": "unavailable", "count": pricingRuleCount}
+			writeJSON(w, http.StatusServiceUnavailable, response)
+			return
+		}
+		goCover_4258a3deb158__16[10]++;checks["pricing_rules"] = map[string]any{"status": "loaded", "count": pricingRuleCount}
+
+		if h.policyEngine == nil {goCover_4258a3deb158__16[13]++;
+			h.logger.Warn("readiness: policy engine unavailable")
+			response["status"] = "degraded"
+			response["error"] = "policy engine unavailable"
+			checks["policy_engine"] = map[string]any{"status": "unavailable", "count": 0}
+			writeJSON(w, http.StatusServiceUnavailable, response)
+			return
+		}
+		goCover_4258a3deb158__16[11]++;policyRuleCount := h.policyEngine.RuleCount()
+		checks["policy_engine"] = map[string]any{"status": "loaded", "count": policyRuleCount}
+		checks["startup_state"] = map[string]any{"status": "healthy"}
+	} else{ goCover_4258a3deb158__16[14]++;{
+		response["mode"] = "health"
+	}}
+	goCover_4258a3deb158__16[6]++;writeJSON(w, http.StatusOK, response)
+}
+
+// ─── Ingest (internal, called by collector) ──────────────────────────────────
+
+type ingestRequest struct {
+	Spans []models.Span `json:"spans"`
+}
+
+func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__17[0] = 26 ; goCover_4258a3deb158__17[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__17[2] = 17 ; goCover_4258a3deb158__17[3]++;
+	const maxBody = 32 << 20 // 32 MiB
+	// Fast path: reject immediately if Content-Length is known and too large.
+	if r.ContentLength > maxBody {goCover_4258a3deb158__17[13]++;
+		writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 32 MiB limit")
+		return
+	}
+	// Fix D: cap request body at 32 MiB to prevent DoS via unbounded reads.
+	goCover_4258a3deb158__17[4]++;r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+
+	var req ingestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__17[14]++;
+		// MaxBytesReader wraps the error when the limit is exceeded.
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) || err.Error() == "http: request body too large" {goCover_4258a3deb158__17[16]++;
+			writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 32 MiB limit")
+			return
+		}
+		goCover_4258a3deb158__17[15]++;writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	goCover_4258a3deb158__17[5]++;if len(req.Spans) == 0 {goCover_4258a3deb158__17[17]++;
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	goCover_4258a3deb158__17[6]++;if len(req.Spans) > 10000 {goCover_4258a3deb158__17[18]++;
+		writeError(w, http.StatusRequestEntityTooLarge, "batch too large")
+		return
+	}
+
+	// Tenant from collector header; fall back to the canonical default UUID.
+	goCover_4258a3deb158__17[7]++;tenantID := r.Header.Get("X-AF-Tenant")
+	if tenantID == "" {goCover_4258a3deb158__17[19]++;
+		tenantID = middleware.DefaultTenantID
+	}
+	goCover_4258a3deb158__17[8]++;for i := range req.Spans {goCover_4258a3deb158__17[20]++;
+		req.Spans[i].TenantID = tenantID
+		if req.Spans[i].ReceivedAt.IsZero() {goCover_4258a3deb158__17[22]++;
+			req.Spans[i].ReceivedAt = time.Now()
+		}
+		goCover_4258a3deb158__17[21]++;h.repriceSpan(&req.Spans[i])
+	}
+
+	// Budget enforcement — check before writing to DB.
+	// Fail open: if the enforcer errors, we still allow the ingest.
+	goCover_4258a3deb158__17[9]++;if h.budgetEnforcer != nil {goCover_4258a3deb158__17[23]++;
+		totalTokens, totalCost := sumSpanUsage(req.Spans)
+		allowed, err := h.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, totalTokens, totalCost)
+		if err != nil {goCover_4258a3deb158__17[25]++;
+			h.logger.Warn("budget check error (fail open)", zap.String("tenant", tenantID), zap.Error(err))
+		}
+		goCover_4258a3deb158__17[24]++;if !allowed {goCover_4258a3deb158__17[26]++;
+			writeError(w, http.StatusTooManyRequests, "monthly budget exceeded")
+			return
+		}
+	}
+
+	goCover_4258a3deb158__17[10]++;if err := h.pg.BulkInsertSpans(r.Context(), req.Spans); err != nil {goCover_4258a3deb158__17[27]++;
+		h.logger.Error("bulk insert failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "storage error")
+		return
+	}
+
+	// Broadcast to WebSocket clients
+	goCover_4258a3deb158__17[11]++;for _, sp := range req.Spans {goCover_4258a3deb158__17[28]++;
+		h.hub.Broadcast(tenantID, &models.LiveEvent{
+			Type:      "span",
+			Timestamp: time.Now().UnixMilli(),
+			TenantID:  tenantID,
+			Data:      sp,
+		})
+	}
+
+	goCover_4258a3deb158__17[12]++;w.WriteHeader(http.StatusOK)
+}
+
+// ─── Traces ──────────────────────────────────────────────────────────────────
+
+func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__18[0] = 7 ; goCover_4258a3deb158__18[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__18[2] = 18 ; goCover_4258a3deb158__18[3]++;
+	q := models.TraceQuery{
+		TenantID:    tenantFromCtx(r),
+		Framework:   r.URL.Query().Get("framework"),
+		Model:       r.URL.Query().Get("model"),
+		AgentName:   r.URL.Query().Get("agent"),
+		Search:      r.URL.Query().Get("search"),
+		Provider:    r.URL.Query().Get("provider"),
+		AppName:     r.URL.Query().Get("app_name"),
+		Environment: r.URL.Query().Get("environment"),
+		UserID:      r.URL.Query().Get("user_id"),
+		SessionID:   r.URL.Query().Get("session_id"),
+		Status:      r.URL.Query().Get("status"),
+		BlockedOnly: parseBoolOr(r.URL.Query().Get("blocked"), false),
+		Limit:       parseIntOr(r.URL.Query().Get("limit"), 50),
+		Cursor:      r.URL.Query().Get("cursor"),
+	}
+	if s := r.URL.Query().Get("start"); s != "" {goCover_4258a3deb158__18[7]++;
+		q.StartTime, _ = strconv.ParseInt(s, 10, 64)
+	}
+	goCover_4258a3deb158__18[4]++;if e := r.URL.Query().Get("end"); e != "" {goCover_4258a3deb158__18[8]++;
+		q.EndTime, _ = strconv.ParseInt(e, 10, 64)
+	}
+
+	goCover_4258a3deb158__18[5]++;page, err := h.pg.ListTraces(r.Context(), q)
+	if err != nil {goCover_4258a3deb158__18[9]++;
+		h.logger.Error("list traces", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__18[6]++;writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetTrace(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__19[0] = 5 ; goCover_4258a3deb158__19[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__19[2] = 19 ; goCover_4258a3deb158__19[3]++;
+	traceID := chi.URLParam(r, "traceId")
+	tenantID := tenantFromCtx(r)
+
+	cacheKey := "trace:" + tenantID + ":" + traceID
+	var trace models.Trace
+	if err := h.redis.GetJSON(r.Context(), cacheKey, &trace); err == nil {goCover_4258a3deb158__19[6]++;
+		writeJSON(w, http.StatusOK, trace)
+		return
+	}
+
+	goCover_4258a3deb158__19[4]++;inputs, err := h.pg.LoadTraceViewInputs(r.Context(), traceID, tenantID)
+	if err != nil || len(inputs.Spans) == 0 {goCover_4258a3deb158__19[7]++;
+		writeError(w, http.StatusNotFound, "trace not found")
+		return
+	}
+
+	goCover_4258a3deb158__19[5]++;enrichedSpans := observability.EnrichSpans(inputs.Spans, nil)
+	policyEvents := auditEntriesToPolicyEvents(inputs.AuditEntries, enrichedSpans)
+	trace = observability.BuildTrace(traceID, inputs.Spans, policyEvents)
+	trace.Timeline = observability.BuildTimeline(traceID, trace.Spans, policyEvents)
+	h.redis.SetJSON(r.Context(), cacheKey, trace, 5*time.Minute)
+	writeJSON(w, http.StatusOK, trace)
+}
+
+func (h *Handler) GetTraceGraph(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__20[0] = 3 ; goCover_4258a3deb158__20[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__20[2] = 20 ; goCover_4258a3deb158__20[3]++;
+	traceID := chi.URLParam(r, "traceId")
+	spans, err := h.pg.GetTraceSpans(r.Context(), traceID, tenantFromCtx(r))
+	if err != nil {goCover_4258a3deb158__20[5]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__20[4]++;graph := buildTopologyGraph(spans)
+	writeJSON(w, http.StatusOK, graph)
+}
+
+func (h *Handler) GetTraceTimeline(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__21[0] = 3 ; goCover_4258a3deb158__21[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__21[2] = 21 ; goCover_4258a3deb158__21[3]++;
+	traceID := chi.URLParam(r, "traceId")
+	tenantID := tenantFromCtx(r)
+	inputs, err := h.pg.LoadTraceViewInputs(r.Context(), traceID, tenantID)
+	if err != nil {goCover_4258a3deb158__21[5]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__21[4]++;baseSpans := observability.EnrichSpans(inputs.Spans, nil)
+	policyEvents := auditEntriesToPolicyEvents(inputs.AuditEntries, baseSpans)
+	spans := observability.EnrichSpans(inputs.Spans, policyEvents)
+	writeJSON(w, http.StatusOK, observability.BuildTimeline(traceID, spans, policyEvents))
+}
+
+func (h *Handler) GetTraceComparison(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__22[0] = 11 ; goCover_4258a3deb158__22[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__22[2] = 22 ; goCover_4258a3deb158__22[3]++;
+	leftID := strings.TrimSpace(r.URL.Query().Get("left"))
+	rightID := strings.TrimSpace(r.URL.Query().Get("right"))
+	if leftID == "" || rightID == "" {goCover_4258a3deb158__22[8]++;
+		writeError(w, http.StatusBadRequest, "left and right trace IDs are required")
+		return
+	}
+	goCover_4258a3deb158__22[4]++;tenantID := tenantFromCtx(r)
+	loadTrace := func(traceID string) (models.Trace, error) {goCover_4258a3deb158__22[9]++;
+		inputs, err := h.pg.LoadTraceViewInputs(r.Context(), traceID, tenantID)
+		if err != nil {goCover_4258a3deb158__22[11]++;
+			return models.Trace{}, err
+		}
+		goCover_4258a3deb158__22[10]++;enrichedSpans := observability.EnrichSpans(inputs.Spans, nil)
+		policyEvents := auditEntriesToPolicyEvents(inputs.AuditEntries, enrichedSpans)
+		trace := observability.BuildTrace(traceID, inputs.Spans, policyEvents)
+		trace.Timeline = observability.BuildTimeline(traceID, trace.Spans, policyEvents)
+		return trace, nil
+	}
+
+	goCover_4258a3deb158__22[5]++;left, err := loadTrace(leftID)
+	if err != nil || len(left.Spans) == 0 {goCover_4258a3deb158__22[12]++;
+		writeError(w, http.StatusNotFound, "left trace not found")
+		return
+	}
+	goCover_4258a3deb158__22[6]++;right, err := loadTrace(rightID)
+	if err != nil || len(right.Spans) == 0 {goCover_4258a3deb158__22[13]++;
+		writeError(w, http.StatusNotFound, "right trace not found")
+		return
+	}
+	goCover_4258a3deb158__22[7]++;writeJSON(w, http.StatusOK, observability.CompareTraces(left, right))
+}
+
+func (h *Handler) ListTraceSavedViews(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__23[0] = 3 ; goCover_4258a3deb158__23[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__23[2] = 23 ; goCover_4258a3deb158__23[3]++;
+	views, err := h.pg.ListTraceSavedViews(r.Context(), tenantFromCtx(r))
+	if err != nil {goCover_4258a3deb158__23[5]++;
+		h.logger.Error("list trace saved views", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__23[4]++;writeJSON(w, http.StatusOK, views)
+}
+
+func (h *Handler) UpsertTraceSavedView(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__24[0] = 5 ; goCover_4258a3deb158__24[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__24[2] = 24 ; goCover_4258a3deb158__24[3]++;
+	var view models.TraceSavedView
+	if err := json.NewDecoder(r.Body).Decode(&view); err != nil {goCover_4258a3deb158__24[6]++;
+		writeError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+	goCover_4258a3deb158__24[4]++;view.CreatedBy = actorFromCtx(r)
+	saved, err := h.pg.UpsertTraceSavedView(r.Context(), tenantFromCtx(r), view)
+	if err != nil {goCover_4258a3deb158__24[7]++;
+		h.logger.Error("upsert trace saved view", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "write error")
+		return
+	}
+	goCover_4258a3deb158__24[5]++;writeJSON(w, http.StatusOK, saved)
+}
+
+func (h *Handler) DeleteTraceSavedView(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__25[0] = 7 ; goCover_4258a3deb158__25[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__25[2] = 25 ; goCover_4258a3deb158__25[3]++;
+	viewID, err := strconv.ParseInt(chi.URLParam(r, "viewId"), 10, 64)
+	if err != nil {goCover_4258a3deb158__25[6]++;
+		writeError(w, http.StatusBadRequest, "invalid view id")
+		return
+	}
+	goCover_4258a3deb158__25[4]++;if err := h.pg.DeleteTraceSavedView(r.Context(), tenantFromCtx(r), viewID); err != nil {goCover_4258a3deb158__25[7]++;
+		if isNotFound(err) {goCover_4258a3deb158__25[9]++;
+			writeError(w, http.StatusNotFound, "saved view not found")
+			return
+		}
+		goCover_4258a3deb158__25[8]++;h.logger.Error("delete trace saved view", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "delete error")
+		return
+	}
+	goCover_4258a3deb158__25[5]++;w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) ListEvalRuns(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__26[0] = 3 ; goCover_4258a3deb158__26[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__26[2] = 26 ; goCover_4258a3deb158__26[3]++;
+	service := evals.NewService(h.pg)
+	runs, err := service.ListRuns(r.Context(), tenantFromCtx(r), parseIntOr(r.URL.Query().Get("limit"), 20))
+	if err != nil {goCover_4258a3deb158__26[5]++;
+		h.logger.Error("list eval runs", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__26[4]++;writeJSON(w, http.StatusOK, models.Page[models.TraceEvalRun]{
+		Items:   runs,
+		Total:   int64(len(runs)),
+		HasMore: false,
+	})
+}
+
+func (h *Handler) ScoreTraceEval(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__27[0] = 7 ; goCover_4258a3deb158__27[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__27[2] = 27 ; goCover_4258a3deb158__27[3]++;
+	var req models.TraceEvalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__27[6]++;
+		writeError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+	goCover_4258a3deb158__27[4]++;service := evals.NewService(h.pg)
+	run, err := service.ScoreTrace(r.Context(), tenantFromCtx(r), req)
+	if err != nil {goCover_4258a3deb158__27[7]++;
+		h.logger.Error("score trace eval", zap.Error(err), zap.String("trace_id", req.TraceID))
+		if isNotFound(err) {goCover_4258a3deb158__27[9]++;
+			writeError(w, http.StatusNotFound, "trace not found")
+			return
+		}
+		goCover_4258a3deb158__27[8]++;writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	goCover_4258a3deb158__27[5]++;h.writeAdminAudit(r, "evals", "score", "trace", req.TraceID, "success", map[string]any{
+		"eval_run_id":   run.ID,
+		"trace_id":      run.TraceID,
+		"release_tag":   run.ReleaseTag,
+		"eval_suite":    run.EvalSuite,
+		"overall_score": run.OverallScore,
+	})
+	writeJSON(w, http.StatusOK, run)
+}
+
+func (h *Handler) CompareEvalRegressions(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__28[0] = 5 ; goCover_4258a3deb158__28[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__28[2] = 28 ; goCover_4258a3deb158__28[3]++;
+	var req models.RegressionCompareRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__28[6]++;
+		writeError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+	goCover_4258a3deb158__28[4]++;service := evals.NewService(h.pg)
+	report, err := service.CompareRelease(r.Context(), tenantFromCtx(r), req)
+	if err != nil {goCover_4258a3deb158__28[7]++;
+		h.logger.Error("compare eval regressions", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "comparison error")
+		return
+	}
+	goCover_4258a3deb158__28[5]++;h.writeAdminAudit(r, "evals", "regression_compare", "release", req.CandidateTag, "success", map[string]any{
+		"baseline_tag":  req.BaselineTag,
+		"candidate_tag": req.CandidateTag,
+		"eval_suite":    report.EvalSuite,
+		"overall_delta": report.OverallDelta,
+		"risk_level":    report.RiskLevel,
+	})
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (h *Handler) ListPrompts(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__29[0] = 3 ; goCover_4258a3deb158__29[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__29[2] = 29 ; goCover_4258a3deb158__29[3]++;
+	service := prompts.NewService(h.pg)
+	catalog, err := service.ListCatalog(r.Context(), tenantFromCtx(r))
+	if err != nil {goCover_4258a3deb158__29[5]++;
+		h.logger.Error("list prompts", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__29[4]++;writeJSON(w, http.StatusOK, catalog)
+}
+
+func (h *Handler) UpsertPromptVersion(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__30[0] = 7 ; goCover_4258a3deb158__30[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__30[2] = 30 ; goCover_4258a3deb158__30[3]++;
+	var version models.PromptVersion
+	if err := json.NewDecoder(r.Body).Decode(&version); err != nil {goCover_4258a3deb158__30[7]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	goCover_4258a3deb158__30[4]++;if version.Config == nil {goCover_4258a3deb158__30[8]++;
+		version.Config = map[string]string{}
+	}
+	goCover_4258a3deb158__30[5]++;service := prompts.NewService(h.pg)
+	saved, err := service.UpsertVersion(r.Context(), tenantFromCtx(r), actorFromCtx(r), version)
+	if err != nil {goCover_4258a3deb158__30[9]++;
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	goCover_4258a3deb158__30[6]++;h.writeAdminAudit(r, "prompts", map[bool]string{true: "update", false: "create"}[version.ID > 0 || version.Version > 0], "prompt_version", saved.PromptID, "success", map[string]any{
+		"prompt_id":    saved.PromptID,
+		"version":      saved.Version,
+		"environment":  saved.Environment,
+		"release_tag":  saved.ReleaseTag,
+		"description":  saved.Description,
+		"content_size": len(saved.Content),
+	})
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (h *Handler) PromotePromptRelease(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__31[0] = 7 ; goCover_4258a3deb158__31[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__31[2] = 31 ; goCover_4258a3deb158__31[3]++;
+	var req models.PromptPromotionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__31[6]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	goCover_4258a3deb158__31[4]++;service := prompts.NewService(h.pg)
+	release, err := service.Promote(r.Context(), tenantFromCtx(r), actorFromCtx(r), req)
+	if err != nil {goCover_4258a3deb158__31[7]++;
+		if isNotFound(err) {goCover_4258a3deb158__31[9]++;
+			writeError(w, http.StatusNotFound, "prompt version not found")
+			return
+		}
+		goCover_4258a3deb158__31[8]++;writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	goCover_4258a3deb158__31[5]++;h.writeAdminAudit(r, "prompts", "promote", "prompt_release", release.PromptID, "success", release)
+	writeJSON(w, http.StatusOK, release)
+}
+
+func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__32[0] = 6 ; goCover_4258a3deb158__32[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__32[2] = 32 ; goCover_4258a3deb158__32[3]++;
+	traceID := chi.URLParam(r, "traceId")
+	spans, err := h.pg.GetTraceSpans(r.Context(), traceID, tenantFromCtx(r))
+	if err != nil {goCover_4258a3deb158__32[6]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__32[4]++;spans = observability.EnrichSpans(spans, nil)
+	type costBreakdown struct {
+		SpanID            string  `json:"span_id"`
+		Name              string  `json:"name"`
+		Model             string  `json:"model"`
+		InputTok          int64   `json:"input_tokens"`
+		OutputTok         int64   `json:"output_tokens"`
+		CacheReadTokens   int64   `json:"cache_read_tokens,omitempty"`
+		CacheWriteTokens  int64   `json:"cache_write_tokens,omitempty"`
+		ReasoningTokens   int64   `json:"reasoning_tokens,omitempty"`
+		InputCostUSD      float64 `json:"input_cost_usd,omitempty"`
+		OutputCostUSD     float64 `json:"output_cost_usd,omitempty"`
+		CacheReadCostUSD  float64 `json:"cache_read_cost_usd,omitempty"`
+		CacheWriteCostUSD float64 `json:"cache_write_cost_usd,omitempty"`
+		ReasoningCostUSD  float64 `json:"reasoning_cost_usd,omitempty"`
+		CostUSD           float64 `json:"cost_usd"`
+		PricingRuleID     int64   `json:"pricing_rule_id,omitempty"`
+		PricingScope      string  `json:"pricing_scope,omitempty"`
+	}
+	var total float64
+	breakdown := make([]costBreakdown, 0, len(spans))
+	for _, sp := range spans {goCover_4258a3deb158__32[7]++;
+		if sp.CostUSD > 0 {goCover_4258a3deb158__32[8]++;
+			breakdown = append(breakdown, costBreakdown{
+				SpanID:            sp.ID,
+				Name:              sp.Name,
+				Model:             sp.Model,
+				InputTok:          sp.InputTokens,
+				OutputTok:         sp.OutputTokens,
+				CacheReadTokens:   sp.CacheReadTokens,
+				CacheWriteTokens:  sp.CacheWriteTokens,
+				ReasoningTokens:   sp.ReasoningTokens,
+				InputCostUSD:      sp.InputCostUSD,
+				OutputCostUSD:     sp.OutputCostUSD,
+				CacheReadCostUSD:  sp.CacheReadCostUSD,
+				CacheWriteCostUSD: sp.CacheWriteCostUSD,
+				ReasoningCostUSD:  sp.ReasoningCostUSD,
+				CostUSD:           sp.CostUSD,
+				PricingRuleID:     sp.PricingRuleID,
+				PricingScope:      sp.PricingScope,
+			})
+			total += sp.CostUSD
+		}
+	}
+	goCover_4258a3deb158__32[5]++;writeJSON(w, http.StatusOK, map[string]interface{}{
+		"total_usd": total,
+		"breakdown": breakdown,
+	})
+}
+
+// ─── Agents ──────────────────────────────────────────────────────────────────
+
+func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__33[0] = 3 ; goCover_4258a3deb158__33[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__33[2] = 33 ; goCover_4258a3deb158__33[3]++;
+	limit := parseIntOr(r.URL.Query().Get("limit"), 50)
+	agents, err := h.pg.ListAgents(r.Context(), tenantFromCtx(r), limit)
+	if err != nil {goCover_4258a3deb158__33[5]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__33[4]++;writeJSON(w, http.StatusOK, models.Page[models.Agent]{Items: agents, Total: int64(len(agents))})
+}
+
+func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__34[0] = 5 ; goCover_4258a3deb158__34[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__34[2] = 34 ; goCover_4258a3deb158__34[3]++;
+	agentID := chi.URLParam(r, "agentId")
+	// O(1) indexed SQL lookup — replaces the previous O(n) ListAgents+scan pattern.
+	agent, err := h.pg.GetAgentByName(r.Context(), tenantFromCtx(r), agentID)
+	if err != nil {goCover_4258a3deb158__34[5]++;
+		if isNotFound(err) {goCover_4258a3deb158__34[7]++;
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+		goCover_4258a3deb158__34[6]++;writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__34[4]++;writeJSON(w, http.StatusOK, agent)
+}
+
+func (h *Handler) GetAgentRuns(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__35[0] = 3 ; goCover_4258a3deb158__35[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__35[2] = 35 ; goCover_4258a3deb158__35[3]++;
+	agentID := chi.URLParam(r, "agentId")
+	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
+		TenantID:  tenantFromCtx(r),
+		AgentName: agentID,
+		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
+	})
+	if err != nil {goCover_4258a3deb158__35[5]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__35[4]++;writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetAgentMetrics(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__36[0] = 6 ; goCover_4258a3deb158__36[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__36[2] = 36 ; goCover_4258a3deb158__36[3]++;
+	since := 24 * time.Hour
+	if s := r.URL.Query().Get("since"); s != "" {goCover_4258a3deb158__36[6]++;
+		if d, err := time.ParseDuration(s); err == nil {goCover_4258a3deb158__36[7]++;
+			since = d
+		}
+	}
+	goCover_4258a3deb158__36[4]++;stats, err := h.pg.GetOverview(r.Context(), tenantFromCtx(r), since)
+	if err != nil {goCover_4258a3deb158__36[8]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__36[5]++;writeJSON(w, http.StatusOK, stats)
+}
+
+func (h *Handler) GetAgentTopology(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__37[0] = 8 ; goCover_4258a3deb158__37[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__37[2] = 37 ; goCover_4258a3deb158__37[3]++;
+	agentID := chi.URLParam(r, "agentId")
+	tenantID := tenantFromCtx(r)
+
+	// Fetch recent runs to collect unique trace IDs
+	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
+		TenantID:  tenantID,
+		AgentName: agentID,
+		Limit:     10,
+	})
+	if err != nil {goCover_4258a3deb158__37[7]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Deduplicate trace IDs, then fetch all spans in a single batch query (P0-2 fix)
+	goCover_4258a3deb158__37[4]++;seen := map[string]bool{}
+	traceIDs := make([]string, 0, len(page.Items))
+	for _, run := range page.Items {goCover_4258a3deb158__37[8]++;
+		if !seen[run.TraceID] {goCover_4258a3deb158__37[9]++;
+			seen[run.TraceID] = true
+			traceIDs = append(traceIDs, run.TraceID)
+		}
+	}
+
+	goCover_4258a3deb158__37[5]++;allSpans, err := h.pg.GetSpansForTraces(r.Context(), traceIDs, tenantID)
+	if err != nil {goCover_4258a3deb158__37[10]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__37[6]++;writeJSON(w, http.StatusOK, buildTopologyGraph(allSpans))
+}
+
+// ─── Runs ─────────────────────────────────────────────────────────────────────
+
+func (h *Handler) ListRuns(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__38[0] = 3 ; goCover_4258a3deb158__38[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__38[2] = 38 ; goCover_4258a3deb158__38[3]++;
+	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
+		TenantID:  tenantFromCtx(r),
+		TraceID:   r.URL.Query().Get("trace_id"),
+		Framework: r.URL.Query().Get("framework"),
+		AgentName: r.URL.Query().Get("agent"),
+		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
+		Cursor:    r.URL.Query().Get("cursor"),
+	})
+	if err != nil {goCover_4258a3deb158__38[5]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__38[4]++;writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetRun(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__39[0] = 3 ; goCover_4258a3deb158__39[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__39[2] = 39 ; goCover_4258a3deb158__39[3]++;
+	run, err := h.pg.GetRun(r.Context(), chi.URLParam(r, "runId"), tenantFromCtx(r))
+	if err != nil {goCover_4258a3deb158__39[5]++;
+		writeError(w, http.StatusNotFound, "run not found")
+		return
+	}
+	goCover_4258a3deb158__39[4]++;writeJSON(w, http.StatusOK, run)
+}
+
+func (h *Handler) GetRunChildren(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__40[0] = 3 ; goCover_4258a3deb158__40[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__40[2] = 40 ; goCover_4258a3deb158__40[3]++;
+	children, err := h.pg.GetRunChildren(r.Context(), chi.URLParam(r, "runId"), tenantFromCtx(r))
+	if err != nil {goCover_4258a3deb158__40[5]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__40[4]++;writeJSON(w, http.StatusOK, children)
+}
+
+func (h *Handler) PostFeedback(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__41[0] = 5 ; goCover_4258a3deb158__41[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__41[2] = 41 ; goCover_4258a3deb158__41[3]++;
+	runID := chi.URLParam(r, "runId")
+	var body struct {
+		Score   *int16 `json:"score"`
+		Comment string `json:"comment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {goCover_4258a3deb158__41[6]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	goCover_4258a3deb158__41[4]++;if err := h.pg.InsertFeedback(r.Context(), runID, tenantFromCtx(r), body.Score, body.Comment); err != nil {goCover_4258a3deb158__41[7]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__41[5]++;w.WriteHeader(http.StatusCreated)
+}
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+func (h *Handler) GetOverview(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__42[0] = 6 ; goCover_4258a3deb158__42[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__42[2] = 42 ; goCover_4258a3deb158__42[3]++;
+	since := 24 * time.Hour
+	if s := r.URL.Query().Get("since"); s != "" {goCover_4258a3deb158__42[6]++;
+		if d, err := time.ParseDuration(s); err == nil {goCover_4258a3deb158__42[7]++;
+			since = d
+		}
+	}
+	goCover_4258a3deb158__42[4]++;stats, err := h.pg.GetOverview(r.Context(), tenantFromCtx(r), since)
+	if err != nil {goCover_4258a3deb158__42[8]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__42[5]++;writeJSON(w, http.StatusOK, stats)
+}
+
+func (h *Handler) GetFrameworkStats(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__43[0] = 6 ; goCover_4258a3deb158__43[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__43[2] = 43 ; goCover_4258a3deb158__43[3]++;
+	since := 24 * time.Hour
+	if s := r.URL.Query().Get("since"); s != "" {goCover_4258a3deb158__43[6]++;
+		if d, err := time.ParseDuration(s); err == nil {goCover_4258a3deb158__43[7]++;
+			since = d
+		}
+	}
+	goCover_4258a3deb158__43[4]++;stats, err := h.pg.GetOverview(r.Context(), tenantFromCtx(r), since)
+	if err != nil {goCover_4258a3deb158__43[8]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__43[5]++;writeJSON(w, http.StatusOK, stats.FrameworkCounts)
+}
+
+func (h *Handler) GetCostReport(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__44[0] = 6 ; goCover_4258a3deb158__44[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__44[2] = 44 ; goCover_4258a3deb158__44[3]++;
+	since := 24 * time.Hour
+	if s := r.URL.Query().Get("since"); s != "" {goCover_4258a3deb158__44[6]++;
+		if d, err := time.ParseDuration(s); err == nil {goCover_4258a3deb158__44[7]++;
+			since = d
+		}
+	}
+	goCover_4258a3deb158__44[4]++;rows, err := h.pg.GetCostReport(r.Context(), tenantFromCtx(r), since)
+	if err != nil {goCover_4258a3deb158__44[8]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__44[5]++;writeJSON(w, http.StatusOK, rows)
+}
+
+func (h *Handler) GetErrorReport(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__45[0] = 6 ; goCover_4258a3deb158__45[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__45[2] = 45 ; goCover_4258a3deb158__45[3]++;
+	since := 24 * time.Hour
+	if s := r.URL.Query().Get("since"); s != "" {goCover_4258a3deb158__45[6]++;
+		if d, err := time.ParseDuration(s); err == nil {goCover_4258a3deb158__45[7]++;
+			since = d
+		}
+	}
+	goCover_4258a3deb158__45[4]++;rows, err := h.pg.GetErrorReport(r.Context(), tenantFromCtx(r), since)
+	if err != nil {goCover_4258a3deb158__45[8]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__45[5]++;writeJSON(w, http.StatusOK, rows)
+}
+
+func (h *Handler) ListEnvironments(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__46[0] = 3 ; goCover_4258a3deb158__46[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__46[2] = 46 ; goCover_4258a3deb158__46[3]++;
+	envs, err := h.pg.ListEnvironments(r.Context(), tenantFromCtx(r))
+	if err != nil {goCover_4258a3deb158__46[5]++;
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	goCover_4258a3deb158__46[4]++;writeJSON(w, http.StatusOK, envs)
+}
+
+// ─── Live stream ──────────────────────────────────────────────────────────────
+
+func (h *Handler) LiveStream(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__47[0] = 1 ; goCover_4258a3deb158__47[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__47[2] = 47 ; goCover_4258a3deb158__47[3]++;
+	h.hub.ServeWS(w, r, tenantFromCtx(r))
+}
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+
+// ListAudit returns a paginated list of policy decisions for the tenant.
+// GET /api/v1/audit?limit=100&offset=0
+func (h *Handler) ListAudit(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__48[0] = 3 ; goCover_4258a3deb158__48[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__48[2] = 48 ; goCover_4258a3deb158__48[3]++;
+	tenantID := tenantFromCtx(r)
+	limit := parseIntOr(r.URL.Query().Get("limit"), 100)
+	offset := parseIntOr(r.URL.Query().Get("offset"), 0)
+
+	entries, err := h.pg.ListAuditEntries(r.Context(), tenantID, limit, offset)
+	if err != nil {goCover_4258a3deb158__48[5]++;
+		writeError(w, http.StatusInternalServerError, "failed to query audit log")
+		return
+	}
+	goCover_4258a3deb158__48[4]++;writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items":  entries,
+		"limit":  limit,
+		"offset": offset,
+		"count":  len(entries),
+	})
+}
+
+// VerifyAuditChain replays the SHA-256 chain and reports any broken links.
+// GET /api/v1/audit/verify
+func (h *Handler) VerifyAuditChain(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__49[0] = 5 ; goCover_4258a3deb158__49[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__49[2] = 49 ; goCover_4258a3deb158__49[3]++;
+	tenantID := tenantFromCtx(r)
+
+	result, err := h.pg.VerifyAuditChain(r.Context(), tenantID)
+	if err != nil {goCover_4258a3deb158__49[6]++;
+		writeError(w, http.StatusInternalServerError, "chain verification failed")
+		return
+	}
+
+	goCover_4258a3deb158__49[4]++;status := http.StatusOK
+	if !result.Valid {goCover_4258a3deb158__49[7]++;
+		status = http.StatusConflict // 409: data conflict — chain broken
+	}
+	goCover_4258a3deb158__49[5]++;writeJSON(w, status, result)
+}
+
+func (h *Handler) ListControlAudit(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__50[0] = 3 ; goCover_4258a3deb158__50[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__50[2] = 50 ; goCover_4258a3deb158__50[3]++;
+	tenantID := tenantFromCtx(r)
+	limit := parseIntOr(r.URL.Query().Get("limit"), 100)
+
+	entries, err := h.pg.ListAdminAuditEntries(r.Context(), tenantID, limit)
+	if err != nil {goCover_4258a3deb158__50[5]++;
+		writeError(w, http.StatusInternalServerError, "failed to query control-plane audit")
+		return
+	}
+	goCover_4258a3deb158__50[4]++;writeJSON(w, http.StatusOK, map[string]any{
+		"items": entries,
+		"count": len(entries),
+		"limit": limit,
+	})
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+// ListUsers returns all users for the current tenant.
+// GET /api/v1/users?limit=50&offset=0
+func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__51[0] = 3 ; goCover_4258a3deb158__51[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__51[2] = 51 ; goCover_4258a3deb158__51[3]++;
+	limit := parseIntOr(r.URL.Query().Get("limit"), 50)
+	offset := parseIntOr(r.URL.Query().Get("offset"), 0)
+
+	users, err := h.pg.ListUsers(r.Context(), tenantFromCtx(r), limit, offset)
+	if err != nil {goCover_4258a3deb158__51[5]++;
+		h.logger.Error("list users", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__51[4]++;writeJSON(w, http.StatusOK, models.Page[models.User]{
+		Items: users,
+		Total: int64(len(users)),
+	})
+}
+
+// GetUser returns a single user by ID within the current tenant.
+// GET /api/v1/users/{userId}
+func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__52[0] = 3 ; goCover_4258a3deb158__52[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__52[2] = 52 ; goCover_4258a3deb158__52[3]++;
+	user, err := h.pg.GetUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r))
+	if err != nil {goCover_4258a3deb158__52[5]++;
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	goCover_4258a3deb158__52[4]++;writeJSON(w, http.StatusOK, user)
+}
+
+// CreateUser creates a new user in the current tenant.
+// POST /api/v1/users — admin role required in production; enforced by policy layer.
+func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__53[0] = 7 ; goCover_4258a3deb158__53[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__53[2] = 53 ; goCover_4258a3deb158__53[3]++;
+	var req models.CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__53[7]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	goCover_4258a3deb158__53[4]++;if req.Username == "" || req.Email == "" {goCover_4258a3deb158__53[8]++;
+		writeError(w, http.StatusBadRequest, "username and email are required")
+		return
+	}
+
+	goCover_4258a3deb158__53[5]++;user, err := h.pg.CreateUser(r.Context(), tenantFromCtx(r), req)
+	if err != nil {goCover_4258a3deb158__53[9]++;
+		h.logger.Error("create user", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "create failed")
+		return
+	}
+	goCover_4258a3deb158__53[6]++;writeJSON(w, http.StatusCreated, user)
+}
+
+// UpdateUser applies partial updates to a user record.
+// PUT /api/v1/users/{userId}
+func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__54[0] = 5 ; goCover_4258a3deb158__54[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__54[2] = 54 ; goCover_4258a3deb158__54[3]++;
+	var req models.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__54[6]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	goCover_4258a3deb158__54[4]++;user, err := h.pg.UpdateUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r), req)
+	if err != nil {goCover_4258a3deb158__54[7]++;
+		h.logger.Error("update user", zap.Error(err))
+		writeError(w, http.StatusNotFound, "user not found or no change")
+		return
+	}
+	goCover_4258a3deb158__54[5]++;writeJSON(w, http.StatusOK, user)
+}
+
+// DeleteUser removes a user from the current tenant.
+// DELETE /api/v1/users/{userId}
+func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__55[0] = 3 ; goCover_4258a3deb158__55[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__55[2] = 55 ; goCover_4258a3deb158__55[3]++;
+	if err := h.pg.DeleteUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r)); err != nil {goCover_4258a3deb158__55[5]++;
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	goCover_4258a3deb158__55[4]++;w.WriteHeader(http.StatusNoContent)
+}
+
+// ─── Build helpers ────────────────────────────────────────────────────────────
+
+func buildTrace(traceID string, spans []models.Span) models.Trace {goCover_4258a3deb158__56[0] = 31 ; goCover_4258a3deb158__56[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__56[2] = 56 ; goCover_4258a3deb158__56[3]++;
+	t := models.Trace{ID: traceID, Spans: spans}
+	if len(spans) == 0 {goCover_4258a3deb158__56[7]++;
+		return t
+	}
+	goCover_4258a3deb158__56[4]++;decorateSpans(spans)
+	t.Framework = spans[0].Framework
+	t.RootSpanName = spans[0].Name
+	t.StartTime = time.Unix(0, spans[0].StartTimeNs)
+	t.Insights = models.TraceInsights{
+		StepTypes:    map[string]int{},
+		ErrorClasses: map[string]int{},
+	}
+	modelsSeen := map[string]struct{}{}
+	providersSeen := map[string]struct{}{}
+	appsSeen := map[string]struct{}{}
+	envsSeen := map[string]struct{}{}
+	var maxEnd int64
+	for _, sp := range spans {goCover_4258a3deb158__56[8]++;
+		end := sp.StartTimeNs + sp.DurationNs
+		if end > maxEnd {goCover_4258a3deb158__56[20]++;
+			maxEnd = end
+		}
+		goCover_4258a3deb158__56[9]++;t.TotalCostUSD += sp.CostUSD
+		t.TotalTokens += sp.InputTokens + sp.OutputTokens + sp.CacheReadTokens + sp.CacheWriteTokens + sp.ReasoningTokens
+		if sp.Model != "" {goCover_4258a3deb158__56[21]++;
+			modelsSeen[sp.Model] = struct{}{}
+		}
+		goCover_4258a3deb158__56[10]++;if sp.Provider != "" {goCover_4258a3deb158__56[22]++;
+			providersSeen[sp.Provider] = struct{}{}
+		}
+		goCover_4258a3deb158__56[11]++;if sp.AppName != "" {goCover_4258a3deb158__56[23]++;
+			appsSeen[sp.AppName] = struct{}{}
+		}
+		goCover_4258a3deb158__56[12]++;if sp.Environment != "" {goCover_4258a3deb158__56[24]++;
+			envsSeen[sp.Environment] = struct{}{}
+		}
+		goCover_4258a3deb158__56[13]++;if sp.StepType != "" {goCover_4258a3deb158__56[25]++;
+			t.Insights.StepTypes[sp.StepType]++
+		}
+		goCover_4258a3deb158__56[14]++;if sp.ErrorClass != "" {goCover_4258a3deb158__56[26]++;
+			t.Insights.ErrorClasses[sp.ErrorClass]++
+		}
+		goCover_4258a3deb158__56[15]++;if sp.StepType == "llm" {goCover_4258a3deb158__56[27]++;
+			t.Insights.LLMCalls++
+		}
+		goCover_4258a3deb158__56[16]++;if sp.StepType == "tool" {goCover_4258a3deb158__56[28]++;
+			t.Insights.ToolCalls++
+		}
+		goCover_4258a3deb158__56[17]++;if sp.Blocked {goCover_4258a3deb158__56[29]++;
+			t.Insights.BlockedSpans++
+		}
+		goCover_4258a3deb158__56[18]++;t.Insights.RetryCount += sp.RetryCount
+		if sp.Depth > t.Insights.MaxDepth {goCover_4258a3deb158__56[30]++;
+			t.Insights.MaxDepth = sp.Depth
+		}
+		goCover_4258a3deb158__56[19]++;if sp.StatusCode == 2 {goCover_4258a3deb158__56[31]++;
+			t.ErrorCount++
+		}
+	}
+	goCover_4258a3deb158__56[5]++;t.Insights.Models = appendSortedSet(modelsSeen)
+	t.Insights.Providers = appendSortedSet(providersSeen)
+	t.Insights.Apps = appendSortedSet(appsSeen)
+	t.Insights.Environments = appendSortedSet(envsSeen)
+	t.Duration = maxEnd - spans[0].StartTimeNs
+	t.SpanCount = len(spans)
+	if t.ErrorCount > 0 {goCover_4258a3deb158__56[32]++;
+		t.Status = "error"
+	} else{ goCover_4258a3deb158__56[33]++;{
+		t.Status = "ok"
+	}}
+	goCover_4258a3deb158__56[6]++;return t
+}
+
+func (h *Handler) attachTracePolicyEvents(ctx context.Context, tenantID string, trace *models.Trace) error {goCover_4258a3deb158__57[0] = 5 ; goCover_4258a3deb158__57[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__57[2] = 57 ; goCover_4258a3deb158__57[3]++;
+	if trace == nil || trace.ID == "" {goCover_4258a3deb158__57[6]++;
+		return nil
+	}
+	goCover_4258a3deb158__57[4]++;policyEvents, err := h.tracePolicyEvents(ctx, tenantID, trace.ID, trace.Spans)
+	if err != nil {goCover_4258a3deb158__57[7]++;
+		return err
+	}
+	goCover_4258a3deb158__57[5]++;trace.PolicyEvents = policyEvents
+	return nil
+}
+
+func (h *Handler) tracePolicyEvents(ctx context.Context, tenantID, traceID string, spans []models.Span) ([]models.PolicyEvent, error) {goCover_4258a3deb158__58[0] = 3 ; goCover_4258a3deb158__58[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__58[2] = 58 ; goCover_4258a3deb158__58[3]++;
+	entries, err := h.pg.ListAuditEntriesForTrace(ctx, tenantID, traceID)
+	if err != nil {goCover_4258a3deb158__58[5]++;
+		return nil, err
+	}
+	goCover_4258a3deb158__58[4]++;return auditEntriesToPolicyEvents(entries, observability.EnrichSpans(spans, nil)), nil
+}
+
+func auditEntriesToPolicyEvents(entries []store.AuditEntry, spans []models.Span) []models.PolicyEvent {goCover_4258a3deb158__59[0] = 12 ; goCover_4258a3deb158__59[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__59[2] = 59 ; goCover_4258a3deb158__59[3]++;
+	if len(entries) == 0 {goCover_4258a3deb158__59[7]++;
+		return nil
+	}
+	goCover_4258a3deb158__59[4]++;spanByID := make(map[string]models.Span, len(spans))
+	for _, span := range spans {goCover_4258a3deb158__59[8]++;
+		spanByID[span.ID] = span
+	}
+
+	goCover_4258a3deb158__59[5]++;events := make([]models.PolicyEvent, 0, len(entries))
+	for _, entry := range entries {goCover_4258a3deb158__59[9]++;
+		event := models.PolicyEvent{
+			DecisionID: entry.DecisionID,
+			TraceID:    entry.TraceID,
+			SpanID:     entry.SpanID,
+			PolicyName: entry.PolicyName,
+			Result:     entry.Result,
+			Reason:     entry.Reason,
+			TenantID:   entry.TenantID,
+		}
+		if span, ok := spanByID[entry.SpanID]; ok {goCover_4258a3deb158__59[11]++;
+			event.Provider = span.Provider
+			event.Model = span.Model
+			event.Scope = firstNonEmpty(span.Attributes["af.policy.scope"], span.Attributes["policy.scope"])
+			if matched := firstNonEmpty(span.Attributes["af.policy.matched"], span.Attributes["policy.matched"]); matched != "" {goCover_4258a3deb158__59[13]++;
+				event.Matched = splitCSV(matched)
+			}
+			goCover_4258a3deb158__59[12]++;if redactions := firstInt(span.Attributes, "af.policy.redactions", "policy.redactions"); redactions > 0 {goCover_4258a3deb158__59[14]++;
+				event.Redactions = redactions
+			}
+		}
+		goCover_4258a3deb158__59[10]++;events = append(events, event)
+	}
+	goCover_4258a3deb158__59[6]++;return events
+}
+
+func buildTopologyGraph(spans []models.Span) models.TopologyGraph {goCover_4258a3deb158__60[0] = 12 ; goCover_4258a3deb158__60[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__60[2] = 60 ; goCover_4258a3deb158__60[3]++;
+	nodes := map[string]models.TopologyNode{}
+	edges := map[string]*models.TopologyEdge{}
+
+	for _, sp := range spans {goCover_4258a3deb158__60[7]++;
+		if _, ok := nodes[sp.ID]; !ok {goCover_4258a3deb158__60[9]++;
+			nodes[sp.ID] = models.TopologyNode{
+				ID:        sp.ID,
+				Name:      sp.Name,
+				Framework: sp.Framework,
+				SpanCount: 1,
+			}
+		}
+		goCover_4258a3deb158__60[8]++;if sp.ParentID != "" {goCover_4258a3deb158__60[10]++;
+			key := sp.ParentID + "->" + sp.ID
+			if e, ok := edges[key]; ok {goCover_4258a3deb158__60[11]++;
+				e.CallCount++
+			} else{ goCover_4258a3deb158__60[12]++;{
+				edges[key] = &models.TopologyEdge{
+					From:      sp.ParentID,
+					To:        sp.ID,
+					EdgeType:  "call",
+					CallCount: 1,
+				}
+			}}
+		}
+	}
+
+	goCover_4258a3deb158__60[4]++;g := models.TopologyGraph{}
+	for _, n := range nodes {goCover_4258a3deb158__60[13]++;
+		g.Nodes = append(g.Nodes, n)
+	}
+	goCover_4258a3deb158__60[5]++;for _, e := range edges {goCover_4258a3deb158__60[14]++;
+		g.Edges = append(g.Edges, *e)
+	}
+	goCover_4258a3deb158__60[6]++;return g
+}
+
+func decorateSpans(spans []models.Span) {goCover_4258a3deb158__61[0] = 4 ; goCover_4258a3deb158__61[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__61[2] = 61 ; goCover_4258a3deb158__61[3]++;
+	byID := make(map[string]models.Span, len(spans))
+	for _, sp := range spans {goCover_4258a3deb158__61[5]++;
+		byID[sp.ID] = sp
+	}
+	goCover_4258a3deb158__61[4]++;depthMemo := map[string]int{}
+	for i := range spans {goCover_4258a3deb158__61[6]++;
+		decorateSpan(&spans[i], byID, depthMemo)
+	}
+}
+
+func decorateSpan(sp *models.Span, byID map[string]models.Span, depthMemo map[string]int) {goCover_4258a3deb158__62[0] = 5 ; goCover_4258a3deb158__62[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__62[2] = 62 ; goCover_4258a3deb158__62[3]++;
+	if sp == nil {goCover_4258a3deb158__62[6]++;
+		return
+	}
+	goCover_4258a3deb158__62[4]++;if sp.Attributes == nil {goCover_4258a3deb158__62[7]++;
+		sp.Attributes = map[string]string{}
+	}
+	goCover_4258a3deb158__62[5]++;sp.Depth = spanDepth(sp.ID, byID, depthMemo)
+	sp.Provider = firstNonEmpty(sp.Attributes["gen_ai.system"], sp.Attributes["proxy.provider"], sp.Attributes["netproxy.provider"])
+	sp.Model = firstNonEmpty(sp.Attributes["gen_ai.request.model"], sp.Attributes["proxy.model"], sp.Attributes["netproxy.model"])
+	sp.StepType = firstNonEmpty(sp.Attributes["af.span.step_type"], inferStepType(sp.Name, sp.Provider, sp.Model))
+	sp.AppName = firstNonEmpty(sp.Attributes["service.name"], sp.Attributes["af.app.name"], sp.Attributes["application.name"])
+	sp.Environment = firstNonEmpty(sp.Attributes["deployment.environment"], sp.Attributes["environment"], sp.Attributes["env"])
+	sp.UserID = firstNonEmpty(sp.Attributes["enduser.id"], sp.Attributes["user.id"], sp.Attributes["af.user.id"])
+	sp.SessionID = firstNonEmpty(sp.Attributes["session.id"], sp.Attributes["af.session.id"])
+	sp.PromptID = firstNonEmpty(sp.Attributes["af.prompt.id"])
+	sp.PromptVersion = firstInt(sp.Attributes, "af.prompt.version")
+	sp.PromptReleaseTag = firstNonEmpty(sp.Attributes["af.prompt.release_tag"])
+	sp.PromptEnvironment = firstNonEmpty(sp.Attributes["af.prompt.environment"], sp.Environment)
+	sp.ErrorClass = firstNonEmpty(sp.Attributes["af.error.class"], sp.Attributes["error.type"], sp.Attributes["exception.type"])
+	sp.PromptPreview = firstPreview(sp.Attributes, "af.preview.prompt", "gen_ai.prompt", "input.value", "prompt", "llm.prompt")
+	sp.ResponsePreview = firstPreview(sp.Attributes, "af.preview.response", "gen_ai.response", "output.value", "response", "llm.response")
+	sp.RetryCount = firstInt(sp.Attributes, "retry.count", "http.retry_count", "af.retry.count")
+	sp.BlockedReason = firstNonEmpty(sp.Attributes["af.policy.reason"], sp.Attributes["policy.reason"], sp.Attributes["budget.reason"])
+	sp.Blocked = isTrue(sp.Attributes["af.policy.blocked"]) || strings.EqualFold(sp.Attributes["af.policy.decision"], "deny") || sp.BlockedReason != ""
+	sp.PricingRuleID = firstInt64(sp.Attributes, "af.pricing.rule_id")
+	sp.PricingScope = sp.Attributes["af.pricing.scope"]
+}
+
+func spanDepth(spanID string, byID map[string]models.Span, memo map[string]int) int {goCover_4258a3deb158__63[0] = 7 ; goCover_4258a3deb158__63[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__63[2] = 63 ; goCover_4258a3deb158__63[3]++;
+	if spanID == "" {goCover_4258a3deb158__63[7]++;
+		return 0
+	}
+	goCover_4258a3deb158__63[4]++;if depth, ok := memo[spanID]; ok {goCover_4258a3deb158__63[8]++;
+		return depth
+	}
+	goCover_4258a3deb158__63[5]++;sp, ok := byID[spanID]
+	if !ok || sp.ParentID == "" {goCover_4258a3deb158__63[9]++;
+		memo[spanID] = 0
+		return 0
+	}
+	goCover_4258a3deb158__63[6]++;depth := 1 + spanDepth(sp.ParentID, byID, memo)
+	memo[spanID] = depth
+	return depth
+}
+
+func inferStepType(name, provider, model string) string {goCover_4258a3deb158__64[0] = 6 ; goCover_4258a3deb158__64[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__64[2] = 64 ; goCover_4258a3deb158__64[3]++;
+	lowerName := strings.ToLower(name)
+	switch {
+	case provider != "" || model != "":goCover_4258a3deb158__64[4]++;
+		return "llm"
+	case strings.Contains(lowerName, "tool"), strings.Contains(lowerName, "function"):goCover_4258a3deb158__64[5]++;
+		return "tool"
+	case strings.Contains(lowerName, "policy"), strings.Contains(lowerName, "guard"):goCover_4258a3deb158__64[6]++;
+		return "policy"
+	case strings.Contains(lowerName, "retry"):goCover_4258a3deb158__64[7]++;
+		return "retry"
+	default:goCover_4258a3deb158__64[8]++;
+		return "agent"
+	}
+}
+
+func firstPreview(attrs map[string]string, keys ...string) string {goCover_4258a3deb158__65[0] = 6 ; goCover_4258a3deb158__65[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__65[2] = 65 ; goCover_4258a3deb158__65[3]++;
+	for _, key := range keys {goCover_4258a3deb158__65[5]++;
+		if v := strings.TrimSpace(attrs[key]); v != "" {goCover_4258a3deb158__65[6]++;
+			if len(v) > 220 {goCover_4258a3deb158__65[8]++;
+				return v[:220] + "..."
+			}
+			goCover_4258a3deb158__65[7]++;return v
+		}
+	}
+	goCover_4258a3deb158__65[4]++;return ""
+}
+
+func firstNonEmpty(values ...string) string {goCover_4258a3deb158__66[0] = 4 ; goCover_4258a3deb158__66[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__66[2] = 66 ; goCover_4258a3deb158__66[3]++;
+	for _, value := range values {goCover_4258a3deb158__66[5]++;
+		if trimmed := strings.TrimSpace(value); trimmed != "" {goCover_4258a3deb158__66[6]++;
+			return trimmed
+		}
+	}
+	goCover_4258a3deb158__66[4]++;return ""
+}
+
+func firstInt(attrs map[string]string, keys ...string) int {goCover_4258a3deb158__67[0] = 4 ; goCover_4258a3deb158__67[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__67[2] = 67 ; goCover_4258a3deb158__67[3]++;
+	for _, key := range keys {goCover_4258a3deb158__67[5]++;
+		if v, err := strconv.Atoi(strings.TrimSpace(attrs[key])); err == nil {goCover_4258a3deb158__67[6]++;
+			return v
+		}
+	}
+	goCover_4258a3deb158__67[4]++;return 0
+}
+
+func firstInt64(attrs map[string]string, keys ...string) int64 {goCover_4258a3deb158__68[0] = 4 ; goCover_4258a3deb158__68[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__68[2] = 68 ; goCover_4258a3deb158__68[3]++;
+	for _, key := range keys {goCover_4258a3deb158__68[5]++;
+		if v, err := strconv.ParseInt(strings.TrimSpace(attrs[key]), 10, 64); err == nil {goCover_4258a3deb158__68[6]++;
+			return v
+		}
+	}
+	goCover_4258a3deb158__68[4]++;return 0
+}
+
+func isTrue(value string) bool {goCover_4258a3deb158__69[0] = 3 ; goCover_4258a3deb158__69[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__69[2] = 69 ; goCover_4258a3deb158__69[3]++;
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "blocked":goCover_4258a3deb158__69[4]++;
+		return true
+	default:goCover_4258a3deb158__69[5]++;
+		return false
+	}
+}
+
+func appendSortedSet(values map[string]struct{}) []string {goCover_4258a3deb158__70[0] = 5 ; goCover_4258a3deb158__70[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__70[2] = 70 ; goCover_4258a3deb158__70[3]++;
+	if len(values) == 0 {goCover_4258a3deb158__70[6]++;
+		return nil
+	}
+	goCover_4258a3deb158__70[4]++;out := make([]string, 0, len(values))
+	for value := range values {goCover_4258a3deb158__70[7]++;
+		out = append(out, value)
+	}
+	goCover_4258a3deb158__70[5]++;sort.Strings(out)
+	return out
+}
+
+func splitCSV(value string) []string {goCover_4258a3deb158__71[0] = 8 ; goCover_4258a3deb158__71[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__71[2] = 71 ; goCover_4258a3deb158__71[3]++;
+	if strings.TrimSpace(value) == "" {goCover_4258a3deb158__71[7]++;
+		return nil
+	}
+	goCover_4258a3deb158__71[4]++;parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {goCover_4258a3deb158__71[8]++;
+		if trimmed := strings.TrimSpace(part); trimmed != "" {goCover_4258a3deb158__71[9]++;
+			out = append(out, trimmed)
+		}
+	}
+	goCover_4258a3deb158__71[5]++;if len(out) == 0 {goCover_4258a3deb158__71[10]++;
+		return nil
+	}
+	goCover_4258a3deb158__71[6]++;return out
+}
+
+func previewPolicyDecision(decision policy.Decision) models.PolicyPreviewDecision {goCover_4258a3deb158__72[0] = 3 ; goCover_4258a3deb158__72[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__72[2] = 72 ; goCover_4258a3deb158__72[3]++;
+	preview := models.PolicyPreviewDecision{
+		Matched:          decision.Matched,
+		RuleID:           decision.RuleID,
+		PolicyName:       decision.PolicyName,
+		Action:           decision.Action,
+		Reason:           decision.Reason,
+		Scope:            decision.Scope,
+		MatchedNames:     append([]string(nil), decision.MatchedNames...),
+		GuardrailMatches: append([]string(nil), decision.GuardrailMatches...),
+		Redactions:       decision.Redactions,
+		Final:            decision.Final,
+		Engine:           decision.Explanation.Engine,
+		DecisionMode:     decision.Explanation.DecisionMode,
+		Version:          decision.Explanation.Version,
+		RolloutPercent:   decision.Explanation.RolloutPercent,
+		EvaluationPath:   append([]string(nil), decision.Explanation.EvaluationPath...),
+		MatchedFields:    append([]string(nil), decision.Explanation.MatchedFields...),
+		ConditionTrace:   append([]models.PolicyConditionTrace(nil), decision.Explanation.ConditionTrace...),
+		RegoQuery:        decision.Explanation.RegoQuery,
+		Explain:          decision.Explanation.Explain,
+		RuleConditions:   cloneStringMap(decision.Explanation.RuleConditions),
+	}
+	if len(decision.RedactedBody) > 0 {goCover_4258a3deb158__72[5]++;
+		preview.RedactedPreview = previewString(decision.RedactedBody, 220)
+	}
+	goCover_4258a3deb158__72[4]++;return preview
+}
+
+func cloneStringMap(input map[string]string) map[string]string {goCover_4258a3deb158__73[0] = 5 ; goCover_4258a3deb158__73[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__73[2] = 73 ; goCover_4258a3deb158__73[3]++;
+	if len(input) == 0 {goCover_4258a3deb158__73[6]++;
+		return nil
+	}
+	goCover_4258a3deb158__73[4]++;out := make(map[string]string, len(input))
+	for key, value := range input {goCover_4258a3deb158__73[7]++;
+		out[key] = value
+	}
+	goCover_4258a3deb158__73[5]++;return out
+}
+
+func previewString(body []byte, limit int) string {goCover_4258a3deb158__74[0] = 7 ; goCover_4258a3deb158__74[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__74[2] = 74 ; goCover_4258a3deb158__74[3]++;
+	if len(body) == 0 {goCover_4258a3deb158__74[7]++;
+		return ""
+	}
+	goCover_4258a3deb158__74[4]++;text := strings.TrimSpace(string(body))
+	if text == "" {goCover_4258a3deb158__74[8]++;
+		return ""
+	}
+	goCover_4258a3deb158__74[5]++;if len(text) <= limit {goCover_4258a3deb158__74[9]++;
+		return text
+	}
+	goCover_4258a3deb158__74[6]++;return text[:limit] + "..."
+}
+
+func parseIntOr(s string, def int) int {goCover_4258a3deb158__75[0] = 3 ; goCover_4258a3deb158__75[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__75[2] = 75 ; goCover_4258a3deb158__75[3]++;
+	if v, err := strconv.Atoi(s); err == nil && v > 0 {goCover_4258a3deb158__75[5]++;
+		return v
+	}
+	goCover_4258a3deb158__75[4]++;return def
+}
+
+func (h *Handler) repriceSpan(sp *models.Span) {goCover_4258a3deb158__76[0] = 20 ; goCover_4258a3deb158__76[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__76[2] = 76 ; goCover_4258a3deb158__76[3]++;
+	if sp == nil {goCover_4258a3deb158__76[13]++;
+		return
+	}
+	goCover_4258a3deb158__76[4]++;model := strings.TrimSpace(sp.Attributes["gen_ai.request.model"])
+	if model == "" {goCover_4258a3deb158__76[14]++;
+		model = strings.TrimSpace(sp.Attributes["proxy.model"])
+	}
+	goCover_4258a3deb158__76[5]++;if model == "" {goCover_4258a3deb158__76[15]++;
+		model = strings.TrimSpace(sp.Attributes["netproxy.model"])
+	}
+
+	goCover_4258a3deb158__76[6]++;provider := strings.TrimSpace(sp.Attributes["gen_ai.system"])
+	match, detailed := proxy.ComputeDetailedCostForTenant(provider, model, sp.TenantID, sp.ReceivedAt, pricing.Usage{
+		InputTokens:      sp.InputTokens,
+		OutputTokens:     sp.OutputTokens,
+		CacheReadTokens:  sp.CacheReadTokens,
+		CacheWriteTokens: sp.CacheWriteTokens,
+		ReasoningTokens:  sp.ReasoningTokens,
+	})
+	sp.CostUSD = detailed.TotalCostUSD
+	sp.InputCostUSD = detailed.InputCostUSD
+	sp.OutputCostUSD = detailed.OutputCostUSD
+	sp.CacheReadCostUSD = detailed.CacheReadCostUSD
+	sp.CacheWriteCostUSD = detailed.CacheWriteCostUSD
+	sp.ReasoningCostUSD = detailed.ReasoningCostUSD
+
+	if sp.Attributes == nil {goCover_4258a3deb158__76[16]++;
+		sp.Attributes = map[string]string{}
+	}
+	goCover_4258a3deb158__76[7]++;if model != "" {goCover_4258a3deb158__76[17]++;
+		sp.Attributes["gen_ai.request.model"] = model
+	}
+	goCover_4258a3deb158__76[8]++;if provider != "" {goCover_4258a3deb158__76[18]++;
+		sp.Attributes["gen_ai.system"] = strings.ToLower(provider)
+	}
+	goCover_4258a3deb158__76[9]++;sp.Attributes["af.cost.input_usd"] = strconv.FormatFloat(detailed.InputCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.output_usd"] = strconv.FormatFloat(detailed.OutputCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.cache_read_usd"] = strconv.FormatFloat(detailed.CacheReadCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.cache_write_usd"] = strconv.FormatFloat(detailed.CacheWriteCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.reasoning_usd"] = strconv.FormatFloat(detailed.ReasoningCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.total_usd"] = strconv.FormatFloat(detailed.TotalCostUSD, 'f', 8, 64)
+	if sp.CacheReadTokens > 0 {goCover_4258a3deb158__76[19]++;
+		sp.Attributes["gen_ai.usage.cache_read_tokens"] = strconv.FormatInt(sp.CacheReadTokens, 10)
+	}
+	goCover_4258a3deb158__76[10]++;if sp.CacheWriteTokens > 0 {goCover_4258a3deb158__76[20]++;
+		sp.Attributes["gen_ai.usage.cache_write_tokens"] = strconv.FormatInt(sp.CacheWriteTokens, 10)
+	}
+	goCover_4258a3deb158__76[11]++;if sp.ReasoningTokens > 0 {goCover_4258a3deb158__76[21]++;
+		sp.Attributes["gen_ai.usage.reasoning_tokens"] = strconv.FormatInt(sp.ReasoningTokens, 10)
+	}
+	goCover_4258a3deb158__76[12]++;if match.RuleID > 0 {goCover_4258a3deb158__76[22]++;
+		sp.Attributes["af.pricing.rule_id"] = strconv.FormatInt(match.RuleID, 10)
+		sp.Attributes["af.pricing.model_pattern"] = match.ModelPattern
+		sp.Attributes["af.pricing.scope"] = match.Scope
+		sp.Attributes["af.pricing.input_per_million"] = strconv.FormatFloat(match.InputPerMillion, 'f', 4, 64)
+		sp.Attributes["af.pricing.output_per_million"] = strconv.FormatFloat(match.OutputPerMillion, 'f', 4, 64)
+		sp.Attributes["af.pricing.cache_read_per_million"] = strconv.FormatFloat(match.CacheReadPerMillion, 'f', 4, 64)
+		sp.Attributes["af.pricing.cache_write_per_million"] = strconv.FormatFloat(match.CacheWritePerMillion, 'f', 4, 64)
+		sp.Attributes["af.pricing.reasoning_per_million"] = strconv.FormatFloat(match.ReasoningPerMillion, 'f', 4, 64)
+	}
+}
+
+func (h *Handler) ListPricingRules(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__77[0] = 3 ; goCover_4258a3deb158__77[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__77[2] = 77 ; goCover_4258a3deb158__77[3]++;
+	rules, err := h.pg.ListPricingRules(r.Context())
+	if err != nil {goCover_4258a3deb158__77[5]++;
+		h.logger.Error("list pricing rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__77[4]++;writeJSON(w, http.StatusOK, map[string]any{"items": rules, "count": len(rules)})
+}
+
+func (h *Handler) UpsertPricingRule(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__78[0] = 23 ; goCover_4258a3deb158__78[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__78[2] = 78 ; goCover_4258a3deb158__78[3]++;
+	var rule models.PricingRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {goCover_4258a3deb158__78[14]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	goCover_4258a3deb158__78[4]++;rule.Provider = proxy.NormalizeProvider(rule.Provider)
+	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
+	if rule.ModelPattern == "" {goCover_4258a3deb158__78[15]++;
+		writeError(w, http.StatusBadRequest, "model_pattern is required")
+		return
+	}
+	goCover_4258a3deb158__78[5]++;if rule.InputPerMillion < 0 || rule.OutputPerMillion < 0 {goCover_4258a3deb158__78[16]++;
+		writeError(w, http.StatusBadRequest, "pricing values must be non-negative")
+		return
+	}
+	goCover_4258a3deb158__78[6]++;if rule.Priority == 0 {goCover_4258a3deb158__78[17]++;
+		rule.Priority = 100
+	}
+	goCover_4258a3deb158__78[7]++;if rule.EffectiveFrom != nil && rule.EffectiveTo != nil && rule.EffectiveTo.Before(*rule.EffectiveFrom) {goCover_4258a3deb158__78[18]++;
+		writeError(w, http.StatusBadRequest, "effective_to must be after effective_from")
+		return
+	}
+	goCover_4258a3deb158__78[8]++;if rule.TenantID != nil && strings.TrimSpace(*rule.TenantID) == "" {goCover_4258a3deb158__78[19]++;
+		rule.TenantID = nil
+	}
+
+	goCover_4258a3deb158__78[9]++;var beforeJSON string
+	if rule.ID > 0 {goCover_4258a3deb158__78[20]++;
+		existing, err := h.pg.GetPricingRule(r.Context(), rule.ID)
+		if err == nil {goCover_4258a3deb158__78[21]++;
+			if b, err := json.Marshal(existing); err == nil {goCover_4258a3deb158__78[22]++;
+				beforeJSON = string(b)
+			}
+		}
+	}
+
+	goCover_4258a3deb158__78[10]++;updated, err := h.pg.UpsertPricingRule(r.Context(), rule)
+	if err != nil {goCover_4258a3deb158__78[23]++;
+		h.logger.Error("upsert pricing rule", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	goCover_4258a3deb158__78[11]++;if err := proxy.LoadPricingRules(r.Context(), h.pg); err != nil {goCover_4258a3deb158__78[24]++;
+		h.logger.Error("reload pricing rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "reload failed")
+		return
+	}
+	goCover_4258a3deb158__78[12]++;if after, err := json.Marshal(updated); err == nil {goCover_4258a3deb158__78[25]++;
+		_ = h.pg.CreatePricingRuleAudit(r.Context(), models.PricingAuditEntry{
+			RuleID:      updated.ID,
+			Action:      map[bool]string{true: "update", false: "create"}[rule.ID > 0],
+			Actor:       actorFromCtx(r),
+			TenantID:    tenantFromCtx(r),
+			BeforeState: beforeJSON,
+			AfterState:  string(after),
+		})
+	}
+	goCover_4258a3deb158__78[13]++;h.writeAdminAudit(r, "pricing", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "pricing_rule", strconv.FormatInt(updated.ID, 10), "success", updated)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) DeletePricingRule(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__79[0] = 12 ; goCover_4258a3deb158__79[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__79[2] = 79 ; goCover_4258a3deb158__79[3]++;
+	id, err := strconv.ParseInt(chi.URLParam(r, "ruleId"), 10, 64)
+	if err != nil || id <= 0 {goCover_4258a3deb158__79[8]++;
+		writeError(w, http.StatusBadRequest, "invalid rule id")
+		return
+	}
+	goCover_4258a3deb158__79[4]++;var beforeJSON string
+	existing, err := h.pg.GetPricingRule(r.Context(), id)
+	if err == nil {goCover_4258a3deb158__79[9]++;
+		if b, err := json.Marshal(existing); err == nil {goCover_4258a3deb158__79[10]++;
+			beforeJSON = string(b)
+		}
+	}
+	goCover_4258a3deb158__79[5]++;if err := h.pg.DeletePricingRule(r.Context(), id); err != nil {goCover_4258a3deb158__79[11]++;
+		if isNotFound(err) {goCover_4258a3deb158__79[13]++;
+			writeError(w, http.StatusNotFound, "pricing rule not found")
+			return
+		}
+		goCover_4258a3deb158__79[12]++;h.logger.Error("delete pricing rule", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	goCover_4258a3deb158__79[6]++;if err := proxy.LoadPricingRules(r.Context(), h.pg); err != nil {goCover_4258a3deb158__79[14]++;
+		h.logger.Error("reload pricing rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "reload failed")
+		return
+	}
+	goCover_4258a3deb158__79[7]++;_ = h.pg.CreatePricingRuleAudit(r.Context(), models.PricingAuditEntry{
+		RuleID:      id,
+		Action:      "delete",
+		Actor:       actorFromCtx(r),
+		TenantID:    tenantFromCtx(r),
+		BeforeState: beforeJSON,
+		AfterState:  "{}",
+	})
+	h.writeAdminAudit(r, "pricing", "delete", "pricing_rule", strconv.FormatInt(id, 10), "success", existing)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) ListPolicyRules(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__80[0] = 3 ; goCover_4258a3deb158__80[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__80[2] = 80 ; goCover_4258a3deb158__80[3]++;
+	rules, err := h.pg.ListPolicyRules(r.Context())
+	if err != nil {goCover_4258a3deb158__80[5]++;
+		h.logger.Error("list policy rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__80[4]++;writeJSON(w, http.StatusOK, map[string]any{"items": rules, "count": len(rules)})
+}
+
+func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__81[0] = 43 ; goCover_4258a3deb158__81[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__81[2] = 81 ; goCover_4258a3deb158__81[3]++;
+	var rule models.PolicyRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {goCover_4258a3deb158__81[24]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	goCover_4258a3deb158__81[4]++;rule.Name = strings.TrimSpace(rule.Name)
+	rule.RuleType = strings.ToLower(strings.TrimSpace(rule.RuleType))
+	rule.DecisionMode = strings.ToLower(strings.TrimSpace(rule.DecisionMode))
+	rule.Action = strings.ToLower(strings.TrimSpace(rule.Action))
+	rule.Provider = proxy.NormalizeProvider(rule.Provider)
+	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
+	rule.Environment = strings.ToLower(strings.TrimSpace(rule.Environment))
+	rule.Detector = strings.ToLower(strings.TrimSpace(rule.Detector))
+	rule.Scope = strings.ToLower(strings.TrimSpace(rule.Scope))
+	rule.SchemaJSON = strings.TrimSpace(rule.SchemaJSON)
+	if rule.Name == "" {goCover_4258a3deb158__81[25]++;
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	goCover_4258a3deb158__81[5]++;if rule.RuleType != "traffic" && rule.RuleType != "dlp" {goCover_4258a3deb158__81[26]++;
+		writeError(w, http.StatusBadRequest, "rule_type must be traffic or dlp")
+		return
+	}
+	goCover_4258a3deb158__81[6]++;if rule.DecisionMode == "" {goCover_4258a3deb158__81[27]++;
+		rule.DecisionMode = "fast"
+	}
+	goCover_4258a3deb158__81[7]++;if rule.DecisionMode != "fast" && rule.DecisionMode != "rego" {goCover_4258a3deb158__81[28]++;
+		writeError(w, http.StatusBadRequest, "decision_mode must be fast or rego")
+		return
+	}
+	goCover_4258a3deb158__81[8]++;if rule.Action != "allow" && rule.Action != "warn" && rule.Action != "redact" && rule.Action != "deny" {goCover_4258a3deb158__81[29]++;
+		writeError(w, http.StatusBadRequest, "action must be allow, warn, redact, or deny")
+		return
+	}
+	goCover_4258a3deb158__81[9]++;if rule.RuleType == "traffic" && rule.Action == "redact" {goCover_4258a3deb158__81[30]++;
+		writeError(w, http.StatusBadRequest, "traffic rules cannot use redact")
+		return
+	}
+	goCover_4258a3deb158__81[10]++;if rule.RolloutPercent <= 0 {goCover_4258a3deb158__81[31]++;
+		rule.RolloutPercent = 100
+	}
+	goCover_4258a3deb158__81[11]++;if rule.RolloutPercent > 100 {goCover_4258a3deb158__81[32]++;
+		writeError(w, http.StatusBadRequest, "rollout_percent must be between 1 and 100")
+		return
+	}
+	goCover_4258a3deb158__81[12]++;if rule.Version <= 0 {goCover_4258a3deb158__81[33]++;
+		rule.Version = 1
+	}
+	goCover_4258a3deb158__81[13]++;if rule.DecisionMode == "rego" && strings.TrimSpace(rule.RegoModule) == "" {goCover_4258a3deb158__81[34]++;
+		writeError(w, http.StatusBadRequest, "rego decision_mode requires rego_module")
+		return
+	}
+	goCover_4258a3deb158__81[14]++;if rule.RuleType == "dlp" && rule.Scope == "" {goCover_4258a3deb158__81[35]++;
+		rule.Scope = "both"
+	}
+	goCover_4258a3deb158__81[15]++;if rule.RuleType == "traffic" {goCover_4258a3deb158__81[36]++;
+		rule.Scope = "both"
+		rule.Detector = ""
+	}
+	goCover_4258a3deb158__81[16]++;for idx, guard := range rule.Guardrails {goCover_4258a3deb158__81[37]++;
+		rule.Guardrails[idx] = strings.ToLower(strings.TrimSpace(guard))
+	}
+	goCover_4258a3deb158__81[17]++;for idx, category := range rule.UnsafeCategories {goCover_4258a3deb158__81[38]++;
+		rule.UnsafeCategories[idx] = strings.ToLower(strings.TrimSpace(category))
+	}
+	goCover_4258a3deb158__81[18]++;if rule.TenantID != nil && strings.TrimSpace(*rule.TenantID) == "" {goCover_4258a3deb158__81[39]++;
+		rule.TenantID = nil
+	}
+	goCover_4258a3deb158__81[19]++;if rule.RuleConditions == nil {goCover_4258a3deb158__81[40]++;
+		rule.RuleConditions = map[string]string{}
+	}
+
+	goCover_4258a3deb158__81[20]++;var before any
+	if rule.ID > 0 {goCover_4258a3deb158__81[41]++;
+		existing, err := h.pg.GetPolicyRule(r.Context(), rule.ID)
+		if err == nil {goCover_4258a3deb158__81[42]++;
+			before = existing
+		}
+	}
+	goCover_4258a3deb158__81[21]++;updated, err := h.pg.UpsertPolicyRule(r.Context(), rule)
+	if err != nil {goCover_4258a3deb158__81[43]++;
+		h.logger.Error("upsert policy rule", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	goCover_4258a3deb158__81[22]++;if h.policyEngine != nil {goCover_4258a3deb158__81[44]++;
+		if err := h.policyEngine.LoadRules(r.Context(), h.pg); err != nil {goCover_4258a3deb158__81[45]++;
+			h.logger.Error("reload policy rules", zap.Error(err))
+			writeError(w, http.StatusInternalServerError, "reload failed")
+			return
+		}
+	}
+	goCover_4258a3deb158__81[23]++;h.writeAdminAudit(r, "policy", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "policy_rule", strconv.FormatInt(updated.ID, 10), "success", map[string]any{
+		"before": before,
+		"after":  updated,
+	})
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) DeletePolicyRule(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__82[0] = 10 ; goCover_4258a3deb158__82[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__82[2] = 82 ; goCover_4258a3deb158__82[3]++;
+	id, err := strconv.ParseInt(chi.URLParam(r, "ruleId"), 10, 64)
+	if err != nil || id <= 0 {goCover_4258a3deb158__82[7]++;
+		writeError(w, http.StatusBadRequest, "invalid rule id")
+		return
+	}
+	goCover_4258a3deb158__82[4]++;existing, _ := h.pg.GetPolicyRule(r.Context(), id)
+	if err := h.pg.DeletePolicyRule(r.Context(), id); err != nil {goCover_4258a3deb158__82[8]++;
+		if isNotFound(err) {goCover_4258a3deb158__82[10]++;
+			writeError(w, http.StatusNotFound, "policy rule not found")
+			return
+		}
+		goCover_4258a3deb158__82[9]++;h.logger.Error("delete policy rule", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	goCover_4258a3deb158__82[5]++;if h.policyEngine != nil {goCover_4258a3deb158__82[11]++;
+		if err := h.policyEngine.LoadRules(r.Context(), h.pg); err != nil {goCover_4258a3deb158__82[12]++;
+			h.logger.Error("reload policy rules", zap.Error(err))
+			writeError(w, http.StatusInternalServerError, "reload failed")
+			return
+		}
+	}
+	goCover_4258a3deb158__82[6]++;h.writeAdminAudit(r, "policy", "delete", "policy_rule", strconv.FormatInt(id, 10), "success", existing)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) PreviewPolicyRule(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__83[0] = 5 ; goCover_4258a3deb158__83[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__83[2] = 83 ; goCover_4258a3deb158__83[3]++;
+	if h.policyEngine == nil {goCover_4258a3deb158__83[6]++;
+		writeError(w, http.StatusServiceUnavailable, "policy engine unavailable")
+		return
+	}
+
+	goCover_4258a3deb158__83[4]++;var req models.PolicyPreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__83[7]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	goCover_4258a3deb158__83[5]++;req.Provider = proxy.NormalizeProvider(req.Provider)
+	req.Model = strings.ToLower(strings.TrimSpace(req.Model))
+	req.Environment = strings.ToLower(strings.TrimSpace(req.Environment))
+
+	traffic, requestDLP, responseDLP := h.policyEngine.Evaluate(policy.EvaluationInput{
+		TenantID:        strings.TrimSpace(req.TenantID),
+		Environment:     req.Environment,
+		Provider:        req.Provider,
+		Model:           req.Model,
+		EstimatedTokens: req.EstimatedTokens,
+		Actor:           strings.TrimSpace(req.Actor),
+		App:             strings.TrimSpace(req.App),
+		Session:         strings.TrimSpace(req.Session),
+		RequestBody:     []byte(req.RequestBody),
+		ResponseBody:    []byte(req.ResponseBody),
+	})
+	resp := models.PolicyPreviewResponse{
+		Traffic:     previewPolicyDecision(traffic),
+		RequestDLP:  previewPolicyDecision(requestDLP),
+		ResponseDLP: previewPolicyDecision(responseDLP),
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) SimulatePolicyRule(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__84[0] = 7 ; goCover_4258a3deb158__84[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__84[2] = 84 ; goCover_4258a3deb158__84[3]++;
+	if h.policyEngine == nil {goCover_4258a3deb158__84[7]++;
+		writeError(w, http.StatusServiceUnavailable, "policy engine unavailable")
+		return
+	}
+	goCover_4258a3deb158__84[4]++;var req models.PolicySimulationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__84[8]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	goCover_4258a3deb158__84[5]++;for i := range req.Samples {goCover_4258a3deb158__84[9]++;
+		req.Samples[i].Provider = proxy.NormalizeProvider(req.Samples[i].Provider)
+		req.Samples[i].Model = strings.ToLower(strings.TrimSpace(req.Samples[i].Model))
+		req.Samples[i].Environment = strings.ToLower(strings.TrimSpace(req.Samples[i].Environment))
+	}
+	goCover_4258a3deb158__84[6]++;writeJSON(w, http.StatusOK, h.policyEngine.Simulate(req))
+}
+
+func (h *Handler) PreviewPricingRule(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__85[0] = 5 ; goCover_4258a3deb158__85[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__85[2] = 85 ; goCover_4258a3deb158__85[3]++;
+	var req models.PricingPreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__85[6]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	goCover_4258a3deb158__85[4]++;at := time.Now().UTC()
+	if req.At != nil {goCover_4258a3deb158__85[7]++;
+		at = req.At.UTC()
+	}
+	goCover_4258a3deb158__85[5]++;match, detailed := proxy.ComputeDetailedCostForTenant(req.Provider, req.Model, req.TenantID, at, pricing.Usage{
+		InputTokens:      req.InputTokens,
+		OutputTokens:     req.OutputTokens,
+		CacheReadTokens:  req.CacheReadTokens,
+		CacheWriteTokens: req.CacheWriteTokens,
+		ReasoningTokens:  req.ReasoningTokens,
+	})
+	resp := models.PricingPreviewResponse{
+		Matched:              match.RuleID > 0 || match.ModelPattern != "",
+		RuleID:               match.RuleID,
+		Provider:             req.Provider,
+		Model:                req.Model,
+		ModelPattern:         match.ModelPattern,
+		PricingScope:         match.Scope,
+		InputPerMillion:      match.InputPerMillion,
+		OutputPerMillion:     match.OutputPerMillion,
+		CacheReadPerMillion:  match.CacheReadPerMillion,
+		CacheWritePerMillion: match.CacheWritePerMillion,
+		ReasoningPerMillion:  match.ReasoningPerMillion,
+		InputTokens:          req.InputTokens,
+		OutputTokens:         req.OutputTokens,
+		CacheReadTokens:      req.CacheReadTokens,
+		CacheWriteTokens:     req.CacheWriteTokens,
+		ReasoningTokens:      req.ReasoningTokens,
+		InputCostUSD:         detailed.InputCostUSD,
+		OutputCostUSD:        detailed.OutputCostUSD,
+		CacheReadCostUSD:     detailed.CacheReadCostUSD,
+		CacheWriteCostUSD:    detailed.CacheWriteCostUSD,
+		ReasoningCostUSD:     detailed.ReasoningCostUSD,
+		TotalCostUSD:         detailed.TotalCostUSD,
+		Explain: pricing.BuildExplanation(pricing.Explanation{
+			RuleID:       match.RuleID,
+			Provider:     req.Provider,
+			MatchedModel: req.Model,
+			ModelPattern: match.ModelPattern,
+			Scope:        match.Scope,
+			RateCard: pricing.RateCard{
+				InputPerMillion:      match.InputPerMillion,
+				OutputPerMillion:     match.OutputPerMillion,
+				CacheReadPerMillion:  match.CacheReadPerMillion,
+				CacheWritePerMillion: match.CacheWritePerMillion,
+				ReasoningPerMillion:  match.ReasoningPerMillion,
+			},
+			Result: detailed,
+		}),
+		EffectiveFrom: match.EffectiveFrom,
+		EffectiveTo:   match.EffectiveTo,
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) ListPricingAudit(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__86[0] = 3 ; goCover_4258a3deb158__86[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__86[2] = 86 ; goCover_4258a3deb158__86[3]++;
+	limit := parseIntOr(r.URL.Query().Get("limit"), 100)
+	entries, err := h.pg.ListPricingRuleAudit(r.Context(), limit)
+	if err != nil {goCover_4258a3deb158__86[5]++;
+		h.logger.Error("list pricing rule audit", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__86[4]++;writeJSON(w, http.StatusOK, map[string]any{"items": entries, "count": len(entries)})
+}
+
+func (h *Handler) ExportPricingRules(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__87[0] = 11 ; goCover_4258a3deb158__87[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__87[2] = 87 ; goCover_4258a3deb158__87[3]++;
+	rules, err := h.pg.ListPricingRules(r.Context())
+	if err != nil {goCover_4258a3deb158__87[6]++;
+		h.logger.Error("export pricing rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__87[4]++;var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	_ = cw.Write([]string{"id", "tenant_id", "provider", "model_pattern", "input_per_million", "output_per_million", "active", "priority", "effective_from", "effective_to", "description"})
+	for _, rule := range rules {goCover_4258a3deb158__87[7]++;
+		tenantID := ""
+		if rule.TenantID != nil {goCover_4258a3deb158__87[11]++;
+			tenantID = *rule.TenantID
+		}
+		goCover_4258a3deb158__87[8]++;effectiveFrom := ""
+		if rule.EffectiveFrom != nil {goCover_4258a3deb158__87[12]++;
+			effectiveFrom = rule.EffectiveFrom.Format(time.RFC3339)
+		}
+		goCover_4258a3deb158__87[9]++;effectiveTo := ""
+		if rule.EffectiveTo != nil {goCover_4258a3deb158__87[13]++;
+			effectiveTo = rule.EffectiveTo.Format(time.RFC3339)
+		}
+		goCover_4258a3deb158__87[10]++;_ = cw.Write([]string{
+			strconv.FormatInt(rule.ID, 10),
+			tenantID,
+			rule.Provider,
+			rule.ModelPattern,
+			strconv.FormatFloat(rule.InputPerMillion, 'f', 6, 64),
+			strconv.FormatFloat(rule.OutputPerMillion, 'f', 6, 64),
+			strconv.FormatBool(rule.Active),
+			strconv.Itoa(rule.Priority),
+			effectiveFrom,
+			effectiveTo,
+			rule.Description,
+		})
+	}
+	goCover_4258a3deb158__87[5]++;cw.Flush()
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", `attachment; filename="pricing-rules.csv"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
+}
+
+// sumSpanUsage totals tokens and cost across a batch of spans.
+func sumSpanUsage(spans []models.Span) (tokens int64, costUSD float64) {goCover_4258a3deb158__88[0] = 3 ; goCover_4258a3deb158__88[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__88[2] = 88 ; goCover_4258a3deb158__88[3]++;
+	for _, sp := range spans {goCover_4258a3deb158__88[5]++;
+		tokens += sp.InputTokens + sp.OutputTokens + sp.CacheReadTokens + sp.CacheWriteTokens + sp.ReasoningTokens
+		costUSD += sp.CostUSD
+	}
+	goCover_4258a3deb158__88[4]++;return
+}

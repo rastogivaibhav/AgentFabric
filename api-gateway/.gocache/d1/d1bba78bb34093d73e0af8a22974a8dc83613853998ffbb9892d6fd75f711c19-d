@@ -1,0 +1,284 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\policy\engine.go:1:1
+package policy
+
+import (
+	"context"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+
+	"github.com/agentfabric/api-gateway/internal/models"
+)
+
+type RuleStore interface {
+	ListPolicyRules(ctx context.Context) ([]models.PolicyRule, error)
+}
+
+type Engine struct {
+	mu       sync.RWMutex
+	rules    []models.PolicyRule
+	compiled []compiledRule
+}
+
+func (e *Engine) RuleCount() int {goCover_3b3dd7bb6bda__1[0] = 3 ; goCover_3b3dd7bb6bda__1[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__1[2] = 1 ; goCover_3b3dd7bb6bda__1[3]++;
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if len(e.compiled) > 0 {goCover_3b3dd7bb6bda__1[5]++;
+		return len(e.compiled)
+	}
+	goCover_3b3dd7bb6bda__1[4]++;return len(e.rules)
+}
+
+type TrafficInput struct {
+	TenantID        string
+	Provider        string
+	Model           string
+	Environment     string
+	EstimatedTokens int64
+	RequestHeaders  map[string]string
+	RequestBody     []byte
+	Actor           string
+	App             string
+	Session         string
+}
+
+type DLPInput struct {
+	TenantID       string
+	Provider       string
+	Model          string
+	Environment    string
+	Scope          string
+	Body           []byte
+	RequestHeaders map[string]string
+	Actor          string
+	App            string
+	Session        string
+}
+
+type Finding struct {
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Count    int    `json:"count"`
+}
+
+type Decision struct {
+	Matched          bool
+	Final            bool
+	RuleID           int64
+	PolicyName       string
+	Action           string
+	Reason           string
+	Scope            string
+	MatchedNames     []string
+	GuardrailMatches []string
+	Redactions       int
+	RedactedBody     []byte
+	Explanation      DecisionExplanation
+}
+
+type detector struct {
+	name     string
+	category string
+	re       *regexp.Regexp
+}
+
+var detectors = []detector{
+	{name: "openai_api_key", category: "secret", re: regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}\b`)},
+	{name: "anthropic_api_key", category: "secret", re: regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_-]{20,}\b`)},
+	{name: "github_token", category: "secret", re: regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{20,}\b`)},
+	{name: "aws_access_key", category: "secret", re: regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)},
+	{name: "email", category: "pii", re: regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`)},
+	{name: "ssn", category: "pii", re: regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)},
+}
+
+func NewEngine() *Engine {goCover_3b3dd7bb6bda__2[0] = 1 ; goCover_3b3dd7bb6bda__2[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__2[2] = 2 ; goCover_3b3dd7bb6bda__2[3]++;
+	return &Engine{}
+}
+
+func (e *Engine) LoadRules(ctx context.Context, store RuleStore) error {goCover_3b3dd7bb6bda__3[0] = 7 ; goCover_3b3dd7bb6bda__3[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__3[2] = 3 ; goCover_3b3dd7bb6bda__3[3]++;
+	rules, err := store.ListPolicyRules(ctx)
+	if err != nil {goCover_3b3dd7bb6bda__3[6]++;
+		return err
+	}
+	goCover_3b3dd7bb6bda__3[4]++;sort.SliceStable(rules, func(i, j int) bool {goCover_3b3dd7bb6bda__3[7]++;
+		if rules[i].Priority != rules[j].Priority {goCover_3b3dd7bb6bda__3[9]++;
+			return rules[i].Priority > rules[j].Priority
+		}
+		goCover_3b3dd7bb6bda__3[8]++;return rules[i].ID < rules[j].ID
+	})
+	goCover_3b3dd7bb6bda__3[5]++;e.mu.Lock()
+	e.rules = rules
+	e.compiled = compileRules(rules)
+	e.mu.Unlock()
+	return nil
+}
+
+func (e *Engine) EvaluateTraffic(input TrafficInput) Decision {goCover_3b3dd7bb6bda__4[0] = 1 ; goCover_3b3dd7bb6bda__4[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__4[2] = 4 ; goCover_3b3dd7bb6bda__4[3]++;
+	return e.evaluateTrafficInput(EvaluationInput{
+		TenantID:        input.TenantID,
+		Environment:     input.Environment,
+		Provider:        input.Provider,
+		Model:           input.Model,
+		Scope:           "request",
+		EstimatedTokens: input.EstimatedTokens,
+		RequestHeaders:  input.RequestHeaders,
+		RequestBody:     input.RequestBody,
+		Actor:           input.Actor,
+		App:             input.App,
+		Session:         input.Session,
+	})
+}
+
+func (e *Engine) EvaluateDLP(input DLPInput) Decision {goCover_3b3dd7bb6bda__5[0] = 4 ; goCover_3b3dd7bb6bda__5[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__5[2] = 5 ; goCover_3b3dd7bb6bda__5[3]++;
+	evaluationInput := EvaluationInput{
+		TenantID:       input.TenantID,
+		Environment:    input.Environment,
+		Provider:       input.Provider,
+		Model:          input.Model,
+		Scope:          input.Scope,
+		RequestHeaders: input.RequestHeaders,
+		Actor:          input.Actor,
+		App:            input.App,
+		Session:        input.Session,
+	}
+	if strings.EqualFold(input.Scope, "response") {goCover_3b3dd7bb6bda__5[5]++;
+		evaluationInput.ResponseBody = input.Body
+	} else{ goCover_3b3dd7bb6bda__5[6]++;{
+		evaluationInput.RequestBody = input.Body
+	}}
+	goCover_3b3dd7bb6bda__5[4]++;return e.evaluateDLPInput(evaluationInput)
+}
+
+func (e *Engine) Evaluate(input EvaluationInput) (Decision, Decision, Decision) {goCover_3b3dd7bb6bda__6[0] = 1 ; goCover_3b3dd7bb6bda__6[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__6[2] = 6 ; goCover_3b3dd7bb6bda__6[3]++;
+	return e.evaluateTrafficInput(input), e.evaluateDLPInput(withScope(input, "request")), e.evaluateDLPInput(withScope(input, "response"))
+}
+
+func (e *Engine) evaluateTrafficInput(input EvaluationInput) Decision {goCover_3b3dd7bb6bda__7[0] = 1 ; goCover_3b3dd7bb6bda__7[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__7[2] = 7 ; goCover_3b3dd7bb6bda__7[3]++;
+	compiled := e.currentCompiledRules()
+	return evaluateTrafficRules(compiled, normalizeEvaluationInput(input))
+}
+
+func (e *Engine) evaluateDLPInput(input EvaluationInput) Decision {goCover_3b3dd7bb6bda__8[0] = 5 ; goCover_3b3dd7bb6bda__8[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__8[2] = 8 ; goCover_3b3dd7bb6bda__8[3]++;
+	input = normalizeEvaluationInput(input)
+	findings := scan(decisionBody(input))
+	compiled := e.currentCompiledRules()
+	decision := evaluateDLPRules(compiled, input, findings)
+	if !decision.Matched {goCover_3b3dd7bb6bda__8[6]++;
+		return Decision{}
+	}
+	goCover_3b3dd7bb6bda__8[4]++;if decision.Action == "redact" {goCover_3b3dd7bb6bda__8[7]++;
+		decision.RedactedBody, decision.Redactions = redact(decisionBody(input), findings)
+	}
+	goCover_3b3dd7bb6bda__8[5]++;return decision
+}
+
+func (e *Engine) currentCompiledRules() []compiledRule {goCover_3b3dd7bb6bda__9[0] = 3 ; goCover_3b3dd7bb6bda__9[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__9[2] = 9 ; goCover_3b3dd7bb6bda__9[3]++;
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	source := e.compiled
+	if len(source) == 0 && len(e.rules) > 0 {goCover_3b3dd7bb6bda__9[5]++;
+		source = compileRules(e.rules)
+	}
+	goCover_3b3dd7bb6bda__9[4]++;out := make([]compiledRule, len(source))
+	copy(out, source)
+	return out
+}
+
+func decisionBody(input EvaluationInput) []byte {goCover_3b3dd7bb6bda__10[0] = 3 ; goCover_3b3dd7bb6bda__10[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__10[2] = 10 ; goCover_3b3dd7bb6bda__10[3]++;
+	if strings.EqualFold(input.Scope, "response") {goCover_3b3dd7bb6bda__10[5]++;
+		return input.ResponseBody
+	}
+	goCover_3b3dd7bb6bda__10[4]++;return input.RequestBody
+}
+
+func withScope(input EvaluationInput, scope string) EvaluationInput {goCover_3b3dd7bb6bda__11[0] = 1 ; goCover_3b3dd7bb6bda__11[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__11[2] = 11 ; goCover_3b3dd7bb6bda__11[3]++;
+	input.Scope = scope
+	return input
+}
+
+func scan(body []byte) []Finding {goCover_3b3dd7bb6bda__12[0] = 7 ; goCover_3b3dd7bb6bda__12[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__12[2] = 12 ; goCover_3b3dd7bb6bda__12[3]++;
+	if len(body) == 0 {goCover_3b3dd7bb6bda__12[6]++;
+		return nil
+	}
+	goCover_3b3dd7bb6bda__12[4]++;text := string(body)
+	findings := make([]Finding, 0, len(detectors))
+	for _, detector := range detectors {goCover_3b3dd7bb6bda__12[7]++;
+		matches := detector.re.FindAllStringIndex(text, -1)
+		if len(matches) == 0 {goCover_3b3dd7bb6bda__12[9]++;
+			continue
+		}
+		goCover_3b3dd7bb6bda__12[8]++;findings = append(findings, Finding{
+			Name:     detector.name,
+			Category: detector.category,
+			Count:    len(matches),
+		})
+	}
+	goCover_3b3dd7bb6bda__12[5]++;return findings
+}
+
+func redact(body []byte, findings []Finding) ([]byte, int) {goCover_3b3dd7bb6bda__13[0] = 12 ; goCover_3b3dd7bb6bda__13[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__13[2] = 13 ; goCover_3b3dd7bb6bda__13[3]++;
+	if len(body) == 0 {goCover_3b3dd7bb6bda__13[6]++;
+		return body, 0
+	}
+	goCover_3b3dd7bb6bda__13[4]++;text := string(body)
+	redactions := 0
+	for _, detector := range detectors {goCover_3b3dd7bb6bda__13[7]++;
+		shouldRedact := false
+		for _, finding := range findings {goCover_3b3dd7bb6bda__13[11]++;
+			if finding.Name == detector.name {goCover_3b3dd7bb6bda__13[12]++;
+				shouldRedact = true
+				break
+			}
+		}
+		goCover_3b3dd7bb6bda__13[8]++;if !shouldRedact {goCover_3b3dd7bb6bda__13[13]++;
+			continue
+		}
+		goCover_3b3dd7bb6bda__13[9]++;count := len(detector.re.FindAllString(text, -1))
+		if count == 0 {goCover_3b3dd7bb6bda__13[14]++;
+			continue
+		}
+		goCover_3b3dd7bb6bda__13[10]++;redactions += count
+		text = detector.re.ReplaceAllString(text, "[REDACTED:"+detector.category+"]")
+	}
+	goCover_3b3dd7bb6bda__13[5]++;return []byte(text), redactions
+}
+
+func matchesValue(ruleValue, actual string) bool {goCover_3b3dd7bb6bda__14[0] = 1 ; goCover_3b3dd7bb6bda__14[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__14[2] = 14 ; goCover_3b3dd7bb6bda__14[3]++;
+	ruleValue = strings.ToLower(strings.TrimSpace(ruleValue))
+	actual = strings.ToLower(strings.TrimSpace(actual))
+	return ruleValue == "" || ruleValue == "*" || ruleValue == actual
+}
+
+func exactValue(ruleValue, actual string) bool {goCover_3b3dd7bb6bda__15[0] = 1 ; goCover_3b3dd7bb6bda__15[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__15[2] = 15 ; goCover_3b3dd7bb6bda__15[3]++;
+	ruleValue = strings.ToLower(strings.TrimSpace(ruleValue))
+	actual = strings.ToLower(strings.TrimSpace(actual))
+	return ruleValue != "" && ruleValue != "*" && ruleValue == actual
+}
+
+func matchesPattern(pattern, actual string) bool {goCover_3b3dd7bb6bda__16[0] = 3 ; goCover_3b3dd7bb6bda__16[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__16[2] = 16 ; goCover_3b3dd7bb6bda__16[3]++;
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
+	actual = strings.ToLower(strings.TrimSpace(actual))
+	if pattern == "" || pattern == "*" {goCover_3b3dd7bb6bda__16[5]++;
+		return true
+	}
+	goCover_3b3dd7bb6bda__16[4]++;return strings.HasPrefix(actual, pattern)
+}
+
+func scopeMatches(ruleScope, actual string) bool {goCover_3b3dd7bb6bda__17[0] = 3 ; goCover_3b3dd7bb6bda__17[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__17[2] = 17 ; goCover_3b3dd7bb6bda__17[3]++;
+	ruleScope = strings.ToLower(strings.TrimSpace(ruleScope))
+	actual = strings.ToLower(strings.TrimSpace(actual))
+	if ruleScope == "" || ruleScope == "both" {goCover_3b3dd7bb6bda__17[5]++;
+		return true
+	}
+	goCover_3b3dd7bb6bda__17[4]++;return ruleScope == actual
+}
+
+func sortedConditionKeys(conditions map[string]string) []string {goCover_3b3dd7bb6bda__18[0] = 3 ; goCover_3b3dd7bb6bda__18[1] = goCover_3b3dd7bb6bda_P ; goCover_3b3dd7bb6bda__18[2] = 18 ; goCover_3b3dd7bb6bda__18[3]++;
+	keys := make([]string, 0, len(conditions))
+	for key := range conditions {goCover_3b3dd7bb6bda__18[5]++;
+		keys = append(keys, key)
+	}
+	goCover_3b3dd7bb6bda__18[4]++;sort.Strings(keys)
+	return keys
+}

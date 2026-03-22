@@ -1,0 +1,150 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\proxy\router.go:1:1
+package proxy
+
+import (
+	"encoding/json"
+	"strings"
+)
+
+type RouteCandidate struct {
+	Provider string
+	Model    string
+	Path     string
+	Source   string
+}
+
+type ProviderRouter struct{}
+
+func NewProviderRouter() *ProviderRouter {goCover_08ec89fa625c__101[0] = 1 ; goCover_08ec89fa625c__101[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__101[2] = 101 ; goCover_08ec89fa625c__101[3]++;
+	return &ProviderRouter{}
+}
+
+func (r *ProviderRouter) Resolve(_ string, provider, model, path string) []RouteCandidate {goCover_08ec89fa625c__102[0] = 3 ; goCover_08ec89fa625c__102[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__102[2] = 102 ; goCover_08ec89fa625c__102[3]++;
+	canonicalProvider := NormalizeProvider(provider)
+	normalizedModel := strings.TrimSpace(model)
+	normalizedPath := strings.TrimSpace(path)
+	candidates := []RouteCandidate{{
+		Provider: canonicalProvider,
+		Model:    normalizedModel,
+		Path:     normalizedPath,
+		Source:   "primary",
+	}}
+	if fallbackModel := defaultFallbackModel(canonicalProvider, normalizedModel); fallbackModel != "" && fallbackModel != normalizedModel {goCover_08ec89fa625c__102[5]++;
+		candidates = append(candidates, RouteCandidate{
+			Provider: canonicalProvider,
+			Model:    fallbackModel,
+			Path:     normalizedPath,
+			Source:   "fallback",
+		})
+	}
+	goCover_08ec89fa625c__102[4]++;return candidates
+}
+
+func (r *ProviderRouter) Apply(provider string, body []byte, candidate RouteCandidate, path string) ([]byte, string, error) {goCover_08ec89fa625c__103[0] = 11 ; goCover_08ec89fa625c__103[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__103[2] = 103 ; goCover_08ec89fa625c__103[3]++;
+	targetModel := strings.TrimSpace(candidate.Model)
+	if targetModel == "" {goCover_08ec89fa625c__103[5]++;
+		return body, path, nil
+	}
+	goCover_08ec89fa625c__103[4]++;switch NormalizeProvider(provider) {
+	case ProviderOpenAI, ProviderAzureOpenAI, ProviderAnthropic:goCover_08ec89fa625c__103[6]++;
+		updatedBody, err := rewriteJSONModel(body, targetModel)
+		return updatedBody, path, err
+	case ProviderGoogle, ProviderVertexAI:goCover_08ec89fa625c__103[7]++;
+		updatedBody, err := rewriteJSONModel(body, targetModel)
+		if err != nil {goCover_08ec89fa625c__103[12]++;
+			return nil, "", err
+		}
+		goCover_08ec89fa625c__103[8]++;return updatedBody, replacePathModel(path, targetModel), nil
+	case ProviderBedrock:goCover_08ec89fa625c__103[9]++;
+		updatedBody, err := rewriteJSONModel(body, targetModel)
+		if err != nil {goCover_08ec89fa625c__103[13]++;
+			return nil, "", err
+		}
+		goCover_08ec89fa625c__103[10]++;return updatedBody, replaceBedrockPathModel(path, targetModel), nil
+	default:goCover_08ec89fa625c__103[11]++;
+		return body, path, nil
+	}
+}
+
+func rewriteJSONModel(body []byte, model string) ([]byte, error) {goCover_08ec89fa625c__104[0] = 9 ; goCover_08ec89fa625c__104[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__104[2] = 104 ; goCover_08ec89fa625c__104[3]++;
+	if len(body) == 0 {goCover_08ec89fa625c__104[8]++;
+		return body, nil
+	}
+	goCover_08ec89fa625c__104[4]++;var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {goCover_08ec89fa625c__104[9]++;
+		return body, nil
+	}
+	goCover_08ec89fa625c__104[5]++;payload["model"] = model
+	if _, ok := payload["modelId"]; ok {goCover_08ec89fa625c__104[10]++;
+		payload["modelId"] = model
+	}
+	goCover_08ec89fa625c__104[6]++;updatedBody, err := json.Marshal(payload)
+	if err != nil {goCover_08ec89fa625c__104[11]++;
+		return nil, err
+	}
+	goCover_08ec89fa625c__104[7]++;return updatedBody, nil
+}
+
+func replacePathModel(path, targetModel string) string {goCover_08ec89fa625c__105[0] = 9 ; goCover_08ec89fa625c__105[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__105[2] = 105 ; goCover_08ec89fa625c__105[3]++;
+	replacers := []string{"/models/", "/publishers/google/models/"}
+	for _, marker := range replacers {goCover_08ec89fa625c__105[5]++;
+		index := strings.Index(strings.ToLower(path), strings.ToLower(marker))
+		if index < 0 {goCover_08ec89fa625c__105[8]++;
+			continue
+		}
+		goCover_08ec89fa625c__105[6]++;start := index + len(marker)
+		end := len(path)
+		if cut := strings.Index(path[start:], ":"); cut >= 0 {goCover_08ec89fa625c__105[9]++;
+			end = start + cut
+		} else{ goCover_08ec89fa625c__105[10]++;if cut := strings.Index(path[start:], "/"); cut >= 0 {goCover_08ec89fa625c__105[11]++;
+			end = start + cut
+		}}
+		goCover_08ec89fa625c__105[7]++;return path[:start] + targetModel + path[end:]
+	}
+	goCover_08ec89fa625c__105[4]++;return path
+}
+
+func replaceBedrockPathModel(path, targetModel string) string {goCover_08ec89fa625c__106[0] = 7 ; goCover_08ec89fa625c__106[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__106[2] = 106 ; goCover_08ec89fa625c__106[3]++;
+	markers := []string{"/model/", "/foundation-model/"}
+	for _, marker := range markers {goCover_08ec89fa625c__106[5]++;
+		index := strings.Index(strings.ToLower(path), strings.ToLower(marker))
+		if index < 0 {goCover_08ec89fa625c__106[8]++;
+			continue
+		}
+		goCover_08ec89fa625c__106[6]++;start := index + len(marker)
+		end := len(path)
+		if cut := strings.Index(path[start:], "/"); cut >= 0 {goCover_08ec89fa625c__106[9]++;
+			end = start + cut
+		}
+		goCover_08ec89fa625c__106[7]++;return path[:start] + targetModel + path[end:]
+	}
+	goCover_08ec89fa625c__106[4]++;return path
+}
+
+func defaultFallbackModel(provider, model string) string {goCover_08ec89fa625c__107[0] = 11 ; goCover_08ec89fa625c__107[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__107[2] = 107 ; goCover_08ec89fa625c__107[3]++;
+	normalizedModel := strings.ToLower(strings.TrimSpace(model))
+	switch NormalizeProvider(provider) {
+	case ProviderOpenAI:goCover_08ec89fa625c__107[5]++;
+		switch {
+		case strings.HasPrefix(normalizedModel, "gpt-4o"):goCover_08ec89fa625c__107[8]++;
+			return "gpt-4o-mini"
+		case strings.HasPrefix(normalizedModel, "gpt-4.1"):goCover_08ec89fa625c__107[9]++;
+			return "gpt-4o-mini"
+		}
+	case ProviderAnthropic, ProviderBedrock:goCover_08ec89fa625c__107[6]++;
+		switch {
+		case strings.Contains(normalizedModel, "sonnet"):goCover_08ec89fa625c__107[10]++;
+			return strings.Replace(model, "sonnet", "haiku", 1)
+		case strings.Contains(normalizedModel, "opus"):goCover_08ec89fa625c__107[11]++;
+			return strings.Replace(model, "opus", "sonnet", 1)
+		}
+	case ProviderGoogle, ProviderVertexAI:goCover_08ec89fa625c__107[7]++;
+		switch {
+		case strings.Contains(normalizedModel, "gemini-1.5-pro"):goCover_08ec89fa625c__107[12]++;
+			return strings.Replace(model, "gemini-1.5-pro", "gemini-1.5-flash", 1)
+		case strings.Contains(normalizedModel, "gemini-2.0-pro"):goCover_08ec89fa625c__107[13]++;
+			return strings.Replace(model, "gemini-2.0-pro", "gemini-2.0-flash", 1)
+		}
+	}
+	goCover_08ec89fa625c__107[4]++;return ""
+}

@@ -1,0 +1,189 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\handlers\budget_handler.go:1:1
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/agentfabric/api-gateway/internal/budget"
+	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
+)
+
+// ─── Budget REST Endpoints ────────────────────────────────────────────────────
+
+// GetBudget returns the current budget + usage for a tenant.
+// GET /api/v1/budgets/{tenant_id}
+func (h *Handler) GetBudget(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__0[0] = 7 ; goCover_4258a3deb158__0[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__0[2] = 0 ; goCover_4258a3deb158__0[3]++;
+	tenantID := chi.URLParam(r, "tenant_id")
+	if tenantID == "" {goCover_4258a3deb158__0[7]++;
+		writeError(w, http.StatusBadRequest, "tenant_id required")
+		return
+	}
+
+	goCover_4258a3deb158__0[4]++;b, err := h.pg.GetBudget(r.Context(), tenantID)
+	if err != nil {goCover_4258a3deb158__0[8]++;
+		h.logger.Error("get budget", zap.String("tenant", tenantID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__0[5]++;if b == nil {goCover_4258a3deb158__0[9]++;
+		writeError(w, http.StatusNotFound, "no budget set for tenant")
+		return
+	}
+	goCover_4258a3deb158__0[6]++;writeJSON(w, http.StatusOK, b)
+}
+
+// UpsertBudget sets or updates a budget for a tenant.
+// PUT /api/v1/budgets/{tenant_id}
+func (h *Handler) UpsertBudget(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__1[0] = 11 ; goCover_4258a3deb158__1[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__1[2] = 1 ; goCover_4258a3deb158__1[3]++;
+	tenantID := chi.URLParam(r, "tenant_id")
+	if tenantID == "" {goCover_4258a3deb158__1[9]++;
+		writeError(w, http.StatusBadRequest, "tenant_id required")
+		return
+	}
+
+	goCover_4258a3deb158__1[4]++;var req struct {
+		MonthlyTokens  int64   `json:"monthly_tokens"`
+		MonthlyCostUSD float64 `json:"monthly_cost_usd"`
+		AlertThreshold float64 `json:"alert_threshold"`
+		HardLimit      bool    `json:"hard_limit"`
+		ResetDay       int     `json:"reset_day"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {goCover_4258a3deb158__1[10]++;
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	goCover_4258a3deb158__1[5]++;if req.AlertThreshold == 0 {goCover_4258a3deb158__1[11]++;
+		req.AlertThreshold = 0.80
+	}
+	goCover_4258a3deb158__1[6]++;if req.ResetDay <= 0 || req.ResetDay > 28 {goCover_4258a3deb158__1[12]++;
+		req.ResetDay = 1
+	}
+
+	goCover_4258a3deb158__1[7]++;b := &budget.Budget{
+		TenantID:       tenantID,
+		MonthlyTokens:  req.MonthlyTokens,
+		MonthlyCostUSD: req.MonthlyCostUSD,
+		AlertThreshold: req.AlertThreshold,
+		HardLimit:      req.HardLimit,
+		ResetDay:       req.ResetDay,
+	}
+	if err := h.pg.UpsertBudget(r.Context(), b); err != nil {goCover_4258a3deb158__1[13]++;
+		h.logger.Error("upsert budget", zap.String("tenant", tenantID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	goCover_4258a3deb158__1[8]++;writeJSON(w, http.StatusOK, b)
+}
+
+// DeleteBudget removes budget limits for a tenant (sets to unlimited).
+// DELETE /api/v1/budgets/{tenant_id}
+func (h *Handler) DeleteBudget(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__2[0] = 5 ; goCover_4258a3deb158__2[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__2[2] = 2 ; goCover_4258a3deb158__2[3]++;
+	tenantID := chi.URLParam(r, "tenant_id")
+	if tenantID == "" {goCover_4258a3deb158__2[6]++;
+		writeError(w, http.StatusBadRequest, "tenant_id required")
+		return
+	}
+
+	goCover_4258a3deb158__2[4]++;b := &budget.Budget{
+		TenantID:       tenantID,
+		MonthlyTokens:  0,
+		MonthlyCostUSD: 0,
+		AlertThreshold: 0.80,
+		HardLimit:      false,
+		ResetDay:       1,
+	}
+	if err := h.pg.UpsertBudget(r.Context(), b); err != nil {goCover_4258a3deb158__2[7]++;
+		h.logger.Error("delete budget", zap.String("tenant", tenantID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	goCover_4258a3deb158__2[5]++;w.WriteHeader(http.StatusNoContent)
+}
+
+// GetBudgetAlerts returns triggered alerts for a tenant.
+// GET /api/v1/budgets/{tenant_id}/alerts
+func (h *Handler) GetBudgetAlerts(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__3[0] = 5 ; goCover_4258a3deb158__3[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__3[2] = 3 ; goCover_4258a3deb158__3[3]++;
+	tenantID := chi.URLParam(r, "tenant_id")
+	if tenantID == "" {goCover_4258a3deb158__3[6]++;
+		writeError(w, http.StatusBadRequest, "tenant_id required")
+		return
+	}
+	goCover_4258a3deb158__3[4]++;limit := parseIntOr(r.URL.Query().Get("limit"), 50)
+
+	alerts, err := h.pg.ListBudgetAlerts(r.Context(), tenantID, limit)
+	if err != nil {goCover_4258a3deb158__3[7]++;
+		h.logger.Error("list budget alerts", zap.String("tenant", tenantID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	goCover_4258a3deb158__3[5]++;writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items": alerts,
+		"count": len(alerts),
+	})
+}
+
+// GetBudgetUsage returns current period token + cost totals for a tenant.
+// GET /api/v1/budgets/{tenant_id}/usage
+func (h *Handler) GetBudgetUsage(w http.ResponseWriter, r *http.Request) {goCover_4258a3deb158__4[0] = 14 ; goCover_4258a3deb158__4[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__4[2] = 4 ; goCover_4258a3deb158__4[3]++;
+	tenantID := chi.URLParam(r, "tenant_id")
+	if tenantID == "" {goCover_4258a3deb158__4[9]++;
+		writeError(w, http.StatusBadRequest, "tenant_id required")
+		return
+	}
+
+	goCover_4258a3deb158__4[4]++;b, err := h.pg.GetBudget(r.Context(), tenantID)
+	if err != nil {goCover_4258a3deb158__4[10]++;
+		h.logger.Error("get budget for usage", zap.String("tenant", tenantID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+
+	goCover_4258a3deb158__4[5]++;resetDay := 1
+	if b != nil {goCover_4258a3deb158__4[11]++;
+		resetDay = b.ResetDay
+	}
+
+	goCover_4258a3deb158__4[6]++;usage, err := h.pg.GetMonthlyUsage(r.Context(), tenantID, periodStart(resetDay))
+	if err != nil {goCover_4258a3deb158__4[12]++;
+		h.logger.Error("get monthly usage", zap.String("tenant", tenantID), zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+
+	goCover_4258a3deb158__4[7]++;resp := map[string]interface{}{
+		"tokens_used":   usage.TokensUsed,
+		"cost_used_usd": usage.CostUsedUSD,
+		"period_start":  usage.PeriodStart,
+		"period_end":    usage.PeriodEnd,
+	}
+	if b != nil {goCover_4258a3deb158__4[13]++;
+		resp["budget"] = b
+		if b.MonthlyTokens > 0 {goCover_4258a3deb158__4[15]++;
+			resp["tokens_pct"] = float64(usage.TokensUsed) / float64(b.MonthlyTokens)
+		}
+		goCover_4258a3deb158__4[14]++;if b.MonthlyCostUSD > 0 {goCover_4258a3deb158__4[16]++;
+			resp["cost_pct"] = usage.CostUsedUSD / b.MonthlyCostUSD
+		}
+	}
+	goCover_4258a3deb158__4[8]++;writeJSON(w, http.StatusOK, resp)
+}
+
+// periodStart returns the UTC start of the current billing period for a given reset day.
+func periodStart(resetDay int) time.Time {goCover_4258a3deb158__5[0] = 5 ; goCover_4258a3deb158__5[1] = goCover_4258a3deb158_P ; goCover_4258a3deb158__5[2] = 5 ; goCover_4258a3deb158__5[3]++;
+	now := time.Now().UTC()
+	year, month, day := now.Date()
+	if day >= resetDay {goCover_4258a3deb158__5[6]++;
+		return time.Date(year, month, resetDay, 0, 0, 0, 0, time.UTC)
+	}
+	goCover_4258a3deb158__5[4]++;prev := month - 1
+	prevYear := year
+	if prev < 1 {goCover_4258a3deb158__5[7]++;
+		prev = 12
+		prevYear--
+	}
+	goCover_4258a3deb158__5[5]++;return time.Date(prevYear, time.Month(prev), resetDay, 0, 0, 0, 0, time.UTC)
+}

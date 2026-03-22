@@ -1,0 +1,101 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\proxy\parsers_openai.go:1:1
+package proxy
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+)
+
+// openAIParser handles OpenAI chat completions request/response parsing.
+type openAIParser struct{}
+
+// openAIRequest is the subset of the OpenAI chat completions request we need.
+type openAIRequest struct {
+	Model    string `json:"model"`
+	Stream   bool   `json:"stream"`
+	Messages []struct {
+		Role    string `json:"role"`
+		Content any    `json:"content"` // string or []part
+	} `json:"messages"`
+}
+
+// openAIUsage is the usage block in a non-streaming response.
+type openAIUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+type openAIResponse struct {
+	Model  string      `json:"model"`
+	Usage  openAIUsage `json:"usage"`
+	Object string      `json:"object"`
+}
+
+// openAIStreamChunk is a single SSE data payload.
+type openAIStreamChunk struct {
+	Object string      `json:"object"`
+	Usage  openAIUsage `json:"usage"` // only in the final chunk with stream_options.include_usage
+}
+
+func (p *openAIParser) ParseRequest(_ *http.Request, body []byte) (model string, streaming bool, estimatedTokens int64, err error) {goCover_08ec89fa625c__37[0] = 6 ; goCover_08ec89fa625c__37[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__37[2] = 37 ; goCover_08ec89fa625c__37[3]++;
+	var req openAIRequest
+	if err = json.Unmarshal(body, &req); err != nil {goCover_08ec89fa625c__37[6]++;
+		return "", false, 0, err
+	}
+	// Rough token estimate: 4 chars ≈ 1 token across all messages.
+	goCover_08ec89fa625c__37[4]++;var totalChars int
+	for _, m := range req.Messages {goCover_08ec89fa625c__37[7]++;
+		switch v := m.Content.(type) {
+		case string:goCover_08ec89fa625c__37[8]++;
+			totalChars += len(v)
+		}
+	}
+	goCover_08ec89fa625c__37[5]++;estimated := int64(totalChars/4) + 1
+	return req.Model, req.Stream, estimated, nil
+}
+
+func (p *openAIParser) ParseUsage(body []byte) (inputTokens, outputTokens int64, err error) {goCover_08ec89fa625c__38[0] = 3 ; goCover_08ec89fa625c__38[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__38[2] = 38 ; goCover_08ec89fa625c__38[3]++;
+	var resp openAIResponse
+	if err = json.Unmarshal(body, &resp); err != nil {goCover_08ec89fa625c__38[5]++;
+		return 0, 0, err
+	}
+	goCover_08ec89fa625c__38[4]++;return int64(resp.Usage.PromptTokens), int64(resp.Usage.CompletionTokens), nil
+}
+
+// ParseStreamingUsage scans SSE chunks for the usage field.
+// OpenAI only emits usage in the final chunk when stream_options.include_usage=true.
+func (p *openAIParser) ParseStreamingUsage(chunks [][]byte) (inputTokens, outputTokens int64) {goCover_08ec89fa625c__39[0] = 8 ; goCover_08ec89fa625c__39[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__39[2] = 39 ; goCover_08ec89fa625c__39[3]++;
+	for _, chunk := range chunks {goCover_08ec89fa625c__39[5]++;
+		// SSE lines look like: data: {...}
+		line := strings.TrimPrefix(strings.TrimSpace(string(chunk)), "data: ")
+		if line == "[DONE]" || line == "" {goCover_08ec89fa625c__39[8]++;
+			continue
+		}
+		goCover_08ec89fa625c__39[6]++;var c openAIStreamChunk
+		if err := json.Unmarshal([]byte(line), &c); err != nil {goCover_08ec89fa625c__39[9]++;
+			continue
+		}
+		goCover_08ec89fa625c__39[7]++;if c.Usage.TotalTokens > 0 {goCover_08ec89fa625c__39[10]++;
+			inputTokens = int64(c.Usage.PromptTokens)
+			outputTokens = int64(c.Usage.CompletionTokens)
+		}
+	}
+	goCover_08ec89fa625c__39[4]++;return
+}
+
+// upstream returns the base URL for the OpenAI API.
+func (p *openAIParser) Upstream() string {goCover_08ec89fa625c__40[0] = 1 ; goCover_08ec89fa625c__40[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__40[2] = 40 ; goCover_08ec89fa625c__40[3]++;
+	return "https://api.openai.com"
+}
+
+// AuthHeader returns the header name used to carry the API key.
+func (p *openAIParser) AuthHeader() string {goCover_08ec89fa625c__41[0] = 1 ; goCover_08ec89fa625c__41[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__41[2] = 41 ; goCover_08ec89fa625c__41[3]++;
+	return "Authorization"
+}
+
+// AuthValue formats the real key as an Authorization header value.
+func (p *openAIParser) AuthValue(realKey string) string {goCover_08ec89fa625c__42[0] = 1 ; goCover_08ec89fa625c__42[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__42[2] = 42 ; goCover_08ec89fa625c__42[3]++;
+	return "Bearer " + realKey
+}

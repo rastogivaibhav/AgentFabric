@@ -1,0 +1,304 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\observability\enrichment.go:1:1
+package observability
+
+import (
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/agentfabric/api-gateway/internal/models"
+)
+
+func BuildTrace(traceID string, spans []models.Span, policyEvents []models.PolicyEvent) models.Trace {goCover_e6e1742105ed__2[0] = 42 ; goCover_e6e1742105ed__2[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__2[2] = 2 ; goCover_e6e1742105ed__2[3]++;
+	enrichedSpans := EnrichSpans(spans, policyEvents)
+	trace := models.Trace{
+		ID:           traceID,
+		Spans:        enrichedSpans,
+		PolicyEvents: policyEvents,
+	}
+	if len(enrichedSpans) == 0 {goCover_e6e1742105ed__2[8]++;
+		return trace
+	}
+
+	goCover_e6e1742105ed__2[4]++;trace.Framework = enrichedSpans[0].Framework
+	trace.RootSpanName = enrichedSpans[0].Name
+	trace.StartTime = time.Unix(0, enrichedSpans[0].StartTimeNs)
+	trace.Insights = models.TraceInsights{
+		StepTypes:     map[string]int{},
+		ErrorClasses:  map[string]int{},
+		PolicyResults: map[string]int{},
+	}
+
+	modelsSeen := map[string]struct{}{}
+	providersSeen := map[string]struct{}{}
+	appsSeen := map[string]struct{}{}
+	envsSeen := map[string]struct{}{}
+	workflow := make([]string, 0, len(enrichedSpans))
+	var maxEnd int64
+
+	for _, span := range enrichedSpans {goCover_e6e1742105ed__2[9]++;
+		end := span.StartTimeNs + span.DurationNs
+		if end > maxEnd {goCover_e6e1742105ed__2[24]++;
+			maxEnd = end
+		}
+		goCover_e6e1742105ed__2[10]++;trace.TotalCostUSD += span.CostUSD
+		trace.TotalTokens += span.InputTokens + span.OutputTokens + span.CacheReadTokens + span.CacheWriteTokens + span.ReasoningTokens
+		if span.Model != "" {goCover_e6e1742105ed__2[25]++;
+			modelsSeen[span.Model] = struct{}{}
+		}
+		goCover_e6e1742105ed__2[11]++;if span.Provider != "" {goCover_e6e1742105ed__2[26]++;
+			providersSeen[span.Provider] = struct{}{}
+		}
+		goCover_e6e1742105ed__2[12]++;if span.AppName != "" {goCover_e6e1742105ed__2[27]++;
+			appsSeen[span.AppName] = struct{}{}
+		}
+		goCover_e6e1742105ed__2[13]++;if span.Environment != "" {goCover_e6e1742105ed__2[28]++;
+			envsSeen[span.Environment] = struct{}{}
+		}
+		goCover_e6e1742105ed__2[14]++;if span.StepType != "" {goCover_e6e1742105ed__2[29]++;
+			trace.Insights.StepTypes[span.StepType]++
+		}
+		goCover_e6e1742105ed__2[15]++;if span.ErrorClass != "" {goCover_e6e1742105ed__2[30]++;
+			trace.Insights.ErrorClasses[span.ErrorClass]++
+		}
+		goCover_e6e1742105ed__2[16]++;if span.StepType == "llm" {goCover_e6e1742105ed__2[31]++;
+			trace.Insights.LLMCalls++
+		}
+		goCover_e6e1742105ed__2[17]++;if span.StepType == "tool" {goCover_e6e1742105ed__2[32]++;
+			trace.Insights.ToolCalls++
+		}
+		goCover_e6e1742105ed__2[18]++;if span.Blocked {goCover_e6e1742105ed__2[33]++;
+			trace.Insights.BlockedSpans++
+		}
+		goCover_e6e1742105ed__2[19]++;if span.RedactionCount > 0 {goCover_e6e1742105ed__2[34]++;
+			trace.Insights.RedactedSpans++
+		}
+		goCover_e6e1742105ed__2[20]++;if span.ErrorClass != "" || span.StatusCode == 2 {goCover_e6e1742105ed__2[35]++;
+			trace.Insights.FailedSpans++
+		}
+		goCover_e6e1742105ed__2[21]++;trace.Insights.RetryCount += span.RetryCount
+		if span.Depth > trace.Insights.MaxDepth {goCover_e6e1742105ed__2[36]++;
+			trace.Insights.MaxDepth = span.Depth
+		}
+		goCover_e6e1742105ed__2[22]++;if span.StatusCode == 2 {goCover_e6e1742105ed__2[37]++;
+			trace.ErrorCount++
+		}
+		goCover_e6e1742105ed__2[23]++;if len(workflow) < 8 {goCover_e6e1742105ed__2[38]++;
+			workflow = append(workflow, summarizeWorkflowSpan(span))
+		}
+	}
+
+	goCover_e6e1742105ed__2[5]++;for _, event := range policyEvents {goCover_e6e1742105ed__2[39]++;
+		if result := strings.TrimSpace(event.Result); result != "" {goCover_e6e1742105ed__2[40]++;
+			trace.Insights.PolicyResults[result]++
+		}
+	}
+
+	goCover_e6e1742105ed__2[6]++;trace.Insights.Models = sortedSet(modelsSeen)
+	trace.Insights.Providers = sortedSet(providersSeen)
+	trace.Insights.Apps = sortedSet(appsSeen)
+	trace.Insights.Environments = sortedSet(envsSeen)
+	trace.Insights.WorkflowSummary = workflow
+	trace.Duration = maxEnd - enrichedSpans[0].StartTimeNs
+	trace.SpanCount = len(enrichedSpans)
+	trace.Timeline = BuildTimeline(traceID, enrichedSpans, policyEvents)
+	if trace.Insights.BlockedSpans > 0 {goCover_e6e1742105ed__2[41]++;
+		trace.Status = "partial"
+	} else{ goCover_e6e1742105ed__2[42]++;if trace.ErrorCount > 0 {goCover_e6e1742105ed__2[43]++;
+		trace.Status = "error"
+	} else{ goCover_e6e1742105ed__2[44]++;{
+		trace.Status = "ok"
+	}}}
+	goCover_e6e1742105ed__2[7]++;return trace
+}
+
+func EnrichSpans(spans []models.Span, policyEvents []models.PolicyEvent) []models.Span {goCover_e6e1742105ed__3[0] = 9 ; goCover_e6e1742105ed__3[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__3[2] = 3 ; goCover_e6e1742105ed__3[3]++;
+	if len(spans) == 0 {goCover_e6e1742105ed__3[7]++;
+		return nil
+	}
+	goCover_e6e1742105ed__3[4]++;out := make([]models.Span, len(spans))
+	copy(out, spans)
+
+	lineage := buildLineage(out)
+	policyBySpan := make(map[string][]models.PolicyEvent)
+	for _, event := range policyEvents {goCover_e6e1742105ed__3[8]++;
+		if strings.TrimSpace(event.SpanID) == "" {goCover_e6e1742105ed__3[10]++;
+			continue
+		}
+		goCover_e6e1742105ed__3[9]++;policyBySpan[event.SpanID] = append(policyBySpan[event.SpanID], event)
+	}
+
+	goCover_e6e1742105ed__3[5]++;for i := range out {goCover_e6e1742105ed__3[11]++;
+		enrichSpan(&out[i], lineage[out[i].ID], policyBySpan[out[i].ID])
+	}
+	goCover_e6e1742105ed__3[6]++;return out
+}
+
+func enrichSpan(span *models.Span, lineage lineageMeta, policyEvents []models.PolicyEvent) {goCover_e6e1742105ed__4[0] = 27 ; goCover_e6e1742105ed__4[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__4[2] = 4 ; goCover_e6e1742105ed__4[3]++;
+	if span == nil {goCover_e6e1742105ed__4[11]++;
+		return
+	}
+	goCover_e6e1742105ed__4[4]++;if span.Attributes == nil {goCover_e6e1742105ed__4[12]++;
+		span.Attributes = map[string]string{}
+	}
+	goCover_e6e1742105ed__4[5]++;span.Depth = lineage.Depth
+	span.ParentName = lineage.ParentName
+	if len(lineage.Path) > 0 {goCover_e6e1742105ed__4[13]++;
+		span.Lineage = lineage.Path
+	}
+	goCover_e6e1742105ed__4[6]++;span.Provider = firstNonEmpty(span.Attributes["gen_ai.system"], span.Attributes["proxy.provider"], span.Attributes["netproxy.provider"])
+	span.Model = firstNonEmpty(span.Attributes["gen_ai.request.model"], span.Attributes["proxy.model"], span.Attributes["netproxy.model"])
+	span.StepType = firstNonEmpty(span.Attributes["af.span.step_type"], inferStepType(span.Name, span.Provider, span.Model))
+	span.AppName = firstNonEmpty(span.Attributes["af.app.name"], span.Attributes["service.name"], span.Attributes["application.name"])
+	span.Environment = firstNonEmpty(span.Attributes["af.environment"], span.Attributes["deployment.environment"], span.Attributes["environment"], span.Attributes["env"])
+	span.UserID = firstNonEmpty(span.Attributes["af.user.id"], span.Attributes["enduser.id"], span.Attributes["user.id"])
+	span.SessionID = firstNonEmpty(span.Attributes["af.session.id"], span.Attributes["session.id"])
+	span.PromptID = firstNonEmpty(span.Attributes["af.prompt.id"])
+	span.PromptVersion = firstInt(span.Attributes, "af.prompt.version")
+	span.PromptReleaseTag = firstNonEmpty(span.Attributes["af.prompt.release_tag"])
+	span.PromptEnvironment = firstNonEmpty(span.Attributes["af.prompt.environment"], span.Environment)
+	span.ErrorClass = classifyError(*span)
+	span.PromptPreview = firstPreview(span.Attributes, "af.preview.prompt", "gen_ai.prompt", "input.value", "prompt", "llm.prompt")
+	span.ResponsePreview = firstPreview(span.Attributes, "af.preview.response", "gen_ai.response", "output.value", "response", "llm.response")
+	span.RetryCount = firstInt(span.Attributes, "af.retry.count", "retry.count", "http.retry_count")
+	span.BlockedReason = firstNonEmpty(span.Attributes["af.policy.reason"], span.Attributes["policy.reason"], span.Attributes["budget.reason"])
+	span.Blocked = isTrue(span.Attributes["af.policy.blocked"]) || strings.EqualFold(span.Attributes["af.policy.decision"], "deny") || span.BlockedReason != ""
+	span.PricingRuleID = firstInt64(span.Attributes, "af.pricing.rule_id")
+	span.PricingScope = span.Attributes["af.pricing.scope"]
+	span.PricingModelPattern = span.Attributes["af.pricing.model_pattern"]
+	if span.CacheReadTokens == 0 {goCover_e6e1742105ed__4[14]++;
+		span.CacheReadTokens = firstInt64(span.Attributes, "gen_ai.usage.cache_read_tokens")
+	}
+	goCover_e6e1742105ed__4[7]++;if span.CacheWriteTokens == 0 {goCover_e6e1742105ed__4[15]++;
+		span.CacheWriteTokens = firstInt64(span.Attributes, "gen_ai.usage.cache_write_tokens")
+	}
+	goCover_e6e1742105ed__4[8]++;if span.ReasoningTokens == 0 {goCover_e6e1742105ed__4[16]++;
+		span.ReasoningTokens = firstInt64(span.Attributes, "gen_ai.usage.reasoning_tokens")
+	}
+	goCover_e6e1742105ed__4[9]++;span.RedactionCount = firstInt(span.Attributes, "af.policy.redactions", "policy.redactions")
+	span.PolicyDecisionCount = len(policyEvents)
+	if len(policyEvents) > 0 {goCover_e6e1742105ed__4[17]++;
+		span.PolicyDecisionSummary = make([]string, 0, len(policyEvents))
+		for _, event := range policyEvents {goCover_e6e1742105ed__4[18]++;
+			label := strings.TrimSpace(event.PolicyName)
+			if label == "" {goCover_e6e1742105ed__4[24]++;
+				label = "policy"
+			}
+			goCover_e6e1742105ed__4[19]++;result := strings.TrimSpace(event.Result)
+			if result != "" {goCover_e6e1742105ed__4[25]++;
+				label += ": " + result
+			}
+			goCover_e6e1742105ed__4[20]++;if event.Redactions > 0 {goCover_e6e1742105ed__4[26]++;
+				label += " (" + strconv.Itoa(event.Redactions) + " redactions)"
+			}
+			goCover_e6e1742105ed__4[21]++;span.PolicyDecisionSummary = append(span.PolicyDecisionSummary, label)
+			if event.Redactions > span.RedactionCount {goCover_e6e1742105ed__4[27]++;
+				span.RedactionCount = event.Redactions
+			}
+			goCover_e6e1742105ed__4[22]++;if !span.Blocked && strings.EqualFold(event.Result, "deny") {goCover_e6e1742105ed__4[28]++;
+				span.Blocked = true
+			}
+			goCover_e6e1742105ed__4[23]++;if span.BlockedReason == "" {goCover_e6e1742105ed__4[29]++;
+				span.BlockedReason = strings.TrimSpace(event.Reason)
+			}
+		}
+	}
+	goCover_e6e1742105ed__4[10]++;span.FailureSummary = failureSummary(*span)
+}
+
+func summarizeWorkflowSpan(span models.Span) string {goCover_e6e1742105ed__5[0] = 13 ; goCover_e6e1742105ed__5[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__5[2] = 5 ; goCover_e6e1742105ed__5[3]++;
+	parts := []string{span.Name}
+	if span.StepType != "" {goCover_e6e1742105ed__5[7]++;
+		parts = append(parts, span.StepType)
+	}
+	goCover_e6e1742105ed__5[4]++;if span.Model != "" {goCover_e6e1742105ed__5[8]++;
+		parts = append(parts, span.Model)
+	} else{ goCover_e6e1742105ed__5[9]++;if span.Provider != "" {goCover_e6e1742105ed__5[10]++;
+		parts = append(parts, span.Provider)
+	}}
+	goCover_e6e1742105ed__5[5]++;if span.Blocked {goCover_e6e1742105ed__5[11]++;
+		parts = append(parts, "blocked")
+	} else{ goCover_e6e1742105ed__5[12]++;if span.RedactionCount > 0 {goCover_e6e1742105ed__5[13]++;
+		parts = append(parts, "redacted")
+	} else{ goCover_e6e1742105ed__5[14]++;if span.ErrorClass != "" {goCover_e6e1742105ed__5[15]++;
+		parts = append(parts, span.ErrorClass)
+	}}}
+	goCover_e6e1742105ed__5[6]++;return strings.Join(parts, " | ")
+}
+
+func inferStepType(name, provider, model string) string {goCover_e6e1742105ed__6[0] = 6 ; goCover_e6e1742105ed__6[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__6[2] = 6 ; goCover_e6e1742105ed__6[3]++;
+	lowerName := strings.ToLower(name)
+	switch {
+	case provider != "" || model != "":goCover_e6e1742105ed__6[4]++;
+		return "llm"
+	case strings.Contains(lowerName, "tool"), strings.Contains(lowerName, "function"):goCover_e6e1742105ed__6[5]++;
+		return "tool"
+	case strings.Contains(lowerName, "policy"), strings.Contains(lowerName, "guard"):goCover_e6e1742105ed__6[6]++;
+		return "policy"
+	case strings.Contains(lowerName, "retry"):goCover_e6e1742105ed__6[7]++;
+		return "retry"
+	default:goCover_e6e1742105ed__6[8]++;
+		return "agent"
+	}
+}
+
+func firstPreview(attrs map[string]string, keys ...string) string {goCover_e6e1742105ed__7[0] = 6 ; goCover_e6e1742105ed__7[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__7[2] = 7 ; goCover_e6e1742105ed__7[3]++;
+	for _, key := range keys {goCover_e6e1742105ed__7[5]++;
+		if value := strings.TrimSpace(attrs[key]); value != "" {goCover_e6e1742105ed__7[6]++;
+			if len(value) > 220 {goCover_e6e1742105ed__7[8]++;
+				return value[:220] + "..."
+			}
+			goCover_e6e1742105ed__7[7]++;return value
+		}
+	}
+	goCover_e6e1742105ed__7[4]++;return ""
+}
+
+func firstNonEmpty(values ...string) string {goCover_e6e1742105ed__8[0] = 4 ; goCover_e6e1742105ed__8[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__8[2] = 8 ; goCover_e6e1742105ed__8[3]++;
+	for _, value := range values {goCover_e6e1742105ed__8[5]++;
+		if trimmed := strings.TrimSpace(value); trimmed != "" {goCover_e6e1742105ed__8[6]++;
+			return trimmed
+		}
+	}
+	goCover_e6e1742105ed__8[4]++;return ""
+}
+
+func firstInt(attrs map[string]string, keys ...string) int {goCover_e6e1742105ed__9[0] = 4 ; goCover_e6e1742105ed__9[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__9[2] = 9 ; goCover_e6e1742105ed__9[3]++;
+	for _, key := range keys {goCover_e6e1742105ed__9[5]++;
+		if value, err := strconv.Atoi(strings.TrimSpace(attrs[key])); err == nil {goCover_e6e1742105ed__9[6]++;
+			return value
+		}
+	}
+	goCover_e6e1742105ed__9[4]++;return 0
+}
+
+func firstInt64(attrs map[string]string, keys ...string) int64 {goCover_e6e1742105ed__10[0] = 4 ; goCover_e6e1742105ed__10[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__10[2] = 10 ; goCover_e6e1742105ed__10[3]++;
+	for _, key := range keys {goCover_e6e1742105ed__10[5]++;
+		if value, err := strconv.ParseInt(strings.TrimSpace(attrs[key]), 10, 64); err == nil {goCover_e6e1742105ed__10[6]++;
+			return value
+		}
+	}
+	goCover_e6e1742105ed__10[4]++;return 0
+}
+
+func isTrue(value string) bool {goCover_e6e1742105ed__11[0] = 3 ; goCover_e6e1742105ed__11[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__11[2] = 11 ; goCover_e6e1742105ed__11[3]++;
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "blocked":goCover_e6e1742105ed__11[4]++;
+		return true
+	default:goCover_e6e1742105ed__11[5]++;
+		return false
+	}
+}
+
+func sortedSet(values map[string]struct{}) []string {goCover_e6e1742105ed__12[0] = 5 ; goCover_e6e1742105ed__12[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__12[2] = 12 ; goCover_e6e1742105ed__12[3]++;
+	if len(values) == 0 {goCover_e6e1742105ed__12[6]++;
+		return nil
+	}
+	goCover_e6e1742105ed__12[4]++;out := make([]string, 0, len(values))
+	for value := range values {goCover_e6e1742105ed__12[7]++;
+		out = append(out, value)
+	}
+	goCover_e6e1742105ed__12[5]++;sort.Strings(out)
+	return out
+}

@@ -10,7 +10,15 @@ import (
 )
 
 type Service struct {
-	store *store.PostgresStore
+	store promptStore
+}
+
+type promptStore interface {
+	ListPromptVersions(ctx context.Context, tenantID string) ([]models.PromptVersion, error)
+	ListPromptReleases(ctx context.Context, tenantID string) ([]models.PromptRelease, error)
+	UpsertPromptVersion(ctx context.Context, tenantID string, version models.PromptVersion) (models.PromptVersion, error)
+	GetPromptVersion(ctx context.Context, tenantID, promptID string, versionNum int) (models.PromptVersion, error)
+	PromotePromptRelease(ctx context.Context, tenantID string, release models.PromptRelease) (models.PromptRelease, error)
 }
 
 func NewService(pg *store.PostgresStore) *Service {

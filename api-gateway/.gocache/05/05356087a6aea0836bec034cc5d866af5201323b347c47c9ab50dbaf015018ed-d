@@ -1,0 +1,11 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\prompts\promotion.go:1:1
+package prompts
+
+import "strings"
+
+func normalizeEnvironment(value string) string {goCover_6f5183467137__0[0] = 3 ; goCover_6f5183467137__0[1] = goCover_6f5183467137_P ; goCover_6f5183467137__0[2] = 0 ; goCover_6f5183467137__0[3]++;
+	if trimmed := strings.ToLower(strings.TrimSpace(value)); trimmed != "" {goCover_6f5183467137__0[5]++;
+		return trimmed
+	}
+	goCover_6f5183467137__0[4]++;return "development"
+}

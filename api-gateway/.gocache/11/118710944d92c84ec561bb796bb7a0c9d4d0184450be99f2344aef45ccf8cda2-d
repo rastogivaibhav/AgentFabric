@@ -1,0 +1,67 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\models\pagination.go:1:1
+package models
+
+import (
+	"encoding/base64"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// EncodeCursor encodes two opaque parts into a base64url cursor token
+// that is safe to embed in query strings.
+func EncodeCursor(part1, part2 string) string {goCover_131b77c8f1bc__0[0] = 1 ; goCover_131b77c8f1bc__0[1] = goCover_131b77c8f1bc_P ; goCover_131b77c8f1bc__0[2] = 0 ; goCover_131b77c8f1bc__0[3]++;
+	return base64.RawURLEncoding.EncodeToString([]byte(part1 + "|" + part2))
+}
+
+// DecodeCursor splits a cursor token back into its two constituent parts.
+// Returns empty strings when the token is missing, malformed, or corrupt.
+func DecodeCursor(cursor string) (part1, part2 string) {goCover_131b77c8f1bc__1[0] = 5 ; goCover_131b77c8f1bc__1[1] = goCover_131b77c8f1bc_P ; goCover_131b77c8f1bc__1[2] = 1 ; goCover_131b77c8f1bc__1[3]++;
+	b, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {goCover_131b77c8f1bc__1[6]++;
+		return "", ""
+	}
+	goCover_131b77c8f1bc__1[4]++;parts := strings.SplitN(string(b), "|", 2)
+	if len(parts) != 2 {goCover_131b77c8f1bc__1[7]++;
+		return "", ""
+	}
+	goCover_131b77c8f1bc__1[5]++;return parts[0], parts[1]
+}
+
+// EncodeTraceCursor encodes a (start_time_ns, trace_id) keyset position.
+func EncodeTraceCursor(startNs int64, traceID string) string {goCover_131b77c8f1bc__2[0] = 1 ; goCover_131b77c8f1bc__2[1] = goCover_131b77c8f1bc_P ; goCover_131b77c8f1bc__2[2] = 2 ; goCover_131b77c8f1bc__2[3]++;
+	return EncodeCursor(strconv.FormatInt(startNs, 10), traceID)
+}
+
+// DecodeTraceCursor unpacks a trace cursor.
+// ok is false when the cursor is absent or unparseable — callers should treat
+// that as "no cursor" (i.e. start from the beginning of the result set).
+func DecodeTraceCursor(cursor string) (startNs int64, traceID string, ok bool) {goCover_131b77c8f1bc__3[0] = 5 ; goCover_131b77c8f1bc__3[1] = goCover_131b77c8f1bc_P ; goCover_131b77c8f1bc__3[2] = 3 ; goCover_131b77c8f1bc__3[3]++;
+	p1, p2 := DecodeCursor(cursor)
+	if p1 == "" || p2 == "" {goCover_131b77c8f1bc__3[6]++;
+		return 0, "", false
+	}
+	goCover_131b77c8f1bc__3[4]++;ns, err := strconv.ParseInt(p1, 10, 64)
+	if err != nil {goCover_131b77c8f1bc__3[7]++;
+		return 0, "", false
+	}
+	goCover_131b77c8f1bc__3[5]++;return ns, p2, true
+}
+
+// EncodeRunCursor encodes a (start_time, run_id) keyset position.
+func EncodeRunCursor(startTime time.Time, runID string) string {goCover_131b77c8f1bc__4[0] = 1 ; goCover_131b77c8f1bc__4[1] = goCover_131b77c8f1bc_P ; goCover_131b77c8f1bc__4[2] = 4 ; goCover_131b77c8f1bc__4[3]++;
+	return EncodeCursor(strconv.FormatInt(startTime.UnixNano(), 10), runID)
+}
+
+// DecodeRunCursor unpacks a run cursor.
+func DecodeRunCursor(cursor string) (startTime time.Time, runID string, ok bool) {goCover_131b77c8f1bc__5[0] = 5 ; goCover_131b77c8f1bc__5[1] = goCover_131b77c8f1bc_P ; goCover_131b77c8f1bc__5[2] = 5 ; goCover_131b77c8f1bc__5[3]++;
+	p1, p2 := DecodeCursor(cursor)
+	if p1 == "" || p2 == "" {goCover_131b77c8f1bc__5[6]++;
+		return time.Time{}, "", false
+	}
+	goCover_131b77c8f1bc__5[4]++;ns, err := strconv.ParseInt(p1, 10, 64)
+	if err != nil {goCover_131b77c8f1bc__5[7]++;
+		return time.Time{}, "", false
+	}
+	goCover_131b77c8f1bc__5[5]++;return time.Unix(0, ns).UTC(), p2, true
+}

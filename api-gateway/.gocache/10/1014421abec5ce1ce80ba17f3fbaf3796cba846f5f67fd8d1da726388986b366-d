@@ -1,0 +1,211 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\store\prompts.go:1:1
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+
+	"github.com/agentfabric/api-gateway/internal/models"
+)
+
+func (s *PostgresStore) ListPromptVersions(ctx context.Context, tenantID string) ([]models.PromptVersion, error) {goCover_1b9794c3e1b6__60[0] = 9 ; goCover_1b9794c3e1b6__60[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__60[2] = 60 ; goCover_1b9794c3e1b6__60[3]++;
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			pv.id,
+			pv.tenant_id,
+			pv.prompt_id,
+			pv.version_num,
+			pv.environment,
+			COALESCE(pv.release_tag, ''),
+			pv.content,
+			pv.config_json::text,
+			COALESCE(pv.description, ''),
+			COALESCE(pv.created_by, ''),
+			pv.created_at,
+			pv.updated_at,
+			pv.version_num = MAX(pv.version_num) OVER (PARTITION BY pv.tenant_id, pv.prompt_id) AS is_latest
+		FROM prompt_versions pv
+		WHERE pv.tenant_id = $1
+		ORDER BY pv.prompt_id ASC, pv.version_num DESC, pv.updated_at DESC
+	`, tenantID)
+	if err != nil {goCover_1b9794c3e1b6__60[7]++;
+		return nil, err
+	}
+	goCover_1b9794c3e1b6__60[4]++;defer rows.Close()
+
+	items := []models.PromptVersion{}
+	for rows.Next() {goCover_1b9794c3e1b6__60[8]++;
+		var item models.PromptVersion
+		var rawConfig string
+		if err := rows.Scan(
+			&item.ID,
+			&item.TenantID,
+			&item.PromptID,
+			&item.Version,
+			&item.Environment,
+			&item.ReleaseTag,
+			&item.Content,
+			&rawConfig,
+			&item.Description,
+			&item.CreatedBy,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+			&item.IsLatest,
+		); err != nil {goCover_1b9794c3e1b6__60[10]++;
+			return nil, err
+		}
+		goCover_1b9794c3e1b6__60[9]++;item.Config = decodePromptConfig(rawConfig)
+		items = append(items, item)
+	}
+	goCover_1b9794c3e1b6__60[5]++;if err := rows.Err(); err != nil {goCover_1b9794c3e1b6__60[11]++;
+		return nil, err
+	}
+	goCover_1b9794c3e1b6__60[6]++;return items, nil
+}
+
+func (s *PostgresStore) ListPromptReleases(ctx context.Context, tenantID string) ([]models.PromptRelease, error) {goCover_1b9794c3e1b6__61[0] = 7 ; goCover_1b9794c3e1b6__61[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__61[2] = 61 ; goCover_1b9794c3e1b6__61[3]++;
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, prompt_id, environment, version_num, release_tag, COALESCE(notes, ''), COALESCE(promoted_by, ''), created_at
+		FROM prompt_releases
+		WHERE tenant_id = $1
+		ORDER BY prompt_id ASC, environment ASC, created_at DESC
+	`, tenantID)
+	if err != nil {goCover_1b9794c3e1b6__61[6]++;
+		return nil, err
+	}
+	goCover_1b9794c3e1b6__61[4]++;defer rows.Close()
+
+	items := []models.PromptRelease{}
+	for rows.Next() {goCover_1b9794c3e1b6__61[7]++;
+		var item models.PromptRelease
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.PromptID, &item.Environment, &item.Version, &item.ReleaseTag, &item.Notes, &item.PromotedBy, &item.CreatedAt); err != nil {goCover_1b9794c3e1b6__61[9]++;
+			return nil, err
+		}
+		goCover_1b9794c3e1b6__61[8]++;items = append(items, item)
+	}
+	goCover_1b9794c3e1b6__61[5]++;return items, rows.Err()
+}
+
+func (s *PostgresStore) UpsertPromptVersion(ctx context.Context, tenantID string, version models.PromptVersion) (models.PromptVersion, error) {goCover_1b9794c3e1b6__62[0] = 7 ; goCover_1b9794c3e1b6__62[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__62[2] = 62 ; goCover_1b9794c3e1b6__62[3]++;
+	rawConfigJSON, err := json.Marshal(version.Config)
+	if err != nil {goCover_1b9794c3e1b6__62[7]++;
+		return version, err
+	}
+	goCover_1b9794c3e1b6__62[4]++;promptID := strings.TrimSpace(version.PromptID)
+	environment := strings.TrimSpace(version.Environment)
+	if environment == "" {goCover_1b9794c3e1b6__62[8]++;
+		environment = "development"
+	}
+
+	goCover_1b9794c3e1b6__62[5]++;var rawConfig string
+	err = s.pool.QueryRow(ctx, `
+		WITH next_version AS (
+			SELECT CASE
+				WHEN $3::integer > 0 THEN $3::integer
+				ELSE COALESCE(MAX(version_num), 0) + 1
+			END AS version_num
+			FROM prompt_versions
+			WHERE tenant_id = $1 AND prompt_id = $2
+		)
+		INSERT INTO prompt_versions (
+			tenant_id, prompt_id, version_num, environment, release_tag, content, config_json, description, created_by
+		)
+		SELECT
+			$1, $2, next_version.version_num, $4, $5, $6, $7::jsonb, $8, $9
+		FROM next_version
+		ON CONFLICT (tenant_id, prompt_id, version_num)
+		DO UPDATE SET
+			environment = EXCLUDED.environment,
+			release_tag = EXCLUDED.release_tag,
+			content = EXCLUDED.content,
+			config_json = EXCLUDED.config_json,
+			description = EXCLUDED.description,
+			created_by = EXCLUDED.created_by,
+			updated_at = NOW()
+		RETURNING id, tenant_id, prompt_id, version_num, environment, COALESCE(release_tag, ''), content, config_json::text, COALESCE(description, ''), COALESCE(created_by, ''), created_at, updated_at
+	`, tenantID, promptID, version.Version, environment, strings.TrimSpace(version.ReleaseTag), version.Content, string(rawConfigJSON), strings.TrimSpace(version.Description), strings.TrimSpace(version.CreatedBy)).Scan(
+		&version.ID,
+		&version.TenantID,
+		&version.PromptID,
+		&version.Version,
+		&version.Environment,
+		&version.ReleaseTag,
+		&version.Content,
+		&rawConfig,
+		&version.Description,
+		&version.CreatedBy,
+		&version.CreatedAt,
+		&version.UpdatedAt,
+	)
+	if err != nil {goCover_1b9794c3e1b6__62[9]++;
+		return version, err
+	}
+	goCover_1b9794c3e1b6__62[6]++;version.Config = decodePromptConfig(rawConfig)
+	return version, nil
+}
+
+func (s *PostgresStore) GetPromptVersion(ctx context.Context, tenantID, promptID string, versionNum int) (models.PromptVersion, error) {goCover_1b9794c3e1b6__63[0] = 3 ; goCover_1b9794c3e1b6__63[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__63[2] = 63 ; goCover_1b9794c3e1b6__63[3]++;
+	var item models.PromptVersion
+	var rawConfig string
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, prompt_id, version_num, environment, COALESCE(release_tag, ''), content, config_json::text, COALESCE(description, ''), COALESCE(created_by, ''), created_at, updated_at
+		FROM prompt_versions
+		WHERE tenant_id = $1 AND prompt_id = $2 AND version_num = $3
+	`, tenantID, strings.TrimSpace(promptID), versionNum).Scan(
+		&item.ID,
+		&item.TenantID,
+		&item.PromptID,
+		&item.Version,
+		&item.Environment,
+		&item.ReleaseTag,
+		&item.Content,
+		&rawConfig,
+		&item.Description,
+		&item.CreatedBy,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {goCover_1b9794c3e1b6__63[5]++;
+		return item, err
+	}
+	goCover_1b9794c3e1b6__63[4]++;item.Config = decodePromptConfig(rawConfig)
+	return item, nil
+}
+
+func (s *PostgresStore) PromotePromptRelease(ctx context.Context, tenantID string, release models.PromptRelease) (models.PromptRelease, error) {goCover_1b9794c3e1b6__64[0] = 1 ; goCover_1b9794c3e1b6__64[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__64[2] = 64 ; goCover_1b9794c3e1b6__64[3]++;
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO prompt_releases (tenant_id, prompt_id, environment, version_num, release_tag, notes, promoted_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (tenant_id, prompt_id, environment)
+		DO UPDATE SET
+			version_num = EXCLUDED.version_num,
+			release_tag = EXCLUDED.release_tag,
+			notes = EXCLUDED.notes,
+			promoted_by = EXCLUDED.promoted_by,
+			created_at = NOW()
+		RETURNING id, tenant_id, prompt_id, environment, version_num, release_tag, COALESCE(notes, ''), COALESCE(promoted_by, ''), created_at
+	`, tenantID, strings.TrimSpace(release.PromptID), strings.TrimSpace(release.Environment), release.Version, strings.TrimSpace(release.ReleaseTag), strings.TrimSpace(release.Notes), strings.TrimSpace(release.PromotedBy)).Scan(
+		&release.ID,
+		&release.TenantID,
+		&release.PromptID,
+		&release.Environment,
+		&release.Version,
+		&release.ReleaseTag,
+		&release.Notes,
+		&release.PromotedBy,
+		&release.CreatedAt,
+	)
+	return release, err
+}
+
+func decodePromptConfig(raw string) map[string]string {goCover_1b9794c3e1b6__65[0] = 5 ; goCover_1b9794c3e1b6__65[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__65[2] = 65 ; goCover_1b9794c3e1b6__65[3]++;
+	if strings.TrimSpace(raw) == "" {goCover_1b9794c3e1b6__65[6]++;
+		return map[string]string{}
+	}
+	goCover_1b9794c3e1b6__65[4]++;out := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {goCover_1b9794c3e1b6__65[7]++;
+		return map[string]string{}
+	}
+	goCover_1b9794c3e1b6__65[5]++;return out
+}

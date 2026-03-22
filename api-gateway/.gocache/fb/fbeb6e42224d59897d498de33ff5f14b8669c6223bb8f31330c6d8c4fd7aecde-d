@@ -1,0 +1,172 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\store\evals.go:1:1
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+
+	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/jackc/pgx/v5"
+)
+
+func (s *PostgresStore) ListEvalRuns(ctx context.Context, tenantID string, limit int) ([]models.TraceEvalRun, error) {goCover_1b9794c3e1b6__0[0] = 11 ; goCover_1b9794c3e1b6__0[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__0[2] = 0 ; goCover_1b9794c3e1b6__0[3]++;
+	if limit <= 0 || limit > 100 {goCover_1b9794c3e1b6__0[8]++;
+		limit = 20
+	}
+	goCover_1b9794c3e1b6__0[4]++;rows, err := s.pool.Query(ctx, `
+		SELECT id, trace_id, COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
+		FROM eval_runs
+		WHERE tenant_id = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT $2
+	`, tenantID, limit)
+	if err != nil {goCover_1b9794c3e1b6__0[9]++;
+		return nil, err
+	}
+	goCover_1b9794c3e1b6__0[5]++;defer rows.Close()
+
+	runs := make([]models.TraceEvalRun, 0, limit)
+	for rows.Next() {goCover_1b9794c3e1b6__0[10]++;
+		var run models.TraceEvalRun
+		var rawPolicy string
+		if err := rows.Scan(&run.ID, &run.TraceID, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt); err != nil {goCover_1b9794c3e1b6__0[12]++;
+			return nil, err
+		}
+		goCover_1b9794c3e1b6__0[11]++;run.PolicyEffectiveness = decodePolicyEffectiveness(rawPolicy)
+		runs = append(runs, run)
+	}
+	goCover_1b9794c3e1b6__0[6]++;if err := rows.Err(); err != nil {goCover_1b9794c3e1b6__0[13]++;
+		return nil, err
+	}
+	goCover_1b9794c3e1b6__0[7]++;return s.attachEvalScores(ctx, tenantID, runs)
+}
+
+func (s *PostgresStore) ListEvalRunsByRelease(ctx context.Context, tenantID, releaseTag, evalSuite string) ([]models.TraceEvalRun, error) {goCover_1b9794c3e1b6__1[0] = 9 ; goCover_1b9794c3e1b6__1[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__1[2] = 1 ; goCover_1b9794c3e1b6__1[3]++;
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, trace_id, COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
+		FROM eval_runs
+		WHERE tenant_id = $1 AND release_tag = $2 AND eval_suite = $3
+		ORDER BY created_at DESC, id DESC
+	`, tenantID, strings.TrimSpace(releaseTag), strings.TrimSpace(evalSuite))
+	if err != nil {goCover_1b9794c3e1b6__1[7]++;
+		return nil, err
+	}
+	goCover_1b9794c3e1b6__1[4]++;defer rows.Close()
+
+	runs := []models.TraceEvalRun{}
+	for rows.Next() {goCover_1b9794c3e1b6__1[8]++;
+		var run models.TraceEvalRun
+		var rawPolicy string
+		if err := rows.Scan(&run.ID, &run.TraceID, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt); err != nil {goCover_1b9794c3e1b6__1[10]++;
+			return nil, err
+		}
+		goCover_1b9794c3e1b6__1[9]++;run.PolicyEffectiveness = decodePolicyEffectiveness(rawPolicy)
+		runs = append(runs, run)
+	}
+	goCover_1b9794c3e1b6__1[5]++;if err := rows.Err(); err != nil {goCover_1b9794c3e1b6__1[11]++;
+		return nil, err
+	}
+	goCover_1b9794c3e1b6__1[6]++;return s.attachEvalScores(ctx, tenantID, runs)
+}
+
+func (s *PostgresStore) InsertEvalRun(ctx context.Context, tenantID string, run models.TraceEvalRun) (models.TraceEvalRun, error) {goCover_1b9794c3e1b6__2[0] = 12 ; goCover_1b9794c3e1b6__2[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__2[2] = 2 ; goCover_1b9794c3e1b6__2[3]++;
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {goCover_1b9794c3e1b6__2[9]++;
+		return run, err
+	}
+	goCover_1b9794c3e1b6__2[4]++;defer tx.Rollback(ctx) //nolint:errcheck
+
+	rawPolicy, err := json.Marshal(run.PolicyEffectiveness)
+	if err != nil {goCover_1b9794c3e1b6__2[10]++;
+		return run, err
+	}
+	goCover_1b9794c3e1b6__2[5]++;err = tx.QueryRow(ctx, `
+		INSERT INTO eval_runs (tenant_id, trace_id, release_tag, eval_suite, overall_score, risk_level, summary, policy_effectiveness)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+		RETURNING id, created_at
+	`, tenantID, strings.TrimSpace(run.TraceID), strings.TrimSpace(run.ReleaseTag), strings.TrimSpace(run.EvalSuite), run.OverallScore, strings.TrimSpace(run.RiskLevel), strings.TrimSpace(run.Summary), string(rawPolicy)).Scan(&run.ID, &run.CreatedAt)
+	if err != nil {goCover_1b9794c3e1b6__2[11]++;
+		return run, err
+	}
+
+	goCover_1b9794c3e1b6__2[6]++;for _, score := range run.Scores {goCover_1b9794c3e1b6__2[12]++;
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO eval_scores (tenant_id, eval_run_id, metric_name, score, weight, severity, summary)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`, tenantID, run.ID, strings.TrimSpace(score.Metric), score.Score, score.Weight, strings.TrimSpace(score.Severity), strings.TrimSpace(score.Summary)); err != nil {goCover_1b9794c3e1b6__2[13]++;
+			return run, err
+		}
+	}
+
+	goCover_1b9794c3e1b6__2[7]++;if err := tx.Commit(ctx); err != nil {goCover_1b9794c3e1b6__2[14]++;
+		return run, err
+	}
+	goCover_1b9794c3e1b6__2[8]++;return run, nil
+}
+
+func (s *PostgresStore) attachEvalScores(ctx context.Context, tenantID string, runs []models.TraceEvalRun) ([]models.TraceEvalRun, error) {goCover_1b9794c3e1b6__3[0] = 12 ; goCover_1b9794c3e1b6__3[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__3[2] = 3 ; goCover_1b9794c3e1b6__3[3]++;
+	if len(runs) == 0 {goCover_1b9794c3e1b6__3[8]++;
+		return runs, nil
+	}
+	goCover_1b9794c3e1b6__3[4]++;ids := make([]int64, 0, len(runs))
+	runByID := make(map[int64]*models.TraceEvalRun, len(runs))
+	for i := range runs {goCover_1b9794c3e1b6__3[9]++;
+		ids = append(ids, runs[i].ID)
+		runByID[runs[i].ID] = &runs[i]
+	}
+	goCover_1b9794c3e1b6__3[5]++;rows, err := s.pool.Query(ctx, `
+		SELECT eval_run_id, metric_name, score, weight, COALESCE(severity,''), COALESCE(summary,'')
+		FROM eval_scores
+		WHERE tenant_id = $1 AND eval_run_id = ANY($2)
+		ORDER BY eval_run_id ASC, metric_name ASC
+	`, tenantID, ids)
+	if err != nil {goCover_1b9794c3e1b6__3[10]++;
+		return nil, err
+	}
+	goCover_1b9794c3e1b6__3[6]++;defer rows.Close()
+	for rows.Next() {goCover_1b9794c3e1b6__3[11]++;
+		var runID int64
+		var score models.TraceEvalScore
+		if err := rows.Scan(&runID, &score.Metric, &score.Score, &score.Weight, &score.Severity, &score.Summary); err != nil {goCover_1b9794c3e1b6__3[13]++;
+			return nil, err
+		}
+		goCover_1b9794c3e1b6__3[12]++;if run := runByID[runID]; run != nil {goCover_1b9794c3e1b6__3[14]++;
+			run.Scores = append(run.Scores, score)
+		}
+	}
+	goCover_1b9794c3e1b6__3[7]++;return runs, rows.Err()
+}
+
+func decodePolicyEffectiveness(raw string) models.PolicyEffectivenessSummary {goCover_1b9794c3e1b6__4[0] = 5 ; goCover_1b9794c3e1b6__4[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__4[2] = 4 ; goCover_1b9794c3e1b6__4[3]++;
+	if strings.TrimSpace(raw) == "" {goCover_1b9794c3e1b6__4[6]++;
+		return models.PolicyEffectivenessSummary{}
+	}
+	goCover_1b9794c3e1b6__4[4]++;var out models.PolicyEffectivenessSummary
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {goCover_1b9794c3e1b6__4[7]++;
+		return models.PolicyEffectivenessSummary{}
+	}
+	goCover_1b9794c3e1b6__4[5]++;return out
+}
+
+func (s *PostgresStore) GetEvalRun(ctx context.Context, tenantID string, runID int64) (models.TraceEvalRun, error) {goCover_1b9794c3e1b6__5[0] = 7 ; goCover_1b9794c3e1b6__5[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__5[2] = 5 ; goCover_1b9794c3e1b6__5[3]++;
+	var run models.TraceEvalRun
+	var rawPolicy string
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, trace_id, COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
+		FROM eval_runs
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, runID).Scan(&run.ID, &run.TraceID, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt)
+	if err != nil {goCover_1b9794c3e1b6__5[7]++;
+		return run, err
+	}
+	goCover_1b9794c3e1b6__5[4]++;run.PolicyEffectiveness = decodePolicyEffectiveness(rawPolicy)
+	runs, err := s.attachEvalScores(ctx, tenantID, []models.TraceEvalRun{run})
+	if err != nil {goCover_1b9794c3e1b6__5[8]++;
+		return run, err
+	}
+	goCover_1b9794c3e1b6__5[5]++;if len(runs) == 0 {goCover_1b9794c3e1b6__5[9]++;
+		return run, pgx.ErrNoRows
+	}
+	goCover_1b9794c3e1b6__5[6]++;return runs[0], nil
+}

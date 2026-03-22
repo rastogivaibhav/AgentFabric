@@ -1,0 +1,130 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\observability\timeline.go:1:1
+package observability
+
+import (
+	"fmt"
+	"sort"
+	"time"
+
+	"github.com/agentfabric/api-gateway/internal/models"
+)
+
+func BuildTimeline(traceID string, spans []models.Span, policyEvents []models.PolicyEvent) *models.TraceTimeline {goCover_e6e1742105ed__18[0] = 37 ; goCover_e6e1742105ed__18[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__18[2] = 18 ; goCover_e6e1742105ed__18[3]++;
+	if len(spans) == 0 {goCover_e6e1742105ed__18[12]++;
+		return &models.TraceTimeline{
+			TraceID: traceID,
+			Items:   []models.TraceTimelineItem{},
+		}
+	}
+
+	goCover_e6e1742105ed__18[4]++;enriched := spans
+	if len(policyEvents) > 0 {goCover_e6e1742105ed__18[13]++;
+		enriched = EnrichSpans(spans, policyEvents)
+	}
+
+	goCover_e6e1742105ed__18[5]++;minStart := enriched[0].StartTimeNs
+	maxEnd := enriched[0].StartTimeNs + enriched[0].DurationNs
+	policyCounts := make(map[string]int, len(policyEvents))
+	policyIDs := make([]string, 0, len(policyEvents))
+	for _, event := range policyEvents {goCover_e6e1742105ed__18[14]++;
+		if event.SpanID != "" {goCover_e6e1742105ed__18[16]++;
+			policyCounts[event.SpanID]++
+		}
+		goCover_e6e1742105ed__18[15]++;if event.DecisionID != "" {goCover_e6e1742105ed__18[17]++;
+			policyIDs = append(policyIDs, event.DecisionID)
+		}
+	}
+
+	goCover_e6e1742105ed__18[6]++;items := make([]models.TraceTimelineItem, 0, len(enriched))
+	highlights := make([]string, 0, 4)
+	var longest *models.Span
+	for _, span := range enriched {goCover_e6e1742105ed__18[18]++;
+		if span.StartTimeNs < minStart {goCover_e6e1742105ed__18[23]++;
+			minStart = span.StartTimeNs
+		}
+		goCover_e6e1742105ed__18[19]++;if end := span.StartTimeNs + span.DurationNs; end > maxEnd {goCover_e6e1742105ed__18[24]++;
+			maxEnd = end
+		}
+		goCover_e6e1742105ed__18[20]++;if longest == nil || span.DurationNs > longest.DurationNs {goCover_e6e1742105ed__18[25]++;
+			copySpan := span
+			longest = &copySpan
+		}
+		goCover_e6e1742105ed__18[21]++;status := "ok"
+		if span.Blocked {goCover_e6e1742105ed__18[26]++;
+			status = "blocked"
+		} else{ goCover_e6e1742105ed__18[27]++;if span.StatusCode == 2 {goCover_e6e1742105ed__18[28]++;
+			status = "error"
+		}}
+		goCover_e6e1742105ed__18[22]++;totalTokens := span.InputTokens + span.OutputTokens + span.CacheReadTokens + span.CacheWriteTokens + span.ReasoningTokens
+		items = append(items, models.TraceTimelineItem{
+			SpanID:           span.ID,
+			ParentSpanID:     span.ParentID,
+			Name:             span.Name,
+			StepType:         span.StepType,
+			Provider:         span.Provider,
+			Model:            span.Model,
+			AppName:          span.AppName,
+			Environment:      span.Environment,
+			Status:           status,
+			FailureSummary:   span.FailureSummary,
+			Blocked:          span.Blocked,
+			BlockedReason:    span.BlockedReason,
+			RedactionCount:   span.RedactionCount,
+			Depth:            span.Depth,
+			Lineage:          append([]string(nil), span.Lineage...),
+			StartOffsetNs:    span.StartTimeNs - minStart,
+			EndOffsetNs:      span.StartTimeNs - minStart + span.DurationNs,
+			DurationNs:       span.DurationNs,
+			TotalTokens:      totalTokens,
+			CostUSD:          span.CostUSD,
+			PolicyEventCount: policyCounts[span.ID],
+		})
+	}
+
+	goCover_e6e1742105ed__18[7]++;sort.Slice(items, func(i, j int) bool {goCover_e6e1742105ed__18[29]++;
+		if items[i].StartOffsetNs == items[j].StartOffsetNs {goCover_e6e1742105ed__18[31]++;
+			return items[i].DurationNs > items[j].DurationNs
+		}
+		goCover_e6e1742105ed__18[30]++;return items[i].StartOffsetNs < items[j].StartOffsetNs
+	})
+
+	goCover_e6e1742105ed__18[8]++;if longest != nil {goCover_e6e1742105ed__18[32]++;
+		highlights = append(highlights, fmt.Sprintf("Longest step: %s (%s)", longest.Name, formatTimelineDuration(longest.DurationNs)))
+	}
+	goCover_e6e1742105ed__18[9]++;for _, span := range enriched {goCover_e6e1742105ed__18[33]++;
+		if span.Blocked {goCover_e6e1742105ed__18[34]++;
+			highlights = append(highlights, fmt.Sprintf("Blocked step: %s", span.Name))
+			break
+		}
+	}
+	goCover_e6e1742105ed__18[10]++;for _, span := range enriched {goCover_e6e1742105ed__18[35]++;
+		if span.StatusCode == 2 || span.FailureSummary != "" {goCover_e6e1742105ed__18[36]++;
+			if span.FailureSummary != "" {goCover_e6e1742105ed__18[38]++;
+				highlights = append(highlights, fmt.Sprintf("Failure: %s", span.FailureSummary))
+			} else{ goCover_e6e1742105ed__18[39]++;{
+				highlights = append(highlights, fmt.Sprintf("Errored step: %s", span.Name))
+			}}
+			goCover_e6e1742105ed__18[37]++;break
+		}
+	}
+
+	goCover_e6e1742105ed__18[11]++;return &models.TraceTimeline{
+		TraceID:        traceID,
+		StartTime:      time.Unix(0, minStart),
+		DurationNs:     maxEnd - minStart,
+		Items:          items,
+		Highlights:     highlights,
+		PolicyEventIDs: policyIDs,
+	}
+}
+
+func formatTimelineDuration(ns int64) string {goCover_e6e1742105ed__19[0] = 4 ; goCover_e6e1742105ed__19[1] = goCover_e6e1742105ed_P ; goCover_e6e1742105ed__19[2] = 19 ; goCover_e6e1742105ed__19[3]++;
+	switch {
+	case ns < 1_000_000:goCover_e6e1742105ed__19[4]++;
+		return fmt.Sprintf("%dus", ns/1_000)
+	case ns < 1_000_000_000:goCover_e6e1742105ed__19[5]++;
+		return fmt.Sprintf("%.1fms", float64(ns)/1_000_000)
+	default:goCover_e6e1742105ed__19[6]++;
+		return fmt.Sprintf("%.2fs", float64(ns)/1_000_000_000)
+	}
+}

@@ -1,0 +1,693 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\proxy\proxy.go:1:1
+// Package proxy implements the LLM reverse proxy for Layer 2 virtual keys.
+//
+// Developers point their SDK at AgentFabric:
+//
+//	OPENAI_BASE_URL=http://localhost:8080/proxy/openai/v1
+//	OPENAI_API_KEY=af-vk-<token>
+//
+// The proxy resolves the virtual key, checks the tenant budget, forwards the
+// request to the real upstream with the real key substituted, records a span,
+// and streams the response back unchanged.
+package proxy
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/agentfabric/api-gateway/internal/budget"
+	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/policy"
+	priced "github.com/agentfabric/api-gateway/internal/pricing"
+	"github.com/agentfabric/api-gateway/internal/vault"
+	"go.uber.org/zap"
+)
+
+// spanStore is the minimal store interface the proxy needs to record spans.
+type spanStore interface {
+	BulkInsertSpans(ctx context.Context, spans []models.Span) error
+	CreatePolicyAuditEntry(ctx context.Context, entry models.PolicyDecisionAudit) error
+}
+
+type eventBroadcaster interface {
+	Broadcast(tenantID string, event interface{})
+}
+
+// ProviderParser abstracts the differences between LLM provider APIs.
+// Exported so the netproxy package can reuse parsers without duplicating logic.
+type ProviderParser interface {
+	ParseRequest(r *http.Request, body []byte) (model string, streaming bool, estimatedTokens int64, err error)
+	ParseUsage(body []byte) (inputTokens, outputTokens int64, err error)
+	ParseStreamingUsage(chunks [][]byte) (inputTokens, outputTokens int64)
+	Upstream() string
+	AuthHeader() string
+	AuthValue(realKey string) string
+}
+
+// LLMProxy is an http.Handler that mounts at /proxy/{provider}/v1/*.
+type LLMProxy struct {
+	vault          *vault.Vault
+	budgetEnforcer *budget.BudgetEnforcer // may be nil (budget disabled)
+	store          spanStore
+	policyEngine   *policy.Engine
+	broadcaster    eventBroadcaster
+	router         *ProviderRouter
+	cache          *proxyResponseCache
+	rateLimiter    *requestRateLimiter
+	httpClient     *http.Client
+	logger         *zap.Logger
+}
+
+// ParserFor returns the ProviderParser for the given provider name.
+// Exported for use by the netproxy package.
+func ParserFor(provider string) (ProviderParser, bool) {goCover_08ec89fa625c__80[0] = 1 ; goCover_08ec89fa625c__80[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__80[2] = 80 ; goCover_08ec89fa625c__80[3]++;
+	return parserFor(provider)
+}
+
+// New creates an LLMProxy.
+func New(v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, policyEngine *policy.Engine, broadcaster eventBroadcaster, logger *zap.Logger) *LLMProxy {goCover_08ec89fa625c__81[0] = 1 ; goCover_08ec89fa625c__81[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__81[2] = 81 ; goCover_08ec89fa625c__81[3]++;
+	return &LLMProxy{
+		vault:          v,
+		budgetEnforcer: be,
+		store:          store,
+		policyEngine:   policyEngine,
+		broadcaster:    broadcaster,
+		router:         NewProviderRouter(),
+		cache:          newProxyResponseCache(),
+		rateLimiter:    newRequestRateLimiter(),
+		httpClient: &http.Client{
+			Timeout: 5 * time.Minute, // generous for long streaming responses
+		},
+		logger: logger,
+	}
+}
+
+// ServeHTTP implements http.Handler.
+//
+// URL layout expected by the router:
+//
+//	/proxy/openai/v1/chat/completions
+//	/proxy/anthropic/v1/messages
+//
+// The router strips /proxy/{provider} before calling ServeHTTP, leaving the
+// path that the upstream API expects (e.g. /v1/chat/completions).
+func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {goCover_08ec89fa625c__82[0] = 74 ; goCover_08ec89fa625c__82[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__82[2] = 82 ; goCover_08ec89fa625c__82[3]++;
+	provider := canonicalProviderFromRequest(r)
+	parser, ok := parserFor(provider)
+	if !ok {goCover_08ec89fa625c__82[21]++;
+		http.Error(w, "unsupported provider: "+provider, http.StatusBadRequest)
+		return
+	}
+
+	// 1. Extract virtual key from Authorization or x-api-key.
+	goCover_08ec89fa625c__82[4]++;vk := extractVirtualKey(r)
+	if vk == "" || !strings.HasPrefix(vk, "af-vk-") {goCover_08ec89fa625c__82[22]++;
+		http.Error(w, "missing or invalid virtual key", http.StatusUnauthorized)
+		return
+	}
+
+	// 2. Resolve virtual key → real key + tenant.
+	goCover_08ec89fa625c__82[5]++;resolvedProvider, realKey, tenantID, err := p.vault.Resolve(r.Context(), vk)
+	if err != nil {goCover_08ec89fa625c__82[23]++;
+		p.logger.Debug("virtual key resolve failed", zap.String("vk_prefix", vk[:min(14, len(vk))]), zap.Error(err))
+		http.Error(w, "invalid or revoked key", http.StatusUnauthorized)
+		return
+	}
+	goCover_08ec89fa625c__82[6]++;resolvedProvider = NormalizeProvider(resolvedProvider)
+	if resolvedProvider != provider {goCover_08ec89fa625c__82[24]++;
+		http.Error(w, fmt.Sprintf("key is for provider %q, not %q", resolvedProvider, provider), http.StatusUnauthorized)
+		return
+	}
+
+	// 3. Buffer and parse the request body.
+	goCover_08ec89fa625c__82[7]++;body, err := io.ReadAll(io.LimitReader(r.Body, 8*1024*1024)) // 8 MB cap
+	if err != nil {goCover_08ec89fa625c__82[25]++;
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+	goCover_08ec89fa625c__82[8]++;model, streaming, estimatedTokens, err := parser.ParseRequest(r, body)
+	if err != nil {goCover_08ec89fa625c__82[26]++;
+		// Non-fatal: proceed without model info.
+		p.logger.Debug("request parse failed", zap.Error(err))
+	}
+	goCover_08ec89fa625c__82[9]++;traceID := newID()
+	spanID := newID()
+	environment := environmentFromRequest(r)
+
+	if p.policyEngine != nil {goCover_08ec89fa625c__82[27]++;
+		trafficDecision := p.policyEngine.EvaluateTraffic(policy.TrafficInput{
+			TenantID:        tenantID,
+			Provider:        provider,
+			Model:           model,
+			Environment:     environment,
+			EstimatedTokens: estimatedTokens,
+			RequestHeaders:  policy.HeadersFromHTTP(r.Header),
+			RequestBody:     body,
+			Actor:           strings.TrimSpace(r.Header.Get("X-AF-User")),
+			App:             strings.TrimSpace(r.Header.Get("X-AF-App")),
+			Session:         strings.TrimSpace(r.Header.Get("X-AF-Session")),
+		})
+		if trafficDecision.Matched {goCover_08ec89fa625c__82[29]++;
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", trafficDecision)
+			if trafficDecision.Action == "deny" {goCover_08ec89fa625c__82[30]++;
+				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusForbidden, priced.Usage{}, 0, map[string]string{
+					"af.policy.blocked":  "true",
+					"af.policy.reason":   trafficDecision.Reason,
+					"af.policy.decision": trafficDecision.Action,
+					"af.error.type":      "policy_denied",
+					"af.span.step_type":  "policy",
+				})
+				http.Error(w, `{"error":{"message":"request blocked by policy","type":"policy_denied"}}`, http.StatusForbidden)
+				return
+			}
+		}
+
+		goCover_08ec89fa625c__82[28]++;dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
+			TenantID:       tenantID,
+			Provider:       provider,
+			Model:          model,
+			Environment:    environment,
+			Scope:          "request",
+			Body:           body,
+			RequestHeaders: policy.HeadersFromHTTP(r.Header),
+			Actor:          strings.TrimSpace(r.Header.Get("X-AF-User")),
+			App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
+			Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
+		})
+		if dlpDecision.Matched {goCover_08ec89fa625c__82[31]++;
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", dlpDecision)
+			switch dlpDecision.Action {
+			case "deny":goCover_08ec89fa625c__82[32]++;
+				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusForbidden, priced.Usage{}, 0, map[string]string{
+					"af.policy.blocked":  "true",
+					"af.policy.reason":   dlpDecision.Reason,
+					"af.policy.decision": dlpDecision.Action,
+					"af.error.type":      "policy_denied",
+					"af.span.step_type":  "policy",
+				})
+				http.Error(w, `{"error":{"message":"request blocked by DLP policy","type":"policy_denied"}}`, http.StatusForbidden)
+				return
+			case "redact":goCover_08ec89fa625c__82[33]++;
+				body = dlpDecision.RedactedBody
+			}
+		}
+	}
+
+	// 4. Budget pre-check.
+	goCover_08ec89fa625c__82[10]++;if p.budgetEnforcer != nil {goCover_08ec89fa625c__82[34]++;
+		_, _, estimatedCostUSD := ComputeEstimatedCostForTenant(provider, model, tenantID, time.Now().UTC(), estimatedTokens)
+		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
+		if !allowed {goCover_08ec89fa625c__82[35]++;
+			go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusTooManyRequests, priced.Usage{}, 0, map[string]string{
+				"af.error.type":     "budget_exceeded",
+				"af.policy.blocked": "true",
+				"af.span.step_type": "policy",
+			})
+			http.Error(w, `{"error":{"message":"token budget exceeded","type":"budget_exceeded"}}`,
+				http.StatusTooManyRequests)
+			return
+		}
+	}
+
+	goCover_08ec89fa625c__82[11]++;limiter := p.rateLimiter
+	if limiter == nil {goCover_08ec89fa625c__82[36]++;
+		limiter = newRequestRateLimiter()
+	}
+	goCover_08ec89fa625c__82[12]++;if err := limiter.Check(map[string]string{
+		"key":      vk,
+		"user":     strings.TrimSpace(r.Header.Get("X-AF-User")),
+		"team":     strings.TrimSpace(r.Header.Get("X-AF-Team")),
+		"tenant":   tenantID,
+		"provider": provider,
+	}); err != nil {goCover_08ec89fa625c__82[37]++;
+		extraAttrs := map[string]string{
+			"af.error.type":     "rate_limited",
+			"af.policy.blocked": "true",
+			"af.span.step_type": "policy",
+		}
+		if rateErr, ok := err.(*RateLimitError); ok {goCover_08ec89fa625c__82[39]++;
+			extraAttrs["af.rate_limit.scope"] = rateErr.Scope
+		}
+		goCover_08ec89fa625c__82[38]++;go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusTooManyRequests, priced.Usage{}, 0, extraAttrs)
+		http.Error(w, `{"error":{"message":"request rate limit exceeded","type":"rate_limited"}}`, http.StatusTooManyRequests)
+		return
+	}
+
+	goCover_08ec89fa625c__82[13]++;router := p.router
+	if router == nil {goCover_08ec89fa625c__82[40]++;
+		router = NewProviderRouter()
+	}
+	goCover_08ec89fa625c__82[14]++;cacheStore := p.cache
+	if cacheStore == nil {goCover_08ec89fa625c__82[41]++;
+		cacheStore = newProxyResponseCache()
+	}
+
+	goCover_08ec89fa625c__82[15]++;candidates := router.Resolve(tenantID, provider, model, r.URL.Path)
+	start := time.Now()
+	usage := priced.Usage{}
+	extraAttrs := map[string]string{}
+	finalModel := model
+	finalStatusCode := 0
+	finalBody := []byte(nil)
+	finalHeaders := http.Header{}
+	finalSource := "primary"
+	streamed := false
+
+	for idx, candidate := range candidates {goCover_08ec89fa625c__82[42]++;
+		candidateBody, candidatePath, routeErr := router.Apply(provider, body, candidate, r.URL.Path)
+		if routeErr != nil {goCover_08ec89fa625c__82[51]++;
+			p.logger.Debug("route candidate rewrite failed", zap.String("provider", provider), zap.String("model", candidate.Model), zap.Error(routeErr))
+			candidateBody = body
+			candidatePath = r.URL.Path
+		}
+		goCover_08ec89fa625c__82[43]++;activeModel := candidate.Model
+		if strings.TrimSpace(activeModel) == "" {goCover_08ec89fa625c__82[52]++;
+			activeModel = model
+		}
+		goCover_08ec89fa625c__82[44]++;finalModel = activeModel
+		finalSource = candidate.Source
+
+		cacheKey := ""
+		if !streaming {goCover_08ec89fa625c__82[53]++;
+			cacheKey = cacheStore.Key(tenantID, provider, activeModel, candidatePath, r.URL.RawQuery, candidateBody)
+			if cached, ok := cacheStore.Get(cacheKey); ok {goCover_08ec89fa625c__82[54]++;
+				copyProxyHeaders(w.Header(), cached.Header)
+				w.Header().Set("X-AgentFabric-Cache", "HIT")
+				w.WriteHeader(cached.StatusCode)
+				w.Write(cached.Body) //nolint:errcheck
+				extraAttrs["af.cache.hit"] = "true"
+				extraAttrs["af.gateway.route_source"] = candidate.Source
+				if activeModel != model && strings.TrimSpace(model) != "" {goCover_08ec89fa625c__82[56]++;
+					extraAttrs["af.gateway.fallback_from"] = model
+				}
+				goCover_08ec89fa625c__82[55]++;go p.recordSpan(traceID, spanID, tenantID, provider, activeModel, vk, cached.StatusCode, cached.Usage, time.Since(start), extraAttrs)
+				return
+			}
+		}
+
+		goCover_08ec89fa625c__82[45]++;upReq, err := p.buildUpstreamRequest(r, parser, realKey, candidateBody, candidatePath)
+		if err != nil {goCover_08ec89fa625c__82[57]++;
+			http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
+			return
+		}
+
+		goCover_08ec89fa625c__82[46]++;upResp, err := p.httpClient.Do(upReq)
+		if err != nil {goCover_08ec89fa625c__82[58]++;
+			if idx < len(candidates)-1 && shouldAttemptFallback(0, err) {goCover_08ec89fa625c__82[60]++;
+				extraAttrs["af.gateway.fallback_trigger"] = classifyUpstreamFailure(0, err)
+				extraAttrs["af.gateway.fallback_from"] = activeModel
+				continue
+			}
+			goCover_08ec89fa625c__82[59]++;p.logger.Warn("upstream request failed", zap.Error(err))
+			go p.recordSpan(traceID, spanID, tenantID, provider, activeModel, vk, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
+				"af.error.type":           "upstream_request_failed",
+				"af.error.message":        err.Error(),
+				"af.span.step_type":       "llm",
+				"af.gateway.route_source": candidate.Source,
+			})
+			http.Error(w, "upstream request failed", http.StatusBadGateway)
+			return
+		}
+
+		goCover_08ec89fa625c__82[47]++;if streaming && upResp.StatusCode == http.StatusOK {goCover_08ec89fa625c__82[61]++;
+			copyProxyHeaders(w.Header(), upResp.Header)
+			w.WriteHeader(upResp.StatusCode)
+			usage = p.handleStreaming(w, upResp, provider, parser)
+			upResp.Body.Close()
+			finalStatusCode = upResp.StatusCode
+			streamed = true
+			break
+		}
+
+		goCover_08ec89fa625c__82[48]++;respBody, _ := io.ReadAll(upResp.Body)
+		upResp.Body.Close()
+		if upResp.StatusCode >= 400 && idx < len(candidates)-1 && shouldAttemptFallback(upResp.StatusCode, nil) {goCover_08ec89fa625c__82[62]++;
+			extraAttrs["af.gateway.fallback_trigger"] = classifyUpstreamFailure(upResp.StatusCode, nil)
+			extraAttrs["af.gateway.fallback_from"] = activeModel
+			continue
+		}
+
+		goCover_08ec89fa625c__82[49]++;if upResp.StatusCode == http.StatusOK {goCover_08ec89fa625c__82[63]++;
+			usage, _ = ParseDetailedUsage(provider, respBody)
+			if usage.TotalTokens() == 0 {goCover_08ec89fa625c__82[66]++;
+				usage.InputTokens, usage.OutputTokens, _ = parser.ParseUsage(respBody)
+			}
+			goCover_08ec89fa625c__82[64]++;if p.policyEngine != nil {goCover_08ec89fa625c__82[67]++;
+				dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
+					TenantID:       tenantID,
+					Provider:       provider,
+					Model:          activeModel,
+					Environment:    environment,
+					Scope:          "response",
+					Body:           respBody,
+					RequestHeaders: policy.HeadersFromHTTP(r.Header),
+					Actor:          strings.TrimSpace(r.Header.Get("X-AF-User")),
+					App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
+					Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
+				})
+				if dlpDecision.Matched {goCover_08ec89fa625c__82[68]++;
+					p.recordPolicyDecision(tenantID, traceID, spanID, provider, activeModel, environment, "proxy", dlpDecision)
+					extraAttrs["af.policy.reason"] = dlpDecision.Reason
+					extraAttrs["af.policy.decision"] = dlpDecision.Action
+					if dlpDecision.Action == "deny" {goCover_08ec89fa625c__82[69]++;
+						extraAttrs["af.policy.blocked"] = "true"
+						respBody = []byte(`{"error":{"message":"response blocked by DLP policy","type":"policy_denied"}}`)
+						upResp.StatusCode = http.StatusForbidden
+					} else{ goCover_08ec89fa625c__82[70]++;if dlpDecision.Action == "redact" {goCover_08ec89fa625c__82[71]++;
+						respBody = dlpDecision.RedactedBody
+						extraAttrs["af.policy.redacted"] = "true"
+					}}
+				}
+			}
+			goCover_08ec89fa625c__82[65]++;if cacheKey != "" {goCover_08ec89fa625c__82[72]++;
+				cacheStore.Put(cacheKey, cachedProxyResponse{
+					StatusCode: upResp.StatusCode,
+					Header:     cloneProxyHeaders(upResp.Header),
+					Body:       respBody,
+					Usage:      usage,
+				})
+			}
+		}
+
+		goCover_08ec89fa625c__82[50]++;finalStatusCode = upResp.StatusCode
+		finalHeaders = cloneProxyHeaders(upResp.Header)
+		finalBody = respBody
+		break
+	}
+
+	goCover_08ec89fa625c__82[16]++;if finalStatusCode == 0 {goCover_08ec89fa625c__82[73]++;
+		go p.recordSpan(traceID, spanID, tenantID, provider, finalModel, vk, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
+			"af.error.type":           "fallback_exhausted",
+			"af.gateway.route_source": finalSource,
+			"af.span.step_type":       "llm",
+		})
+		http.Error(w, "upstream request failed after fallbacks", http.StatusBadGateway)
+		return
+	}
+
+	goCover_08ec89fa625c__82[17]++;if !streamed {goCover_08ec89fa625c__82[74]++;
+		copyProxyHeaders(w.Header(), finalHeaders)
+		w.Header().Del("Content-Length")
+		w.Header().Set("X-AgentFabric-Cache", "MISS")
+		w.WriteHeader(finalStatusCode)
+		w.Write(finalBody) //nolint:errcheck
+	}
+
+	goCover_08ec89fa625c__82[18]++;duration := time.Since(start)
+	if finalModel != model && strings.TrimSpace(model) != "" {goCover_08ec89fa625c__82[75]++;
+		extraAttrs["af.gateway.fallback_from"] = model
+	}
+	goCover_08ec89fa625c__82[19]++;extraAttrs["af.gateway.route_source"] = finalSource
+	if finalStatusCode >= 400 && strings.TrimSpace(extraAttrs["af.error.type"]) == "" {goCover_08ec89fa625c__82[76]++;
+		extraAttrs["af.error.type"] = classifyProxyStatus(finalStatusCode)
+	}
+	goCover_08ec89fa625c__82[20]++;go p.recordSpan(traceID, spanID, tenantID, provider, finalModel, vk, finalStatusCode, usage, duration, extraAttrs)
+}
+
+// handleStreaming forwards SSE chunks as they arrive, buffering them for usage parsing.
+func (p *LLMProxy) handleStreaming(w http.ResponseWriter, resp *http.Response, provider string, parser ProviderParser) priced.Usage {goCover_08ec89fa625c__83[0] = 8 ; goCover_08ec89fa625c__83[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__83[2] = 83 ; goCover_08ec89fa625c__83[3]++;
+	flusher, canFlush := w.(http.Flusher)
+
+	var chunks [][]byte
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 64*1024)
+
+	for scanner.Scan() {goCover_08ec89fa625c__83[6]++;
+		line := scanner.Bytes()
+		chunk := make([]byte, len(line))
+		copy(chunk, line)
+		chunks = append(chunks, chunk)
+
+		_, err := fmt.Fprintf(w, "%s\n", line)
+		if err != nil {goCover_08ec89fa625c__83[8]++;
+			break
+		}
+		goCover_08ec89fa625c__83[7]++;if canFlush {goCover_08ec89fa625c__83[9]++;
+			flusher.Flush()
+		}
+	}
+	// Trailing newline to close the SSE stream.
+	goCover_08ec89fa625c__83[4]++;fmt.Fprintln(w, "")
+	if canFlush {goCover_08ec89fa625c__83[10]++;
+		flusher.Flush()
+	}
+
+	goCover_08ec89fa625c__83[5]++;return ParseDetailedStreamingUsage(provider, chunks, parser)
+}
+
+func (p *LLMProxy) buildUpstreamRequest(r *http.Request, parser ProviderParser, realKey string, body []byte, path string) (*http.Request, error) {goCover_08ec89fa625c__84[0] = 8 ; goCover_08ec89fa625c__84[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__84[2] = 84 ; goCover_08ec89fa625c__84[3]++;
+	upstreamURL := parser.Upstream() + path
+	if r.URL.RawQuery != "" {goCover_08ec89fa625c__84[7]++;
+		upstreamURL += "?" + r.URL.RawQuery
+	}
+	goCover_08ec89fa625c__84[4]++;upReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(body))
+	if err != nil {goCover_08ec89fa625c__84[8]++;
+		return nil, err
+	}
+	goCover_08ec89fa625c__84[5]++;for k, vv := range r.Header {goCover_08ec89fa625c__84[9]++;
+		for _, v := range vv {goCover_08ec89fa625c__84[10]++;
+			upReq.Header.Add(k, v)
+		}
+	}
+	goCover_08ec89fa625c__84[6]++;upReq.Header.Del("Authorization")
+	upReq.Header.Del("x-api-key")
+	upReq.Header.Set(parser.AuthHeader(), parser.AuthValue(realKey))
+	upReq.Header.Set("Content-Type", "application/json")
+	return upReq, nil
+}
+
+func cloneProxyHeaders(src http.Header) http.Header {goCover_08ec89fa625c__85[0] = 3 ; goCover_08ec89fa625c__85[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__85[2] = 85 ; goCover_08ec89fa625c__85[3]++;
+	dst := make(http.Header, len(src))
+	for key, values := range src {goCover_08ec89fa625c__85[5]++;
+		copied := make([]string, len(values))
+		copy(copied, values)
+		dst[key] = copied
+	}
+	goCover_08ec89fa625c__85[4]++;return dst
+}
+
+func copyProxyHeaders(dst, src http.Header) {goCover_08ec89fa625c__86[0] = 3 ; goCover_08ec89fa625c__86[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__86[2] = 86 ; goCover_08ec89fa625c__86[3]++;
+	for key, values := range src {goCover_08ec89fa625c__86[4]++;
+		for _, value := range values {goCover_08ec89fa625c__86[5]++;
+			dst.Add(key, value)
+		}
+	}
+}
+
+// recordSpan writes a single proxy span to PostgreSQL.
+func (p *LLMProxy) recordSpan(traceID, spanID, tenantID, provider, model, vkPrefix string, statusCode int, usage priced.Usage, duration time.Duration, extraAttrs map[string]string) {goCover_08ec89fa625c__87[0] = 19 ; goCover_08ec89fa625c__87[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__87[2] = 87 ; goCover_08ec89fa625c__87[3]++;
+	now := time.Now()
+	if traceID == "" {goCover_08ec89fa625c__87[12]++;
+		traceID = newID()
+	}
+	goCover_08ec89fa625c__87[4]++;if spanID == "" {goCover_08ec89fa625c__87[13]++;
+		spanID = newID()
+	}
+
+	// Mask the virtual key: show only the first 14 chars (af-vk- + 8 chars).
+	goCover_08ec89fa625c__87[5]++;maskedVK := vkPrefix
+	if len(maskedVK) > 14 {goCover_08ec89fa625c__87[14]++;
+		maskedVK = maskedVK[:14] + "..."
+	}
+
+	goCover_08ec89fa625c__87[6]++;match, costResult := ComputeDetailedCostForTenant(provider, model, tenantID, now, usage)
+
+	span := models.Span{
+		ID:                spanID,
+		TraceID:           traceID,
+		RunID:             traceID,
+		Name:              fmt.Sprintf("proxy.%s.%s", provider, model),
+		Framework:         "proxy",
+		StartTimeNs:       now.Add(-duration).UnixNano(),
+		DurationNs:        duration.Nanoseconds(),
+		StatusCode:        statusCode,
+		InputTokens:       usage.InputTokens,
+		OutputTokens:      usage.OutputTokens,
+		CacheReadTokens:   usage.CacheReadTokens,
+		CacheWriteTokens:  usage.CacheWriteTokens,
+		ReasoningTokens:   usage.ReasoningTokens,
+		CostUSD:           costResult.TotalCostUSD,
+		InputCostUSD:      costResult.InputCostUSD,
+		OutputCostUSD:     costResult.OutputCostUSD,
+		CacheReadCostUSD:  costResult.CacheReadCostUSD,
+		CacheWriteCostUSD: costResult.CacheWriteCostUSD,
+		ReasoningCostUSD:  costResult.ReasoningCostUSD,
+		TenantID:          tenantID,
+		ReceivedAt:        now,
+		Attributes: map[string]string{
+			"proxy.provider":       provider,
+			"proxy.model":          model,
+			"proxy.virtual_key":    maskedVK,
+			"af.span.step_type":    "llm",
+			"gen_ai.system":        provider,
+			"gen_ai.request.model": model,
+		},
+	}
+	for key, value := range extraAttrs {goCover_08ec89fa625c__87[15]++;
+		if strings.TrimSpace(value) != "" {goCover_08ec89fa625c__87[16]++;
+			span.Attributes[key] = value
+		}
+	}
+	goCover_08ec89fa625c__87[7]++;if match.RuleID > 0 {goCover_08ec89fa625c__87[17]++;
+		span.Attributes["af.pricing.rule_id"] = fmt.Sprintf("%d", match.RuleID)
+		span.Attributes["af.pricing.model_pattern"] = match.ModelPattern
+		span.Attributes["af.pricing.scope"] = match.Scope
+		span.Attributes["af.pricing.cache_read_per_million"] = fmt.Sprintf("%.6f", match.CacheReadPerMillion)
+		span.Attributes["af.pricing.cache_write_per_million"] = fmt.Sprintf("%.6f", match.CacheWritePerMillion)
+		span.Attributes["af.pricing.reasoning_per_million"] = fmt.Sprintf("%.6f", match.ReasoningPerMillion)
+	}
+	goCover_08ec89fa625c__87[8]++;if usage.CacheReadTokens > 0 {goCover_08ec89fa625c__87[18]++;
+		span.Attributes["gen_ai.usage.cache_read_tokens"] = fmt.Sprintf("%d", usage.CacheReadTokens)
+	}
+	goCover_08ec89fa625c__87[9]++;if usage.CacheWriteTokens > 0 {goCover_08ec89fa625c__87[19]++;
+		span.Attributes["gen_ai.usage.cache_write_tokens"] = fmt.Sprintf("%d", usage.CacheWriteTokens)
+	}
+	goCover_08ec89fa625c__87[10]++;if usage.ReasoningTokens > 0 {goCover_08ec89fa625c__87[20]++;
+		span.Attributes["gen_ai.usage.reasoning_tokens"] = fmt.Sprintf("%d", usage.ReasoningTokens)
+	}
+
+	goCover_08ec89fa625c__87[11]++;ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := p.store.BulkInsertSpans(ctx, []models.Span{span}); err != nil {goCover_08ec89fa625c__87[21]++;
+		p.logger.Warn("failed to record proxy span", zap.Error(err))
+	}
+}
+
+func classifyProxyStatus(statusCode int) string {goCover_08ec89fa625c__88[0] = 6 ; goCover_08ec89fa625c__88[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__88[2] = 88 ; goCover_08ec89fa625c__88[3]++;
+	switch {
+	case statusCode == http.StatusForbidden:goCover_08ec89fa625c__88[4]++;
+		return "policy_denied"
+	case statusCode == http.StatusTooManyRequests:goCover_08ec89fa625c__88[5]++;
+		return "rate_limited"
+	case statusCode >= 500:goCover_08ec89fa625c__88[6]++;
+		return "upstream_error"
+	case statusCode >= 400:goCover_08ec89fa625c__88[7]++;
+		return "client_error"
+	default:goCover_08ec89fa625c__88[8]++;
+		return ""
+	}
+}
+
+func (p *LLMProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, framework string, decision policy.Decision) {goCover_08ec89fa625c__89[0] = 8 ; goCover_08ec89fa625c__89[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__89[2] = 89 ; goCover_08ec89fa625c__89[3]++;
+	if !decision.Matched {goCover_08ec89fa625c__89[7]++;
+		return
+	}
+	goCover_08ec89fa625c__89[4]++;tenantID = normalizeTenantID(tenantID)
+	result := decision.Action
+	if result == "redact" {goCover_08ec89fa625c__89[8]++;
+		result = "sanitize"
+	}
+	goCover_08ec89fa625c__89[5]++;decisionID := newUUID()
+	now := time.Now().UTC()
+	if err := p.store.CreatePolicyAuditEntry(context.Background(), models.PolicyDecisionAudit{
+		DecisionID:  decisionID,
+		TraceID:     traceID,
+		SpanID:      spanID,
+		PolicyName:  decision.PolicyName,
+		Result:      result,
+		Reason:      decision.Reason,
+		TenantID:    tenantID,
+		EvaluatedAt: now,
+		Framework:   framework,
+		Model:       model,
+		Environment: environment,
+	}); err != nil {goCover_08ec89fa625c__89[9]++;
+		p.logger.Warn("failed to write policy audit entry", zap.Error(err))
+	}
+	goCover_08ec89fa625c__89[6]++;if p.broadcaster != nil {goCover_08ec89fa625c__89[10]++;
+		p.broadcaster.Broadcast(tenantID, &models.LiveEvent{
+			Type:      "policy",
+			Timestamp: now.UnixMilli(),
+			TenantID:  tenantID,
+			Data: models.PolicyEvent{
+				DecisionID: decisionID,
+				TraceID:    traceID,
+				SpanID:     spanID,
+				PolicyName: decision.PolicyName,
+				Result:     result,
+				Reason:     decision.Reason,
+				TenantID:   tenantID,
+				Provider:   provider,
+				Model:      model,
+				Scope:      decision.Scope,
+				Matched:    decision.MatchedNames,
+				Redactions: decision.Redactions,
+			},
+		})
+	}
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+type ctxKeyProvider struct{}
+
+// WithProvider stores the provider string in the request context.
+// Called by the router before handing off to ServeHTTP.
+func WithProvider(r *http.Request, provider string) *http.Request {goCover_08ec89fa625c__90[0] = 1 ; goCover_08ec89fa625c__90[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__90[2] = 90 ; goCover_08ec89fa625c__90[3]++;
+	return r.WithContext(context.WithValue(r.Context(), ctxKeyProvider{}, NormalizeProvider(provider)))
+}
+
+// extractVirtualKey pulls the virtual key from Authorization: Bearer or x-api-key.
+func extractVirtualKey(r *http.Request) string {goCover_08ec89fa625c__91[0] = 4 ; goCover_08ec89fa625c__91[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__91[2] = 91 ; goCover_08ec89fa625c__91[3]++;
+	if auth := r.Header.Get("Authorization"); auth != "" {goCover_08ec89fa625c__91[5]++;
+		if after, ok := strings.CutPrefix(auth, "Bearer "); ok {goCover_08ec89fa625c__91[6]++;
+			return strings.TrimSpace(after)
+		}
+	}
+	goCover_08ec89fa625c__91[4]++;return strings.TrimSpace(r.Header.Get("x-api-key"))
+}
+
+func newID() string {goCover_08ec89fa625c__92[0] = 1 ; goCover_08ec89fa625c__92[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__92[2] = 92 ; goCover_08ec89fa625c__92[3]++;
+	b := make([]byte, 16)
+	rand.Read(b) //nolint:errcheck
+	return hex.EncodeToString(b)
+}
+
+func min(a, b int) int {goCover_08ec89fa625c__93[0] = 3 ; goCover_08ec89fa625c__93[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__93[2] = 93 ; goCover_08ec89fa625c__93[3]++;
+	if a < b {goCover_08ec89fa625c__93[5]++;
+		return a
+	}
+	goCover_08ec89fa625c__93[4]++;return b
+}
+
+func environmentFromRequest(r *http.Request) string {goCover_08ec89fa625c__94[0] = 6 ; goCover_08ec89fa625c__94[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__94[2] = 94 ; goCover_08ec89fa625c__94[3]++;
+	if r == nil {goCover_08ec89fa625c__94[6]++;
+		return "unknown"
+	}
+	goCover_08ec89fa625c__94[4]++;for _, value := range []string{r.Header.Get("X-AF-Environment"), r.Header.Get("X-Environment")} {goCover_08ec89fa625c__94[7]++;
+		if trimmed := strings.ToLower(strings.TrimSpace(value)); trimmed != "" {goCover_08ec89fa625c__94[8]++;
+			return trimmed
+		}
+	}
+	goCover_08ec89fa625c__94[5]++;return "unknown"
+}
+
+func normalizeTenantID(tenantID string) string {goCover_08ec89fa625c__95[0] = 3 ; goCover_08ec89fa625c__95[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__95[2] = 95 ; goCover_08ec89fa625c__95[3]++;
+	if strings.TrimSpace(tenantID) == "" {goCover_08ec89fa625c__95[5]++;
+		return "00000000-0000-0000-0000-000000000001"
+	}
+	goCover_08ec89fa625c__95[4]++;return tenantID
+}
+
+func newUUID() string {goCover_08ec89fa625c__96[0] = 1 ; goCover_08ec89fa625c__96[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__96[2] = 96 ; goCover_08ec89fa625c__96[3]++;
+	b := make([]byte, 16)
+	rand.Read(b) //nolint:errcheck
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// EncodeJSON is a small helper used by the key handler.
+func EncodeJSON(w http.ResponseWriter, status int, v any) {goCover_08ec89fa625c__97[0] = 1 ; goCover_08ec89fa625c__97[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__97[2] = 97 ; goCover_08ec89fa625c__97[3]++;
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v) //nolint:errcheck
+}

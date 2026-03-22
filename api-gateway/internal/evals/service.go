@@ -14,7 +14,14 @@ import (
 const defaultSuite = "core-release"
 
 type Service struct {
-	store *store.PostgresStore
+	store evalStore
+}
+
+type evalStore interface {
+	LoadTraceViewInputs(ctx context.Context, traceID, tenantID string) (*store.TraceViewInputs, error)
+	InsertEvalRun(ctx context.Context, tenantID string, run models.TraceEvalRun) (models.TraceEvalRun, error)
+	ListEvalRuns(ctx context.Context, tenantID string, limit int) ([]models.TraceEvalRun, error)
+	ListEvalRunsByRelease(ctx context.Context, tenantID, releaseTag, evalSuite string) ([]models.TraceEvalRun, error)
 }
 
 func NewService(pg *store.PostgresStore) *Service {

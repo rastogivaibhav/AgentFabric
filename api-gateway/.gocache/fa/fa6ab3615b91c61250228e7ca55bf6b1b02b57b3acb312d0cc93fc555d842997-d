@@ -1,0 +1,108 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\store\redis.go:1:1
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+type RedisClient struct {
+	client *redis.Client
+}
+
+func NewRedisClient(addr string) (*RedisClient, error) {goCover_1b9794c3e1b6__66[0] = 5 ; goCover_1b9794c3e1b6__66[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__66[2] = 66 ; goCover_1b9794c3e1b6__66[3]++;
+	opts, err := redis.ParseURL(addr)
+	if err != nil {goCover_1b9794c3e1b6__66[6]++;
+		opts = &redis.Options{
+			Addr:         addr,
+			PoolSize:     20,
+			MinIdleConns: 5,
+		}
+	}
+	goCover_1b9794c3e1b6__66[4]++;opts.PoolSize = 20
+	opts.MinIdleConns = 5
+
+	c := redis.NewClient(opts)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := c.Ping(ctx).Err(); err != nil {goCover_1b9794c3e1b6__66[7]++;
+		return nil, fmt.Errorf("redis ping: %w", err)
+	}
+	goCover_1b9794c3e1b6__66[5]++;return &RedisClient{client: c}, nil
+}
+
+func (r *RedisClient) SetJSON(ctx context.Context, key string, val interface{}, ttl time.Duration) error {goCover_1b9794c3e1b6__67[0] = 3 ; goCover_1b9794c3e1b6__67[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__67[2] = 67 ; goCover_1b9794c3e1b6__67[3]++;
+	b, err := json.Marshal(val)
+	if err != nil {goCover_1b9794c3e1b6__67[5]++;
+		return err
+	}
+	goCover_1b9794c3e1b6__67[4]++;return r.client.Set(ctx, key, b, ttl).Err()
+}
+
+func (r *RedisClient) GetJSON(ctx context.Context, key string, dest interface{}) error {goCover_1b9794c3e1b6__68[0] = 3 ; goCover_1b9794c3e1b6__68[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__68[2] = 68 ; goCover_1b9794c3e1b6__68[3]++;
+	b, err := r.client.Get(ctx, key).Bytes()
+	if err != nil {goCover_1b9794c3e1b6__68[5]++;
+		return err
+	}
+	goCover_1b9794c3e1b6__68[4]++;return json.Unmarshal(b, dest)
+}
+
+// Publish a live event to a tenant channel.
+func (r *RedisClient) PublishLiveEvent(ctx context.Context, tenantID string, event interface{}) error {goCover_1b9794c3e1b6__69[0] = 3 ; goCover_1b9794c3e1b6__69[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__69[2] = 69 ; goCover_1b9794c3e1b6__69[3]++;
+	b, err := json.Marshal(event)
+	if err != nil {goCover_1b9794c3e1b6__69[5]++;
+		return err
+	}
+	goCover_1b9794c3e1b6__69[4]++;return r.client.Publish(ctx, "live:"+tenantID, b).Err()
+}
+
+// Subscribe returns a channel of raw JSON messages for the tenant.
+func (r *RedisClient) Subscribe(ctx context.Context, tenantID string) <-chan string {goCover_1b9794c3e1b6__70[0] = 7 ; goCover_1b9794c3e1b6__70[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__70[2] = 70 ; goCover_1b9794c3e1b6__70[3]++;
+	sub := r.client.Subscribe(ctx, "live:"+tenantID)
+	ch := make(chan string, 256)
+	go func() {goCover_1b9794c3e1b6__70[5]++;
+		defer close(ch)
+		defer sub.Close()
+		for msg := range sub.Channel() {goCover_1b9794c3e1b6__70[6]++;
+			select {
+			case ch <- msg.Payload:goCover_1b9794c3e1b6__70[7]++;
+			case <-ctx.Done():goCover_1b9794c3e1b6__70[8]++;
+				return
+			default:goCover_1b9794c3e1b6__70[9]++;
+				// Drop if channel full (WebSocket client slow)
+			}
+		}
+	}()
+	goCover_1b9794c3e1b6__70[4]++;return ch
+}
+
+func (r *RedisClient) Incr(ctx context.Context, key string) (int64, error) {goCover_1b9794c3e1b6__71[0] = 1 ; goCover_1b9794c3e1b6__71[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__71[2] = 71 ; goCover_1b9794c3e1b6__71[3]++;
+	return r.client.Incr(ctx, key).Result()
+}
+
+// IncrWithExpiry atomically increments key and sets an expiry on first creation.
+// Implements middleware.RateLimitStore.
+func (r *RedisClient) IncrWithExpiry(ctx context.Context, key string, expiry time.Duration) (int64, error) {goCover_1b9794c3e1b6__72[0] = 3 ; goCover_1b9794c3e1b6__72[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__72[2] = 72 ; goCover_1b9794c3e1b6__72[3]++;
+	pipe := r.client.Pipeline()
+	incrCmd := pipe.Incr(ctx, key)
+	pipe.Expire(ctx, key, expiry)
+	if _, err := pipe.Exec(ctx); err != nil {goCover_1b9794c3e1b6__72[5]++;
+		return 0, err
+	}
+	goCover_1b9794c3e1b6__72[4]++;return incrCmd.Val(), nil
+}
+
+// Ping checks the Redis connection with a 2-second timeout.
+// Used by the /healthz handler to detect degraded storage.
+func (r *RedisClient) Ping(ctx context.Context) error {goCover_1b9794c3e1b6__73[0] = 1 ; goCover_1b9794c3e1b6__73[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__73[2] = 73 ; goCover_1b9794c3e1b6__73[3]++;
+	return r.client.Ping(ctx).Err()
+}
+
+func (r *RedisClient) Close() error {goCover_1b9794c3e1b6__74[0] = 1 ; goCover_1b9794c3e1b6__74[1] = goCover_1b9794c3e1b6_P ; goCover_1b9794c3e1b6__74[2] = 74 ; goCover_1b9794c3e1b6__74[3]++;
+	return r.client.Close()
+}

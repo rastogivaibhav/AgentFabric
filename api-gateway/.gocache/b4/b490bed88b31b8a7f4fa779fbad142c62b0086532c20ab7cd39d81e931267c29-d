@@ -1,0 +1,83 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\proxy\cache.go:1:1
+package proxy
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"sync"
+	"time"
+
+	priced "github.com/agentfabric/api-gateway/internal/pricing"
+)
+
+type cachedProxyResponse struct {
+	StatusCode int
+	Header     http.Header
+	Body       []byte
+	Usage      priced.Usage
+	ExpiresAt  time.Time
+}
+
+type proxyResponseCache struct {
+	mu           sync.RWMutex
+	ttl          time.Duration
+	maxEntrySize int
+	entries      map[string]cachedProxyResponse
+}
+
+func newProxyResponseCache() *proxyResponseCache {goCover_08ec89fa625c__0[0] = 1 ; goCover_08ec89fa625c__0[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__0[2] = 0 ; goCover_08ec89fa625c__0[3]++;
+	return &proxyResponseCache{
+		ttl:          90 * time.Second,
+		maxEntrySize: 512 * 1024,
+		entries:      make(map[string]cachedProxyResponse),
+	}
+}
+
+func (c *proxyResponseCache) Key(tenantID, provider, model, path, rawQuery string, body []byte) string {goCover_08ec89fa625c__1[0] = 1 ; goCover_08ec89fa625c__1[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__1[2] = 1 ; goCover_08ec89fa625c__1[3]++;
+	sum := sha256.Sum256([]byte(tenantID + "|" + provider + "|" + model + "|" + path + "|" + rawQuery + "|" + string(body)))
+	return hex.EncodeToString(sum[:])
+}
+
+func (c *proxyResponseCache) Get(key string) (cachedProxyResponse, bool) {goCover_08ec89fa625c__2[0] = 5 ; goCover_08ec89fa625c__2[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__2[2] = 2 ; goCover_08ec89fa625c__2[3]++;
+	c.mu.RLock()
+	entry, ok := c.entries[key]
+	c.mu.RUnlock()
+	if !ok {goCover_08ec89fa625c__2[6]++;
+		return cachedProxyResponse{}, false
+	}
+	goCover_08ec89fa625c__2[4]++;if time.Now().After(entry.ExpiresAt) {goCover_08ec89fa625c__2[7]++;
+		c.mu.Lock()
+		delete(c.entries, key)
+		c.mu.Unlock()
+		return cachedProxyResponse{}, false
+	}
+	goCover_08ec89fa625c__2[5]++;return cloneCachedResponse(entry), true
+}
+
+func (c *proxyResponseCache) Put(key string, response cachedProxyResponse) {goCover_08ec89fa625c__3[0] = 5 ; goCover_08ec89fa625c__3[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__3[2] = 3 ; goCover_08ec89fa625c__3[3]++;
+	if len(response.Body) == 0 || len(response.Body) > c.maxEntrySize {goCover_08ec89fa625c__3[6]++;
+		return
+	}
+	goCover_08ec89fa625c__3[4]++;if response.StatusCode != http.StatusOK {goCover_08ec89fa625c__3[7]++;
+		return
+	}
+	goCover_08ec89fa625c__3[5]++;response.ExpiresAt = time.Now().Add(c.ttl)
+	c.mu.Lock()
+	c.entries[key] = cloneCachedResponse(response)
+	c.mu.Unlock()
+}
+
+func cloneCachedResponse(entry cachedProxyResponse) cachedProxyResponse {goCover_08ec89fa625c__4[0] = 3 ; goCover_08ec89fa625c__4[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__4[2] = 4 ; goCover_08ec89fa625c__4[3]++;
+	clonedHeaders := make(http.Header, len(entry.Header))
+	for key, values := range entry.Header {goCover_08ec89fa625c__4[5]++;
+		copied := make([]string, len(values))
+		copy(copied, values)
+		clonedHeaders[key] = copied
+	}
+	goCover_08ec89fa625c__4[4]++;clonedBody := make([]byte, len(entry.Body))
+	copy(clonedBody, entry.Body)
+	entry.Header = clonedHeaders
+	entry.Body = clonedBody
+	return entry
+}

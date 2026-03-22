@@ -1,0 +1,132 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\proxy\parsers_vertexai.go:1:1
+package proxy
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"strings"
+)
+
+type vertexAIParser struct {
+	endpoint string
+}
+
+type vertexAIRequest struct {
+	Model             string `json:"model,omitempty"`
+	SystemInstruction *struct {
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	} `json:"systemInstruction,omitempty"`
+	Contents []struct {
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	} `json:"contents"`
+}
+
+type vertexAIResponse struct {
+	Model         string `json:"model,omitempty"`
+	ModelVersion  string `json:"modelVersion,omitempty"`
+	UsageMetadata struct {
+		PromptTokenCount        int `json:"promptTokenCount"`
+		CandidatesTokenCount    int `json:"candidatesTokenCount"`
+		TotalTokenCount         int `json:"totalTokenCount"`
+		CachedContentTokenCount int `json:"cachedContentTokenCount"`
+		ThoughtsTokenCount      int `json:"thoughtsTokenCount"`
+	} `json:"usageMetadata"`
+}
+
+func (p *vertexAIParser) ParseRequest(r *http.Request, body []byte) (model string, streaming bool, estimatedTokens int64, err error) {goCover_08ec89fa625c__43[0] = 11 ; goCover_08ec89fa625c__43[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__43[2] = 43 ; goCover_08ec89fa625c__43[3]++;
+	var req vertexAIRequest
+	if err = json.Unmarshal(body, &req); err != nil {goCover_08ec89fa625c__43[8]++;
+		return "", false, 0, err
+	}
+	goCover_08ec89fa625c__43[4]++;model = strings.TrimSpace(req.Model)
+	if model == "" {goCover_08ec89fa625c__43[9]++;
+		model = vertexAIModelFromPath(requestPath(r))
+	}
+	goCover_08ec89fa625c__43[5]++;var totalChars int
+	if req.SystemInstruction != nil {goCover_08ec89fa625c__43[10]++;
+		for _, part := range req.SystemInstruction.Parts {goCover_08ec89fa625c__43[11]++;
+			totalChars += len(part.Text)
+		}
+	}
+	goCover_08ec89fa625c__43[6]++;for _, content := range req.Contents {goCover_08ec89fa625c__43[12]++;
+		for _, part := range content.Parts {goCover_08ec89fa625c__43[13]++;
+			totalChars += len(part.Text)
+		}
+	}
+	goCover_08ec89fa625c__43[7]++;streaming = strings.Contains(strings.ToLower(requestPath(r)), ":streamgeneratecontent") || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("alt")), "sse")
+	estimatedTokens = int64(totalChars/4) + 1
+	return model, streaming, estimatedTokens, nil
+}
+
+func (p *vertexAIParser) ParseUsage(body []byte) (inputTokens, outputTokens int64, err error) {goCover_08ec89fa625c__44[0] = 3 ; goCover_08ec89fa625c__44[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__44[2] = 44 ; goCover_08ec89fa625c__44[3]++;
+	var resp vertexAIResponse
+	if err = json.Unmarshal(body, &resp); err != nil {goCover_08ec89fa625c__44[5]++;
+		return 0, 0, err
+	}
+	goCover_08ec89fa625c__44[4]++;return int64(resp.UsageMetadata.PromptTokenCount), int64(resp.UsageMetadata.CandidatesTokenCount), nil
+}
+
+func (p *vertexAIParser) ParseStreamingUsage(chunks [][]byte) (inputTokens, outputTokens int64) {goCover_08ec89fa625c__45[0] = 10 ; goCover_08ec89fa625c__45[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__45[2] = 45 ; goCover_08ec89fa625c__45[3]++;
+	for _, chunk := range chunks {goCover_08ec89fa625c__45[5]++;
+		line := strings.TrimSpace(string(chunk))
+		if !strings.HasPrefix(line, "data:") {goCover_08ec89fa625c__45[9]++;
+			continue
+		}
+		goCover_08ec89fa625c__45[6]++;payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {goCover_08ec89fa625c__45[10]++;
+			continue
+		}
+		goCover_08ec89fa625c__45[7]++;var resp vertexAIResponse
+		if err := json.Unmarshal([]byte(payload), &resp); err != nil {goCover_08ec89fa625c__45[11]++;
+			continue
+		}
+		goCover_08ec89fa625c__45[8]++;if resp.UsageMetadata.TotalTokenCount > 0 {goCover_08ec89fa625c__45[12]++;
+			inputTokens = int64(resp.UsageMetadata.PromptTokenCount)
+			outputTokens = int64(resp.UsageMetadata.CandidatesTokenCount)
+		}
+	}
+	goCover_08ec89fa625c__45[4]++;return
+}
+
+func (p *vertexAIParser) Upstream() string {goCover_08ec89fa625c__46[0] = 5 ; goCover_08ec89fa625c__46[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__46[2] = 46 ; goCover_08ec89fa625c__46[3]++;
+	if strings.TrimSpace(p.endpoint) != "" {goCover_08ec89fa625c__46[6]++;
+		return p.endpoint
+	}
+	goCover_08ec89fa625c__46[4]++;if endpoint := strings.TrimSpace(os.Getenv("AF_VERTEXAI_ENDPOINT")); endpoint != "" {goCover_08ec89fa625c__46[7]++;
+		return endpoint
+	}
+	goCover_08ec89fa625c__46[5]++;return "https://us-central1-aiplatform.googleapis.com"
+}
+
+func (p *vertexAIParser) AuthHeader() string {goCover_08ec89fa625c__47[0] = 1 ; goCover_08ec89fa625c__47[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__47[2] = 47 ; goCover_08ec89fa625c__47[3]++;
+	return "Authorization"
+}
+
+func (p *vertexAIParser) AuthValue(realKey string) string {goCover_08ec89fa625c__48[0] = 1 ; goCover_08ec89fa625c__48[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__48[2] = 48 ; goCover_08ec89fa625c__48[3]++;
+	return "Bearer " + realKey
+}
+
+func vertexAIModelFromPath(path string) string {goCover_08ec89fa625c__49[0] = 9 ; goCover_08ec89fa625c__49[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__49[2] = 49 ; goCover_08ec89fa625c__49[3]++;
+	normalized := strings.TrimSpace(path)
+	markers := []string{"/publishers/google/models/", "/models/"}
+	for _, marker := range markers {goCover_08ec89fa625c__49[5]++;
+		index := strings.Index(strings.ToLower(normalized), strings.ToLower(marker))
+		if index < 0 {goCover_08ec89fa625c__49[9]++;
+			continue
+		}
+		goCover_08ec89fa625c__49[6]++;segment := normalized[index+len(marker):]
+		if cut := strings.Index(segment, ":"); cut >= 0 {goCover_08ec89fa625c__49[10]++;
+			segment = segment[:cut]
+		}
+		goCover_08ec89fa625c__49[7]++;if cut := strings.Index(segment, "/"); cut >= 0 {goCover_08ec89fa625c__49[11]++;
+			segment = segment[:cut]
+		}
+		goCover_08ec89fa625c__49[8]++;return strings.TrimSpace(segment)
+	}
+	goCover_08ec89fa625c__49[4]++;return ""
+}

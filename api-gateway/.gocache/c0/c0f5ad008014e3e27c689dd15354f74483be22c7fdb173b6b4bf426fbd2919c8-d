@@ -1,0 +1,191 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\ws\hub.go:1:1
+package ws
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
+)
+
+// allowedWSOrigins is built once at startup from AF_CORS_ORIGINS env var.
+var allowedWSOrigins = func() map[string]bool {goCover_a4eaabe3e4eb__0[0] = 5 ; goCover_a4eaabe3e4eb__0[1] = goCover_a4eaabe3e4eb_P ; goCover_a4eaabe3e4eb__0[2] = 0 ; goCover_a4eaabe3e4eb__0[3]++;
+	m := map[string]bool{
+		"http://localhost:3000": true,
+		"http://localhost:5173": true,
+	}
+	if v := os.Getenv("AF_CORS_ORIGINS"); v != "" {goCover_a4eaabe3e4eb__0[5]++;
+		for _, o := range strings.Split(v, ",") {goCover_a4eaabe3e4eb__0[6]++;
+			if o = strings.TrimSpace(o); o != "" {goCover_a4eaabe3e4eb__0[7]++;
+				m[o] = true
+			}
+		}
+	}
+	goCover_a4eaabe3e4eb__0[4]++;return m
+}()
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 4096,
+	CheckOrigin: func(r *http.Request) bool {goCover_a4eaabe3e4eb__1[0] = 3 ; goCover_a4eaabe3e4eb__1[1] = goCover_a4eaabe3e4eb_P ; goCover_a4eaabe3e4eb__1[2] = 1 ; goCover_a4eaabe3e4eb__1[3]++;
+		origin := r.Header.Get("Origin")
+		if origin == "" {goCover_a4eaabe3e4eb__1[5]++;
+			return true // non-browser / same-origin clients
+		}
+		goCover_a4eaabe3e4eb__1[4]++;return allowedWSOrigins[origin]
+	},
+}
+
+// Client is a single WebSocket connection.
+type Client struct {
+	id       string
+	conn     *websocket.Conn
+	send     chan []byte
+	tenantID string
+	hub      *Hub
+}
+
+// Hub manages all WebSocket clients and fan-out.
+type Hub struct {
+	mu       sync.RWMutex
+	clients  map[string]map[*Client]struct{} // tenantID -> clients
+	logger   *zap.Logger
+	register chan *Client
+	unregister chan *Client
+	broadcast  chan *broadcastMsg
+}
+
+type broadcastMsg struct {
+	tenantID string
+	data     []byte
+}
+
+func NewHub(logger *zap.Logger) *Hub {goCover_a4eaabe3e4eb__2[0] = 1 ; goCover_a4eaabe3e4eb__2[1] = goCover_a4eaabe3e4eb_P ; goCover_a4eaabe3e4eb__2[2] = 2 ; goCover_a4eaabe3e4eb__2[3]++;
+	return &Hub{
+		clients:    make(map[string]map[*Client]struct{}),
+		logger:     logger,
+		register:   make(chan *Client, 64),
+		unregister: make(chan *Client, 64),
+		broadcast:  make(chan *broadcastMsg, 4096),
+	}
+}
+
+func (h *Hub) Run(ctx context.Context) {goCover_a4eaabe3e4eb__3[0] = 13 ; goCover_a4eaabe3e4eb__3[1] = goCover_a4eaabe3e4eb_P ; goCover_a4eaabe3e4eb__3[2] = 3 ; goCover_a4eaabe3e4eb__3[3]++;
+	for {goCover_a4eaabe3e4eb__3[4]++;
+		select {
+		case <-ctx.Done():goCover_a4eaabe3e4eb__3[5]++;
+			return
+		case c := <-h.register:goCover_a4eaabe3e4eb__3[6]++;
+			h.mu.Lock()
+			if h.clients[c.tenantID] == nil {goCover_a4eaabe3e4eb__3[11]++;
+				h.clients[c.tenantID] = make(map[*Client]struct{})
+			}
+			goCover_a4eaabe3e4eb__3[7]++;h.clients[c.tenantID][c] = struct{}{}
+			h.mu.Unlock()
+			h.logger.Debug("ws client connected", zap.String("tenant", c.tenantID))
+
+		case c := <-h.unregister:goCover_a4eaabe3e4eb__3[8]++;
+			h.mu.Lock()
+			if _, ok := h.clients[c.tenantID][c]; ok {goCover_a4eaabe3e4eb__3[12]++;
+				delete(h.clients[c.tenantID], c)
+				close(c.send)
+			}
+			goCover_a4eaabe3e4eb__3[9]++;h.mu.Unlock()
+
+		case msg := <-h.broadcast:goCover_a4eaabe3e4eb__3[10]++;
+			h.mu.RLock()
+			tenantClients := h.clients[msg.tenantID]
+			h.mu.RUnlock()
+			for c := range tenantClients {goCover_a4eaabe3e4eb__3[13]++;
+				select {
+				case c.send <- msg.data:goCover_a4eaabe3e4eb__3[14]++;
+				default:goCover_a4eaabe3e4eb__3[15]++;
+					// Client too slow — disconnect
+					h.unregister <- c
+				}
+			}
+		}
+	}
+}
+
+func (h *Hub) Broadcast(tenantID string, event interface{}) {goCover_a4eaabe3e4eb__4[0] = 5 ; goCover_a4eaabe3e4eb__4[1] = goCover_a4eaabe3e4eb_P ; goCover_a4eaabe3e4eb__4[2] = 4 ; goCover_a4eaabe3e4eb__4[3]++;
+	b, err := json.Marshal(event)
+	if err != nil {goCover_a4eaabe3e4eb__4[5]++;
+		return
+	}
+	goCover_a4eaabe3e4eb__4[4]++;select {
+	case h.broadcast <- &broadcastMsg{tenantID: tenantID, data: b}:goCover_a4eaabe3e4eb__4[6]++;
+	default:goCover_a4eaabe3e4eb__4[7]++;
+		// Drop if broadcast queue full
+	}
+}
+
+func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, tenantID string) {goCover_a4eaabe3e4eb__5[0] = 3 ; goCover_a4eaabe3e4eb__5[1] = goCover_a4eaabe3e4eb_P ; goCover_a4eaabe3e4eb__5[2] = 5 ; goCover_a4eaabe3e4eb__5[3]++;
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {goCover_a4eaabe3e4eb__5[5]++;
+		h.logger.Warn("ws upgrade failed", zap.Error(err))
+		return
+	}
+
+	goCover_a4eaabe3e4eb__5[4]++;client := &Client{
+		conn:     conn,
+		send:     make(chan []byte, 512),
+		tenantID: tenantID,
+		hub:      h,
+	}
+
+	h.register <- client
+
+	go client.writePump()
+	go client.readPump()
+}
+
+func (c *Client) writePump() {goCover_a4eaabe3e4eb__6[0] = 10 ; goCover_a4eaabe3e4eb__6[1] = goCover_a4eaabe3e4eb_P ; goCover_a4eaabe3e4eb__6[2] = 6 ; goCover_a4eaabe3e4eb__6[3]++;
+	ticker := time.NewTicker(30 * time.Second)
+	defer func() {goCover_a4eaabe3e4eb__6[5]++;
+		ticker.Stop()
+		c.conn.Close()
+	}()
+	goCover_a4eaabe3e4eb__6[4]++;for {goCover_a4eaabe3e4eb__6[6]++;
+		select {
+		case msg, ok := <-c.send:goCover_a4eaabe3e4eb__6[7]++;
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if !ok {goCover_a4eaabe3e4eb__6[10]++;
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			goCover_a4eaabe3e4eb__6[8]++;if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {goCover_a4eaabe3e4eb__6[11]++;
+				return
+			}
+		case <-ticker.C:goCover_a4eaabe3e4eb__6[9]++;
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {goCover_a4eaabe3e4eb__6[12]++;
+				return
+			}
+		}
+	}
+}
+
+func (c *Client) readPump() {goCover_a4eaabe3e4eb__7[0] = 7 ; goCover_a4eaabe3e4eb__7[1] = goCover_a4eaabe3e4eb_P ; goCover_a4eaabe3e4eb__7[2] = 7 ; goCover_a4eaabe3e4eb__7[3]++;
+	defer func() {goCover_a4eaabe3e4eb__7[6]++;
+		c.hub.unregister <- c
+	}()
+	goCover_a4eaabe3e4eb__7[4]++;c.conn.SetReadLimit(512)
+	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.conn.SetPongHandler(func(string) error {goCover_a4eaabe3e4eb__7[7]++;
+		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+	goCover_a4eaabe3e4eb__7[5]++;for {goCover_a4eaabe3e4eb__7[8]++;
+		_, _, err := c.conn.ReadMessage()
+		if err != nil {goCover_a4eaabe3e4eb__7[9]++;
+			break
+		}
+	}
+}

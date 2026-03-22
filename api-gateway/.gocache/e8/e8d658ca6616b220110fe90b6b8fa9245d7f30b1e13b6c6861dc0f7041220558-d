@@ -1,0 +1,128 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\evals\regressions.go:1:1
+package evals
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/agentfabric/api-gateway/internal/models"
+)
+
+func (s *Service) CompareRelease(ctx context.Context, tenantID string, req models.RegressionCompareRequest) (models.RegressionReport, error) {goCover_9341b1a9fad1__4[0] = 21 ; goCover_9341b1a9fad1__4[1] = goCover_9341b1a9fad1_P ; goCover_9341b1a9fad1__4[2] = 4 ; goCover_9341b1a9fad1__4[3]++;
+	suite := strings.TrimSpace(req.EvalSuite)
+	if suite == "" {goCover_9341b1a9fad1__4[11]++;
+		suite = defaultSuite
+	}
+	goCover_9341b1a9fad1__4[4]++;baselineRuns, err := s.store.ListEvalRunsByRelease(ctx, tenantID, strings.TrimSpace(req.BaselineTag), suite)
+	if err != nil {goCover_9341b1a9fad1__4[12]++;
+		return models.RegressionReport{}, err
+	}
+	goCover_9341b1a9fad1__4[5]++;candidateRuns, err := s.store.ListEvalRunsByRelease(ctx, tenantID, strings.TrimSpace(req.CandidateTag), suite)
+	if err != nil {goCover_9341b1a9fad1__4[13]++;
+		return models.RegressionReport{}, err
+	}
+	goCover_9341b1a9fad1__4[6]++;report := models.RegressionReport{
+		BaselineTag:  strings.TrimSpace(req.BaselineTag),
+		CandidateTag: strings.TrimSpace(req.CandidateTag),
+		EvalSuite:    suite,
+		ComparedRuns: minInt(len(baselineRuns), len(candidateRuns)),
+		GeneratedAt:  time.Now().UTC(),
+	}
+
+	baselineAgg := aggregateMetrics(baselineRuns)
+	candidateAgg := aggregateMetrics(candidateRuns)
+	metricNames := metricUnion(baselineAgg, candidateAgg)
+	for _, metric := range metricNames {goCover_9341b1a9fad1__4[14]++;
+		base := baselineAgg[metric]
+		cand := candidateAgg[metric]
+		delta := math.Round((cand-base)*100) / 100
+		item := models.RegressionMetricDelta{
+			Metric:         metric,
+			BaselineScore:  base,
+			CandidateScore: cand,
+			Delta:          delta,
+			Severity:       regressionSeverity(delta),
+			Summary:        fmt.Sprintf("%s moved by %.2f points", metric, delta),
+		}
+		report.Metrics = append(report.Metrics, item)
+		if delta < -8 {goCover_9341b1a9fad1__4[16]++;
+			report.Highlights = append(report.Highlights, fmt.Sprintf("%s regressed materially", metric))
+		} else{ goCover_9341b1a9fad1__4[17]++;if delta > 8 {goCover_9341b1a9fad1__4[18]++;
+			report.Highlights = append(report.Highlights, fmt.Sprintf("%s improved materially", metric))
+		}}
+		goCover_9341b1a9fad1__4[15]++;report.OverallDelta += delta
+	}
+	goCover_9341b1a9fad1__4[7]++;if len(report.Metrics) > 0 {goCover_9341b1a9fad1__4[19]++;
+		report.OverallDelta = math.Round((report.OverallDelta/float64(len(report.Metrics)))*100) / 100
+	}
+	goCover_9341b1a9fad1__4[8]++;switch {
+	case report.OverallDelta <= -10:goCover_9341b1a9fad1__4[20]++;
+		report.RiskLevel = "high"
+	case report.OverallDelta <= -3:goCover_9341b1a9fad1__4[21]++;
+		report.RiskLevel = "medium"
+	default:goCover_9341b1a9fad1__4[22]++;
+		report.RiskLevel = "low"
+	}
+	goCover_9341b1a9fad1__4[9]++;if report.ComparedRuns == 0 {goCover_9341b1a9fad1__4[23]++;
+		report.RiskLevel = "unknown"
+		report.Highlights = append(report.Highlights, "No overlapping eval evidence found for the requested release tags")
+	}
+	goCover_9341b1a9fad1__4[10]++;return report, nil
+}
+
+func aggregateMetrics(runs []models.TraceEvalRun) map[string]float64 {goCover_9341b1a9fad1__5[0] = 8 ; goCover_9341b1a9fad1__5[1] = goCover_9341b1a9fad1_P ; goCover_9341b1a9fad1__5[2] = 5 ; goCover_9341b1a9fad1__5[3]++;
+	sum := map[string]float64{}
+	count := map[string]float64{}
+	for _, run := range runs {goCover_9341b1a9fad1__5[6]++;
+		for _, score := range run.Scores {goCover_9341b1a9fad1__5[7]++;
+			sum[score.Metric] += score.Score
+			count[score.Metric]++
+		}
+	}
+	goCover_9341b1a9fad1__5[4]++;out := map[string]float64{}
+	for metric, total := range sum {goCover_9341b1a9fad1__5[8]++;
+		if count[metric] == 0 {goCover_9341b1a9fad1__5[10]++;
+			continue
+		}
+		goCover_9341b1a9fad1__5[9]++;out[metric] = math.Round((total/count[metric])*100) / 100
+	}
+	goCover_9341b1a9fad1__5[5]++;return out
+}
+
+func metricUnion(left, right map[string]float64) []string {goCover_9341b1a9fad1__6[0] = 7 ; goCover_9341b1a9fad1__6[1] = goCover_9341b1a9fad1_P ; goCover_9341b1a9fad1__6[2] = 6 ; goCover_9341b1a9fad1__6[3]++;
+	seen := map[string]struct{}{}
+	for metric := range left {goCover_9341b1a9fad1__6[7]++;
+		seen[metric] = struct{}{}
+	}
+	goCover_9341b1a9fad1__6[4]++;for metric := range right {goCover_9341b1a9fad1__6[8]++;
+		seen[metric] = struct{}{}
+	}
+	goCover_9341b1a9fad1__6[5]++;out := make([]string, 0, len(seen))
+	for metric := range seen {goCover_9341b1a9fad1__6[9]++;
+		out = append(out, metric)
+	}
+	goCover_9341b1a9fad1__6[6]++;sort.Strings(out)
+	return out
+}
+
+func regressionSeverity(delta float64) string {goCover_9341b1a9fad1__7[0] = 4 ; goCover_9341b1a9fad1__7[1] = goCover_9341b1a9fad1_P ; goCover_9341b1a9fad1__7[2] = 7 ; goCover_9341b1a9fad1__7[3]++;
+	switch {
+	case delta <= -10:goCover_9341b1a9fad1__7[4]++;
+		return "high"
+	case delta <= -3:goCover_9341b1a9fad1__7[5]++;
+		return "medium"
+	default:goCover_9341b1a9fad1__7[6]++;
+		return "low"
+	}
+}
+
+func minInt(left, right int) int {goCover_9341b1a9fad1__8[0] = 3 ; goCover_9341b1a9fad1__8[1] = goCover_9341b1a9fad1_P ; goCover_9341b1a9fad1__8[2] = 8 ; goCover_9341b1a9fad1__8[3]++;
+	if left < right {goCover_9341b1a9fad1__8[5]++;
+		return left
+	}
+	goCover_9341b1a9fad1__8[4]++;return right
+}

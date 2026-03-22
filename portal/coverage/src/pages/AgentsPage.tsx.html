@@ -1,0 +1,457 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/pages/AgentsPage.tsx</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../prettify.css" />
+    <link rel="stylesheet" href="../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/pages</a> AgentsPage.tsx</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">96.77% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>120/124</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">77.77% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>21/27</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">50% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>1/2</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">96.77% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>120/124</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">64x</span>
+<span class="cline-any cline-yes">64x</span>
+<span class="cline-any cline-yes">64x</span>
+<span class="cline-any cline-yes">64x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useQuery } from '@tanstack/react-query'
+import { useOverview } from '../hooks/api'
+&nbsp;
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+&nbsp;
+const FRAMEWORK_COLORS: Record&lt;string, string&gt; = {
+  crewai: '#FF6B35',
+  langgraph: '#4ECDC4',
+  google_adk: '#4285F4',
+  openai_agents: '#10A37F',
+  claude_agents: '#D97706',
+  unknown: '#475569',
+}
+&nbsp;
+export default function AgentsPage() {
+  const { data: overview } = useOverview('24h')
+&nbsp;
+  const { data: traces, isLoading } = useQuery({
+    queryKey: ['traces-agents'],
+    queryFn: <span class="fstat-no" title="function not covered" >async () =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >      const res = await fetch(`${BASE}/api/v1/traces?limit=100`)</span>
+<span class="cstat-no" title="statement not covered" >      if (!res.ok) throw new Error('fetch failed')</span>
+<span class="cstat-no" title="statement not covered" >      return res.json()</span>
+<span class="cstat-no" title="statement not covered" >    },</span>
+    refetchInterval: 30_000,
+  })
+&nbsp;
+  const frameworkCounts = overview?.framework_counts ?? {}
+  const totalTraces = overview?.total_traces ?? 0
+&nbsp;
+  return (
+    &lt;div style={{ padding: 32 }}&gt;
+      &lt;div style={{ marginBottom: 28 }}&gt;
+        &lt;h1 style={{ fontSize: 22, fontWeight: 700, color: '#F0F9FF', margin: 0 }}&gt;Agents&lt;/h1&gt;
+        &lt;p style={{ fontSize: 12, color: '#475569', marginTop: 4 }}&gt;Framework activity · Last 24 hours&lt;/p&gt;
+      &lt;/div&gt;
+&nbsp;
+      {/* Framework cards */}
+      &lt;div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 16, marginBottom: 32 }}&gt;
+        {Object.entries(FRAMEWORK_COLORS).filter(([k]) =&gt; k !== 'unknown').map(([fw, color]) =&gt; {
+          const count = frameworkCounts[fw] ?? 0
+          const pct = totalTraces &gt; 0 ? Math.round((count / Number(totalTraces)) * 100) : 0
+          return (
+            &lt;div key={fw} style={{
+              background: '#0D1B2A', border: `1px solid ${color}30`,
+              borderTop: `2px solid ${color}`, borderRadius: 10, padding: '20px 18px'
+            }}&gt;
+              &lt;div style={{ fontSize: 10, color: '#475569', letterSpacing: '0.1em', marginBottom: 8 }}&gt;
+                {fw.replace(/_/g, ' ').toUpperCase()}
+              &lt;/div&gt;
+              &lt;div style={{ fontSize: 32, fontWeight: 700, color, lineHeight: 1, marginBottom: 4 }}&gt;
+                {count.toLocaleString()}
+              &lt;/div&gt;
+              &lt;div style={{ fontSize: 11, color: '#334155' }}&gt;traces&lt;/div&gt;
+              &lt;div style={{ marginTop: 12, height: 4, background: '#0F1F35', borderRadius: 2 }}&gt;
+                &lt;div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} /&gt;
+              &lt;/div&gt;
+              &lt;div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}&gt;{pct}% of total&lt;/div&gt;
+            &lt;/div&gt;
+          )
+        })}
+      &lt;/div&gt;
+&nbsp;
+      {/* Recent traces as agent activity */}
+      &lt;div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10 }}&gt;
+        &lt;div style={{ padding: '16px 24px', borderBottom: '1px solid #0F1F35', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}&gt;
+          &lt;span style={{ fontSize: 12, color: '#475569', letterSpacing: '0.1em' }}&gt;RECENT ACTIVITY&lt;/span&gt;
+          {isLoading &amp;&amp; &lt;span style={{ fontSize: 11, color: '#334155' }}&gt;loading…&lt;/span&gt;}
+        &lt;/div&gt;
+        &lt;table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}&gt;
+          &lt;thead&gt;
+            &lt;tr&gt;
+              {['Trace ID', 'Framework', 'Root Span', 'Duration', 'Spans', 'Tokens', 'Cost', 'Status'].map(h =&gt; (
+                &lt;th key={h} style={{
+                  padding: '10px 16px', textAlign: 'left', color: '#334155',
+                  borderBottom: '1px solid #0F1F35', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em'
+                }}&gt;{h}&lt;/th&gt;
+              ))}
+            &lt;/tr&gt;
+          &lt;/thead&gt;
+          &lt;tbody&gt;
+            {((traces?.items ?? []) as any[]).map((t: any, i: number) =&gt; (
+              &lt;tr key={t.id} style={{ background: i % 2 === 0 ? 'transparent' : '#060A1430' }}&gt;
+                &lt;td style={{ padding: '8px 16px', color: '#3B82F6', fontFamily: 'monospace', fontSize: 11 }}&gt;
+                  &lt;a href={`/traces/${t.id}`} style={{ color: '#3B82F6', textDecoration: 'none' }}&gt;
+                    {t.id.substring(0, 16)}…
+                  &lt;/a&gt;
+                &lt;/td&gt;
+                &lt;td style={{ padding: '8px 16px' }}&gt;
+                  &lt;span style={{
+                    padding: '2px 8px', borderRadius: 4, fontSize: 10,
+                    background: (FRAMEWORK_COLORS[t.framework<span class="branch-0 cbranch-no" title="branch not covered" >] ?? '#475569') + '</span>20',
+                    color: FRAMEWORK_COLORS[t.framework<span class="branch-0 cbranch-no" title="branch not covered" >] ?? '#475569',</span>
+                  }}&gt;{t.framework}&lt;/span&gt;
+                &lt;/td&gt;
+                &lt;td style={{ padding: '8px 16px', color: '#94A3B8', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}&gt;
+                  {t.root_span_name}
+                &lt;/td&gt;
+                &lt;td style={{ padding: '8px 16px', color: '#94A3B8' }}&gt;{(t.duration_ns / 1_000_000).toFixed(0)}ms&lt;/td&gt;
+                &lt;td style={{ padding: '8px 16px', color: '#94A3B8' }}&gt;{t.span_count}&lt;/td&gt;
+                &lt;td style={{ padding: '8px 16px', color: '#94A3B8' }}&gt;{(t.<span class="branch-0 cbranch-no" title="branch not covered" >total_tokens ?? 0).t</span>oLocaleString()}&lt;/td&gt;
+                &lt;td style={{ padding: '8px 16px', color: '#F59E0B' }}&gt;${(t.<span class="branch-0 cbranch-no" title="branch not covered" >total_cost_usd ?? 0).t</span>oFixed(6)}&lt;/td&gt;
+                &lt;td style={{ padding: '8px 16px' }}&gt;
+                  &lt;span style={{
+                    padding: '2px 8px', borderRadius: 4, fontSize: 10,
+                    background: t.status === <span class="branch-0 cbranch-no" title="branch not covered" >'error' ? '#EF444420' : '</span>#10B98120',
+                    color: t.status === <span class="branch-0 cbranch-no" title="branch not covered" >'error' ? '#EF4444' : '</span>#10B981',
+                  }}&gt;{t.status}&lt;/span&gt;
+                &lt;/td&gt;
+              &lt;/tr&gt;
+            ))}
+            {(traces?.items ?? []).length === 0 &amp;&amp; !isLoading &amp;&amp; (
+              &lt;tr&gt;
+                &lt;td colSpan={8} style={{ padding: '32px 16px', textAlign: 'center', color: '#334155', fontSize: 12 }}&gt;
+                  No agent activity yet — send spans via OTLP to get started.
+                &lt;/td&gt;
+              &lt;/tr&gt;
+            )}
+          &lt;/tbody&gt;
+        &lt;/table&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  )
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-03-22T22:12:10.086Z
+            </div>
+        <script src="../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../sorter.js"></script>
+        <script src="../../block-navigation.js"></script>
+    </body>
+</html>
+    

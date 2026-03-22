@@ -1,0 +1,45 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\evals\policy_effectiveness.go:1:1
+package evals
+
+import "github.com/agentfabric/api-gateway/internal/models"
+
+func summarizePolicyEffectiveness(trace models.Trace) models.PolicyEffectivenessSummary {goCover_9341b1a9fad1__3[0] = 16 ; goCover_9341b1a9fad1__3[1] = goCover_9341b1a9fad1_P ; goCover_9341b1a9fad1__3[2] = 3 ; goCover_9341b1a9fad1__3[3]++;
+	summary := models.PolicyEffectivenessSummary{
+		TotalEvents:     len(trace.PolicyEvents),
+		BlockedSpans:    trace.Insights.BlockedSpans,
+		RedactedSpans:   trace.Insights.RedactedSpans,
+		TotalLLMCalls:   trace.Insights.LLMCalls,
+		CoveredLLMCalls: 0,
+	}
+
+	covered := map[string]struct{}{}
+	for _, event := range trace.PolicyEvents {goCover_9341b1a9fad1__3[7]++;
+		switch event.Result {
+		case "allow":goCover_9341b1a9fad1__3[9]++;
+			summary.Allows++
+		case "deny":goCover_9341b1a9fad1__3[10]++;
+			summary.Denies++
+			summary.PreventedFailures++
+		case "warn":goCover_9341b1a9fad1__3[11]++;
+			summary.Warns++
+		case "redact", "sanitize":goCover_9341b1a9fad1__3[12]++;
+			summary.Redacts++
+		}
+		goCover_9341b1a9fad1__3[8]++;if event.SpanID != "" {goCover_9341b1a9fad1__3[13]++;
+			covered[event.SpanID] = struct{}{}
+		}
+	}
+
+	goCover_9341b1a9fad1__3[4]++;for _, span := range trace.Spans {goCover_9341b1a9fad1__3[14]++;
+		if span.StepType != "llm" {goCover_9341b1a9fad1__3[16]++;
+			continue
+		}
+		goCover_9341b1a9fad1__3[15]++;if _, ok := covered[span.ID]; ok {goCover_9341b1a9fad1__3[17]++;
+			summary.CoveredLLMCalls++
+		}
+	}
+	goCover_9341b1a9fad1__3[5]++;if summary.TotalLLMCalls > 0 {goCover_9341b1a9fad1__3[18]++;
+		summary.CoverageRatio = float64(summary.CoveredLLMCalls) / float64(summary.TotalLLMCalls)
+	}
+	goCover_9341b1a9fad1__3[6]++;return summary
+}

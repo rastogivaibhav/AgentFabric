@@ -1,0 +1,156 @@
+//line C:\Users\vrast\Documents\Agentic Code\files\api-gateway\internal\proxy\provider_registry.go:1:1
+package proxy
+
+import (
+	"net/http"
+	"sort"
+	"strings"
+)
+
+const (
+	ProviderOpenAI      = "openai"
+	ProviderAnthropic   = "anthropic"
+	ProviderGoogle      = "google"
+	ProviderVertexAI    = "vertexai"
+	ProviderBedrock     = "bedrock"
+	ProviderAzureOpenAI = "azure-openai"
+)
+
+type providerDefinition struct {
+	Name         string
+	DisplayName  string
+	Aliases      []string
+	Hosts        []string
+	HostSuffixes []string
+	HostContains []string
+	NewParser    func() ProviderParser
+}
+
+var providerRegistry = map[string]providerDefinition{
+	ProviderOpenAI: {
+		Name:        ProviderOpenAI,
+		DisplayName: "OpenAI",
+		Aliases:     []string{ProviderOpenAI},
+		Hosts:       []string{"api.openai.com"},
+		NewParser:   func() ProviderParser {goCover_08ec89fa625c__67[0] = 1 ; goCover_08ec89fa625c__67[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__67[2] = 67 ; goCover_08ec89fa625c__67[3]++; return &openAIParser{} },
+	},
+	ProviderAnthropic: {
+		Name:        ProviderAnthropic,
+		DisplayName: "Anthropic",
+		Aliases:     []string{ProviderAnthropic},
+		Hosts:       []string{"api.anthropic.com"},
+		NewParser:   func() ProviderParser {goCover_08ec89fa625c__68[0] = 1 ; goCover_08ec89fa625c__68[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__68[2] = 68 ; goCover_08ec89fa625c__68[3]++; return &anthropicParser{} },
+	},
+	ProviderGoogle: {
+		Name:        ProviderGoogle,
+		DisplayName: "Google Gemini",
+		Aliases:     []string{ProviderGoogle, "gemini"},
+		Hosts:       []string{"generativelanguage.googleapis.com"},
+		NewParser:   func() ProviderParser {goCover_08ec89fa625c__69[0] = 1 ; goCover_08ec89fa625c__69[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__69[2] = 69 ; goCover_08ec89fa625c__69[3]++; return &geminiParser{} },
+	},
+	ProviderVertexAI: {
+		Name:         ProviderVertexAI,
+		DisplayName:  "Google Vertex AI",
+		Aliases:      []string{ProviderVertexAI, "vertex-ai", "vertex"},
+		Hosts:        []string{"us-central1-aiplatform.googleapis.com", "aiplatform.googleapis.com"},
+		HostSuffixes: []string{"-aiplatform.googleapis.com"},
+		HostContains: []string{"aiplatform.googleapis.com"},
+		NewParser:    func() ProviderParser {goCover_08ec89fa625c__70[0] = 1 ; goCover_08ec89fa625c__70[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__70[2] = 70 ; goCover_08ec89fa625c__70[3]++; return &vertexAIParser{} },
+	},
+	ProviderBedrock: {
+		Name:         ProviderBedrock,
+		DisplayName:  "AWS Bedrock",
+		Aliases:      []string{ProviderBedrock, "aws-bedrock"},
+		Hosts:        []string{"bedrock-runtime.us-east-1.amazonaws.com"},
+		HostContains: []string{"bedrock-runtime."},
+		NewParser:    func() ProviderParser {goCover_08ec89fa625c__71[0] = 1 ; goCover_08ec89fa625c__71[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__71[2] = 71 ; goCover_08ec89fa625c__71[3]++; return &bedrockParser{} },
+	},
+}
+
+func NormalizeProvider(provider string) string {goCover_08ec89fa625c__72[0] = 5 ; goCover_08ec89fa625c__72[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__72[2] = 72 ; goCover_08ec89fa625c__72[3]++;
+	normalized := strings.ToLower(strings.TrimSpace(provider))
+	for canonical, definition := range providerRegistry {goCover_08ec89fa625c__72[5]++;
+		for _, alias := range definition.Aliases {goCover_08ec89fa625c__72[6]++;
+			if normalized == alias {goCover_08ec89fa625c__72[7]++;
+				return canonical
+			}
+		}
+	}
+	goCover_08ec89fa625c__72[4]++;return normalized
+}
+
+func IsSupportedProvider(provider string) bool {goCover_08ec89fa625c__73[0] = 1 ; goCover_08ec89fa625c__73[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__73[2] = 73 ; goCover_08ec89fa625c__73[3]++;
+	_, ok := providerRegistry[NormalizeProvider(provider)]
+	return ok
+}
+
+func SupportedProviders() []string {goCover_08ec89fa625c__74[0] = 3 ; goCover_08ec89fa625c__74[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__74[2] = 74 ; goCover_08ec89fa625c__74[3]++;
+	out := make([]string, 0, len(providerRegistry))
+	for name := range providerRegistry {goCover_08ec89fa625c__74[5]++;
+		out = append(out, name)
+	}
+	goCover_08ec89fa625c__74[4]++;sort.Strings(out)
+	return out
+}
+
+func ProviderDisplayName(provider string) string {goCover_08ec89fa625c__75[0] = 3 ; goCover_08ec89fa625c__75[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__75[2] = 75 ; goCover_08ec89fa625c__75[3]++;
+	if definition, ok := providerRegistry[NormalizeProvider(provider)]; ok {goCover_08ec89fa625c__75[5]++;
+		return definition.DisplayName
+	}
+	goCover_08ec89fa625c__75[4]++;return provider
+}
+
+func ProviderForHost(host string) (string, bool) {goCover_08ec89fa625c__76[0] = 11 ; goCover_08ec89fa625c__76[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__76[2] = 76 ; goCover_08ec89fa625c__76[3]++;
+	normalizedHost := strings.ToLower(strings.TrimSpace(host))
+	for canonical, definition := range providerRegistry {goCover_08ec89fa625c__76[5]++;
+		for _, knownHost := range definition.Hosts {goCover_08ec89fa625c__76[8]++;
+			if normalizedHost == knownHost {goCover_08ec89fa625c__76[9]++;
+				return canonical, true
+			}
+		}
+		goCover_08ec89fa625c__76[6]++;for _, suffix := range definition.HostSuffixes {goCover_08ec89fa625c__76[10]++;
+			if strings.HasSuffix(normalizedHost, suffix) {goCover_08ec89fa625c__76[11]++;
+				return canonical, true
+			}
+		}
+		goCover_08ec89fa625c__76[7]++;for _, fragment := range definition.HostContains {goCover_08ec89fa625c__76[12]++;
+			if strings.Contains(normalizedHost, fragment) {goCover_08ec89fa625c__76[13]++;
+				return canonical, true
+			}
+		}
+	}
+	goCover_08ec89fa625c__76[4]++;return "", false
+}
+
+func ProviderRouteHint(provider string) string {goCover_08ec89fa625c__77[0] = 7 ; goCover_08ec89fa625c__77[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__77[2] = 77 ; goCover_08ec89fa625c__77[3]++;
+	switch NormalizeProvider(provider) {
+	case ProviderOpenAI:goCover_08ec89fa625c__77[4]++;
+		return "/proxy/openai/v1/chat/completions"
+	case ProviderAnthropic:goCover_08ec89fa625c__77[5]++;
+		return "/proxy/anthropic/v1/messages"
+	case ProviderGoogle:goCover_08ec89fa625c__77[6]++;
+		return "/proxy/google/v1beta/models/gemini-1.5-pro:generateContent"
+	case ProviderVertexAI:goCover_08ec89fa625c__77[7]++;
+		return "/proxy/vertexai/v1/projects/demo/locations/us-central1/publishers/google/models/gemini-1.5-pro:generateContent"
+	case ProviderBedrock:goCover_08ec89fa625c__77[8]++;
+		return "/proxy/bedrock/model/anthropic.claude-3-5-sonnet-20240620-v1:0/invoke"
+	default:goCover_08ec89fa625c__77[9]++;
+		return "/proxy/" + NormalizeProvider(provider)
+	}
+}
+
+func parserFor(provider string) (ProviderParser, bool) {goCover_08ec89fa625c__78[0] = 3 ; goCover_08ec89fa625c__78[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__78[2] = 78 ; goCover_08ec89fa625c__78[3]++;
+	definition, ok := providerRegistry[NormalizeProvider(provider)]
+	if !ok || definition.NewParser == nil {goCover_08ec89fa625c__78[5]++;
+		return nil, false
+	}
+	goCover_08ec89fa625c__78[4]++;return definition.NewParser(), true
+}
+
+func canonicalProviderFromRequest(r *http.Request) string {goCover_08ec89fa625c__79[0] = 3 ; goCover_08ec89fa625c__79[1] = goCover_08ec89fa625c_P ; goCover_08ec89fa625c__79[2] = 79 ; goCover_08ec89fa625c__79[3]++;
+	if r == nil {goCover_08ec89fa625c__79[5]++;
+		return ""
+	}
+	goCover_08ec89fa625c__79[4]++;provider, _ := r.Context().Value(ctxKeyProvider{}).(string)
+	return NormalizeProvider(provider)
+}
