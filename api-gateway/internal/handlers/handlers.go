@@ -17,6 +17,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/observability"
 	"github.com/agentfabric/api-gateway/internal/policy"
+	"github.com/agentfabric/api-gateway/internal/pricing"
 	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
@@ -123,19 +124,20 @@ func (h *Handler) writeReadiness(w http.ResponseWriter, r *http.Request, ready b
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
+	checks := map[string]map[string]any{
+		"postgres": {"status": "ok"},
+		"redis":    {"status": "ok"},
+	}
 	response := map[string]any{
 		"status": "ok",
-		"checks": map[string]string{
-			"postgres": "ok",
-			"redis":    "ok",
-		},
+		"checks": checks,
 	}
 
 	if err := h.pg.Ping(ctx); err != nil {
 		h.logger.Warn("readiness: postgres ping failed", zap.Error(err), zap.Bool("ready", ready))
 		response["status"] = "degraded"
 		response["error"] = "postgres unavailable"
-		response["checks"].(map[string]string)["postgres"] = "unavailable"
+		checks["postgres"] = map[string]any{"status": "unavailable", "error": err.Error()}
 		writeJSON(w, http.StatusServiceUnavailable, response)
 		return
 	}
@@ -143,12 +145,34 @@ func (h *Handler) writeReadiness(w http.ResponseWriter, r *http.Request, ready b
 		h.logger.Warn("readiness: redis ping failed", zap.Error(err), zap.Bool("ready", ready))
 		response["status"] = "degraded"
 		response["error"] = "redis unavailable"
-		response["checks"].(map[string]string)["redis"] = "unavailable"
+		checks["redis"] = map[string]any{"status": "unavailable", "error": err.Error()}
 		writeJSON(w, http.StatusServiceUnavailable, response)
 		return
 	}
 	if ready {
 		response["mode"] = "ready"
+		pricingRuleCount := proxy.ActivePricingRuleCount()
+		if pricingRuleCount <= 0 {
+			h.logger.Warn("readiness: no pricing rules active")
+			response["status"] = "degraded"
+			response["error"] = "pricing rules not loaded"
+			checks["pricing_rules"] = map[string]any{"status": "unavailable", "count": pricingRuleCount}
+			writeJSON(w, http.StatusServiceUnavailable, response)
+			return
+		}
+		checks["pricing_rules"] = map[string]any{"status": "loaded", "count": pricingRuleCount}
+
+		if h.policyEngine == nil {
+			h.logger.Warn("readiness: policy engine unavailable")
+			response["status"] = "degraded"
+			response["error"] = "policy engine unavailable"
+			checks["policy_engine"] = map[string]any{"status": "unavailable", "count": 0}
+			writeJSON(w, http.StatusServiceUnavailable, response)
+			return
+		}
+		policyRuleCount := h.policyEngine.RuleCount()
+		checks["policy_engine"] = map[string]any{"status": "loaded", "count": policyRuleCount}
+		checks["startup_state"] = map[string]any{"status": "healthy"}
 	} else {
 		response["mode"] = "health"
 	}
@@ -327,24 +351,44 @@ func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {
 	}
 	spans = observability.EnrichSpans(spans, nil)
 	type costBreakdown struct {
-		SpanID    string  `json:"span_id"`
-		Name      string  `json:"name"`
-		Model     string  `json:"model"`
-		InputTok  int64   `json:"input_tokens"`
-		OutputTok int64   `json:"output_tokens"`
-		CostUSD   float64 `json:"cost_usd"`
+		SpanID            string  `json:"span_id"`
+		Name              string  `json:"name"`
+		Model             string  `json:"model"`
+		InputTok          int64   `json:"input_tokens"`
+		OutputTok         int64   `json:"output_tokens"`
+		CacheReadTokens   int64   `json:"cache_read_tokens,omitempty"`
+		CacheWriteTokens  int64   `json:"cache_write_tokens,omitempty"`
+		ReasoningTokens   int64   `json:"reasoning_tokens,omitempty"`
+		InputCostUSD      float64 `json:"input_cost_usd,omitempty"`
+		OutputCostUSD     float64 `json:"output_cost_usd,omitempty"`
+		CacheReadCostUSD  float64 `json:"cache_read_cost_usd,omitempty"`
+		CacheWriteCostUSD float64 `json:"cache_write_cost_usd,omitempty"`
+		ReasoningCostUSD  float64 `json:"reasoning_cost_usd,omitempty"`
+		CostUSD           float64 `json:"cost_usd"`
+		PricingRuleID     int64   `json:"pricing_rule_id,omitempty"`
+		PricingScope      string  `json:"pricing_scope,omitempty"`
 	}
 	var total float64
 	breakdown := make([]costBreakdown, 0, len(spans))
 	for _, sp := range spans {
 		if sp.CostUSD > 0 {
 			breakdown = append(breakdown, costBreakdown{
-				SpanID:    sp.ID,
-				Name:      sp.Name,
-				Model:     sp.Model,
-				InputTok:  sp.InputTokens,
-				OutputTok: sp.OutputTokens,
-				CostUSD:   sp.CostUSD,
+				SpanID:            sp.ID,
+				Name:              sp.Name,
+				Model:             sp.Model,
+				InputTok:          sp.InputTokens,
+				OutputTok:         sp.OutputTokens,
+				CacheReadTokens:   sp.CacheReadTokens,
+				CacheWriteTokens:  sp.CacheWriteTokens,
+				ReasoningTokens:   sp.ReasoningTokens,
+				InputCostUSD:      sp.InputCostUSD,
+				OutputCostUSD:     sp.OutputCostUSD,
+				CacheReadCostUSD:  sp.CacheReadCostUSD,
+				CacheWriteCostUSD: sp.CacheWriteCostUSD,
+				ReasoningCostUSD:  sp.ReasoningCostUSD,
+				CostUSD:           sp.CostUSD,
+				PricingRuleID:     sp.PricingRuleID,
+				PricingScope:      sp.PricingScope,
 			})
 			total += sp.CostUSD
 		}
@@ -737,7 +781,7 @@ func buildTrace(traceID string, spans []models.Span) models.Trace {
 			maxEnd = end
 		}
 		t.TotalCostUSD += sp.CostUSD
-		t.TotalTokens += sp.InputTokens + sp.OutputTokens
+		t.TotalTokens += sp.InputTokens + sp.OutputTokens + sp.CacheReadTokens + sp.CacheWriteTokens + sp.ReasoningTokens
 		if sp.Model != "" {
 			modelsSeen[sp.Model] = struct{}{}
 		}
@@ -1029,19 +1073,39 @@ func splitCSV(value string) []string {
 
 func previewPolicyDecision(decision policy.Decision) models.PolicyPreviewDecision {
 	preview := models.PolicyPreviewDecision{
-		Matched:      decision.Matched,
-		RuleID:       decision.RuleID,
-		PolicyName:   decision.PolicyName,
-		Action:       decision.Action,
-		Reason:       decision.Reason,
-		Scope:        decision.Scope,
-		MatchedNames: append([]string(nil), decision.MatchedNames...),
-		Redactions:   decision.Redactions,
+		Matched:        decision.Matched,
+		RuleID:         decision.RuleID,
+		PolicyName:     decision.PolicyName,
+		Action:         decision.Action,
+		Reason:         decision.Reason,
+		Scope:          decision.Scope,
+		MatchedNames:   append([]string(nil), decision.MatchedNames...),
+		Redactions:     decision.Redactions,
+		Final:          decision.Final,
+		Engine:         decision.Explanation.Engine,
+		DecisionMode:   decision.Explanation.DecisionMode,
+		EvaluationPath: append([]string(nil), decision.Explanation.EvaluationPath...),
+		MatchedFields:  append([]string(nil), decision.Explanation.MatchedFields...),
+		ConditionTrace: append([]models.PolicyConditionTrace(nil), decision.Explanation.ConditionTrace...),
+		RegoQuery:      decision.Explanation.RegoQuery,
+		Explain:        decision.Explanation.Explain,
+		RuleConditions: cloneStringMap(decision.Explanation.RuleConditions),
 	}
 	if len(decision.RedactedBody) > 0 {
 		preview.RedactedPreview = previewString(decision.RedactedBody, 220)
 	}
 	return preview
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func previewString(body []byte, limit int) string {
@@ -1078,8 +1142,19 @@ func (h *Handler) repriceSpan(sp *models.Span) {
 	}
 
 	provider := strings.TrimSpace(sp.Attributes["gen_ai.system"])
-	match, inputCost, totalCost := proxy.ComputeExactCostForTenant(provider, model, sp.TenantID, sp.ReceivedAt, sp.InputTokens, sp.OutputTokens)
-	sp.CostUSD = totalCost
+	match, detailed := proxy.ComputeDetailedCostForTenant(provider, model, sp.TenantID, sp.ReceivedAt, pricing.Usage{
+		InputTokens:      sp.InputTokens,
+		OutputTokens:     sp.OutputTokens,
+		CacheReadTokens:  sp.CacheReadTokens,
+		CacheWriteTokens: sp.CacheWriteTokens,
+		ReasoningTokens:  sp.ReasoningTokens,
+	})
+	sp.CostUSD = detailed.TotalCostUSD
+	sp.InputCostUSD = detailed.InputCostUSD
+	sp.OutputCostUSD = detailed.OutputCostUSD
+	sp.CacheReadCostUSD = detailed.CacheReadCostUSD
+	sp.CacheWriteCostUSD = detailed.CacheWriteCostUSD
+	sp.ReasoningCostUSD = detailed.ReasoningCostUSD
 
 	if sp.Attributes == nil {
 		sp.Attributes = map[string]string{}
@@ -1090,15 +1165,30 @@ func (h *Handler) repriceSpan(sp *models.Span) {
 	if provider != "" {
 		sp.Attributes["gen_ai.system"] = strings.ToLower(provider)
 	}
-	sp.Attributes["af.cost.input_usd"] = strconv.FormatFloat(inputCost, 'f', 8, 64)
-	sp.Attributes["af.cost.output_usd"] = strconv.FormatFloat(totalCost-inputCost, 'f', 8, 64)
-	sp.Attributes["af.cost.total_usd"] = strconv.FormatFloat(totalCost, 'f', 8, 64)
+	sp.Attributes["af.cost.input_usd"] = strconv.FormatFloat(detailed.InputCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.output_usd"] = strconv.FormatFloat(detailed.OutputCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.cache_read_usd"] = strconv.FormatFloat(detailed.CacheReadCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.cache_write_usd"] = strconv.FormatFloat(detailed.CacheWriteCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.reasoning_usd"] = strconv.FormatFloat(detailed.ReasoningCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.total_usd"] = strconv.FormatFloat(detailed.TotalCostUSD, 'f', 8, 64)
+	if sp.CacheReadTokens > 0 {
+		sp.Attributes["gen_ai.usage.cache_read_tokens"] = strconv.FormatInt(sp.CacheReadTokens, 10)
+	}
+	if sp.CacheWriteTokens > 0 {
+		sp.Attributes["gen_ai.usage.cache_write_tokens"] = strconv.FormatInt(sp.CacheWriteTokens, 10)
+	}
+	if sp.ReasoningTokens > 0 {
+		sp.Attributes["gen_ai.usage.reasoning_tokens"] = strconv.FormatInt(sp.ReasoningTokens, 10)
+	}
 	if match.RuleID > 0 {
 		sp.Attributes["af.pricing.rule_id"] = strconv.FormatInt(match.RuleID, 10)
 		sp.Attributes["af.pricing.model_pattern"] = match.ModelPattern
 		sp.Attributes["af.pricing.scope"] = match.Scope
 		sp.Attributes["af.pricing.input_per_million"] = strconv.FormatFloat(match.InputPerMillion, 'f', 4, 64)
 		sp.Attributes["af.pricing.output_per_million"] = strconv.FormatFloat(match.OutputPerMillion, 'f', 4, 64)
+		sp.Attributes["af.pricing.cache_read_per_million"] = strconv.FormatFloat(match.CacheReadPerMillion, 'f', 4, 64)
+		sp.Attributes["af.pricing.cache_write_per_million"] = strconv.FormatFloat(match.CacheWritePerMillion, 'f', 4, 64)
+		sp.Attributes["af.pricing.reasoning_per_million"] = strconv.FormatFloat(match.ReasoningPerMillion, 'f', 4, 64)
 	}
 }
 
@@ -1231,6 +1321,7 @@ func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 	}
 	rule.Name = strings.TrimSpace(rule.Name)
 	rule.RuleType = strings.ToLower(strings.TrimSpace(rule.RuleType))
+	rule.DecisionMode = strings.ToLower(strings.TrimSpace(rule.DecisionMode))
 	rule.Action = strings.ToLower(strings.TrimSpace(rule.Action))
 	rule.Provider = proxy.NormalizeProvider(rule.Provider)
 	rule.ModelPattern = strings.ToLower(strings.TrimSpace(rule.ModelPattern))
@@ -1245,12 +1336,23 @@ func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "rule_type must be traffic or dlp")
 		return
 	}
+	if rule.DecisionMode == "" {
+		rule.DecisionMode = "fast"
+	}
+	if rule.DecisionMode != "fast" && rule.DecisionMode != "rego" {
+		writeError(w, http.StatusBadRequest, "decision_mode must be fast or rego")
+		return
+	}
 	if rule.Action != "allow" && rule.Action != "warn" && rule.Action != "redact" && rule.Action != "deny" {
 		writeError(w, http.StatusBadRequest, "action must be allow, warn, redact, or deny")
 		return
 	}
 	if rule.RuleType == "traffic" && rule.Action == "redact" {
 		writeError(w, http.StatusBadRequest, "traffic rules cannot use redact")
+		return
+	}
+	if rule.DecisionMode == "rego" && strings.TrimSpace(rule.RegoModule) == "" {
+		writeError(w, http.StatusBadRequest, "rego decision_mode requires rego_module")
 		return
 	}
 	if rule.RuleType == "dlp" && rule.Scope == "" {
@@ -1262,6 +1364,9 @@ func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if rule.TenantID != nil && strings.TrimSpace(*rule.TenantID) == "" {
 		rule.TenantID = nil
+	}
+	if rule.RuleConditions == nil {
+		rule.RuleConditions = map[string]string{}
 	}
 
 	var before any
@@ -1334,30 +1439,19 @@ func (h *Handler) PreviewPolicyRule(w http.ResponseWriter, r *http.Request) {
 	req.Model = strings.ToLower(strings.TrimSpace(req.Model))
 	req.Environment = strings.ToLower(strings.TrimSpace(req.Environment))
 
+	traffic, requestDLP, responseDLP := h.policyEngine.Evaluate(policy.EvaluationInput{
+		TenantID:        strings.TrimSpace(req.TenantID),
+		Environment:     req.Environment,
+		Provider:        req.Provider,
+		Model:           req.Model,
+		EstimatedTokens: req.EstimatedTokens,
+		RequestBody:     []byte(req.RequestBody),
+		ResponseBody:    []byte(req.ResponseBody),
+	})
 	resp := models.PolicyPreviewResponse{
-		Traffic: previewPolicyDecision(h.policyEngine.EvaluateTraffic(policy.TrafficInput{
-			TenantID:        strings.TrimSpace(req.TenantID),
-			Provider:        req.Provider,
-			Model:           req.Model,
-			Environment:     req.Environment,
-			EstimatedTokens: req.EstimatedTokens,
-		})),
-		RequestDLP: previewPolicyDecision(h.policyEngine.EvaluateDLP(policy.DLPInput{
-			TenantID:    strings.TrimSpace(req.TenantID),
-			Provider:    req.Provider,
-			Model:       req.Model,
-			Environment: req.Environment,
-			Scope:       "request",
-			Body:        []byte(req.RequestBody),
-		})),
-		ResponseDLP: previewPolicyDecision(h.policyEngine.EvaluateDLP(policy.DLPInput{
-			TenantID:    strings.TrimSpace(req.TenantID),
-			Provider:    req.Provider,
-			Model:       req.Model,
-			Environment: req.Environment,
-			Scope:       "response",
-			Body:        []byte(req.ResponseBody),
-		})),
+		Traffic:     previewPolicyDecision(traffic),
+		RequestDLP:  previewPolicyDecision(requestDLP),
+		ResponseDLP: previewPolicyDecision(responseDLP),
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -1373,23 +1467,53 @@ func (h *Handler) PreviewPricingRule(w http.ResponseWriter, r *http.Request) {
 	if req.At != nil {
 		at = req.At.UTC()
 	}
-	match, inputCost, totalCost := proxy.ComputeExactCostForTenant(req.Provider, req.Model, req.TenantID, at, req.InputTokens, req.OutputTokens)
-	resp := models.PricingPreviewResponse{
-		Matched:          match.RuleID > 0 || match.ModelPattern != "",
-		RuleID:           match.RuleID,
-		Provider:         req.Provider,
-		Model:            req.Model,
-		ModelPattern:     match.ModelPattern,
-		PricingScope:     match.Scope,
-		InputPerMillion:  match.InputPerMillion,
-		OutputPerMillion: match.OutputPerMillion,
+	match, detailed := proxy.ComputeDetailedCostForTenant(req.Provider, req.Model, req.TenantID, at, pricing.Usage{
 		InputTokens:      req.InputTokens,
 		OutputTokens:     req.OutputTokens,
-		InputCostUSD:     inputCost,
-		OutputCostUSD:    totalCost - inputCost,
-		TotalCostUSD:     totalCost,
-		EffectiveFrom:    match.EffectiveFrom,
-		EffectiveTo:      match.EffectiveTo,
+		CacheReadTokens:  req.CacheReadTokens,
+		CacheWriteTokens: req.CacheWriteTokens,
+		ReasoningTokens:  req.ReasoningTokens,
+	})
+	resp := models.PricingPreviewResponse{
+		Matched:              match.RuleID > 0 || match.ModelPattern != "",
+		RuleID:               match.RuleID,
+		Provider:             req.Provider,
+		Model:                req.Model,
+		ModelPattern:         match.ModelPattern,
+		PricingScope:         match.Scope,
+		InputPerMillion:      match.InputPerMillion,
+		OutputPerMillion:     match.OutputPerMillion,
+		CacheReadPerMillion:  match.CacheReadPerMillion,
+		CacheWritePerMillion: match.CacheWritePerMillion,
+		ReasoningPerMillion:  match.ReasoningPerMillion,
+		InputTokens:          req.InputTokens,
+		OutputTokens:         req.OutputTokens,
+		CacheReadTokens:      req.CacheReadTokens,
+		CacheWriteTokens:     req.CacheWriteTokens,
+		ReasoningTokens:      req.ReasoningTokens,
+		InputCostUSD:         detailed.InputCostUSD,
+		OutputCostUSD:        detailed.OutputCostUSD,
+		CacheReadCostUSD:     detailed.CacheReadCostUSD,
+		CacheWriteCostUSD:    detailed.CacheWriteCostUSD,
+		ReasoningCostUSD:     detailed.ReasoningCostUSD,
+		TotalCostUSD:         detailed.TotalCostUSD,
+		Explain: pricing.BuildExplanation(pricing.Explanation{
+			RuleID:       match.RuleID,
+			Provider:     req.Provider,
+			MatchedModel: req.Model,
+			ModelPattern: match.ModelPattern,
+			Scope:        match.Scope,
+			RateCard: pricing.RateCard{
+				InputPerMillion:      match.InputPerMillion,
+				OutputPerMillion:     match.OutputPerMillion,
+				CacheReadPerMillion:  match.CacheReadPerMillion,
+				CacheWritePerMillion: match.CacheWritePerMillion,
+				ReasoningPerMillion:  match.ReasoningPerMillion,
+			},
+			Result: detailed,
+		}),
+		EffectiveFrom: match.EffectiveFrom,
+		EffectiveTo:   match.EffectiveTo,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -1452,7 +1576,7 @@ func (h *Handler) ExportPricingRules(w http.ResponseWriter, r *http.Request) {
 // sumSpanUsage totals tokens and cost across a batch of spans.
 func sumSpanUsage(spans []models.Span) (tokens int64, costUSD float64) {
 	for _, sp := range spans {
-		tokens += sp.InputTokens + sp.OutputTokens
+		tokens += sp.InputTokens + sp.OutputTokens + sp.CacheReadTokens + sp.CacheWriteTokens + sp.ReasoningTokens
 		costUSD += sp.CostUSD
 	}
 	return

@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -84,11 +87,15 @@ func main() {
 	httpMux.Handle("/v1/traces", receiver.NewHTTPOTLPHandler(spanProcessor, jwtValidator, logger))
 	httpMux.Handle("/metrics", promhttp.Handler())
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok","version":"1.0.0","checks":{"gateway_export":"configured"}}`))
+		w.Write([]byte(`{"status":"ok","version":"1.0.0","mode":"health","checks":{"receiver":{"status":"ok"},"gateway_export":{"status":"configured"}}}`))
+	}
+	readyHandler := func(w http.ResponseWriter, r *http.Request) {
+		collectorReady(w, r, cfg)
 	}
 	httpMux.HandleFunc("/healthz", healthHandler)
-	httpMux.HandleFunc("/readyz", healthHandler)
+	httpMux.HandleFunc("/readyz", readyHandler)
 
 	httpServer := &http.Server{
 		Addr:         cfg.HTTP.Addr,
@@ -135,4 +142,71 @@ func main() {
 	spanProcessor.Shutdown()
 
 	logger.Info("Collector stopped cleanly")
+}
+
+func collectorReady(w http.ResponseWriter, r *http.Request, cfg *config.Config) {
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]any{
+		"status": "ok",
+		"mode":   "ready",
+		"checks": map[string]map[string]any{
+			"receiver":          {"status": "ok"},
+			"gateway_export":    {"status": "configured"},
+			"pricing_config":    {"status": "loaded"},
+			"gateway_auth_token": {"status": "configured"},
+		},
+	}
+	checks := response["checks"].(map[string]map[string]any)
+
+	if cfg == nil {
+		response["status"] = "degraded"
+		response["error"] = "collector config unavailable"
+		checks["receiver"] = map[string]any{"status": "unavailable"}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
+	if strings.TrimSpace(cfg.Gateway.AuthToken) == "" {
+		response["status"] = "degraded"
+		response["error"] = "gateway auth token missing"
+		checks["gateway_auth_token"] = map[string]any{"status": "unavailable"}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	url := strings.TrimRight(cfg.Gateway.Endpoint, "/") + "/readyz"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		response["status"] = "degraded"
+		response["error"] = "gateway probe build failed"
+		checks["gateway_readyz"] = map[string]any{"status": "unavailable", "error": err.Error()}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		response["status"] = "degraded"
+		response["error"] = "gateway readyz unreachable"
+		checks["gateway_readyz"] = map[string]any{"status": "unavailable", "url": url, "error": err.Error()}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		response["status"] = "degraded"
+		response["error"] = "gateway readyz returned non-200"
+		checks["gateway_readyz"] = map[string]any{"status": "unavailable", "url": url, "status_code": resp.StatusCode}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
+	checks["gateway_readyz"] = map[string]any{"status": "ok", "url": url}
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
 }

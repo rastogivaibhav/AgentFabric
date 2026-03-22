@@ -1,0 +1,2 @@
+./otlp_grpc.go
+./otlp_http.go

@@ -6,6 +6,7 @@ vi.mock('../hooks/api', () => ({
   useOverview: vi.fn(),
   useFrameworkStats: vi.fn(),
   useCostReport: vi.fn(),
+  usePreviewPricingRule: vi.fn(),
   useTraces: vi.fn(),
   useBudget: vi.fn(),
   useBudgetUsage: vi.fn(),
@@ -24,11 +25,12 @@ vi.mock('recharts', () => ({
 }))
 
 import CostPage from './CostPage'
-import { useOverview, useFrameworkStats, useCostReport, useTraces, useBudget, useBudgetUsage, useUpsertBudget, useDeleteBudget } from '../hooks/api'
+import { useOverview, useFrameworkStats, useCostReport, usePreviewPricingRule, useTraces, useBudget, useBudgetUsage, useUpsertBudget, useDeleteBudget } from '../hooks/api'
 
 const mockUseOverview = vi.mocked(useOverview)
 const mockUseFrameworkStats = vi.mocked(useFrameworkStats)
 const mockUseCostReport = vi.mocked(useCostReport)
+const mockUsePreviewPricingRule = vi.mocked(usePreviewPricingRule)
 const mockUseTraces = vi.mocked(useTraces)
 const mockUseBudget = vi.mocked(useBudget)
 const mockUseBudgetUsage = vi.mocked(useBudgetUsage)
@@ -72,6 +74,7 @@ describe('CostPage', () => {
     mockUseUpsertBudget.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
     mockUseDeleteBudget.mockReturnValue({ mutate: vi.fn() } as any)
     mockUseCostReport.mockReturnValue({ data: [], isLoading: false } as any)
+    mockUsePreviewPricingRule.mockReturnValue({ mutate: vi.fn(), isPending: false, data: undefined } as any)
   })
 
   it('renders Total Cost stat card', () => {

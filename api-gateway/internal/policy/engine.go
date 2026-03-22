@@ -15,8 +15,18 @@ type RuleStore interface {
 }
 
 type Engine struct {
-	mu    sync.RWMutex
-	rules []models.PolicyRule
+	mu       sync.RWMutex
+	rules    []models.PolicyRule
+	compiled []compiledRule
+}
+
+func (e *Engine) RuleCount() int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if len(e.compiled) > 0 {
+		return len(e.compiled)
+	}
+	return len(e.rules)
 }
 
 type TrafficInput struct {
@@ -25,15 +35,24 @@ type TrafficInput struct {
 	Model           string
 	Environment     string
 	EstimatedTokens int64
+	RequestHeaders  map[string]string
+	RequestBody     []byte
+	Actor           string
+	App             string
+	Session         string
 }
 
 type DLPInput struct {
-	TenantID    string
-	Provider    string
-	Model       string
-	Environment string
-	Scope       string
-	Body        []byte
+	TenantID       string
+	Provider       string
+	Model          string
+	Environment    string
+	Scope          string
+	Body           []byte
+	RequestHeaders map[string]string
+	Actor          string
+	App            string
+	Session        string
 }
 
 type Finding struct {
@@ -44,6 +63,7 @@ type Finding struct {
 
 type Decision struct {
 	Matched      bool
+	Final        bool
 	RuleID       int64
 	PolicyName   string
 	Action       string
@@ -52,6 +72,7 @@ type Decision struct {
 	MatchedNames []string
 	Redactions   int
 	RedactedBody []byte
+	Explanation  DecisionExplanation
 }
 
 type detector struct {
@@ -86,170 +107,95 @@ func (e *Engine) LoadRules(ctx context.Context, store RuleStore) error {
 	})
 	e.mu.Lock()
 	e.rules = rules
+	e.compiled = compileRules(rules)
 	e.mu.Unlock()
 	return nil
 }
 
 func (e *Engine) EvaluateTraffic(input TrafficInput) Decision {
-	e.mu.RLock()
-	rules := append([]models.PolicyRule(nil), e.rules...)
-	e.mu.RUnlock()
-
-	best := Decision{}
-	bestScore := -1
-	for _, rule := range rules {
-		score, ok := matchTrafficRule(rule, input)
-		if !ok || score <= bestScore {
-			continue
-		}
-		bestScore = score
-		best = Decision{
-			Matched:    true,
-			RuleID:     rule.ID,
-			PolicyName: rule.Name,
-			Action:     strings.ToLower(rule.Action),
-			Scope:      "request",
-		}
-		if rule.MaxTokens > 0 {
-			best.Reason = "estimated tokens exceeded policy limit"
-		} else if rule.ModelPattern != "" && rule.ModelPattern != "*" {
-			best.Reason = "provider/model policy matched"
-		} else {
-			best.Reason = "traffic policy matched"
-		}
-	}
-	return best
+	return e.evaluateTrafficInput(EvaluationInput{
+		TenantID:        input.TenantID,
+		Environment:     input.Environment,
+		Provider:        input.Provider,
+		Model:           input.Model,
+		Scope:           "request",
+		EstimatedTokens: input.EstimatedTokens,
+		RequestHeaders:  input.RequestHeaders,
+		RequestBody:     input.RequestBody,
+		Actor:           input.Actor,
+		App:             input.App,
+		Session:         input.Session,
+	})
 }
 
 func (e *Engine) EvaluateDLP(input DLPInput) Decision {
-	findings := scan(input.Body)
+	evaluationInput := EvaluationInput{
+		TenantID:       input.TenantID,
+		Environment:    input.Environment,
+		Provider:       input.Provider,
+		Model:          input.Model,
+		Scope:          input.Scope,
+		RequestHeaders: input.RequestHeaders,
+		Actor:          input.Actor,
+		App:            input.App,
+		Session:        input.Session,
+	}
+	if strings.EqualFold(input.Scope, "response") {
+		evaluationInput.ResponseBody = input.Body
+	} else {
+		evaluationInput.RequestBody = input.Body
+	}
+	return e.evaluateDLPInput(evaluationInput)
+}
+
+func (e *Engine) Evaluate(input EvaluationInput) (Decision, Decision, Decision) {
+	return e.evaluateTrafficInput(input), e.evaluateDLPInput(withScope(input, "request")), e.evaluateDLPInput(withScope(input, "response"))
+}
+
+func (e *Engine) evaluateTrafficInput(input EvaluationInput) Decision {
+	compiled := e.currentCompiledRules()
+	return evaluateTrafficRules(compiled, normalizeEvaluationInput(input))
+}
+
+func (e *Engine) evaluateDLPInput(input EvaluationInput) Decision {
+	input = normalizeEvaluationInput(input)
+	findings := scan(decisionBody(input))
 	if len(findings) == 0 {
 		return Decision{}
 	}
-
-	e.mu.RLock()
-	rules := append([]models.PolicyRule(nil), e.rules...)
-	e.mu.RUnlock()
-
-	best := Decision{}
-	bestScore := -1
-	for _, rule := range rules {
-		score, matchedNames, ok := matchDLPRule(rule, input, findings)
-		if !ok || score <= bestScore {
-			continue
-		}
-		bestScore = score
-		best = Decision{
-			Matched:      true,
-			RuleID:       rule.ID,
-			PolicyName:   rule.Name,
-			Action:       strings.ToLower(rule.Action),
-			Scope:        input.Scope,
-			MatchedNames: matchedNames,
-			Reason:       "sensitive content detected",
-		}
-	}
-
-	if !best.Matched {
+	compiled := e.currentCompiledRules()
+	decision := evaluateDLPRules(compiled, input, findings)
+	if !decision.Matched {
 		return Decision{}
 	}
-	if best.Action == "redact" {
-		best.RedactedBody, best.Redactions = redact(input.Body, findings)
+	if decision.Action == "redact" {
+		decision.RedactedBody, decision.Redactions = redact(decisionBody(input), findings)
 	}
-	return best
+	return decision
 }
 
-func matchTrafficRule(rule models.PolicyRule, input TrafficInput) (int, bool) {
-	if !rule.Enabled || strings.ToLower(rule.RuleType) != "traffic" {
-		return 0, false
+func (e *Engine) currentCompiledRules() []compiledRule {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	source := e.compiled
+	if len(source) == 0 && len(e.rules) > 0 {
+		source = compileRules(e.rules)
 	}
-	if rule.TenantID != nil && strings.TrimSpace(*rule.TenantID) != strings.TrimSpace(input.TenantID) {
-		return 0, false
-	}
-	if !matchesValue(rule.Provider, input.Provider) {
-		return 0, false
-	}
-	if !matchesPattern(rule.ModelPattern, input.Model) {
-		return 0, false
-	}
-	if !matchesValue(rule.Environment, input.Environment) {
-		return 0, false
-	}
-	if rule.MaxTokens > 0 && input.EstimatedTokens <= rule.MaxTokens {
-		return 0, false
-	}
-
-	score := rule.Priority * 100
-	if rule.TenantID != nil {
-		score += 100000
-	}
-	if exactValue(rule.Provider, input.Provider) {
-		score += 1000
-	}
-	if exactValue(rule.ModelPattern, input.Model) {
-		score += 500
-	} else if strings.TrimSpace(rule.ModelPattern) != "" && rule.ModelPattern != "*" {
-		score += len(rule.ModelPattern)
-	}
-	if exactValue(rule.Environment, input.Environment) {
-		score += 250
-	}
-	if rule.MaxTokens > 0 {
-		score += 100
-	}
-	return score, true
+	out := make([]compiledRule, len(source))
+	copy(out, source)
+	return out
 }
 
-func matchDLPRule(rule models.PolicyRule, input DLPInput, findings []Finding) (int, []string, bool) {
-	if !rule.Enabled || strings.ToLower(rule.RuleType) != "dlp" {
-		return 0, nil, false
+func decisionBody(input EvaluationInput) []byte {
+	if strings.EqualFold(input.Scope, "response") {
+		return input.ResponseBody
 	}
-	if rule.TenantID != nil && strings.TrimSpace(*rule.TenantID) != strings.TrimSpace(input.TenantID) {
-		return 0, nil, false
-	}
-	if !matchesValue(rule.Provider, input.Provider) {
-		return 0, nil, false
-	}
-	if !matchesPattern(rule.ModelPattern, input.Model) {
-		return 0, nil, false
-	}
-	if !matchesValue(rule.Environment, input.Environment) {
-		return 0, nil, false
-	}
-	if !scopeMatches(rule.Scope, input.Scope) {
-		return 0, nil, false
-	}
+	return input.RequestBody
+}
 
-	matchedNames := make([]string, 0, len(findings))
-	target := strings.ToLower(strings.TrimSpace(rule.Detector))
-	for _, finding := range findings {
-		if target == "" || target == "*" || target == finding.Name || target == finding.Category {
-			matchedNames = append(matchedNames, finding.Name)
-		}
-	}
-	if len(matchedNames) == 0 {
-		return 0, nil, false
-	}
-
-	score := rule.Priority * 100
-	if rule.TenantID != nil {
-		score += 100000
-	}
-	if exactValue(rule.Provider, input.Provider) {
-		score += 1000
-	}
-	if exactValue(rule.ModelPattern, input.Model) {
-		score += 500
-	} else if strings.TrimSpace(rule.ModelPattern) != "" && rule.ModelPattern != "*" {
-		score += len(rule.ModelPattern)
-	}
-	if exactValue(rule.Environment, input.Environment) {
-		score += 250
-	}
-	if strings.TrimSpace(rule.Detector) != "" && rule.Detector != "*" {
-		score += 100
-	}
-	return score, matchedNames, true
+func withScope(input EvaluationInput, scope string) EvaluationInput {
+	input.Scope = scope
+	return input
 }
 
 func scan(body []byte) []Finding {
@@ -327,4 +273,13 @@ func scopeMatches(ruleScope, actual string) bool {
 		return true
 	}
 	return ruleScope == actual
+}
+
+func sortedConditionKeys(conditions map[string]string) []string {
+	keys := make([]string, 0, len(conditions))
+	for key := range conditions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

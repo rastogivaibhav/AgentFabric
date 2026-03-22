@@ -141,6 +141,8 @@ jobs:
           test -f scripts/seed-demo-data.ps1
           test -f scripts/run-release-candidate-validation.sh
           test -f scripts/run_release_candidate_validation.ps1
+          test -f scripts/run-ga-gate.sh
+          test -f scripts/run_ga_gate.ps1
 
   secret-scan:
     name: Secret Scan (Gitleaks)
@@ -155,9 +157,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
+  ga-gate-smoke:
+    name: GA Gate (CI Mode)
+    needs: [collector, api-gateway, portal, agent-sdk, helm-smoke, packaging-smoke, secret-scan]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run GA gate in CI mode
+        env:
+          GA_GATE_MODE: ci
+          GA_COLLECTOR_RESULT: ${{ needs.collector.result }}
+          GA_GATEWAY_RESULT: ${{ needs.api-gateway.result }}
+          GA_PORTAL_RESULT: ${{ needs.portal.result }}
+          GA_SDK_RESULT: ${{ needs.agent-sdk.result }}
+          GA_HELM_RESULT: ${{ needs.helm-smoke.result }}
+          GA_PACKAGING_RESULT: ${{ needs.packaging-smoke.result }}
+          GA_SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+        run: bash scripts/run-ga-gate.sh
+
   ci-gate:
     name: CI Gate
-    needs: [collector, api-gateway, portal, agent-sdk, helm-smoke, packaging-smoke, secret-scan]
+    needs: [collector, api-gateway, portal, agent-sdk, helm-smoke, packaging-smoke, secret-scan, ga-gate-smoke]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -170,9 +191,10 @@ jobs:
           HELM_RESULT: ${{ needs.helm-smoke.result }}
           PACKAGING_RESULT: ${{ needs.packaging-smoke.result }}
           SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+          GA_GATE_RESULT: ${{ needs.ga-gate-smoke.result }}
         run: |
           FAILED=0
-          for JOB in "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT" "$HELM_RESULT" "$PACKAGING_RESULT" "$SECRET_SCAN_RESULT"; do
+          for JOB in "$COLLECTOR_RESULT" "$GATEWAY_RESULT" "$PORTAL_RESULT" "$SDK_RESULT" "$HELM_RESULT" "$PACKAGING_RESULT" "$SECRET_SCAN_RESULT" "$GA_GATE_RESULT"; do
             if [ "$JOB" != "success" ]; then
               FAILED=1
             fi

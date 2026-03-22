@@ -1,0 +1,17 @@
+# import config
+packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\68\68ebcedb076b13fe2277c33e90f8b1a5c487236e93e6d2478b550c2f2f8d5f12-d
+packagefile github.com/grpc-ecosystem/grpc-gateway/v2/runtime=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b384\_pkg_.a
+packagefile github.com/grpc-ecosystem/grpc-gateway/v2/utilities=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b386\_pkg_.a
+packagefile go.opentelemetry.io/proto/otlp/trace/v1=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\6e\6e741f109dc802ebf6f06991e62d39674abce7e0a48c6b34db3cbc842b280cdc-d
+packagefile google.golang.org/grpc=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b150\_pkg_.a
+packagefile google.golang.org/grpc/codes=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b254\_pkg_.a
+packagefile google.golang.org/grpc/grpclog=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b207\_pkg_.a
+packagefile google.golang.org/grpc/metadata=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b250\_pkg_.a
+packagefile google.golang.org/grpc/status=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b268\_pkg_.a
+packagefile google.golang.org/protobuf/proto=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\36\36ae299aa4115904e3387a1d7c2a902be7b92ce125340d205398245af8c0030b-d
+packagefile google.golang.org/protobuf/reflect/protoreflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\eb\eb2b14cb1d57d7be08dd01e1d9b8595ea1ea1685f3d0de123b139534788e848a-d
+packagefile google.golang.org/protobuf/runtime/protoimpl=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\fa\fa6f6e25d435e355c1e528fa10f9c6da8bdf656e70c86304ba4f6b7c9751ceba-d
+packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\e3\e35d9a76ce86bbca326dfb7c7c65f1a133c9565b080fdc6421468371b0a5dfa3-d
+packagefile net/http=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\57\57593cb47a13e03e087b2cfc1e59d87e6bcbab99dcffb2e2887737448aad64df-d
+packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\36\36c1c096ab4ec1d9e96c41c64c811c6a93f5ed970e36c6e6a2ae9570d283a53d-d
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\23\2395a0222280fa9f0f415e48ab6e1807a4398967f085c466f77ebbfc5a046808-d

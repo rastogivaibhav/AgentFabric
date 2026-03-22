@@ -17,8 +17,7 @@ VALUES="deploy/helm/values.yaml"
 
 IMAGES=(
   "collector:.collector.image.digest"
-  "af-core:.afCore.image.digest"
-  "api:.api.image.digest"
+  "api-gateway:.api.image.digest"
   "portal:.portal.image.digest"
 )
 

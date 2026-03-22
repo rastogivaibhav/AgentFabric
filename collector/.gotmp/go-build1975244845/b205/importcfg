@@ -1,0 +1,12 @@
+# import config
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\7c\7c7e94fb5ae6a2180a1c74981abdd6eca0488f65cd71f1296acf9abf89b3835c-d
+packagefile fmt=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\a9\a9a97cad3827e2071f1e7e6d192b56d5a3422918007ae6c28125fcdcb609337e-d
+packagefile google.golang.org/grpc/connectivity=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b206\_pkg_.a
+packagefile google.golang.org/grpc/credentials=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b209\_pkg_.a
+packagefile google.golang.org/grpc/grpclog=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b207\_pkg_.a
+packagefile google.golang.org/grpc/internal=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b246\_pkg_.a
+packagefile net=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\3f\3fbe3d61bcaf90b5af0009418dc64e7b6e798a71a994ff160a6841f8e8dcd9e2-d
+packagefile sort=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\f3\f3d818d76dd078e10d0c0163c0f0f637584594edbf25ed92e164e0fe5e32a671-d
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\23\2395a0222280fa9f0f415e48ab6e1807a4398967f085c466f77ebbfc5a046808-d
+packagefile sync/atomic=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5a\5a25e61c92ad00090120e8b7787b98f8298d33a2c4af0722a2c0f44a4ef3af57-d
+packagefile time=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\d2\d2c8c6a3dd898f5423875686736ab809019d14593a37bb543b1eb186aa7b8524-d

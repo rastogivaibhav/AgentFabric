@@ -1,0 +1,5 @@
+# import config
+packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\68\68ebcedb076b13fe2277c33e90f8b1a5c487236e93e6d2478b550c2f2f8d5f12-d
+packagefile google.golang.org/grpc/internal/buffer=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b273\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\23\2395a0222280fa9f0f415e48ab6e1807a4398967f085c466f77ebbfc5a046808-d
+packagefile sync/atomic=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5a\5a25e61c92ad00090120e8b7787b98f8298d33a2c4af0722a2c0f44a4ef3af57-d

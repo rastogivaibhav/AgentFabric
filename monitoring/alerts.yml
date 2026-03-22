@@ -76,23 +76,22 @@ groups:
           description: "More than 10 requests/second are being rate-limited (429). A tenant may be exceeding their quota."
           runbook: "https://docs.agentfabric.io/runbooks/rate-limiting"
 
-  - name: agentfabric.audit_chain
+  - name: agentfabric.audit_integrity
     interval: 1m
     rules:
 
-      - alert: AuditChainMultipleReplicas
-        expr: kube_deployment_spec_replicas{deployment=~".*af-core.*"} > 1
+      - alert: AuditChainIntegrityBroken
+        expr: agentfabric_audit_chain_valid == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "af-core is running {{ $value }} replicas — audit chain integrity at risk"
+          summary: "Audit chain integrity check is failing"
           description: |
-            af-core's AuditWriter stores the last-known hash in process memory (Mutex<String>).
-            Running more than one replica produces independent diverged chains, breaking
-            tamper-evidence. Scale back to 1 replica immediately and investigate.
-            This constraint will be lifted in v1.2.0 (PostgreSQL-backed chain).
-          runbook: "https://docs.agentfabric.io/runbooks/audit-chain-single-replica"
+            The gateway-reported audit chain verification is returning an invalid state.
+            Investigate recent policy audit writes, database consistency, and any failures
+            in the audit verification path before treating the audit trail as trustworthy.
+          runbook: "https://docs.agentfabric.io/runbooks/audit-chain-integrity"
 
   - name: agentfabric.cost
     interval: 1m

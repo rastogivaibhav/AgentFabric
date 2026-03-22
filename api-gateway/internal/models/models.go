@@ -19,7 +19,15 @@ type Span struct {
 	Events                []SpanEvent       `json:"events,omitempty" db:"-"`
 	InputTokens           int64             `json:"input_tokens,omitempty" db:"input_tokens"`
 	OutputTokens          int64             `json:"output_tokens,omitempty" db:"output_tokens"`
+	CacheReadTokens       int64             `json:"cache_read_tokens,omitempty" db:"cache_read_tokens"`
+	CacheWriteTokens      int64             `json:"cache_write_tokens,omitempty" db:"cache_write_tokens"`
+	ReasoningTokens       int64             `json:"reasoning_tokens,omitempty" db:"reasoning_tokens"`
 	CostUSD               float64           `json:"cost_usd,omitempty" db:"cost_usd"`
+	InputCostUSD          float64           `json:"input_cost_usd,omitempty" db:"input_cost_usd"`
+	OutputCostUSD         float64           `json:"output_cost_usd,omitempty" db:"output_cost_usd"`
+	CacheReadCostUSD      float64           `json:"cache_read_cost_usd,omitempty" db:"cache_read_cost_usd"`
+	CacheWriteCostUSD     float64           `json:"cache_write_cost_usd,omitempty" db:"cache_write_cost_usd"`
+	ReasoningCostUSD      float64           `json:"reasoning_cost_usd,omitempty" db:"reasoning_cost_usd"`
 	Depth                 int               `json:"depth,omitempty" db:"-"`
 	StepType              string            `json:"step_type,omitempty" db:"-"`
 	Provider              string            `json:"provider,omitempty" db:"-"`
@@ -42,6 +50,7 @@ type Span struct {
 	PolicyDecisionSummary []string          `json:"policy_decision_summary,omitempty" db:"-"`
 	PricingRuleID         int64             `json:"pricing_rule_id,omitempty" db:"-"`
 	PricingScope          string            `json:"pricing_scope,omitempty" db:"-"`
+	PricingModelPattern   string            `json:"pricing_model_pattern,omitempty" db:"-"`
 	TenantID              string            `json:"-" db:"tenant_id"`
 	ReceivedAt            time.Time         `json:"received_at" db:"received_at"`
 }
@@ -245,46 +254,62 @@ type UserRecord struct {
 }
 
 type PricingRule struct {
-	ID               int64      `json:"id"`
-	TenantID         *string    `json:"tenant_id,omitempty"`
-	Provider         string     `json:"provider"`
-	ModelPattern     string     `json:"model_pattern"`
-	InputPerMillion  float64    `json:"input_per_million"`
-	OutputPerMillion float64    `json:"output_per_million"`
-	Active           bool       `json:"active"`
-	Priority         int        `json:"priority"`
-	EffectiveFrom    *time.Time `json:"effective_from,omitempty"`
-	EffectiveTo      *time.Time `json:"effective_to,omitempty"`
-	Description      string     `json:"description,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                   int64      `json:"id"`
+	TenantID             *string    `json:"tenant_id,omitempty"`
+	Provider             string     `json:"provider"`
+	ModelPattern         string     `json:"model_pattern"`
+	InputPerMillion      float64    `json:"input_per_million"`
+	OutputPerMillion     float64    `json:"output_per_million"`
+	CacheReadPerMillion  float64    `json:"cache_read_per_million"`
+	CacheWritePerMillion float64    `json:"cache_write_per_million"`
+	ReasoningPerMillion  float64    `json:"reasoning_per_million"`
+	Active               bool       `json:"active"`
+	Priority             int        `json:"priority"`
+	EffectiveFrom        *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo          *time.Time `json:"effective_to,omitempty"`
+	Description          string     `json:"description,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type PricingPreviewRequest struct {
-	TenantID     string     `json:"tenant_id,omitempty"`
-	Provider     string     `json:"provider"`
-	Model        string     `json:"model"`
-	InputTokens  int64      `json:"input_tokens"`
-	OutputTokens int64      `json:"output_tokens"`
-	At           *time.Time `json:"at,omitempty"`
+	TenantID         string     `json:"tenant_id,omitempty"`
+	Provider         string     `json:"provider"`
+	Model            string     `json:"model"`
+	InputTokens      int64      `json:"input_tokens"`
+	OutputTokens     int64      `json:"output_tokens"`
+	CacheReadTokens  int64      `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64      `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens  int64      `json:"reasoning_tokens,omitempty"`
+	At               *time.Time `json:"at,omitempty"`
 }
 
 type PricingPreviewResponse struct {
-	Matched          bool       `json:"matched"`
-	RuleID           int64      `json:"rule_id,omitempty"`
-	Provider         string     `json:"provider,omitempty"`
-	Model            string     `json:"model,omitempty"`
-	ModelPattern     string     `json:"model_pattern,omitempty"`
-	PricingScope     string     `json:"pricing_scope,omitempty"`
-	InputPerMillion  float64    `json:"input_per_million,omitempty"`
-	OutputPerMillion float64    `json:"output_per_million,omitempty"`
-	InputTokens      int64      `json:"input_tokens"`
-	OutputTokens     int64      `json:"output_tokens"`
-	InputCostUSD     float64    `json:"input_cost_usd"`
-	OutputCostUSD    float64    `json:"output_cost_usd"`
-	TotalCostUSD     float64    `json:"total_cost_usd"`
-	EffectiveFrom    *time.Time `json:"effective_from,omitempty"`
-	EffectiveTo      *time.Time `json:"effective_to,omitempty"`
+	Matched              bool       `json:"matched"`
+	RuleID               int64      `json:"rule_id,omitempty"`
+	Provider             string     `json:"provider,omitempty"`
+	Model                string     `json:"model,omitempty"`
+	ModelPattern         string     `json:"model_pattern,omitempty"`
+	PricingScope         string     `json:"pricing_scope,omitempty"`
+	InputPerMillion      float64    `json:"input_per_million,omitempty"`
+	OutputPerMillion     float64    `json:"output_per_million,omitempty"`
+	CacheReadPerMillion  float64    `json:"cache_read_per_million,omitempty"`
+	CacheWritePerMillion float64    `json:"cache_write_per_million,omitempty"`
+	ReasoningPerMillion  float64    `json:"reasoning_per_million,omitempty"`
+	InputTokens          int64      `json:"input_tokens"`
+	OutputTokens         int64      `json:"output_tokens"`
+	CacheReadTokens      int64      `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens     int64      `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens      int64      `json:"reasoning_tokens,omitempty"`
+	InputCostUSD         float64    `json:"input_cost_usd"`
+	OutputCostUSD        float64    `json:"output_cost_usd"`
+	CacheReadCostUSD     float64    `json:"cache_read_cost_usd,omitempty"`
+	CacheWriteCostUSD    float64    `json:"cache_write_cost_usd,omitempty"`
+	ReasoningCostUSD     float64    `json:"reasoning_cost_usd,omitempty"`
+	TotalCostUSD         float64    `json:"total_cost_usd"`
+	Explain              []string   `json:"explain,omitempty"`
+	EffectiveFrom        *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo          *time.Time `json:"effective_to,omitempty"`
 }
 
 type PricingAuditEntry struct {
@@ -299,22 +324,25 @@ type PricingAuditEntry struct {
 }
 
 type PolicyRule struct {
-	ID           int64     `json:"id"`
-	TenantID     *string   `json:"tenant_id,omitempty"`
-	Name         string    `json:"name"`
-	RuleType     string    `json:"rule_type"`
-	Enabled      bool      `json:"enabled"`
-	Priority     int       `json:"priority"`
-	Action       string    `json:"action"`
-	Provider     string    `json:"provider,omitempty"`
-	ModelPattern string    `json:"model_pattern,omitempty"`
-	Environment  string    `json:"environment,omitempty"`
-	MaxTokens    int64     `json:"max_tokens,omitempty"`
-	Detector     string    `json:"detector,omitempty"`
-	Scope        string    `json:"scope,omitempty"`
-	Description  string    `json:"description,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID             int64             `json:"id"`
+	TenantID       *string           `json:"tenant_id,omitempty"`
+	Name           string            `json:"name"`
+	RuleType       string            `json:"rule_type"`
+	DecisionMode   string            `json:"decision_mode,omitempty"`
+	Enabled        bool              `json:"enabled"`
+	Priority       int               `json:"priority"`
+	Action         string            `json:"action"`
+	Provider       string            `json:"provider,omitempty"`
+	ModelPattern   string            `json:"model_pattern,omitempty"`
+	Environment    string            `json:"environment,omitempty"`
+	MaxTokens      int64             `json:"max_tokens,omitempty"`
+	Detector       string            `json:"detector,omitempty"`
+	Scope          string            `json:"scope,omitempty"`
+	RuleConditions map[string]string `json:"rule_conditions,omitempty"`
+	RegoModule     string            `json:"rego_module,omitempty"`
+	Description    string            `json:"description,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
 type PolicyDecisionAudit struct {
@@ -358,21 +386,39 @@ type PolicyPreviewRequest struct {
 }
 
 type PolicyPreviewDecision struct {
-	Matched         bool     `json:"matched"`
-	RuleID          int64    `json:"rule_id,omitempty"`
-	PolicyName      string   `json:"policy_name,omitempty"`
-	Action          string   `json:"action,omitempty"`
-	Reason          string   `json:"reason,omitempty"`
-	Scope           string   `json:"scope,omitempty"`
-	MatchedNames    []string `json:"matched_names,omitempty"`
-	Redactions      int      `json:"redactions,omitempty"`
-	RedactedPreview string   `json:"redacted_preview,omitempty"`
+	Matched         bool                   `json:"matched"`
+	RuleID          int64                  `json:"rule_id,omitempty"`
+	PolicyName      string                 `json:"policy_name,omitempty"`
+	Action          string                 `json:"action,omitempty"`
+	Reason          string                 `json:"reason,omitempty"`
+	Scope           string                 `json:"scope,omitempty"`
+	MatchedNames    []string               `json:"matched_names,omitempty"`
+	Redactions      int                    `json:"redactions,omitempty"`
+	RedactedPreview string                 `json:"redacted_preview,omitempty"`
+	Final           bool                   `json:"final,omitempty"`
+	Engine          string                 `json:"engine,omitempty"`
+	DecisionMode    string                 `json:"decision_mode,omitempty"`
+	EvaluationPath  []string               `json:"evaluation_path,omitempty"`
+	MatchedFields   []string               `json:"matched_fields,omitempty"`
+	ConditionTrace  []PolicyConditionTrace `json:"condition_trace,omitempty"`
+	RegoQuery       string                 `json:"rego_query,omitempty"`
+	Explain         string                 `json:"explain,omitempty"`
+	RuleConditions  map[string]string      `json:"rule_conditions,omitempty"`
 }
 
 type PolicyPreviewResponse struct {
 	Traffic     PolicyPreviewDecision `json:"traffic"`
 	RequestDLP  PolicyPreviewDecision `json:"request_dlp"`
 	ResponseDLP PolicyPreviewDecision `json:"response_dlp"`
+}
+
+type PolicyConditionTrace struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Expected string `json:"expected,omitempty"`
+	Actual   string `json:"actual,omitempty"`
+	Matched  bool   `json:"matched"`
+	Source   string `json:"source,omitempty"`
 }
 
 type AdminAuditEntry struct {

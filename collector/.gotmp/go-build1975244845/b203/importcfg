@@ -1,0 +1,14 @@
+# import config
+packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\68\68ebcedb076b13fe2277c33e90f8b1a5c487236e93e6d2478b550c2f2f8d5f12-d
+packagefile encoding/json=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\b8\b8842da09d068d1da5161ca2d099a0660c691da1534b41f53463799b74b5d33e-d
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\7c\7c7e94fb5ae6a2180a1c74981abdd6eca0488f65cd71f1296acf9abf89b3835c-d
+packagefile google.golang.org/grpc/channelz=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b204\_pkg_.a
+packagefile google.golang.org/grpc/connectivity=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b206\_pkg_.a
+packagefile google.golang.org/grpc/credentials=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b209\_pkg_.a
+packagefile google.golang.org/grpc/grpclog=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b207\_pkg_.a
+packagefile google.golang.org/grpc/internal=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b246\_pkg_.a
+packagefile google.golang.org/grpc/metadata=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b250\_pkg_.a
+packagefile google.golang.org/grpc/resolver=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b248\_pkg_.a
+packagefile google.golang.org/grpc/serviceconfig=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b249\_pkg_.a
+packagefile net=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\3f\3fbe3d61bcaf90b5af0009418dc64e7b6e798a71a994ff160a6841f8e8dcd9e2-d
+packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\2d\2ded9dc49b8a817ca9058c2571ad219819355a58d18dffba6e34159a2c220edf-d

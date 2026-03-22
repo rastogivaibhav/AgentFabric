@@ -2,7 +2,12 @@ param(
   [string]$BaseUrl = "http://localhost:8080",
   [string]$AdminUser = "",
   [string]$AdminPassword = "",
-  [switch]$StartStack
+  [switch]$StartStack,
+  [switch]$RunGovernanceScenarios,
+  [string]$TenantId = "00000000-0000-0000-0000-000000000001",
+  [string]$ProxyVirtualKey = "",
+  [string]$ProxyPath = "/proxy/openai/v1/chat/completions",
+  [string]$ProxyBodyJson = '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"governance validation"}],"stream":false}'
 )
 
 $ErrorActionPreference = "Stop"
@@ -165,6 +170,18 @@ try {
   $controlAuditAfter = Get-Json -Url "$BaseUrl/api/v1/audit/control" -WebSession $session
   if (($controlAuditAfter.count | ForEach-Object { [int]$_ }) -lt ($controlAudit.count | ForEach-Object { [int]$_ })) {
     throw "control-plane audit count regressed after temporary mutation"
+  }
+
+  if ($RunGovernanceScenarios) {
+    Step "Running governance battle-testing scenarios"
+    & (Join-Path $PSScriptRoot "run_staging_governance_validation.ps1") `
+      -BaseUrl $BaseUrl `
+      -AdminUser $AdminUser `
+      -AdminPassword $AdminPassword `
+      -TenantId $TenantId `
+      -ProxyVirtualKey $ProxyVirtualKey `
+      -ProxyPath $ProxyPath `
+      -ProxyBodyJson $ProxyBodyJson
   }
 }
 finally {

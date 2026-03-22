@@ -28,6 +28,16 @@ VALUES
         TRUE,
         240,
         'Lower-cost demo profile for local experiments'
+    ),
+    (
+        '00000000-0000-0000-0000-000000000001',
+        'google',
+        'gemini-2.0-flash',
+        0.35,
+        1.05,
+        TRUE,
+        230,
+        'Demo Gemini override for multi-provider governance walkthroughs'
     )
 ON CONFLICT (provider, model_pattern) DO NOTHING;
 
@@ -35,6 +45,7 @@ INSERT INTO policy_rules (
     tenant_id,
     name,
     rule_type,
+    decision_mode,
     enabled,
     priority,
     action,
@@ -44,6 +55,8 @@ INSERT INTO policy_rules (
     max_tokens,
     detector,
     scope,
+    rule_conditions,
+    rego_module,
     description
 )
 VALUES
@@ -51,6 +64,7 @@ VALUES
         '00000000-0000-0000-0000-000000000001',
         'deny-large-openai-requests',
         'traffic',
+        'fast',
         TRUE,
         200,
         'deny',
@@ -60,12 +74,15 @@ VALUES
         12000,
         '',
         'both',
+        '{}'::jsonb,
+        '',
         'Blocks unusually large production-like requests in the local demo tenant'
     ),
     (
         '00000000-0000-0000-0000-000000000001',
         'redact-secrets',
         'dlp',
+        'fast',
         TRUE,
         220,
         'redact',
@@ -75,12 +92,15 @@ VALUES
         0,
         'secret',
         'both',
+        '{}'::jsonb,
+        '',
         'Redacts obvious secrets before traffic leaves the proxy'
     ),
     (
         '00000000-0000-0000-0000-000000000001',
         'warn-on-pii-response',
         'dlp',
+        'rego',
         TRUE,
         180,
         'warn',
@@ -90,6 +110,44 @@ VALUES
         0,
         'pii',
         'response',
+        '{"scope":"response"}'::jsonb,
+        'warn if input.scope == "response" && input.response_body contains "@"',
         'Warns on likely PII in model responses for the demo tenant'
+    ),
+    (
+        '00000000-0000-0000-0000-000000000001',
+        'deny-gemini-production-large',
+        'traffic',
+        'rego',
+        TRUE,
+        210,
+        'deny',
+        'google',
+        'gemini-2.0-flash',
+        'production',
+        0,
+        '',
+        'both',
+        '{"environment":"production"}'::jsonb,
+        'deny if input.environment == "production" && input.estimated_tokens > 1000',
+        'Blocks large Gemini requests in production for the demo tenant'
+    ),
+    (
+        '00000000-0000-0000-0000-000000000001',
+        'allow-safe-staging-mini',
+        'traffic',
+        'fast',
+        TRUE,
+        205,
+        'allow',
+        'openai',
+        'gpt-4o-mini',
+        'staging',
+        0,
+        '',
+        'both',
+        '{"environment":"staging"}'::jsonb,
+        '',
+        'Explicitly allows safe low-cost staging traffic for governance demos'
     )
 ON CONFLICT DO NOTHING;

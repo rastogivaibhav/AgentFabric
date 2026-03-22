@@ -18,6 +18,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/policy"
+	priced "github.com/agentfabric/api-gateway/internal/pricing"
 	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/vault"
 	"go.uber.org/zap"
@@ -236,11 +237,15 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 			Model:           model,
 			Environment:     environment,
 			EstimatedTokens: estimatedTokens,
+			RequestHeaders:  policy.HeadersFromHTTP(r.Header),
+			RequestBody:     body,
+			App:             strings.TrimSpace(r.Header.Get("X-AF-App")),
+			Session:         strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
 		if trafficDecision.Matched {
 			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", trafficDecision)
 			if trafficDecision.Action == "deny" {
-				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusForbidden, 0, 0, 0, map[string]string{
+				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusForbidden, priced.Usage{}, 0, map[string]string{
 					"af.policy.blocked":  "true",
 					"af.policy.reason":   trafficDecision.Reason,
 					"af.policy.decision": trafficDecision.Action,
@@ -253,18 +258,21 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 		}
 
 		dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
-			TenantID:    tenantID,
-			Provider:    provider,
-			Model:       model,
-			Environment: environment,
-			Scope:       "request",
-			Body:        body,
+			TenantID:       tenantID,
+			Provider:       provider,
+			Model:          model,
+			Environment:    environment,
+			Scope:          "request",
+			Body:           body,
+			RequestHeaders: policy.HeadersFromHTTP(r.Header),
+			App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
+			Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
 		if dlpDecision.Matched {
 			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", dlpDecision)
 			switch dlpDecision.Action {
 			case "deny":
-				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusForbidden, 0, 0, 0, map[string]string{
+				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusForbidden, priced.Usage{}, 0, map[string]string{
 					"af.policy.blocked":  "true",
 					"af.policy.reason":   dlpDecision.Reason,
 					"af.policy.decision": dlpDecision.Action,
@@ -284,7 +292,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 		_, _, estimatedCostUSD := proxy.ComputeEstimatedCostForTenant(provider, model, tenantID, time.Now().UTC(), estimatedTokens)
 		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
-			go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusTooManyRequests, 0, 0, 0, map[string]string{
+			go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusTooManyRequests, priced.Usage{}, 0, map[string]string{
 				"af.error.type":     "budget_exceeded",
 				"af.policy.blocked": "true",
 				"af.span.step_type": "policy",
@@ -316,7 +324,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 	if err != nil {
 		p.logger.Warn("netproxy: upstream request failed",
 			zap.String("host", host), zap.Error(err))
-		go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusBadGateway, 0, 0, time.Since(start), map[string]string{
+		go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
 			"af.error.type":     "upstream_request_failed",
 			"af.error.message":  err.Error(),
 			"af.span.step_type": "llm",
@@ -326,7 +334,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 	}
 	defer upResp.Body.Close()
 
-	var inputTokens, outputTokens int64
+	usage := priced.Usage{}
 	extraAttrs := map[string]string{}
 	if streaming && upResp.StatusCode == http.StatusOK {
 		for k, vv := range upResp.Header {
@@ -335,19 +343,25 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 			}
 		}
 		w.WriteHeader(upResp.StatusCode)
-		inputTokens, outputTokens = forwardStreaming(w, upResp, parser)
+		usage = forwardStreaming(w, upResp, provider, parser)
 	} else {
 		respBody, _ := io.ReadAll(upResp.Body)
 		if upResp.StatusCode == http.StatusOK {
-			inputTokens, outputTokens, _ = parser.ParseUsage(respBody)
+			usage, _ = proxy.ParseDetailedUsage(provider, respBody)
+			if usage.TotalTokens() == 0 {
+				usage.InputTokens, usage.OutputTokens, _ = parser.ParseUsage(respBody)
+			}
 			if p.policyEngine != nil {
 				dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
-					TenantID:    tenantID,
-					Provider:    provider,
-					Model:       model,
-					Environment: environment,
-					Scope:       "response",
-					Body:        respBody,
+					TenantID:       tenantID,
+					Provider:       provider,
+					Model:          model,
+					Environment:    environment,
+					Scope:          "response",
+					Body:           respBody,
+					RequestHeaders: policy.HeadersFromHTTP(r.Header),
+					App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
+					Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 				})
 				if dlpDecision.Matched {
 					p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", dlpDecision)
@@ -381,7 +395,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 		if upResp.StatusCode >= 400 {
 			extraAttrs["af.error.type"] = classifyNetproxyStatus(upResp.StatusCode)
 		}
-		go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, upResp.StatusCode, inputTokens, outputTokens, duration, extraAttrs)
+		go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, upResp.StatusCode, usage, duration, extraAttrs)
 	}
 }
 
@@ -415,7 +429,7 @@ func (p *NetProxy) forwardRaw(w http.ResponseWriter, r *http.Request, host strin
 
 // forwardStreaming forwards SSE chunks as they arrive, buffering for usage parsing.
 // Mirrors proxy.LLMProxy.handleStreaming.
-func forwardStreaming(w http.ResponseWriter, resp *http.Response, parser proxy.ProviderParser) (inputTokens, outputTokens int64) {
+func forwardStreaming(w http.ResponseWriter, resp *http.Response, provider string, parser proxy.ProviderParser) priced.Usage {
 	flusher, canFlush := w.(http.Flusher)
 
 	var chunks [][]byte
@@ -438,12 +452,12 @@ func forwardStreaming(w http.ResponseWriter, resp *http.Response, parser proxy.P
 		flusher.Flush()
 	}
 
-	return parser.ParseStreamingUsage(chunks)
+	return proxy.ParseDetailedStreamingUsage(provider, chunks, parser)
 }
 
 // ─── Span recording ───────────────────────────────────────────────────────────
 
-func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey string, statusCode int, inputTokens, outputTokens int64, duration time.Duration, extraAttrs map[string]string) {
+func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey string, statusCode int, usage priced.Usage, duration time.Duration, extraAttrs map[string]string) {
 	now := time.Now()
 	if traceID == "" {
 		traceID = newID()
@@ -457,22 +471,30 @@ func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey
 		maskedKey = maskedKey[:14] + "..."
 	}
 
-	match, _, totalCostUSD := proxy.ComputeExactCostForTenant(provider, model, tenantID, now, inputTokens, outputTokens)
+	match, costResult := proxy.ComputeDetailedCostForTenant(provider, model, tenantID, now, usage)
 
 	span := models.Span{
-		ID:           spanID,
-		TraceID:      traceID,
-		RunID:        traceID,
-		Name:         fmt.Sprintf("netproxy.%s.%s", provider, model),
-		Framework:    "netproxy",
-		StartTimeNs:  now.Add(-duration).UnixNano(),
-		DurationNs:   duration.Nanoseconds(),
-		StatusCode:   statusCode,
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-		CostUSD:      totalCostUSD,
-		TenantID:     tenantID,
-		ReceivedAt:   now,
+		ID:                spanID,
+		TraceID:           traceID,
+		RunID:             traceID,
+		Name:              fmt.Sprintf("netproxy.%s.%s", provider, model),
+		Framework:         "netproxy",
+		StartTimeNs:       now.Add(-duration).UnixNano(),
+		DurationNs:        duration.Nanoseconds(),
+		StatusCode:        statusCode,
+		InputTokens:       usage.InputTokens,
+		OutputTokens:      usage.OutputTokens,
+		CacheReadTokens:   usage.CacheReadTokens,
+		CacheWriteTokens:  usage.CacheWriteTokens,
+		ReasoningTokens:   usage.ReasoningTokens,
+		CostUSD:           costResult.TotalCostUSD,
+		InputCostUSD:      costResult.InputCostUSD,
+		OutputCostUSD:     costResult.OutputCostUSD,
+		CacheReadCostUSD:  costResult.CacheReadCostUSD,
+		CacheWriteCostUSD: costResult.CacheWriteCostUSD,
+		ReasoningCostUSD:  costResult.ReasoningCostUSD,
+		TenantID:          tenantID,
+		ReceivedAt:        now,
 		Attributes: map[string]string{
 			"netproxy.provider":    provider,
 			"netproxy.model":       model,
@@ -492,6 +514,18 @@ func (p *NetProxy) recordSpan(traceID, spanID, tenantID, provider, model, rawKey
 		span.Attributes["af.pricing.rule_id"] = fmt.Sprintf("%d", match.RuleID)
 		span.Attributes["af.pricing.model_pattern"] = match.ModelPattern
 		span.Attributes["af.pricing.scope"] = match.Scope
+		span.Attributes["af.pricing.cache_read_per_million"] = fmt.Sprintf("%.6f", match.CacheReadPerMillion)
+		span.Attributes["af.pricing.cache_write_per_million"] = fmt.Sprintf("%.6f", match.CacheWritePerMillion)
+		span.Attributes["af.pricing.reasoning_per_million"] = fmt.Sprintf("%.6f", match.ReasoningPerMillion)
+	}
+	if usage.CacheReadTokens > 0 {
+		span.Attributes["gen_ai.usage.cache_read_tokens"] = fmt.Sprintf("%d", usage.CacheReadTokens)
+	}
+	if usage.CacheWriteTokens > 0 {
+		span.Attributes["gen_ai.usage.cache_write_tokens"] = fmt.Sprintf("%d", usage.CacheWriteTokens)
+	}
+	if usage.ReasoningTokens > 0 {
+		span.Attributes["gen_ai.usage.reasoning_tokens"] = fmt.Sprintf("%d", usage.ReasoningTokens)
 	}
 	if tenantID == "" {
 		span.TenantID = "00000000-0000-0000-0000-000000000001" // default tenant

@@ -138,7 +138,7 @@ CREATE RULE no_delete_audit AS ON DELETE TO policy_audit_log DO INSTEAD NOTHING;
 -- NOLOGIN by default — the role exists for GRANT enforcement.
 -- Production setup: run the following after deployment, replacing the placeholder:
 --   ALTER ROLE af_audit_writer WITH LOGIN PASSWORD '$AF_AUDIT_WRITER_PASSWORD';
--- Then set AF_AUDIT_DSN in af-core to connect as this role for audit writes.
+-- Then configure the current audit writer to use AF_AUDIT_DSN for audit writes.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'af_audit_writer') THEN

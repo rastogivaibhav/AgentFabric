@@ -8,10 +8,12 @@ import {
   usePolicyRules,
   useUpsertPolicyRule,
 } from '../hooks/api'
+import PolicyDecisionExplorer from './PolicyDecisionExplorer'
 
 const emptyRule: PolicyRule = {
   name: '',
   rule_type: 'traffic',
+  decision_mode: 'fast',
   enabled: true,
   priority: 100,
   action: 'deny',
@@ -21,6 +23,8 @@ const emptyRule: PolicyRule = {
   max_tokens: 0,
   detector: '',
   scope: 'both',
+  rule_conditions: {},
+  rego_module: '',
   tenant_id: null,
   description: '',
 }
@@ -66,6 +70,9 @@ export default function PoliciesPage() {
         model_pattern: form.model_pattern?.trim().toLowerCase() ?? '',
         environment: form.environment?.trim().toLowerCase() ?? '',
         detector: form.detector?.trim().toLowerCase() ?? '',
+        decision_mode: form.decision_mode ?? 'fast',
+        rule_conditions: form.rule_conditions ?? {},
+        rego_module: form.rego_module ?? '',
       },
       { onSuccess: () => setForm(emptyRule) },
     )
@@ -110,6 +117,13 @@ export default function PoliciesPage() {
                 </select>
               </label>
             </div>
+            <label style={labelStyle}>
+              Decision Mode
+              <select value={form.decision_mode ?? 'fast'} onChange={e => setForm(f => ({ ...f, decision_mode: e.target.value as PolicyRule['decision_mode'] }))} style={inputStyle}>
+                <option value="fast">fast</option>
+                <option value="rego">rego</option>
+              </select>
+            </label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={labelStyle}>
                 Priority
@@ -167,6 +181,33 @@ export default function PoliciesPage() {
               Description
               <textarea value={form.description ?? ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={textareaStyle} rows={3} />
             </label>
+            <label style={labelStyle}>
+              Rule Conditions JSON
+              <textarea
+                value={JSON.stringify(form.rule_conditions ?? {}, null, 2)}
+                onChange={e => {
+                  try {
+                    const parsed = JSON.parse(e.target.value || '{}') as Record<string, string>
+                    setForm(f => ({ ...f, rule_conditions: parsed }))
+                  } catch {}
+                }}
+                style={textareaStyle}
+                rows={4}
+                placeholder='{"app":"ops-ui","header:x-af-source":"plugin"}'
+              />
+            </label>
+            {form.decision_mode === 'rego' && (
+              <label style={labelStyle}>
+                Rego-Style Module
+                <textarea
+                  value={form.rego_module ?? ''}
+                  onChange={e => setForm(f => ({ ...f, rego_module: e.target.value }))}
+                  style={textareaStyle}
+                  rows={4}
+                  placeholder={'deny if input.environment == "production" && input.estimated_tokens > 2000'}
+                />
+              </label>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button style={primaryBtn} onClick={save} disabled={upsert.isPending || !form.name}>
@@ -203,7 +244,7 @@ export default function PoliciesPage() {
                     <td style={tdStyle}>
                       <div>{rule.provider || '*'}/{rule.model_pattern || '*'}</div>
                       <div style={{ fontSize: 10, color: '#64748B' }}>
-                        env {rule.environment || '*'}
+                        env {rule.environment || '*'} · mode {rule.decision_mode || 'fast'}
                         {rule.rule_type === 'traffic' && rule.max_tokens ? ` · max ${rule.max_tokens}` : ''}
                         {rule.rule_type === 'dlp' && rule.detector ? ` · ${rule.detector}` : ''}
                       </div>
@@ -312,27 +353,9 @@ export default function PoliciesPage() {
         {preview.isError && <div style={errorStyle}>Failed to preview policy decision.</div>}
         {preview.data && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 16 }}>
-            {[
-              { label: 'Traffic', decision: preview.data.traffic },
-              { label: 'Request DLP', decision: preview.data.request_dlp },
-              { label: 'Response DLP', decision: preview.data.response_dlp },
-            ].map(({ label, decision }) => {
-              return (
-                <div key={label} style={{ border: '1px solid #0F1F35', borderRadius: 8, padding: 12, background: '#071525' }}>
-                  <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{label}</div>
-                  <div style={{ color: decision.matched ? '#10B981' : '#64748B', fontSize: 11, marginTop: 6 }}>
-                    {decision.matched ? `${decision.action || 'matched'}${decision.policy_name ? ` via ${decision.policy_name}` : ''}` : 'no matching rule'}
-                  </div>
-                  {decision.reason && <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 6 }}>{decision.reason}</div>}
-                  {decision.matched_names && decision.matched_names.length > 0 && (
-                    <div style={{ color: '#64748B', fontSize: 10, marginTop: 6 }}>detectors: {decision.matched_names.join(', ')}</div>
-                  )}
-                  {decision.redacted_preview && (
-                    <div style={{ color: '#CBD5E1', fontSize: 10, marginTop: 8, whiteSpace: 'pre-wrap' }}>{decision.redacted_preview}</div>
-                  )}
-                </div>
-              )
-            })}
+            <PolicyDecisionExplorer label="Traffic" decision={preview.data.traffic} />
+            <PolicyDecisionExplorer label="Request DLP" decision={preview.data.request_dlp} />
+            <PolicyDecisionExplorer label="Response DLP" decision={preview.data.response_dlp} />
           </div>
         )}
       </div>

@@ -1,0 +1,6 @@
+# import config
+packagefile google.golang.org/grpc/balancer=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b203\_pkg_.a
+packagefile google.golang.org/grpc/balancer/base=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b251\_pkg_.a
+packagefile google.golang.org/grpc/grpclog=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b207\_pkg_.a
+packagefile google.golang.org/grpc/internal/grpcrand=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build1975244845\b253\_pkg_.a
+packagefile sync/atomic=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5a\5a25e61c92ad00090120e8b7787b98f8298d33a2c4af0722a2c0f44a4ef3af57-d

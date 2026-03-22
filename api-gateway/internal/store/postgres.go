@@ -65,7 +65,8 @@ func (s *PostgresStore) BulkInsertSpans(ctx context.Context, spans []models.Span
 			sp.Framework, sp.StartTimeNs, sp.DurationNs,
 			sp.StatusCode, sp.StatusMsg,
 			attrsJSON, eventsJSON,
-			sp.InputTokens, sp.OutputTokens, sp.CostUSD,
+			sp.InputTokens, sp.OutputTokens, sp.CacheReadTokens, sp.CacheWriteTokens, sp.ReasoningTokens,
+			sp.CostUSD, sp.InputCostUSD, sp.OutputCostUSD, sp.CacheReadCostUSD, sp.CacheWriteCostUSD, sp.ReasoningCostUSD,
 			sp.TenantID,
 		})
 	}
@@ -77,7 +78,8 @@ func (s *PostgresStore) BulkInsertSpans(ctx context.Context, spans []models.Span
 			"framework", "start_time_ns", "duration_ns",
 			"status_code", "status_msg",
 			"attributes", "events",
-			"input_tokens", "output_tokens", "cost_usd",
+			"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens",
+			"cost_usd", "input_cost_usd", "output_cost_usd", "cache_read_cost_usd", "cache_write_cost_usd", "reasoning_cost_usd",
 			"tenant_id",
 		},
 		pgx.CopyFromRows(rows),
@@ -141,7 +143,7 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 				COUNT(*)                                                             AS span_count,
 				SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)                   AS error_count,
 				SUM(cost_usd)                                                        AS total_cost,
-				SUM(input_tokens + output_tokens)                                   AS total_tokens,
+				SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens) AS total_tokens,
 				CASE WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0
 				     THEN 'error' ELSE 'ok' END                                     AS status
 			FROM spans
@@ -195,7 +197,8 @@ func (s *PostgresStore) GetTraceSpans(ctx context.Context, traceID, tenantID str
 	rows, err := s.pool.Query(ctx, `
 		SELECT span_id, trace_id, COALESCE(parent_span_id,''), run_id, name, framework,
 		       start_time_ns, duration_ns, status_code, COALESCE(status_msg,''),
-		       attributes, events, input_tokens, output_tokens, cost_usd, received_at
+		       attributes, events, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
+		       cost_usd, input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_write_cost_usd, reasoning_cost_usd, received_at
 		FROM spans
 		WHERE trace_id = $1 AND tenant_id = $2
 		ORDER BY start_time_ns ASC
@@ -215,7 +218,8 @@ func (s *PostgresStore) GetTraceSpans(ctx context.Context, traceID, tenantID str
 		if err := rows.Scan(
 			&sp.ID, &sp.TraceID, &sp.ParentID, &sp.RunID, &sp.Name, &sp.Framework,
 			&sp.StartTimeNs, &sp.DurationNs, &sp.StatusCode, &sp.StatusMsg,
-			&attrsJSON, &eventsJSON, &sp.InputTokens, &sp.OutputTokens, &sp.CostUSD,
+			&attrsJSON, &eventsJSON, &sp.InputTokens, &sp.OutputTokens, &sp.CacheReadTokens, &sp.CacheWriteTokens, &sp.ReasoningTokens,
+			&sp.CostUSD, &sp.InputCostUSD, &sp.OutputCostUSD, &sp.CacheReadCostUSD, &sp.CacheWriteCostUSD, &sp.ReasoningCostUSD,
 			&sp.ReceivedAt,
 		); err != nil {
 			continue
@@ -242,7 +246,8 @@ func (s *PostgresStore) GetSpansForTraces(ctx context.Context, traceIDs []string
 	rows, err := s.pool.Query(ctx, `
 		SELECT span_id, trace_id, COALESCE(parent_span_id,''), run_id, name, framework,
 		       start_time_ns, duration_ns, status_code, COALESCE(status_msg,''),
-		       attributes, events, input_tokens, output_tokens, cost_usd, received_at
+		       attributes, events, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
+		       cost_usd, input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_write_cost_usd, reasoning_cost_usd, received_at
 		FROM spans
 		WHERE trace_id = ANY($1) AND tenant_id = $2
 		ORDER BY start_time_ns ASC
@@ -261,7 +266,8 @@ func (s *PostgresStore) GetSpansForTraces(ctx context.Context, traceIDs []string
 		if err := rows.Scan(
 			&sp.ID, &sp.TraceID, &sp.ParentID, &sp.RunID, &sp.Name, &sp.Framework,
 			&sp.StartTimeNs, &sp.DurationNs, &sp.StatusCode, &sp.StatusMsg,
-			&attrsJSON, &eventsJSON, &sp.InputTokens, &sp.OutputTokens, &sp.CostUSD,
+			&attrsJSON, &eventsJSON, &sp.InputTokens, &sp.OutputTokens, &sp.CacheReadTokens, &sp.CacheWriteTokens, &sp.ReasoningTokens,
+			&sp.CostUSD, &sp.InputCostUSD, &sp.OutputCostUSD, &sp.CacheReadCostUSD, &sp.CacheWriteCostUSD, &sp.ReasoningCostUSD,
 			&sp.ReceivedAt,
 		); err != nil {
 			continue
@@ -287,7 +293,7 @@ func (s *PostgresStore) GetOverview(ctx context.Context, tenantID string, since 
 		SELECT
 			COUNT(DISTINCT trace_id),
 			COALESCE(SUM(cost_usd), 0),
-			COALESCE(SUM(input_tokens + output_tokens), 0),
+			COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens), 0),
 			COALESCE(AVG(CASE WHEN status_code = 2 THEN 1.0 ELSE 0.0 END), 0),
 			COALESCE(AVG(duration_ns) / 1e6, 0),
 			COALESCE(SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END), 0),
@@ -530,16 +536,24 @@ func (s *PostgresStore) GetAgentByName(ctx context.Context, tenantID, agentName 
 // ─── Reports ──────────────────────────────────────────────────────────────────
 
 type CostReportRow struct {
-	AppName      string  `json:"app_name"`
-	Environment  string  `json:"environment"`
-	Provider     string  `json:"provider"`
-	Model        string  `json:"model"`
-	Framework    string  `json:"framework"`
-	TotalCost    float64 `json:"total_cost_usd"`
-	InputTokens  int64   `json:"input_tokens"`
-	OutputTokens int64   `json:"output_tokens"`
-	TraceCount   int64   `json:"trace_count"`
-	BlockedCount int64   `json:"blocked_count"`
+	AppName           string  `json:"app_name"`
+	Environment       string  `json:"environment"`
+	Provider          string  `json:"provider"`
+	Model             string  `json:"model"`
+	Framework         string  `json:"framework"`
+	TotalCost         float64 `json:"total_cost_usd"`
+	InputTokens       int64   `json:"input_tokens"`
+	OutputTokens      int64   `json:"output_tokens"`
+	CacheReadTokens   int64   `json:"cache_read_tokens"`
+	CacheWriteTokens  int64   `json:"cache_write_tokens"`
+	ReasoningTokens   int64   `json:"reasoning_tokens"`
+	InputCostUSD      float64 `json:"input_cost_usd"`
+	OutputCostUSD     float64 `json:"output_cost_usd"`
+	CacheReadCostUSD  float64 `json:"cache_read_cost_usd"`
+	CacheWriteCostUSD float64 `json:"cache_write_cost_usd"`
+	ReasoningCostUSD  float64 `json:"reasoning_cost_usd"`
+	TraceCount        int64   `json:"trace_count"`
+	BlockedCount      int64   `json:"blocked_count"`
 }
 
 func (s *PostgresStore) GetCostReport(ctx context.Context, tenantID string, since time.Duration) ([]CostReportRow, error) {
@@ -554,6 +568,14 @@ func (s *PostgresStore) GetCostReport(ctx context.Context, tenantID string, sinc
 		    SUM(cost_usd)                  AS total_cost,
 		    SUM(input_tokens)              AS input_tokens,
 		    SUM(output_tokens)             AS output_tokens,
+		    SUM(cache_read_tokens)         AS cache_read_tokens,
+		    SUM(cache_write_tokens)        AS cache_write_tokens,
+		    SUM(reasoning_tokens)          AS reasoning_tokens,
+		    SUM(input_cost_usd)            AS input_cost_usd,
+		    SUM(output_cost_usd)           AS output_cost_usd,
+		    SUM(cache_read_cost_usd)       AS cache_read_cost_usd,
+		    SUM(cache_write_cost_usd)      AS cache_write_cost_usd,
+		    SUM(reasoning_cost_usd)        AS reasoning_cost_usd,
 		    COUNT(DISTINCT trace_id)       AS trace_count,
 		    SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END) AS blocked_count
 		FROM spans
@@ -571,7 +593,7 @@ func (s *PostgresStore) GetCostReport(ctx context.Context, tenantID string, sinc
 	var result []CostReportRow
 	for rows.Next() {
 		var r CostReportRow
-		if err := rows.Scan(&r.AppName, &r.Environment, &r.Provider, &r.Model, &r.Framework, &r.TotalCost, &r.InputTokens, &r.OutputTokens, &r.TraceCount, &r.BlockedCount); err != nil {
+		if err := rows.Scan(&r.AppName, &r.Environment, &r.Provider, &r.Model, &r.Framework, &r.TotalCost, &r.InputTokens, &r.OutputTokens, &r.CacheReadTokens, &r.CacheWriteTokens, &r.ReasoningTokens, &r.InputCostUSD, &r.OutputCostUSD, &r.CacheReadCostUSD, &r.CacheWriteCostUSD, &r.ReasoningCostUSD, &r.TraceCount, &r.BlockedCount); err != nil {
 			continue
 		}
 		result = append(result, r)
@@ -853,8 +875,8 @@ func (s *PostgresStore) ListAuditEntriesForTrace(ctx context.Context, tenantID, 
 }
 
 // VerifyAuditChain replays the SHA-256 hash chain for a tenant and reports
-// the first broken link, if any. This is the Go equivalent of af-core's
-// AuditWriter.verify_chain().
+// the first broken link, if any. This mirrors the current gateway audit
+// verification logic.
 func (s *PostgresStore) VerifyAuditChain(ctx context.Context, tenantID string) (*ChainVerification, error) {
 	// Load all entries in insertion order — limit to 100k for safety
 	rows, err := s.pool.Query(ctx, `
@@ -900,7 +922,7 @@ func (s *PostgresStore) VerifyAuditChain(ctx context.Context, tenantID string) (
 
 	prevHash := "genesis"
 	for i, r := range chain {
-		// Replicate the exact payload format from af-core/src/policy/audit.rs
+		// Keep the payload format stable so verification matches historical writes.
 		payload := fmt.Sprintf("%s:%s:%s:%s:%d:%s",
 			r.decisionID, r.traceID, r.policyName, r.result, r.evaluatedNs, prevHash)
 
@@ -1177,7 +1199,7 @@ func (s *PostgresStore) GetMonthlyUsage(ctx context.Context, tenantID string, si
 
 	err := s.pool.QueryRow(ctx, `
 		SELECT
-		  COALESCE(SUM(input_tokens + output_tokens), 0),
+		  COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens), 0),
 		  COALESCE(SUM(cost_usd), 0),
 		  $2,
 		  NOW()
@@ -1259,6 +1281,7 @@ func (s *PostgresStore) ListBudgetAlerts(ctx context.Context, tenantID string, l
 func (s *PostgresStore) ListPricingRules(ctx context.Context) ([]models.PricingRule, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, provider, model_pattern, input_per_million, output_per_million,
+		       cache_read_per_million, cache_write_per_million, reasoning_per_million,
 		       active, priority, effective_from, effective_to, description, created_at, updated_at
 		FROM pricing_rules
 		ORDER BY COALESCE(tenant_id, '') ASC, provider ASC, priority DESC, model_pattern ASC
@@ -1274,7 +1297,7 @@ func (s *PostgresStore) ListPricingRules(ctx context.Context) ([]models.PricingR
 		var tenantID *string
 		if err := rows.Scan(
 			&rule.ID, &tenantID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
-			&rule.OutputPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
+			&rule.OutputPerMillion, &rule.CacheReadPerMillion, &rule.CacheWritePerMillion, &rule.ReasoningPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
 			&rule.EffectiveTo, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -1290,8 +1313,8 @@ func (s *PostgresStore) ListPricingRules(ctx context.Context) ([]models.PricingR
 
 func (s *PostgresStore) ListPolicyRules(ctx context.Context) ([]models.PolicyRule, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
-		       environment, max_tokens, detector, scope, description, created_at, updated_at
+		SELECT id, tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
+		       environment, max_tokens, detector, scope, rule_conditions, rego_module, description, created_at, updated_at
 		FROM policy_rules
 		ORDER BY priority DESC, id ASC
 	`)
@@ -1304,14 +1327,16 @@ func (s *PostgresStore) ListPolicyRules(ctx context.Context) ([]models.PolicyRul
 	for rows.Next() {
 		var rule models.PolicyRule
 		var tenantID *string
+		var rawConditions []byte
 		if err := rows.Scan(
-			&rule.ID, &tenantID, &rule.Name, &rule.RuleType, &rule.Enabled, &rule.Priority, &rule.Action,
+			&rule.ID, &tenantID, &rule.Name, &rule.RuleType, &rule.DecisionMode, &rule.Enabled, &rule.Priority, &rule.Action,
 			&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
-			&rule.Scope, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+			&rule.Scope, &rawConditions, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
 		rule.TenantID = tenantID
+		rule.RuleConditions = decodePolicyConditions(rawConditions)
 		rules = append(rules, rule)
 	}
 	if rules == nil {
@@ -1322,19 +1347,21 @@ func (s *PostgresStore) ListPolicyRules(ctx context.Context) ([]models.PolicyRul
 
 func (s *PostgresStore) GetPolicyRule(ctx context.Context, id int64) (*models.PolicyRule, error) {
 	var rule models.PolicyRule
+	var rawConditions []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
-		       environment, max_tokens, detector, scope, description, created_at, updated_at
+		SELECT id, tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
+		       environment, max_tokens, detector, scope, rule_conditions, rego_module, description, created_at, updated_at
 		FROM policy_rules
 		WHERE id = $1
 	`, id).Scan(
-		&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.Enabled, &rule.Priority, &rule.Action,
+		&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.DecisionMode, &rule.Enabled, &rule.Priority, &rule.Action,
 		&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
-		&rule.Scope, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+		&rule.Scope, &rawConditions, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	rule.RuleConditions = decodePolicyConditions(rawConditions)
 	return &rule, nil
 }
 
@@ -1342,8 +1369,16 @@ func (s *PostgresStore) UpsertPolicyRule(ctx context.Context, rule models.Policy
 	if rule.Priority == 0 {
 		rule.Priority = 100
 	}
+	if strings.TrimSpace(rule.DecisionMode) == "" {
+		rule.DecisionMode = "fast"
+	}
 	if rule.Scope == "" {
 		rule.Scope = "both"
+	}
+	rule.RuleConditions = clonePolicyConditions(rule.RuleConditions)
+	conditionsJSON, err := encodePolicyConditions(rule.RuleConditions)
+	if err != nil {
+		return rule, err
 	}
 	if rule.ID > 0 {
 		err := s.pool.QueryRow(ctx, `
@@ -1351,43 +1386,48 @@ func (s *PostgresStore) UpsertPolicyRule(ctx context.Context, rule models.Policy
 			SET tenant_id = $2,
 			    name = $3,
 			    rule_type = $4,
-			    enabled = $5,
-			    priority = $6,
-			    action = $7,
-			    provider = $8,
-			    model_pattern = $9,
-			    environment = $10,
-			    max_tokens = $11,
-			    detector = $12,
-			    scope = $13,
-			    description = $14,
+			    decision_mode = $5,
+			    enabled = $6,
+			    priority = $7,
+			    action = $8,
+			    provider = $9,
+			    model_pattern = $10,
+			    environment = $11,
+			    max_tokens = $12,
+			    detector = $13,
+			    scope = $14,
+			    rule_conditions = $15,
+			    rego_module = $16,
+			    description = $17,
 			    updated_at = NOW()
 			WHERE id = $1
-			RETURNING id, tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
-			          environment, max_tokens, detector, scope, description, created_at, updated_at
-		`, rule.ID, rule.TenantID, rule.Name, rule.RuleType, rule.Enabled, rule.Priority, rule.Action,
-			rule.Provider, rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope,
-			rule.Description).Scan(
-			&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.Enabled, &rule.Priority, &rule.Action,
+			RETURNING id, tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
+			          environment, max_tokens, detector, scope, rule_conditions, rego_module, description, created_at, updated_at
+		`, rule.ID, rule.TenantID, rule.Name, rule.RuleType, rule.DecisionMode, rule.Enabled, rule.Priority, rule.Action,
+			rule.Provider, rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope, conditionsJSON,
+			rule.RegoModule, rule.Description).Scan(
+			&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.DecisionMode, &rule.Enabled, &rule.Priority, &rule.Action,
 			&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
-			&rule.Scope, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+			&rule.Scope, &conditionsJSON, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 		)
+		rule.RuleConditions = decodePolicyConditions(conditionsJSON)
 		return rule, err
 	}
-	err := s.pool.QueryRow(ctx, `
+	err = s.pool.QueryRow(ctx, `
 		INSERT INTO policy_rules (
-			tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
-			environment, max_tokens, detector, scope, description
+			tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
+			environment, max_tokens, detector, scope, rule_conditions, rego_module, description
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-		RETURNING id, tenant_id, name, rule_type, enabled, priority, action, provider, model_pattern,
-		          environment, max_tokens, detector, scope, description, created_at, updated_at
-	`, rule.TenantID, rule.Name, rule.RuleType, rule.Enabled, rule.Priority, rule.Action, rule.Provider,
-		rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope, rule.Description).Scan(
-		&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.Enabled, &rule.Priority, &rule.Action,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		RETURNING id, tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
+		          environment, max_tokens, detector, scope, rule_conditions, rego_module, description, created_at, updated_at
+	`, rule.TenantID, rule.Name, rule.RuleType, rule.DecisionMode, rule.Enabled, rule.Priority, rule.Action, rule.Provider,
+		rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope, conditionsJSON, rule.RegoModule, rule.Description).Scan(
+		&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.DecisionMode, &rule.Enabled, &rule.Priority, &rule.Action,
 		&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
-		&rule.Scope, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+		&rule.Scope, &conditionsJSON, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 	)
+	rule.RuleConditions = decodePolicyConditions(conditionsJSON)
 	return rule, err
 }
 
@@ -1400,6 +1440,35 @@ func (s *PostgresStore) DeletePolicyRule(ctx context.Context, id int64) error {
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func encodePolicyConditions(conditions map[string]string) ([]byte, error) {
+	if len(conditions) == 0 {
+		return []byte(`{}`), nil
+	}
+	return json.Marshal(conditions)
+}
+
+func decodePolicyConditions(raw []byte) map[string]string {
+	if len(raw) == 0 {
+		return map[string]string{}
+	}
+	out := map[string]string{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return map[string]string{}
+	}
+	return out
+}
+
+func clonePolicyConditions(conditions map[string]string) map[string]string {
+	if len(conditions) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(conditions))
+	for key, value := range conditions {
+		out[key] = value
+	}
+	return out
 }
 
 func (s *PostgresStore) UpsertPricingRule(ctx context.Context, rule models.PricingRule) (models.PricingRule, error) {
@@ -1420,19 +1489,23 @@ func (s *PostgresStore) UpsertPricingRule(ctx context.Context, rule models.Prici
 			    model_pattern = $4,
 			    input_per_million = $5,
 			    output_per_million = $6,
-			    active = $7,
-			    priority = $8,
-			    effective_from = $9,
-			    effective_to = $10,
-			    description = $11,
+			    cache_read_per_million = $7,
+			    cache_write_per_million = $8,
+			    reasoning_per_million = $9,
+			    active = $10,
+			    priority = $11,
+			    effective_from = $12,
+			    effective_to = $13,
+			    description = $14,
 			    updated_at = NOW()
 			WHERE id = $1
 			RETURNING id, tenant_id, provider, model_pattern, input_per_million, output_per_million,
+			          cache_read_per_million, cache_write_per_million, reasoning_per_million,
 			          active, priority, effective_from, effective_to, description, created_at, updated_at
 		`, rule.ID, rule.TenantID, rule.Provider, rule.ModelPattern, rule.InputPerMillion, rule.OutputPerMillion,
-			rule.Active, rule.Priority, rule.EffectiveFrom, rule.EffectiveTo, rule.Description).Scan(
+			rule.CacheReadPerMillion, rule.CacheWritePerMillion, rule.ReasoningPerMillion, rule.Active, rule.Priority, rule.EffectiveFrom, rule.EffectiveTo, rule.Description).Scan(
 			&rule.ID, &rule.TenantID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
-			&rule.OutputPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
+			&rule.OutputPerMillion, &rule.CacheReadPerMillion, &rule.CacheWritePerMillion, &rule.ReasoningPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
 			&rule.EffectiveTo, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 		)
 		return rule, err
@@ -1440,15 +1513,18 @@ func (s *PostgresStore) UpsertPricingRule(ctx context.Context, rule models.Prici
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO pricing_rules (
 			tenant_id, provider, model_pattern, input_per_million, output_per_million,
+			cache_read_per_million, cache_write_per_million, reasoning_per_million,
 			active, priority, effective_from, effective_to, description
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, tenant_id, provider, model_pattern, input_per_million, output_per_million,
+		          cache_read_per_million, cache_write_per_million, reasoning_per_million,
 		          active, priority, effective_from, effective_to, description, created_at, updated_at
 	`, rule.TenantID, rule.Provider, rule.ModelPattern, rule.InputPerMillion, rule.OutputPerMillion,
+		rule.CacheReadPerMillion, rule.CacheWritePerMillion, rule.ReasoningPerMillion,
 		rule.Active, rule.Priority, rule.EffectiveFrom, rule.EffectiveTo, rule.Description).Scan(
 		&rule.ID, &rule.TenantID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
-		&rule.OutputPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
+		&rule.OutputPerMillion, &rule.CacheReadPerMillion, &rule.CacheWritePerMillion, &rule.ReasoningPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
 		&rule.EffectiveTo, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 	)
 	return rule, err
@@ -1458,12 +1534,13 @@ func (s *PostgresStore) GetPricingRule(ctx context.Context, id int64) (*models.P
 	var rule models.PricingRule
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tenant_id, provider, model_pattern, input_per_million, output_per_million,
+		       cache_read_per_million, cache_write_per_million, reasoning_per_million,
 		       active, priority, effective_from, effective_to, description, created_at, updated_at
 		FROM pricing_rules
 		WHERE id = $1
 	`, id).Scan(
 		&rule.ID, &rule.TenantID, &rule.Provider, &rule.ModelPattern, &rule.InputPerMillion,
-		&rule.OutputPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
+		&rule.OutputPerMillion, &rule.CacheReadPerMillion, &rule.CacheWritePerMillion, &rule.ReasoningPerMillion, &rule.Active, &rule.Priority, &rule.EffectiveFrom,
 		&rule.EffectiveTo, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 	)
 	if err != nil {

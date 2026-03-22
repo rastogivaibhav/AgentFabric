@@ -42,7 +42,7 @@ func BuildTrace(traceID string, spans []models.Span, policyEvents []models.Polic
 			maxEnd = end
 		}
 		trace.TotalCostUSD += span.CostUSD
-		trace.TotalTokens += span.InputTokens + span.OutputTokens
+		trace.TotalTokens += span.InputTokens + span.OutputTokens + span.CacheReadTokens + span.CacheWriteTokens + span.ReasoningTokens
 		if span.Model != "" {
 			modelsSeen[span.Model] = struct{}{}
 		}
@@ -158,6 +158,16 @@ func enrichSpan(span *models.Span, lineage lineageMeta, policyEvents []models.Po
 	span.Blocked = isTrue(span.Attributes["af.policy.blocked"]) || strings.EqualFold(span.Attributes["af.policy.decision"], "deny") || span.BlockedReason != ""
 	span.PricingRuleID = firstInt64(span.Attributes, "af.pricing.rule_id")
 	span.PricingScope = span.Attributes["af.pricing.scope"]
+	span.PricingModelPattern = span.Attributes["af.pricing.model_pattern"]
+	if span.CacheReadTokens == 0 {
+		span.CacheReadTokens = firstInt64(span.Attributes, "gen_ai.usage.cache_read_tokens")
+	}
+	if span.CacheWriteTokens == 0 {
+		span.CacheWriteTokens = firstInt64(span.Attributes, "gen_ai.usage.cache_write_tokens")
+	}
+	if span.ReasoningTokens == 0 {
+		span.ReasoningTokens = firstInt64(span.Attributes, "gen_ai.usage.reasoning_tokens")
+	}
 	span.RedactionCount = firstInt(span.Attributes, "af.policy.redactions", "policy.redactions")
 	span.PolicyDecisionCount = len(policyEvents)
 	if len(policyEvents) > 0 {

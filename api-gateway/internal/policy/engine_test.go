@@ -165,3 +165,75 @@ func TestEvaluateDLP_RespectsScope(t *testing.T) {
 		t.Fatalf("expected deny action, got %q", responseDecision.Action)
 	}
 }
+
+func TestEvaluateTraffic_RegoDecisionMode(t *testing.T) {
+	engine := &Engine{
+		rules: []models.PolicyRule{
+			{
+				ID:           40,
+				Name:         "rego-prod-openai-limit",
+				RuleType:     "traffic",
+				DecisionMode: "rego",
+				Enabled:      true,
+				Priority:     100,
+				Action:       "deny",
+				Provider:     "openai",
+				ModelPattern: "gpt-4o",
+				RegoModule:   `deny if input.environment == "production" && input.estimated_tokens > 1000`,
+			},
+		},
+	}
+	engine.compiled = compileRules(engine.rules)
+
+	decision := engine.EvaluateTraffic(TrafficInput{
+		Provider:        "openai",
+		Model:           "gpt-4o-mini",
+		Environment:     "production",
+		EstimatedTokens: 1500,
+	})
+
+	if !decision.Matched {
+		t.Fatal("expected rego-mode policy to match")
+	}
+	if decision.Explanation.Engine != "rego-adapter" {
+		t.Fatalf("expected rego-adapter engine, got %q", decision.Explanation.Engine)
+	}
+	if len(decision.Explanation.ConditionTrace) == 0 {
+		t.Fatal("expected condition trace to be populated")
+	}
+}
+
+func TestEvaluateTraffic_RuleConditions(t *testing.T) {
+	engine := &Engine{
+		rules: []models.PolicyRule{
+			{
+				ID:           41,
+				Name:         "ops-ui-limit",
+				RuleType:     "traffic",
+				DecisionMode: "fast",
+				Enabled:      true,
+				Priority:     100,
+				Action:       "warn",
+				Provider:     "openai",
+				ModelPattern: "gpt-4o",
+				RuleConditions: map[string]string{
+					"app": "ops-ui",
+				},
+			},
+		},
+	}
+	engine.compiled = compileRules(engine.rules)
+
+	decision := engine.EvaluateTraffic(TrafficInput{
+		Provider: "openai",
+		Model:    "gpt-4o-mini",
+		App:      "ops-ui",
+	})
+
+	if !decision.Matched {
+		t.Fatal("expected rule_conditions-based policy to match")
+	}
+	if len(decision.Explanation.MatchedFields) == 0 {
+		t.Fatal("expected explanation matched fields")
+	}
+}

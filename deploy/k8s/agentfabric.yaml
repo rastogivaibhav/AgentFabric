@@ -55,7 +55,6 @@ stringData:
   admin-password:   "REPLACE_WITH_STRONG_ADMIN_PASSWORD"
   database-url:     "postgres://fabric:REPLACE_PASSWORD@postgres-svc:5432/agentfabric?sslmode=require"
   redis-url:        "redis://:REPLACE_PASSWORD@redis-svc:6379"
-  clickhouse-url:   "http://fabric:REPLACE_PASSWORD@clickhouse-svc:8123"
 
 ---
 # ─── Collector DaemonSet ──────────────────────────────────────────────────────
@@ -270,125 +269,9 @@ spec:
     - port: 8080
       targetPort: 8080
 
----
-# ─── af-core Deployment ───────────────────────────────────────────────────────
-# Rust processing engine: Kafka consumer, policy evaluation, audit log.
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: agentfabric-af-core
-  namespace: agentfabric
-  labels:
-    app: agentfabric-af-core
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: agentfabric-af-core
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        app: agentfabric-af-core
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8889"
-    spec:
-      terminationGracePeriodSeconds: 30
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: agentfabric-af-core
-                topologyKey: kubernetes.io/hostname
-      containers:
-        - name: af-core
-          image: ghcr.io/agentfabric/af-core:1.0.0
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 50051  # gRPC (internal)
-              protocol: TCP
-            - containerPort: 8889   # HTTP metrics / health
-              protocol: TCP
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: agentfabric-secrets
-                  key: database-url
-            - name: CLICKHOUSE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: agentfabric-secrets
-                  key: clickhouse-url
-            - name: REDIS_URL
-              valueFrom:
-                secretKeyRef:
-                  name: agentfabric-secrets
-                  key: redis-url
-            - name: KAFKA_ENABLED
-              value: "true"
-            - name: KAFKA_BROKERS
-              value: "kafka-svc:9092"
-            - name: KAFKA_TOPIC
-              value: "af.spans"
-            - name: RUST_LOG
-              value: "af_core=info"
-          resources:
-            requests:
-              cpu: 200m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 1Gi
-          livenessProbe:
-            tcpSocket:
-              port: 8889
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 3
-          readinessProbe:
-            tcpSocket:
-              port: 8889
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 3
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 65534
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: agentfabric-af-core-svc
-  namespace: agentfabric
-spec:
-  selector:
-    app: agentfabric-af-core
-  type: ClusterIP
-  ports:
-    - name: grpc
-      port: 50051
-      targetPort: 50051
-    - name: http
-      port: 8889
-      targetPort: 8889
-
----
 # ─── Portal Deployment ────────────────────────────────────────────────────────
 # Nginx serving the pre-built React bundle.  Stateless — scale freely.
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -520,34 +403,13 @@ spec:
           type: Utilization
           averageUtilization: 80
 
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: agentfabric-af-core-hpa
-  namespace: agentfabric
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: agentfabric-af-core
-  minReplicas: 2
-  maxReplicas: 8
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
-
----
 # ─── PodDisruptionBudgets ─────────────────────────────────────────────────────
 # Ensure at least one pod of each critical service survives voluntary disruptions
 # (node drains, rolling cluster upgrades).  Without PDBs, a multi-node drain
 # can take all pods offline simultaneously.
 #
 # api-gateway: minAvailable:1 with 3 replicas → two pods can drain at once.
+---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -573,17 +435,3 @@ spec:
   selector:
     matchLabels:
       app: agentfabric-collector
-
----
-# af-core: minAvailable:1 with 2 replicas → rolling update does not create
-# a window where Kafka consumer lag accumulates with zero processors.
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: agentfabric-af-core-pdb
-  namespace: agentfabric
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: agentfabric-af-core

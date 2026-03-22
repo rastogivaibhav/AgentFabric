@@ -38,12 +38,21 @@ export default function SpanDetailPanel({
           ['Failure', span.failure_summary],
           ['Duration', span.duration_ns ? fmtDuration(span.duration_ns) : undefined],
           ['Tokens', span.input_tokens != null || span.output_tokens != null ? `${span.input_tokens ?? 0} in / ${span.output_tokens ?? 0} out` : undefined],
+          ['Cache Read Tokens', span.cache_read_tokens ? String(span.cache_read_tokens) : undefined],
+          ['Cache Write Tokens', span.cache_write_tokens ? String(span.cache_write_tokens) : undefined],
+          ['Reasoning Tokens', span.reasoning_tokens ? String(span.reasoning_tokens) : undefined],
           ['Cost', span.cost_usd ? `$${span.cost_usd.toFixed(6)}` : undefined],
+          ['Input Cost', span.input_cost_usd ? `$${span.input_cost_usd.toFixed(6)}` : undefined],
+          ['Output Cost', span.output_cost_usd ? `$${span.output_cost_usd.toFixed(6)}` : undefined],
+          ['Cache Read Cost', span.cache_read_cost_usd ? `$${span.cache_read_cost_usd.toFixed(6)}` : undefined],
+          ['Cache Write Cost', span.cache_write_cost_usd ? `$${span.cache_write_cost_usd.toFixed(6)}` : undefined],
+          ['Reasoning Cost', span.reasoning_cost_usd ? `$${span.reasoning_cost_usd.toFixed(6)}` : undefined],
           ['Retry Count', span.retry_count != null ? String(span.retry_count) : undefined],
           ['Blocked', span.blocked ? `yes${span.blocked_reason ? ` | ${span.blocked_reason}` : ''}` : 'no'],
           ['Redactions', span.redaction_count ? String(span.redaction_count) : undefined],
           ['Policy Decisions', span.policy_decision_count ? String(span.policy_decision_count) : undefined],
           ['Pricing Rule', span.pricing_rule_id ? `${span.pricing_rule_id} (${span.pricing_scope ?? 'global'})` : undefined],
+          ['Pricing Pattern', span.pricing_model_pattern],
         ]
           .filter(([, value]) => value !== undefined && value !== '')
           .map(([label, value]) => (

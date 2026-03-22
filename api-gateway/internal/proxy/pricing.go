@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentfabric/api-gateway/internal/models"
+	priced "github.com/agentfabric/api-gateway/internal/pricing"
 )
 
 type modelPricing struct {
@@ -19,30 +20,36 @@ type modelPricing struct {
 }
 
 type pricingRule struct {
-	ID               int64
-	TenantID         string
-	Provider         string     `json:"provider"`
-	ModelPattern     string     `json:"model_pattern"`
-	InputPerMillion  float64    `json:"input_per_million"`
-	OutputPerMillion float64    `json:"output_per_million"`
-	Active           bool       `json:"active"`
-	Priority         int        `json:"priority"`
-	EffectiveFrom    *time.Time `json:"effective_from"`
-	EffectiveTo      *time.Time `json:"effective_to"`
-	Description      string     `json:"description"`
+	ID                   int64
+	TenantID             string
+	Provider             string     `json:"provider"`
+	ModelPattern         string     `json:"model_pattern"`
+	InputPerMillion      float64    `json:"input_per_million"`
+	OutputPerMillion     float64    `json:"output_per_million"`
+	CacheReadPerMillion  float64    `json:"cache_read_per_million"`
+	CacheWritePerMillion float64    `json:"cache_write_per_million"`
+	ReasoningPerMillion  float64    `json:"reasoning_per_million"`
+	Active               bool       `json:"active"`
+	Priority             int        `json:"priority"`
+	EffectiveFrom        *time.Time `json:"effective_from"`
+	EffectiveTo          *time.Time `json:"effective_to"`
+	Description          string     `json:"description"`
 }
 
 type PricingMatch struct {
-	RuleID           int64
-	Provider         string
-	ModelPattern     string
-	MatchedModel     string
-	InputPerMillion  float64
-	OutputPerMillion float64
-	Scope            string
-	Priority         int
-	EffectiveFrom    *time.Time
-	EffectiveTo      *time.Time
+	RuleID               int64
+	Provider             string
+	ModelPattern         string
+	MatchedModel         string
+	InputPerMillion      float64
+	OutputPerMillion     float64
+	CacheReadPerMillion  float64
+	CacheWritePerMillion float64
+	ReasoningPerMillion  float64
+	Scope                string
+	Priority             int
+	EffectiveFrom        *time.Time
+	EffectiveTo          *time.Time
 }
 
 var (
@@ -60,12 +67,12 @@ func defaultPricingRules() []pricingRule {
 		{Provider: ProviderAnthropic, ModelPattern: "claude-3-5-haiku", InputPerMillion: 0.80, OutputPerMillion: 4.00, Active: true, Priority: 100},
 		{Provider: ProviderAnthropic, ModelPattern: "claude-3-opus", InputPerMillion: 15.0, OutputPerMillion: 75.0, Active: true, Priority: 100},
 		{Provider: ProviderAnthropic, ModelPattern: "claude-3-haiku", InputPerMillion: 0.25, OutputPerMillion: 1.25, Active: true, Priority: 100},
-		{Provider: ProviderOpenAI, ModelPattern: "gpt-4o", InputPerMillion: 5.0, OutputPerMillion: 15.0, Active: true, Priority: 100},
-		{Provider: ProviderOpenAI, ModelPattern: "gpt-4o-mini", InputPerMillion: 0.15, OutputPerMillion: 0.60, Active: true, Priority: 100},
-		{Provider: ProviderOpenAI, ModelPattern: "gpt-4-turbo", InputPerMillion: 10.0, OutputPerMillion: 30.0, Active: true, Priority: 100},
-		{Provider: ProviderOpenAI, ModelPattern: "gpt-3.5-turbo", InputPerMillion: 0.50, OutputPerMillion: 1.50, Active: true, Priority: 100},
-		{Provider: ProviderGoogle, ModelPattern: "gemini-1.5-pro", InputPerMillion: 3.5, OutputPerMillion: 10.5, Active: true, Priority: 100},
-		{Provider: ProviderGoogle, ModelPattern: "gemini-1.5-flash", InputPerMillion: 0.35, OutputPerMillion: 1.05, Active: true, Priority: 100},
+		{Provider: ProviderOpenAI, ModelPattern: "gpt-4o", InputPerMillion: 5.0, OutputPerMillion: 15.0, CacheReadPerMillion: 2.5, ReasoningPerMillion: 15.0, Active: true, Priority: 100},
+		{Provider: ProviderOpenAI, ModelPattern: "gpt-4o-mini", InputPerMillion: 0.15, OutputPerMillion: 0.60, CacheReadPerMillion: 0.075, ReasoningPerMillion: 0.60, Active: true, Priority: 100},
+		{Provider: ProviderOpenAI, ModelPattern: "gpt-4-turbo", InputPerMillion: 10.0, OutputPerMillion: 30.0, CacheReadPerMillion: 5.0, ReasoningPerMillion: 30.0, Active: true, Priority: 100},
+		{Provider: ProviderOpenAI, ModelPattern: "gpt-3.5-turbo", InputPerMillion: 0.50, OutputPerMillion: 1.50, CacheReadPerMillion: 0.25, ReasoningPerMillion: 1.50, Active: true, Priority: 100},
+		{Provider: ProviderGoogle, ModelPattern: "gemini-1.5-pro", InputPerMillion: 3.5, OutputPerMillion: 10.5, CacheReadPerMillion: 1.75, ReasoningPerMillion: 10.5, Active: true, Priority: 100},
+		{Provider: ProviderGoogle, ModelPattern: "gemini-1.5-flash", InputPerMillion: 0.35, OutputPerMillion: 1.05, CacheReadPerMillion: 0.175, ReasoningPerMillion: 1.05, Active: true, Priority: 100},
 		{Provider: "meta", ModelPattern: "llama-3.1-405b", InputPerMillion: 5.0, OutputPerMillion: 15.0, Active: true, Priority: 100},
 	}
 }
@@ -107,17 +114,20 @@ func SetPricingRules(rules []models.PricingRule) {
 			tenantID = strings.TrimSpace(*rule.TenantID)
 		}
 		normalized = append(normalized, pricingRule{
-			ID:               rule.ID,
-			TenantID:         tenantID,
-			Provider:         NormalizeProvider(rule.Provider),
-			ModelPattern:     strings.ToLower(strings.TrimSpace(rule.ModelPattern)),
-			InputPerMillion:  rule.InputPerMillion,
-			OutputPerMillion: rule.OutputPerMillion,
-			Active:           rule.Active,
-			Priority:         rule.Priority,
-			EffectiveFrom:    rule.EffectiveFrom,
-			EffectiveTo:      rule.EffectiveTo,
-			Description:      rule.Description,
+			ID:                   rule.ID,
+			TenantID:             tenantID,
+			Provider:             NormalizeProvider(rule.Provider),
+			ModelPattern:         strings.ToLower(strings.TrimSpace(rule.ModelPattern)),
+			InputPerMillion:      rule.InputPerMillion,
+			OutputPerMillion:     rule.OutputPerMillion,
+			CacheReadPerMillion:  rule.CacheReadPerMillion,
+			CacheWritePerMillion: rule.CacheWritePerMillion,
+			ReasoningPerMillion:  rule.ReasoningPerMillion,
+			Active:               rule.Active,
+			Priority:             rule.Priority,
+			EffectiveFrom:        rule.EffectiveFrom,
+			EffectiveTo:          rule.EffectiveTo,
+			Description:          rule.Description,
 		})
 	}
 	pricingMu.Lock()
@@ -156,7 +166,7 @@ func parsePricingRules(raw string) ([]pricingRule, error) {
 		if rule.ModelPattern == "" {
 			return nil, fmt.Errorf("parse pricing config: model_pattern is required")
 		}
-		if rule.InputPerMillion < 0 || rule.OutputPerMillion < 0 {
+		if rule.InputPerMillion < 0 || rule.OutputPerMillion < 0 || rule.CacheReadPerMillion < 0 || rule.CacheWritePerMillion < 0 || rule.ReasoningPerMillion < 0 {
 			return nil, fmt.Errorf("parse pricing config: pricing values must be non-negative")
 		}
 		rule.Active = true
@@ -185,6 +195,12 @@ func currentPricingRules() []pricingRule {
 	out := make([]pricingRule, len(activePricingRules))
 	copy(out, activePricingRules)
 	return out
+}
+
+func ActivePricingRuleCount() int {
+	pricingMu.RLock()
+	defer pricingMu.RUnlock()
+	return len(activePricingRules)
 }
 
 func ResolvePricing(provider, model, tenantID string, at time.Time) (PricingMatch, bool) {
@@ -276,16 +292,19 @@ func ResolvePricing(provider, model, tenantID string, at time.Time) (PricingMatc
 
 	best := candidates[0]
 	return PricingMatch{
-		RuleID:           best.rule.ID,
-		Provider:         best.rule.Provider,
-		ModelPattern:     best.rule.ModelPattern,
-		MatchedModel:     normalizedModel,
-		InputPerMillion:  best.rule.InputPerMillion,
-		OutputPerMillion: best.rule.OutputPerMillion,
-		Scope:            best.scope,
-		Priority:         best.rule.Priority,
-		EffectiveFrom:    best.rule.EffectiveFrom,
-		EffectiveTo:      best.rule.EffectiveTo,
+		RuleID:               best.rule.ID,
+		Provider:             best.rule.Provider,
+		ModelPattern:         best.rule.ModelPattern,
+		MatchedModel:         normalizedModel,
+		InputPerMillion:      best.rule.InputPerMillion,
+		OutputPerMillion:     best.rule.OutputPerMillion,
+		CacheReadPerMillion:  best.rule.CacheReadPerMillion,
+		CacheWritePerMillion: best.rule.CacheWritePerMillion,
+		ReasoningPerMillion:  best.rule.ReasoningPerMillion,
+		Scope:                best.scope,
+		Priority:             best.rule.Priority,
+		EffectiveFrom:        best.rule.EffectiveFrom,
+		EffectiveTo:          best.rule.EffectiveTo,
 	}, true
 }
 
@@ -301,19 +320,34 @@ func lookupPricing(provider, model string) (modelPricing, bool) {
 }
 
 func ComputeExactCost(provider, model string, inputTokens, outputTokens int64) (float64, float64) {
-	_, inputCost, totalCost := ComputeExactCostForTenant(provider, model, "", time.Now().UTC(), inputTokens, outputTokens)
-	return inputCost, totalCost
+	_, result := ComputeDetailedCostForTenant(provider, model, "", time.Now().UTC(), priced.Usage{
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+	})
+	return result.InputCostUSD, result.TotalCostUSD
 }
 
 func ComputeExactCostForTenant(provider, model, tenantID string, at time.Time, inputTokens, outputTokens int64) (PricingMatch, float64, float64) {
+	match, result := ComputeDetailedCostForTenant(provider, model, tenantID, at, priced.Usage{
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+	})
+	return match, result.InputCostUSD, result.TotalCostUSD
+}
+
+func ComputeDetailedCostForTenant(provider, model, tenantID string, at time.Time, usage priced.Usage) (PricingMatch, priced.Result) {
 	match, ok := ResolvePricing(provider, model, tenantID, at)
 	if !ok {
-		return PricingMatch{}, 0, 0
+		return PricingMatch{}, priced.Result{Usage: usage}
 	}
-
-	inputCost := float64(inputTokens) / 1_000_000 * match.InputPerMillion
-	outputCost := float64(outputTokens) / 1_000_000 * match.OutputPerMillion
-	return match, inputCost, inputCost + outputCost
+	result := priced.Compute(priced.RateCard{
+		InputPerMillion:      match.InputPerMillion,
+		OutputPerMillion:     match.OutputPerMillion,
+		CacheReadPerMillion:  match.CacheReadPerMillion,
+		CacheWritePerMillion: match.CacheWritePerMillion,
+		ReasoningPerMillion:  match.ReasoningPerMillion,
+	}, usage)
+	return match, result
 }
 
 func ComputeEstimatedCost(provider, model string, estimatedInputTokens int64) (float64, float64) {

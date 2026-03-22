@@ -1,0 +1,11 @@
+./parsers_anthropic.go
+./parsers_azure_openai.go
+./parsers_gemini.go
+./parsers_openai.go
+./pricing.go
+./provider_registry.go
+./proxy.go
+./usage_details.go
+./pricing_test.go
+./provider_registry_test.go
+./proxy_test.go

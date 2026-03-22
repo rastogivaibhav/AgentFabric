@@ -1,9 +1,11 @@
 """
-E2E Pipeline Tests — AgentFabric v1.0.0 GA
-Tests the current central flow: Agent SDK -> Collector -> API Gateway
+E2E pipeline tests for the current AgentFabric runtime.
 
-In CI: services are mocked using pytest fixtures (see conftest.py).
-In staging: set AF_TEST_MODE=integration to hit real services.
+These tests exercise the supported central flow:
+    instrumented app or SDK -> collector -> api-gateway -> portal-facing APIs
+
+In CI, downstream services are mocked via pytest fixtures.
+In staging, set AF_TEST_MODE=integration to hit a real stack.
 
 Run (CI/unit mode):
     pytest tests/e2e/test_e2e_pipeline.py -v
@@ -11,27 +13,9 @@ Run (CI/unit mode):
 Run (staging integration mode):
     AF_TEST_MODE=integration pytest tests/e2e/ -v -m integration
 
-Test coverage:
-  1.  OTLP HTTP span ingestion (200 OK)
-  2.  OTLP gRPC span ingestion (accepted)
-  3-7. Framework detection for each of the 5 supported frameworks
-  8.  PII scrubbing — email address
-  9.  PII scrubbing — SSN
-  10. PII scrubbing — credit card number
-  11. Cost computation — non-zero for gpt-4o-mini
-  12. Cost computation — accurate value for claude-3-haiku (spot-check)
-  13. Trace appears in API Gateway after ingestion
-  14. Multi-tenant isolation — tenant A's spans not visible to tenant B
-  15. WebSocket live stream delivers span within 5 s
-  16. Auth login returns JWT (integration)
-  17. Auth login bad password returns 401 (integration)
-  18. Auth refresh returns new token (integration)
-  19. Auth refresh without token returns 401 (integration)
-  20. Users list returns admin (integration)
-  21. Users CRUD lifecycle — create, read, update, delete (integration)
-  22. Users create validates required fields (integration)
-  23. Users get nonexistent returns 404 (integration)
-  24. Google/Gemini seeded trace cost coverage
+Coverage areas include OTLP ingestion, framework detection, PII scrubbing,
+cost attribution, multi-tenant isolation, live stream delivery, auth, user
+management, and seeded provider traces such as Google/Gemini.
 """
 import json
 import os

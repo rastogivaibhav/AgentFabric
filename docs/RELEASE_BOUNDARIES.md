@@ -23,7 +23,7 @@ AgentFabric should currently be positioned and released as:
 - broad experiment management
 - research-first evaluation workflows
 - generic policy-engine replacement for OPA
-- broader managed-key provider scope beyond `openai` and `anthropic`
+- broader managed-key provider scope beyond `openai`, `anthropic`, and `google`
 
 ## Operational caveats
 
@@ -39,9 +39,30 @@ AgentFabric should currently be positioned and released as:
 ## Release gate summary
 
 Do not ship a release unless:
+- CI is green
 - packaging renders cleanly
 - health and readiness checks pass
 - portal tests and build pass
 - focused Go validation passes
 - staging validation passes against a real candidate environment
+- governance scenarios pass against the candidate environment
 - docs, provider scope, and release claims match code
+- no open P0/P1 blockers remain
+
+## Final GA decision
+
+Use the GA gate scripts as the objective release decision:
+
+- [run_ga_gate.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_ga_gate.ps1)
+- [run-ga-gate.sh](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run-ga-gate.sh)
+
+`ci` mode confirms merge/release evidence inside GitHub Actions.
+
+`ga` mode is the actual release decision and requires:
+- confirmed green CI
+- successful packaging checks
+- successful stack and proxy probes
+- successful release-candidate validation with governance scenarios
+- explicit blocker counts showing no open P0/P1 items
+
+Treat any result other than `GO` as `NO-GO`.

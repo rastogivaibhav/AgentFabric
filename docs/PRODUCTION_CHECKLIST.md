@@ -10,6 +10,7 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] Release scope is explicitly limited to the current supported provider path:
   - `openai`
   - `anthropic`
+  - `google`
 - [ ] Release notes do not advertise unsupported gateway capabilities or research/eval features that are not in the product boundary.
 - [ ] Deployment topology matches the supported reference shape:
   - shared `api-gateway`
@@ -53,6 +54,12 @@ Use this checklist before every production deployment and before declaring the p
   - local Docker Compose
   - production Docker Compose overlay
   - Helm render/lint
+- [ ] Stack probe passes:
+  - `scripts/probe_stack_health.ps1`
+  - `scripts/probe-stack-health.sh`
+- [ ] Proxy-path probe passes:
+  - `scripts/probe_proxy_path.ps1`
+  - `scripts/probe-proxy-path.sh`
 - [ ] `scripts/run_release_candidate_validation.ps1` or `scripts/run-release-candidate-validation.sh` passes against the candidate deployment
 
 ## 5. Runtime Smoke
@@ -66,6 +73,13 @@ Use this checklist before every production deployment and before declaring the p
   - model attribution
   - token usage
   - non-zero cost
+- [ ] One proxy-path proof run verifies:
+  - pricing preview
+  - policy preview
+  - proxied request success
+  - trace visibility
+  - trace cost visibility
+  - control-audit visibility
 - [ ] One budget-limited scenario is exercised and recorded
 - [ ] One policy event is visible in the portal
 - [ ] One control-plane audit event is visible in the portal
@@ -98,17 +112,66 @@ Use this checklist before every production deployment and before declaring the p
 
 Only declare GA when all of the following are true:
 
-- [ ] release validation is repeatable
-- [ ] readiness and smoke checks are green in a real staging environment
-- [ ] governance behavior is demonstrated, not inferred
-- [ ] docs match the deployed product
+- [ ] CI is green
+- [ ] Helm and Docker Compose packaging renders are green
+- [ ] readiness, proxy-path, and release-candidate validation are green in a real staging environment
+- [ ] governance scenarios are green
+- [ ] docs match the deployed product and supported provider scope
 - [ ] no open P0 or P1 release blockers remain
 
-## 9. Validation Commands
+## 9. Final GA Gate
+
+Use the GA gate scripts for the final objective release decision. `ci` mode is for GitHub Actions and merge evidence. `ga` mode is the actual release decision and must be run with explicit blocker counts plus staging credentials.
+
+- [ ] `scripts/run_ga_gate.ps1` passes in `ga` mode
+- [ ] or `scripts/run-ga-gate.sh` passes in `ga` mode
+- [ ] GA gate summary is attached to the release review and shows `GO`
 
 Windows PowerShell:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_ga_gate.ps1 `
+  -Mode ga `
+  -BaseUrl http://<gateway-host>:8080 `
+  -CollectorUrl http://<collector-host>:4318 `
+  -AdminUser <admin-user> `
+  -AdminPassword <admin-password> `
+  -ProxyVirtualKey <af-vk-key> `
+  -CiGreen `
+  -OpenP0Count 0 `
+  -OpenP1Count 0
+```
+
+macOS / Linux:
+
+```bash
+GA_GATE_MODE=ga \
+BASE_URL=http://<gateway-host>:8080 \
+COLLECTOR_URL=http://<collector-host>:4318 \
+ADMIN_USER=<admin-user> \
+ADMIN_PASSWORD=<admin-password> \
+PROXY_VIRTUAL_KEY=<af-vk-key> \
+GA_CI_GREEN=true \
+OPEN_P0_COUNT=0 \
+OPEN_P1_COUNT=0 \
+bash scripts/run-ga-gate.sh
+```
+
+## 10. Validation Commands
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\probe_stack_health.ps1 `
+  -BaseUrl http://<gateway-host>:8080 `
+  -CollectorUrl http://<collector-host>:4318
+
+powershell -ExecutionPolicy Bypass -File .\scripts\probe_proxy_path.ps1 `
+  -BaseUrl http://<gateway-host>:8080 `
+  -AdminUser <admin-user> `
+  -AdminPassword <admin-password> `
+  -ProxyVirtualKey <af-vk-key>
+
 powershell -ExecutionPolicy Bypass -File .\scripts\run_release_candidate_validation.ps1 `
   -BaseUrl http://<gateway-host>:8080 `
   -AdminUser <admin-user> `
@@ -118,6 +181,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_release_candidate_validat
 macOS / Linux:
 
 ```bash
+BASE_URL=http://<gateway-host>:8080 \
+COLLECTOR_URL=http://<collector-host>:4318 \
+bash scripts/probe-stack-health.sh
+
+BASE_URL=http://<gateway-host>:8080 \
+ADMIN_USER=<admin-user> \
+ADMIN_PASSWORD=<admin-password> \
+bash scripts/probe-proxy-path.sh
+
 BASE_URL=http://<gateway-host>:8080 \
 ADMIN_USER=<admin-user> \
 ADMIN_PASSWORD=<admin-password> \

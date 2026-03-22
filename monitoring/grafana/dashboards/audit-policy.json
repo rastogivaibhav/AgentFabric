@@ -31,7 +31,7 @@
       }
     ]
   },
-  "description": "AgentFabric — audit log chain health, PII redaction, policy enforcement, and compliance",
+  "description": "AgentFabric — audit integrity, PII redaction, policy enforcement, and compliance",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -44,7 +44,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
-      "title": "Audit Chain Health",
+      "title": "Audit Integrity",
       "type": "row"
     },
     {
@@ -82,10 +82,10 @@
       "id": 2,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "kube_deployment_spec_replicas{deployment=~\".*af-core.*\"}", "legendFormat": "af-core replicas" }
+        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "rate(agentfabric_policy_decisions_total[5m]) * 60", "legendFormat": "decisions/min" }
       ],
-      "title": "af-core Replica Count",
-      "description": "MUST stay at 1. >1 replica breaks the audit hash chain (single-process Mutex). See runbook.",
+      "title": "Policy Decisions (per minute)",
+      "description": "Inline proxy and gateway enforcement decisions over the last 5 minutes.",
       "type": "stat"
     },
     {

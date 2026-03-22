@@ -74,9 +74,27 @@ It does not automatically monitor every host in an enterprise without onboarding
 
 Run:
 - health and readiness checks
+- stack-health probe
+- proxy-path proof
 - portal build
 - focused Go test suite
 - release candidate validation script
 
 Primary validation entrypoint:
 - [run_release_candidate_validation.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_release_candidate_validation.ps1)
+- [probe_stack_health.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_stack_health.ps1)
+- [probe-stack-health.sh](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe-stack-health.sh)
+- [probe_proxy_path.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe_proxy_path.ps1)
+- [probe-proxy-path.sh](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/probe-proxy-path.sh)
+
+## Staging proof artifact
+
+Treat the following outputs as release artifacts for every candidate deployment:
+
+- gateway `GET /healthz`
+- gateway `GET /readyz`
+- collector `GET /healthz`
+- collector `GET /readyz`
+- stack-health probe output
+- proxy-path probe output
+- release candidate validation output

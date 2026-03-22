@@ -5,6 +5,12 @@ BASE_URL="${BASE_URL:-http://localhost:8080}"
 ADMIN_USER="${ADMIN_USER:-}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 START_STACK="${START_STACK:-false}"
+RUN_GOVERNANCE_SCENARIOS="${RUN_GOVERNANCE_SCENARIOS:-false}"
+TENANT_ID="${TENANT_ID:-00000000-0000-0000-0000-000000000001}"
+PROXY_VIRTUAL_KEY="${PROXY_VIRTUAL_KEY:-}"
+PROXY_PATH="${PROXY_PATH:-/proxy/openai/v1/chat/completions}"
+DEFAULT_PROXY_BODY='{"model":"gpt-4o-mini","messages":[{"role":"user","content":"governance validation"}],"stream":false}'
+PROXY_BODY_JSON="${PROXY_BODY_JSON:-$DEFAULT_PROXY_BODY}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 step() {
@@ -93,6 +99,18 @@ echo "${dlp_preview}" | grep -q '"response_dlp"' || { echo "DLP preview was miss
 step "Checking control-plane audit after temporary mutation"
 control_audit_after="$(curl -fsS -b "${cookie_jar}" "${BASE_URL}/api/v1/audit/control")"
 echo "${control_audit_after}" | grep -q '"count"' || { echo "control audit response was missing count" >&2; exit 1; }
+
+if [[ "${RUN_GOVERNANCE_SCENARIOS}" == "true" ]]; then
+  step "Running governance battle-testing scenarios"
+  BASE_URL="${BASE_URL}" \
+  ADMIN_USER="${ADMIN_USER}" \
+  ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+  TENANT_ID="${TENANT_ID}" \
+  PROXY_VIRTUAL_KEY="${PROXY_VIRTUAL_KEY}" \
+  PROXY_PATH="${PROXY_PATH}" \
+  PROXY_BODY_JSON="${PROXY_BODY_JSON}" \
+  "${REPO_ROOT}/scripts/run-staging-governance-validation.sh"
+fi
 
 echo
 echo "Release candidate validation passed."

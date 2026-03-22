@@ -62,7 +62,15 @@ export interface Span {
   events?: SpanEvent[]
   input_tokens?: number
   output_tokens?: number
+  cache_read_tokens?: number
+  cache_write_tokens?: number
+  reasoning_tokens?: number
   cost_usd?: number
+  input_cost_usd?: number
+  output_cost_usd?: number
+  cache_read_cost_usd?: number
+  cache_write_cost_usd?: number
+  reasoning_cost_usd?: number
   depth?: number
   step_type?: string
   provider?: string
@@ -85,6 +93,7 @@ export interface Span {
   policy_decision_summary?: string[]
   pricing_rule_id?: number
   pricing_scope?: string
+  pricing_model_pattern?: string
   received_at: string
 }
 
@@ -353,6 +362,14 @@ export interface CostReportRow {
   total_cost_usd: number
   input_tokens: number
   output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  reasoning_tokens: number
+  input_cost_usd: number
+  output_cost_usd: number
+  cache_read_cost_usd: number
+  cache_write_cost_usd: number
+  reasoning_cost_usd: number
   trace_count: number
   blocked_count: number
 }
@@ -372,6 +389,9 @@ export interface PricingRule {
   model_pattern: string
   input_per_million: number
   output_per_million: number
+  cache_read_per_million?: number
+  cache_write_per_million?: number
+  reasoning_per_million?: number
   active?: boolean
   priority?: number
   effective_from?: string | null
@@ -387,6 +407,9 @@ export interface PricingPreviewRequest {
   model: string
   input_tokens: number
   output_tokens: number
+  cache_read_tokens?: number
+  cache_write_tokens?: number
+  reasoning_tokens?: number
   at?: string
 }
 
@@ -399,11 +422,21 @@ export interface PricingPreviewResponse {
   pricing_scope?: string
   input_per_million?: number
   output_per_million?: number
+  cache_read_per_million?: number
+  cache_write_per_million?: number
+  reasoning_per_million?: number
   input_tokens: number
   output_tokens: number
+  cache_read_tokens?: number
+  cache_write_tokens?: number
+  reasoning_tokens?: number
   input_cost_usd: number
   output_cost_usd: number
+  cache_read_cost_usd?: number
+  cache_write_cost_usd?: number
+  reasoning_cost_usd?: number
   total_cost_usd: number
+  explain?: string[]
   effective_from?: string | null
   effective_to?: string | null
 }
@@ -424,6 +457,7 @@ export interface PolicyRule {
   tenant_id?: string | null
   name: string
   rule_type: 'traffic' | 'dlp'
+  decision_mode?: 'fast' | 'rego'
   enabled?: boolean
   priority?: number
   action: 'allow' | 'warn' | 'redact' | 'deny'
@@ -433,6 +467,8 @@ export interface PolicyRule {
   max_tokens?: number
   detector?: string
   scope?: 'request' | 'response' | 'both'
+  rule_conditions?: Record<string, string>
+  rego_module?: string
   description?: string
   created_at?: string
   updated_at?: string
@@ -458,6 +494,22 @@ export interface PolicyPreviewDecision {
   matched_names?: string[]
   redactions?: number
   redacted_preview?: string
+  final?: boolean
+  engine?: string
+  decision_mode?: string
+  evaluation_path?: string[]
+  matched_fields?: string[]
+  condition_trace?: Array<{
+    field: string
+    operator: string
+    expected?: string
+    actual?: string
+    matched: boolean
+    source?: string
+  }>
+  rego_query?: string
+  explain?: string
+  rule_conditions?: Record<string, string>
 }
 
 export interface PolicyPreviewResponse {

@@ -59,7 +59,7 @@ const (
 	AttrRunID         = "af.agent.run_id"    // computed if missing
 	AttrCollectorNode = "af.collector.node"
 	AttrCollectorTS   = "af.collector.received_ns"
-	AttrPolicyTrusted = "af.policy.trusted" // always set to "false" on ingestion; recomputed by af-core
+	AttrPolicyTrusted = "af.policy.trusted" // always set to "false" on ingestion; recomputed by the gateway
 	AttrStepType      = "af.span.step_type"
 	AttrErrorClass    = "af.error.class"
 	AttrPromptPreview = "af.preview.prompt"
@@ -71,15 +71,18 @@ const (
 	AttrRetryCount    = "af.retry.count"
 
 	// SDK-emitted keys used only for detection (not trusted for policy)
-	sdkCrewRole     = "crewai.agent.role"
-	sdkLangNode     = "langgraph.node.name"
-	sdkADKAgent     = "google.adk.agent.name"
-	sdkOpenAIRun    = "openai.run.id"
-	sdkAnthropicM   = "anthropic.model"
-	sdkGenAISystem  = "gen_ai.system"
-	sdkGenAIModel   = "gen_ai.request.model"
-	sdkInputTokens  = "gen_ai.usage.input_tokens"
-	sdkOutputTokens = "gen_ai.usage.output_tokens"
+	sdkCrewRole         = "crewai.agent.role"
+	sdkLangNode         = "langgraph.node.name"
+	sdkADKAgent         = "google.adk.agent.name"
+	sdkOpenAIRun        = "openai.run.id"
+	sdkAnthropicM       = "anthropic.model"
+	sdkGenAISystem      = "gen_ai.system"
+	sdkGenAIModel       = "gen_ai.request.model"
+	sdkInputTokens      = "gen_ai.usage.input_tokens"
+	sdkOutputTokens     = "gen_ai.usage.output_tokens"
+	sdkCacheReadTokens  = "gen_ai.usage.cache_read_tokens"
+	sdkCacheWriteTokens = "gen_ai.usage.cache_write_tokens"
+	sdkReasoningTokens  = "gen_ai.usage.reasoning_tokens"
 )
 
 // Model pricing table (USD per 1M tokens) — update via config/price feed
@@ -117,12 +120,12 @@ type EnrichedSpan struct {
 	CollectorNode string            `json:"collector_node"`
 	ReceivedNs    int64             `json:"received_ns"`
 	RunID         string            `json:"run_id"`
-	// Cost fields — collector computes all three; downstream must not recompute
-	InputTokens   int64   `json:"input_tokens,omitempty"`
-	OutputTokens  int64   `json:"output_tokens,omitempty"`
-	InputCostUSD  float64 `json:"input_cost_usd,omitempty"`
-	OutputCostUSD float64 `json:"output_cost_usd,omitempty"`
-	CostUSD       float64 `json:"cost_usd,omitempty"`
+	// Usage fields — gateway remains authoritative for final pricing.
+	InputTokens      int64 `json:"input_tokens,omitempty"`
+	OutputTokens     int64 `json:"output_tokens,omitempty"`
+	CacheReadTokens  int64 `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64 `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens  int64 `json:"reasoning_tokens,omitempty"`
 }
 
 type SpanEvent struct {
@@ -251,6 +254,9 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 	// 5. Usage forwarding â€” the gateway is authoritative for final cost.
 	inputTokens := parseInt64(attrs[sdkInputTokens])
 	outputTokens := parseInt64(attrs[sdkOutputTokens])
+	cacheReadTokens := parseInt64(attrs[sdkCacheReadTokens])
+	cacheWriteTokens := parseInt64(attrs[sdkCacheWriteTokens])
+	reasoningTokens := parseInt64(attrs[sdkReasoningTokens])
 
 	// 6. Run ID (ensure present)
 	runID := attrs["af.agent.run_id"]
@@ -260,7 +266,7 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 
 	// 7. Set server-side computed attrs
 	attrs[AttrFramework] = string(fw)
-	attrs[AttrPolicyTrusted] = "false" // always false at collector; af-core sets this
+	attrs[AttrPolicyTrusted] = "false" // always false at collector; the gateway sets the final trust state
 	attrs[AttrCollectorNode] = p.cfg.NodeName
 	attrs[AttrStepType] = deriveStepType(attrs, span.Name)
 	attrs[AttrErrorClass] = deriveErrorClass(attrs, span.Status.GetMessage())
@@ -295,22 +301,25 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 	}
 
 	e := &EnrichedSpan{
-		TraceID:       hex.EncodeToString(span.TraceId),
-		SpanID:        hex.EncodeToString(span.SpanId),
-		ParentSpanID:  hex.EncodeToString(span.ParentSpanId),
-		Name:          span.Name,
-		Framework:     string(fw),
-		StartTimeNs:   span.StartTimeUnixNano,
-		DurationNs:    span.EndTimeUnixNano - span.StartTimeUnixNano,
-		StatusCode:    int32(span.Status.GetCode()),
-		StatusMsg:     span.Status.GetMessage(),
-		Attributes:    attrs,
-		Events:        events,
-		CollectorNode: p.cfg.NodeName,
-		ReceivedNs:    time.Now().UnixNano(),
-		RunID:         runID,
-		InputTokens:   inputTokens,
-		OutputTokens:  outputTokens,
+		TraceID:          hex.EncodeToString(span.TraceId),
+		SpanID:           hex.EncodeToString(span.SpanId),
+		ParentSpanID:     hex.EncodeToString(span.ParentSpanId),
+		Name:             span.Name,
+		Framework:        string(fw),
+		StartTimeNs:      span.StartTimeUnixNano,
+		DurationNs:       span.EndTimeUnixNano - span.StartTimeUnixNano,
+		StatusCode:       int32(span.Status.GetCode()),
+		StatusMsg:        span.Status.GetMessage(),
+		Attributes:       attrs,
+		Events:           events,
+		CollectorNode:    p.cfg.NodeName,
+		ReceivedNs:       time.Now().UnixNano(),
+		RunID:            runID,
+		InputTokens:      inputTokens,
+		OutputTokens:     outputTokens,
+		CacheReadTokens:  cacheReadTokens,
+		CacheWriteTokens: cacheWriteTokens,
+		ReasoningTokens:  reasoningTokens,
 	}
 
 	processedSpans.WithLabelValues(string(fw), "ok").Inc()

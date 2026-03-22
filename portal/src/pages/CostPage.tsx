@@ -1,6 +1,8 @@
-import { useOverview, useFrameworkStats, useTraces, useBudget, useBudgetUsage, useUpsertBudget, useDeleteBudget, useCostReport } from '../hooks/api'
+import { useOverview, useFrameworkStats, useTraces, useBudget, useBudgetUsage, useUpsertBudget, useDeleteBudget, useCostReport, usePreviewPricingRule } from '../hooks/api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { useMemo, useState } from 'react'
+import CostBreakdownTable from '../components/cost/CostBreakdownTable'
+import CostRuleMatchPanel from '../components/cost/CostRuleMatchPanel'
 
 const FRAMEWORK_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
@@ -197,6 +199,16 @@ export default function CostPage() {
   const { data: overview, isLoading } = useOverview('24h')
   const { data: fwStats, isLoading: fwLoading } = useFrameworkStats()
   const { data: costReport, isLoading: reportLoading } = useCostReport('24h')
+  const previewPricing = usePreviewPricingRule()
+  const [previewForm, setPreviewForm] = useState({
+    provider: 'openai',
+    model: 'gpt-4o',
+    input_tokens: 1000,
+    output_tokens: 500,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    reasoning_tokens: 0,
+  })
 
   // Fallback: aggregate cost per framework from traces if server doesn't provide it
   // Use a large page to get a reasonable sample; only fetched if fwStats lack cost
@@ -444,29 +456,48 @@ export default function CostPage() {
         ) : (costReport?.length ?? 0) === 0 ? (
           <div style={{ color: '#334155', fontSize: 12, padding: 24, textAlign: 'center' }}>No governed cost rows yet.</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #0F1F35' }}>
-                {['App', 'Environment', 'Provider', 'Model', 'Trace Count', 'Blocked', 'Cost'].map(h => (
-                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', color: '#334155', fontSize: 10, letterSpacing: '0.08em', fontWeight: 700 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(costReport ?? []).slice(0, 12).map((row, i) => (
-                <tr key={`${row.app_name}-${row.environment}-${row.provider}-${row.model}-${i}`} style={{ borderBottom: '1px solid #0A1020', background: i % 2 === 0 ? 'transparent' : '#060A1430' }}>
-                  <td style={{ padding: '8px 12px', color: '#E2E8F0' }}>{row.app_name}</td>
-                  <td style={{ padding: '8px 12px', color: '#94A3B8' }}>{row.environment}</td>
-                  <td style={{ padding: '8px 12px', color: '#60A5FA' }}>{row.provider}</td>
-                  <td style={{ padding: '8px 12px', color: '#CBD5E1' }}>{row.model}</td>
-                  <td style={{ padding: '8px 12px', color: '#94A3B8' }}>{row.trace_count}</td>
-                  <td style={{ padding: '8px 12px', color: row.blocked_count > 0 ? '#EF4444' : '#10B981' }}>{row.blocked_count}</td>
-                  <td style={{ padding: '8px 12px', color: '#F59E0B' }}>${row.total_cost_usd.toFixed(6)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <CostBreakdownTable rows={(costReport ?? []).slice(0, 12)} />
         )}
+      </div>
+
+      <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24, marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: '#475569', marginBottom: 6, letterSpacing: '0.1em' }}>PRICING RULE MATCH</div>
+        <div style={{ fontSize: 10, color: '#334155', marginBottom: 16 }}>
+          Preview the exact rule and category breakdown that will be applied to a request.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+          {[
+            ['provider', 'Provider'],
+            ['model', 'Model'],
+            ['input_tokens', 'Input Tokens'],
+            ['output_tokens', 'Output Tokens'],
+            ['cache_read_tokens', 'Cache Read'],
+            ['cache_write_tokens', 'Cache Write'],
+            ['reasoning_tokens', 'Reasoning'],
+          ].map(([key, label]) => (
+            <label key={key} style={{ fontSize: 11, color: '#94A3B8' }}>
+              {label}
+              <input
+                style={{ background: '#071525', border: '1px solid #1E3A5F', borderRadius: 6, color: '#F0F9FF', padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box', marginTop: 4 }}
+                value={String(previewForm[key as keyof typeof previewForm])}
+                onChange={e => setPreviewForm(current => ({
+                  ...current,
+                  [key]: key === 'provider' || key === 'model' ? e.target.value : Number(e.target.value),
+                }))}
+              />
+            </label>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+          <button
+            style={{ background: '#1D4ED8', border: 'none', borderRadius: 6, color: '#fff', padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+            onClick={() => previewPricing.mutate(previewForm)}
+            disabled={previewPricing.isPending}
+          >
+            {previewPricing.isPending ? 'Previewing…' : 'Preview Pricing'}
+          </button>
+        </div>
+        <CostRuleMatchPanel preview={previewPricing.data} />
       </div>
     </div>
   )
