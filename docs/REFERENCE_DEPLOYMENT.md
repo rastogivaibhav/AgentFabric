@@ -43,6 +43,23 @@ Use:
 For the current release scope, treat PostgreSQL and Redis as required backing services and keep provider support aligned to:
 - `openai`
 - `anthropic`
+- `google`
+- `vertexai`
+
+## Operations Hardening
+
+Production deployments should now include:
+
+- Helm network isolation from [networkpolicies.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/networkpolicies.yaml)
+- scheduled PostgreSQL backups from [backup-cronjob.yaml](/C:/Users/vrast/Documents/Agentic%20Code/files/deploy/helm/templates/backup-cronjob.yaml)
+- documented backup and restore procedure in [BACKUP_RESTORE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/BACKUP_RESTORE.md)
+- HA review in [HA_GUIDE.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/HA_GUIDE.md)
+- enterprise auth rollout in [SSO_RBAC_PLAN.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/SSO_RBAC_PLAN.md)
+
+Recommended production auth flags:
+
+- `AF_SSO_REQUIRED=true` once OIDC is live
+- `AF_PASSWORD_LOGIN_DISABLED=true` after SSO cutover
 
 ## Reference topology
 
@@ -79,6 +96,8 @@ Run:
 - portal build
 - focused Go test suite
 - release candidate validation script
+- backup script dry run
+- restore command rehearsal for the latest dump
 
 Primary validation entrypoint:
 - [run_release_candidate_validation.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_release_candidate_validation.ps1)
@@ -98,3 +117,4 @@ Treat the following outputs as release artifacts for every candidate deployment:
 - stack-health probe output
 - proxy-path probe output
 - release candidate validation output
+- latest backup job output

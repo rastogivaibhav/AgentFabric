@@ -1,0 +1,6 @@
+# import config
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b003\_pkg_.a
+packagefile internal/syscall/windows/sysdll=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b053\_pkg_.a
+packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b009\_pkg_.a
+packagefile syscall=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b055\_pkg_.a
+packagefile unicode/utf16=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b056\_pkg_.a

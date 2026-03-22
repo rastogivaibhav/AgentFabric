@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import TracesPage from './pages/TracesPage'
 import TraceDetail from './pages/TraceDetail'
+import TraceComparePage from './pages/TraceComparePage'
 import LiveStream from './pages/LiveStream'
 import AgentsPage from './pages/AgentsPage'
 import CostPage from './pages/CostPage'
@@ -13,6 +14,10 @@ import AuditPage from './pages/AuditPage'
 import ApiKeysPage from './pages/ApiKeysPage'
 import PricingRulesPage from './pages/PricingRulesPage'
 import PoliciesPage from './pages/PoliciesPage'
+import EvalsPage from './pages/EvalsPage'
+import RegressionPage from './pages/RegressionPage'
+import PromptsPage from './pages/PromptsPage'
+import PromptReleasePage from './pages/PromptReleasePage'
 import LoginPage from './pages/LoginPage'
 import { useAuth, isAuthEnabled, hasRole } from './hooks/auth'
 
@@ -69,6 +74,7 @@ export default function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="traces" element={<TracesPage />} />
+            <Route path="traces/compare" element={<TraceComparePage />} />
             <Route path="traces/:traceId" element={<TraceDetail />} />
             <Route path="live" element={<LiveStream />} />
             <Route path="agents" element={<AgentsPage />} />
@@ -78,7 +84,11 @@ export default function App() {
             <Route path="audit" element={<AuditPage />} />
             <Route path="keys" element={<ApiKeysPage />} />
             <Route path="pricing" element={<PricingRulesPage />} />
+            <Route path="prompts" element={<PromptsPage />} />
+            <Route path="prompts/:promptId" element={<PromptReleasePage />} />
             <Route path="policies" element={<PoliciesPage />} />
+            <Route path="evals" element={<EvalsPage />} />
+            <Route path="evals/regressions" element={<RegressionPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

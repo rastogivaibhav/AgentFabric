@@ -57,7 +57,7 @@ func ParseDetailedUsage(provider string, body []byte) (priced.Usage, error) {
 			CacheReadTokens:  int64(resp.Usage.CacheReadInputTokens),
 			CacheWriteTokens: int64(resp.Usage.CacheCreationInputTokens),
 		}, nil
-	case ProviderGoogle:
+	case ProviderGoogle, ProviderVertexAI:
 		var resp struct {
 			UsageMetadata struct {
 				PromptTokenCount        int `json:"promptTokenCount"`
@@ -79,6 +79,16 @@ func ParseDetailedUsage(provider string, body []byte) (priced.Usage, error) {
 			CacheReadTokens: int64(resp.UsageMetadata.CachedContentTokenCount),
 			ReasoningTokens: int64(resp.UsageMetadata.ThoughtsTokenCount),
 		}, nil
+	case ProviderBedrock:
+		if usage, ok, err := parseBedrockUsage(body); err != nil {
+			return priced.Usage{}, err
+		} else if ok {
+			return priced.Usage{
+				InputTokens:  usage.InputTokens,
+				OutputTokens: usage.OutputTokens,
+			}, nil
+		}
+		return priced.Usage{}, nil
 	default:
 		return priced.Usage{}, nil
 	}
@@ -91,7 +101,7 @@ func ParseDetailedStreamingUsage(provider string, chunks [][]byte, parser Provid
 		OutputTokens: outputTokens,
 	}
 	switch NormalizeProvider(provider) {
-	case ProviderOpenAI, ProviderAzureOpenAI, ProviderAnthropic, ProviderGoogle:
+	case ProviderOpenAI, ProviderAzureOpenAI, ProviderAnthropic, ProviderGoogle, ProviderVertexAI, ProviderBedrock:
 		for _, chunk := range chunks {
 			line := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(chunk)), "data:"))
 			if line == "" || line == "[DONE]" {

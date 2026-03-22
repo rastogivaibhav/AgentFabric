@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/agentfabric/api-gateway/internal/budget"
+	"github.com/agentfabric/api-gateway/internal/evals"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/observability"
 	"github.com/agentfabric/api-gateway/internal/policy"
 	"github.com/agentfabric/api-gateway/internal/pricing"
+	"github.com/agentfabric/api-gateway/internal/prompts"
 	"github.com/agentfabric/api-gateway/internal/proxy"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
@@ -64,6 +66,18 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func parseBoolOr(raw string, def bool) bool {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
 }
 
 func tenantFromCtx(r *http.Request) string {
@@ -266,13 +280,20 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {
 	q := models.TraceQuery{
-		TenantID:  tenantFromCtx(r),
-		Framework: r.URL.Query().Get("framework"),
-		Model:     r.URL.Query().Get("model"),
-		AgentName: r.URL.Query().Get("agent"),
-		Status:    r.URL.Query().Get("status"),
-		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
-		Cursor:    r.URL.Query().Get("cursor"),
+		TenantID:    tenantFromCtx(r),
+		Framework:   r.URL.Query().Get("framework"),
+		Model:       r.URL.Query().Get("model"),
+		AgentName:   r.URL.Query().Get("agent"),
+		Search:      r.URL.Query().Get("search"),
+		Provider:    r.URL.Query().Get("provider"),
+		AppName:     r.URL.Query().Get("app_name"),
+		Environment: r.URL.Query().Get("environment"),
+		UserID:      r.URL.Query().Get("user_id"),
+		SessionID:   r.URL.Query().Get("session_id"),
+		Status:      r.URL.Query().Get("status"),
+		BlockedOnly: parseBoolOr(r.URL.Query().Get("blocked"), false),
+		Limit:       parseIntOr(r.URL.Query().Get("limit"), 50),
+		Cursor:      r.URL.Query().Get("cursor"),
 	}
 	if s := r.URL.Query().Get("start"); s != "" {
 		q.StartTime, _ = strconv.ParseInt(s, 10, 64)
@@ -310,6 +331,7 @@ func (h *Handler) GetTrace(w http.ResponseWriter, r *http.Request) {
 	enrichedSpans := observability.EnrichSpans(inputs.Spans, nil)
 	policyEvents := auditEntriesToPolicyEvents(inputs.AuditEntries, enrichedSpans)
 	trace = observability.BuildTrace(traceID, inputs.Spans, policyEvents)
+	trace.Timeline = observability.BuildTimeline(traceID, trace.Spans, policyEvents)
 	h.redis.SetJSON(r.Context(), cacheKey, trace, 5*time.Minute)
 	writeJSON(w, http.StatusOK, trace)
 }
@@ -336,10 +358,206 @@ func (h *Handler) GetTraceTimeline(w http.ResponseWriter, r *http.Request) {
 	baseSpans := observability.EnrichSpans(inputs.Spans, nil)
 	policyEvents := auditEntriesToPolicyEvents(inputs.AuditEntries, baseSpans)
 	spans := observability.EnrichSpans(inputs.Spans, policyEvents)
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"spans":         spans,
-		"policy_events": policyEvents,
+	writeJSON(w, http.StatusOK, observability.BuildTimeline(traceID, spans, policyEvents))
+}
+
+func (h *Handler) GetTraceComparison(w http.ResponseWriter, r *http.Request) {
+	leftID := strings.TrimSpace(r.URL.Query().Get("left"))
+	rightID := strings.TrimSpace(r.URL.Query().Get("right"))
+	if leftID == "" || rightID == "" {
+		writeError(w, http.StatusBadRequest, "left and right trace IDs are required")
+		return
+	}
+	tenantID := tenantFromCtx(r)
+	loadTrace := func(traceID string) (models.Trace, error) {
+		inputs, err := h.pg.LoadTraceViewInputs(r.Context(), traceID, tenantID)
+		if err != nil {
+			return models.Trace{}, err
+		}
+		enrichedSpans := observability.EnrichSpans(inputs.Spans, nil)
+		policyEvents := auditEntriesToPolicyEvents(inputs.AuditEntries, enrichedSpans)
+		trace := observability.BuildTrace(traceID, inputs.Spans, policyEvents)
+		trace.Timeline = observability.BuildTimeline(traceID, trace.Spans, policyEvents)
+		return trace, nil
+	}
+
+	left, err := loadTrace(leftID)
+	if err != nil || len(left.Spans) == 0 {
+		writeError(w, http.StatusNotFound, "left trace not found")
+		return
+	}
+	right, err := loadTrace(rightID)
+	if err != nil || len(right.Spans) == 0 {
+		writeError(w, http.StatusNotFound, "right trace not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, observability.CompareTraces(left, right))
+}
+
+func (h *Handler) ListTraceSavedViews(w http.ResponseWriter, r *http.Request) {
+	views, err := h.pg.ListTraceSavedViews(r.Context(), tenantFromCtx(r))
+	if err != nil {
+		h.logger.Error("list trace saved views", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
+func (h *Handler) UpsertTraceSavedView(w http.ResponseWriter, r *http.Request) {
+	var view models.TraceSavedView
+	if err := json.NewDecoder(r.Body).Decode(&view); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+	view.CreatedBy = actorFromCtx(r)
+	saved, err := h.pg.UpsertTraceSavedView(r.Context(), tenantFromCtx(r), view)
+	if err != nil {
+		h.logger.Error("upsert trace saved view", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "write error")
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (h *Handler) DeleteTraceSavedView(w http.ResponseWriter, r *http.Request) {
+	viewID, err := strconv.ParseInt(chi.URLParam(r, "viewId"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid view id")
+		return
+	}
+	if err := h.pg.DeleteTraceSavedView(r.Context(), tenantFromCtx(r), viewID); err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "saved view not found")
+			return
+		}
+		h.logger.Error("delete trace saved view", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "delete error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) ListEvalRuns(w http.ResponseWriter, r *http.Request) {
+	service := evals.NewService(h.pg)
+	runs, err := service.ListRuns(r.Context(), tenantFromCtx(r), parseIntOr(r.URL.Query().Get("limit"), 20))
+	if err != nil {
+		h.logger.Error("list eval runs", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, models.Page[models.TraceEvalRun]{
+		Items:   runs,
+		Total:   int64(len(runs)),
+		HasMore: false,
 	})
+}
+
+func (h *Handler) ScoreTraceEval(w http.ResponseWriter, r *http.Request) {
+	var req models.TraceEvalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+	service := evals.NewService(h.pg)
+	run, err := service.ScoreTrace(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		h.logger.Error("score trace eval", zap.Error(err), zap.String("trace_id", req.TraceID))
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "trace not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "evals", "score", "trace", req.TraceID, "success", map[string]any{
+		"eval_run_id":   run.ID,
+		"trace_id":      run.TraceID,
+		"release_tag":   run.ReleaseTag,
+		"eval_suite":    run.EvalSuite,
+		"overall_score": run.OverallScore,
+	})
+	writeJSON(w, http.StatusOK, run)
+}
+
+func (h *Handler) CompareEvalRegressions(w http.ResponseWriter, r *http.Request) {
+	var req models.RegressionCompareRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+	service := evals.NewService(h.pg)
+	report, err := service.CompareRelease(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		h.logger.Error("compare eval regressions", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "comparison error")
+		return
+	}
+	h.writeAdminAudit(r, "evals", "regression_compare", "release", req.CandidateTag, "success", map[string]any{
+		"baseline_tag":  req.BaselineTag,
+		"candidate_tag": req.CandidateTag,
+		"eval_suite":    report.EvalSuite,
+		"overall_delta": report.OverallDelta,
+		"risk_level":    report.RiskLevel,
+	})
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (h *Handler) ListPrompts(w http.ResponseWriter, r *http.Request) {
+	service := prompts.NewService(h.pg)
+	catalog, err := service.ListCatalog(r.Context(), tenantFromCtx(r))
+	if err != nil {
+		h.logger.Error("list prompts", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
+}
+
+func (h *Handler) UpsertPromptVersion(w http.ResponseWriter, r *http.Request) {
+	var version models.PromptVersion
+	if err := json.NewDecoder(r.Body).Decode(&version); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if version.Config == nil {
+		version.Config = map[string]string{}
+	}
+	service := prompts.NewService(h.pg)
+	saved, err := service.UpsertVersion(r.Context(), tenantFromCtx(r), actorFromCtx(r), version)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "prompts", map[bool]string{true: "update", false: "create"}[version.ID > 0 || version.Version > 0], "prompt_version", saved.PromptID, "success", map[string]any{
+		"prompt_id":    saved.PromptID,
+		"version":      saved.Version,
+		"environment":  saved.Environment,
+		"release_tag":  saved.ReleaseTag,
+		"description":  saved.Description,
+		"content_size": len(saved.Content),
+	})
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (h *Handler) PromotePromptRelease(w http.ResponseWriter, r *http.Request) {
+	var req models.PromptPromotionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	service := prompts.NewService(h.pg)
+	release, err := service.Promote(r.Context(), tenantFromCtx(r), actorFromCtx(r), req)
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "prompt version not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "prompts", "promote", "prompt_release", release.PromptID, "success", release)
+	writeJSON(w, http.StatusOK, release)
 }
 
 func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {
@@ -951,6 +1169,10 @@ func decorateSpan(sp *models.Span, byID map[string]models.Span, depthMemo map[st
 	sp.Environment = firstNonEmpty(sp.Attributes["deployment.environment"], sp.Attributes["environment"], sp.Attributes["env"])
 	sp.UserID = firstNonEmpty(sp.Attributes["enduser.id"], sp.Attributes["user.id"], sp.Attributes["af.user.id"])
 	sp.SessionID = firstNonEmpty(sp.Attributes["session.id"], sp.Attributes["af.session.id"])
+	sp.PromptID = firstNonEmpty(sp.Attributes["af.prompt.id"])
+	sp.PromptVersion = firstInt(sp.Attributes, "af.prompt.version")
+	sp.PromptReleaseTag = firstNonEmpty(sp.Attributes["af.prompt.release_tag"])
+	sp.PromptEnvironment = firstNonEmpty(sp.Attributes["af.prompt.environment"], sp.Environment)
 	sp.ErrorClass = firstNonEmpty(sp.Attributes["af.error.class"], sp.Attributes["error.type"], sp.Attributes["exception.type"])
 	sp.PromptPreview = firstPreview(sp.Attributes, "af.preview.prompt", "gen_ai.prompt", "input.value", "prompt", "llm.prompt")
 	sp.ResponsePreview = firstPreview(sp.Attributes, "af.preview.response", "gen_ai.response", "output.value", "response", "llm.response")
@@ -1073,23 +1295,26 @@ func splitCSV(value string) []string {
 
 func previewPolicyDecision(decision policy.Decision) models.PolicyPreviewDecision {
 	preview := models.PolicyPreviewDecision{
-		Matched:        decision.Matched,
-		RuleID:         decision.RuleID,
-		PolicyName:     decision.PolicyName,
-		Action:         decision.Action,
-		Reason:         decision.Reason,
-		Scope:          decision.Scope,
-		MatchedNames:   append([]string(nil), decision.MatchedNames...),
-		Redactions:     decision.Redactions,
-		Final:          decision.Final,
-		Engine:         decision.Explanation.Engine,
-		DecisionMode:   decision.Explanation.DecisionMode,
-		EvaluationPath: append([]string(nil), decision.Explanation.EvaluationPath...),
-		MatchedFields:  append([]string(nil), decision.Explanation.MatchedFields...),
-		ConditionTrace: append([]models.PolicyConditionTrace(nil), decision.Explanation.ConditionTrace...),
-		RegoQuery:      decision.Explanation.RegoQuery,
-		Explain:        decision.Explanation.Explain,
-		RuleConditions: cloneStringMap(decision.Explanation.RuleConditions),
+		Matched:          decision.Matched,
+		RuleID:           decision.RuleID,
+		PolicyName:       decision.PolicyName,
+		Action:           decision.Action,
+		Reason:           decision.Reason,
+		Scope:            decision.Scope,
+		MatchedNames:     append([]string(nil), decision.MatchedNames...),
+		GuardrailMatches: append([]string(nil), decision.GuardrailMatches...),
+		Redactions:       decision.Redactions,
+		Final:            decision.Final,
+		Engine:           decision.Explanation.Engine,
+		DecisionMode:     decision.Explanation.DecisionMode,
+		Version:          decision.Explanation.Version,
+		RolloutPercent:   decision.Explanation.RolloutPercent,
+		EvaluationPath:   append([]string(nil), decision.Explanation.EvaluationPath...),
+		MatchedFields:    append([]string(nil), decision.Explanation.MatchedFields...),
+		ConditionTrace:   append([]models.PolicyConditionTrace(nil), decision.Explanation.ConditionTrace...),
+		RegoQuery:        decision.Explanation.RegoQuery,
+		Explain:          decision.Explanation.Explain,
+		RuleConditions:   cloneStringMap(decision.Explanation.RuleConditions),
 	}
 	if len(decision.RedactedBody) > 0 {
 		preview.RedactedPreview = previewString(decision.RedactedBody, 220)
@@ -1328,6 +1553,7 @@ func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 	rule.Environment = strings.ToLower(strings.TrimSpace(rule.Environment))
 	rule.Detector = strings.ToLower(strings.TrimSpace(rule.Detector))
 	rule.Scope = strings.ToLower(strings.TrimSpace(rule.Scope))
+	rule.SchemaJSON = strings.TrimSpace(rule.SchemaJSON)
 	if rule.Name == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
@@ -1351,6 +1577,16 @@ func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "traffic rules cannot use redact")
 		return
 	}
+	if rule.RolloutPercent <= 0 {
+		rule.RolloutPercent = 100
+	}
+	if rule.RolloutPercent > 100 {
+		writeError(w, http.StatusBadRequest, "rollout_percent must be between 1 and 100")
+		return
+	}
+	if rule.Version <= 0 {
+		rule.Version = 1
+	}
 	if rule.DecisionMode == "rego" && strings.TrimSpace(rule.RegoModule) == "" {
 		writeError(w, http.StatusBadRequest, "rego decision_mode requires rego_module")
 		return
@@ -1361,6 +1597,12 @@ func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 	if rule.RuleType == "traffic" {
 		rule.Scope = "both"
 		rule.Detector = ""
+	}
+	for idx, guard := range rule.Guardrails {
+		rule.Guardrails[idx] = strings.ToLower(strings.TrimSpace(guard))
+	}
+	for idx, category := range rule.UnsafeCategories {
+		rule.UnsafeCategories[idx] = strings.ToLower(strings.TrimSpace(category))
 	}
 	if rule.TenantID != nil && strings.TrimSpace(*rule.TenantID) == "" {
 		rule.TenantID = nil
@@ -1445,6 +1687,9 @@ func (h *Handler) PreviewPolicyRule(w http.ResponseWriter, r *http.Request) {
 		Provider:        req.Provider,
 		Model:           req.Model,
 		EstimatedTokens: req.EstimatedTokens,
+		Actor:           strings.TrimSpace(req.Actor),
+		App:             strings.TrimSpace(req.App),
+		Session:         strings.TrimSpace(req.Session),
 		RequestBody:     []byte(req.RequestBody),
 		ResponseBody:    []byte(req.ResponseBody),
 	})
@@ -1455,6 +1700,24 @@ func (h *Handler) PreviewPolicyRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) SimulatePolicyRule(w http.ResponseWriter, r *http.Request) {
+	if h.policyEngine == nil {
+		writeError(w, http.StatusServiceUnavailable, "policy engine unavailable")
+		return
+	}
+	var req models.PolicySimulationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	for i := range req.Samples {
+		req.Samples[i].Provider = proxy.NormalizeProvider(req.Samples[i].Provider)
+		req.Samples[i].Model = strings.ToLower(strings.TrimSpace(req.Samples[i].Model))
+		req.Samples[i].Environment = strings.ToLower(strings.TrimSpace(req.Samples[i].Environment))
+	}
+	writeJSON(w, http.StatusOK, h.policyEngine.Simulate(req))
 }
 
 func (h *Handler) PreviewPricingRule(w http.ResponseWriter, r *http.Request) {

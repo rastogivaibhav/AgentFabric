@@ -2,6 +2,7 @@ global:
   image:
     pullPolicy: IfNotPresent
   environment: "production"
+  namespace: ""
 
 collector:
   enabled: true
@@ -83,6 +84,41 @@ portal:
 
 secrets:
   name: agentfabric-secrets
+
+auth:
+  ssoRequired: false
+  passwordLoginDisabled: false
+  oidc:
+    issuer: ""
+    clientId: ""
+    redirectUri: ""
+
+networkPolicy:
+  enabled: true
+  allowSameNamespace: true
+  allowIngressCIDRs: []
+  allowEgressCIDRs: []
+
+backups:
+  enabled: false
+  schedule: "0 */6 * * *"
+  retentionDays: 7
+  image:
+    repository: postgres
+    tag: "16"
+  pvc:
+    enabled: false
+    existingClaim: ""
+    size: 20Gi
+  export:
+    format: custom
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
 
 certManager:
   enabled: false

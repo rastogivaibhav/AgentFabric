@@ -21,6 +21,8 @@ func (a *regoAdapter) Evaluate(rule compiledRule, input EvaluationInput) (Decisi
 	explanation := DecisionExplanation{
 		Engine:         "rego-adapter",
 		DecisionMode:   rule.decisionMode,
+		Version:        rule.normalized.Version,
+		RolloutPercent: rule.normalized.RolloutPercent,
 		EvaluationPath: []string{"rego-adapter", query},
 		RegoQuery:      query,
 		RuleConditions: cloneConditions(rule.ruleConditions),

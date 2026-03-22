@@ -1,0 +1,115 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agentfabric-api
+  labels:
+    {{- include "agentfabric.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.allowSameNamespace }}
+        - podSelector: {}
+        {{- end }}
+        - podSelector:
+            {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 12 }}
+        - podSelector:
+            {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 12 }}
+        {{- range .Values.networkPolicy.allowIngressCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        {{- if .Values.networkPolicy.allowSameNamespace }}
+        - podSelector: {}
+        {{- end }}
+        {{- range .Values.networkPolicy.allowEgressCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agentfabric-collector
+  labels:
+    {{- include "agentfabric.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.allowSameNamespace }}
+        - podSelector: {}
+        {{- end }}
+        {{- range .Values.networkPolicy.allowIngressCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+  egress:
+    - to:
+        - podSelector:
+            {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- if .Values.networkPolicy.allowEgressCIDRs }}
+    - to:
+        {{- range .Values.networkPolicy.allowEgressCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agentfabric-portal
+  labels:
+    {{- include "agentfabric.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.allowSameNamespace }}
+        - podSelector: {}
+        {{- end }}
+        {{- range .Values.networkPolicy.allowIngressCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    - to:
+        - podSelector:
+            {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: 8080
+{{- end }}

@@ -1,0 +1,7 @@
+# import config
+packagefile crypto/internal/boring=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b074\_pkg_.a
+packagefile crypto/internal/fips140/hmac=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b084\_pkg_.a
+packagefile crypto/internal/fips140hash=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b147\_pkg_.a
+packagefile crypto/internal/fips140only=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b098\_pkg_.a
+packagefile crypto/subtle=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b100\_pkg_.a
+packagefile hash=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b076\_pkg_.a

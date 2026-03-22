@@ -94,7 +94,6 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		q.Limit = 50
 	}
 
-	// Build the inner WHERE clause (filters applied before GROUP BY).
 	args := []interface{}{q.TenantID}
 	argIdx := 2
 	innerWhere := "WHERE tenant_id = $1"
@@ -102,6 +101,61 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 	if q.Framework != "" {
 		innerWhere += fmt.Sprintf(" AND framework = $%d", argIdx)
 		args = append(args, q.Framework)
+		argIdx++
+	}
+	if q.Model != "" {
+		innerWhere += fmt.Sprintf(" AND COALESCE(attributes->>'gen_ai.request.model', '') ILIKE $%d", argIdx)
+		args = append(args, "%"+q.Model+"%")
+		argIdx++
+	}
+	if q.Provider != "" {
+		innerWhere += fmt.Sprintf(" AND COALESCE(attributes->>'gen_ai.system', '') = $%d", argIdx)
+		args = append(args, strings.ToLower(strings.TrimSpace(q.Provider)))
+		argIdx++
+	}
+	if q.AgentName != "" {
+		innerWhere += fmt.Sprintf(" AND (COALESCE(attributes->>'agent.name', '') ILIKE $%d OR COALESCE(attributes->>'service.name', '') ILIKE $%d)", argIdx, argIdx)
+		args = append(args, "%"+q.AgentName+"%")
+		argIdx++
+	}
+	if q.AppName != "" {
+		innerWhere += fmt.Sprintf(" AND COALESCE(NULLIF(attributes->>'service.name', ''), NULLIF(attributes->>'af.app.name', ''), '') ILIKE $%d", argIdx)
+		args = append(args, "%"+q.AppName+"%")
+		argIdx++
+	}
+	if q.Environment != "" {
+		innerWhere += fmt.Sprintf(" AND COALESCE(NULLIF(attributes->>'deployment.environment', ''), NULLIF(attributes->>'environment', ''), '') ILIKE $%d", argIdx)
+		args = append(args, "%"+q.Environment+"%")
+		argIdx++
+	}
+	if q.UserID != "" {
+		innerWhere += fmt.Sprintf(" AND COALESCE(NULLIF(attributes->>'enduser.id', ''), NULLIF(attributes->>'user.id', ''), '') ILIKE $%d", argIdx)
+		args = append(args, "%"+q.UserID+"%")
+		argIdx++
+	}
+	if q.SessionID != "" {
+		innerWhere += fmt.Sprintf(" AND COALESCE(NULLIF(attributes->>'session.id', ''), NULLIF(attributes->>'af.session.id', ''), '') ILIKE $%d", argIdx)
+		args = append(args, "%"+q.SessionID+"%")
+		argIdx++
+	}
+	if q.BlockedOnly {
+		innerWhere += " AND COALESCE(attributes->>'af.policy.blocked', 'false') = 'true'"
+	}
+	if q.Search != "" {
+		needle := "%" + strings.ToLower(strings.TrimSpace(q.Search)) + "%"
+		innerWhere += fmt.Sprintf(` AND (
+			LOWER(trace_id) LIKE $%d OR
+			LOWER(name) LIKE $%d OR
+			LOWER(COALESCE(attributes->>'gen_ai.request.model', '')) LIKE $%d OR
+			LOWER(COALESCE(attributes->>'gen_ai.system', '')) LIKE $%d OR
+			LOWER(COALESCE(attributes->>'service.name', '')) LIKE $%d OR
+			LOWER(COALESCE(attributes->>'af.app.name', '')) LIKE $%d OR
+			LOWER(COALESCE(attributes->>'deployment.environment', '')) LIKE $%d OR
+			LOWER(COALESCE(attributes->>'environment', '')) LIKE $%d OR
+			LOWER(COALESCE(attributes->>'enduser.id', '')) LIKE $%d OR
+			LOWER(COALESCE(attributes->>'session.id', '')) LIKE $%d
+		)`, argIdx, argIdx, argIdx, argIdx, argIdx, argIdx, argIdx, argIdx, argIdx, argIdx)
+		args = append(args, needle)
 		argIdx++
 	}
 	if q.StartTime > 0 {
@@ -115,8 +169,8 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		argIdx++
 	}
 
-	// Keyset cursor: WHERE (start_ns, trace_id) < (cursor_ns, cursor_trace_id)
-	// applied on the CTE output so the filter runs after aggregation.
+	countArgs := append([]interface{}{}, args...)
+
 	outerWhere := ""
 	if q.Cursor != "" {
 		if cursorNs, cursorTraceID, ok := models.DecodeTraceCursor(q.Cursor); ok {
@@ -128,7 +182,56 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		}
 	}
 
-	// Fetch limit+1 to detect whether a next page exists.
+	statusOuterWhere := ""
+	countStatusWhere := ""
+	if q.Status != "" {
+		statusValue := strings.ToLower(strings.TrimSpace(q.Status))
+		statusOuterWhere = fmt.Sprintf("status = $%d", argIdx)
+		countStatusWhere = fmt.Sprintf("status = $%d", len(countArgs)+1)
+		args = append(args, statusValue)
+		countArgs = append(countArgs, statusValue)
+		argIdx++
+	}
+	countWhere := ""
+	if countStatusWhere != "" {
+		countWhere = " WHERE " + countStatusWhere
+	}
+	switch {
+	case outerWhere != "" && statusOuterWhere != "":
+		outerWhere += " AND " + statusOuterWhere
+	case statusOuterWhere != "":
+		outerWhere = " WHERE " + statusOuterWhere
+	}
+
+	countQuery := fmt.Sprintf(`
+		WITH agg AS (
+			SELECT
+				trace_id,
+				MIN(name) AS root_span_name,
+				MAX(framework) AS framework,
+				MIN(start_time_ns) AS start_ns,
+				MAX(start_time_ns + duration_ns) - MIN(start_time_ns) AS duration_ns,
+				COUNT(*) AS span_count,
+				SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count,
+				SUM(cost_usd) AS total_cost,
+				SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens) AS total_tokens,
+				CASE
+					WHEN SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END) > 0 THEN 'partial'
+					WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0 THEN 'error'
+					ELSE 'ok'
+				END AS status
+			FROM spans
+			%s
+			GROUP BY trace_id
+		)
+		SELECT COUNT(*) FROM agg%s
+	`, innerWhere, countWhere)
+
+	var total int64
+	if err := s.pool.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, err
+	}
+
 	args = append(args, q.Limit+1)
 	limitIdx := argIdx
 
@@ -144,8 +247,11 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 				SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)                   AS error_count,
 				SUM(cost_usd)                                                        AS total_cost,
 				SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens) AS total_tokens,
-				CASE WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0
-				     THEN 'error' ELSE 'ok' END                                     AS status
+				CASE
+					WHEN SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END) > 0 THEN 'partial'
+					WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0 THEN 'error'
+					ELSE 'ok'
+				END                                                                  AS status
 			FROM spans
 			%s
 			GROUP BY trace_id
@@ -185,7 +291,7 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		traces = traces[:q.Limit]
 	}
 
-	page := &models.Page[models.Trace]{Items: traces, HasMore: hasMore}
+	page := &models.Page[models.Trace]{Items: traces, Total: total, HasMore: hasMore}
 	if hasMore && len(traces) > 0 {
 		last := traces[len(traces)-1]
 		page.NextCursor = models.EncodeTraceCursor(last.StartTime.UnixNano(), last.ID)
@@ -1314,7 +1420,8 @@ func (s *PostgresStore) ListPricingRules(ctx context.Context) ([]models.PricingR
 func (s *PostgresStore) ListPolicyRules(ctx context.Context) ([]models.PolicyRule, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
-		       environment, max_tokens, detector, scope, rule_conditions, rego_module, description, created_at, updated_at
+		       environment, max_tokens, detector, scope, guardrails, schema_json, unsafe_categories, rollout_percent, version,
+		       rule_conditions, rego_module, description, created_at, updated_at
 		FROM policy_rules
 		ORDER BY priority DESC, id ASC
 	`)
@@ -1328,14 +1435,19 @@ func (s *PostgresStore) ListPolicyRules(ctx context.Context) ([]models.PolicyRul
 		var rule models.PolicyRule
 		var tenantID *string
 		var rawConditions []byte
+		var rawGuardrails []byte
+		var rawUnsafeCategories []byte
 		if err := rows.Scan(
 			&rule.ID, &tenantID, &rule.Name, &rule.RuleType, &rule.DecisionMode, &rule.Enabled, &rule.Priority, &rule.Action,
 			&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
-			&rule.Scope, &rawConditions, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+			&rule.Scope, &rawGuardrails, &rule.SchemaJSON, &rawUnsafeCategories, &rule.RolloutPercent, &rule.Version,
+			&rawConditions, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
 		rule.TenantID = tenantID
+		rule.Guardrails = decodePolicyStringSlice(rawGuardrails)
+		rule.UnsafeCategories = decodePolicyStringSlice(rawUnsafeCategories)
 		rule.RuleConditions = decodePolicyConditions(rawConditions)
 		rules = append(rules, rule)
 	}
@@ -1348,19 +1460,25 @@ func (s *PostgresStore) ListPolicyRules(ctx context.Context) ([]models.PolicyRul
 func (s *PostgresStore) GetPolicyRule(ctx context.Context, id int64) (*models.PolicyRule, error) {
 	var rule models.PolicyRule
 	var rawConditions []byte
+	var rawGuardrails []byte
+	var rawUnsafeCategories []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
-		       environment, max_tokens, detector, scope, rule_conditions, rego_module, description, created_at, updated_at
+		       environment, max_tokens, detector, scope, guardrails, schema_json, unsafe_categories, rollout_percent, version,
+		       rule_conditions, rego_module, description, created_at, updated_at
 		FROM policy_rules
 		WHERE id = $1
 	`, id).Scan(
 		&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.DecisionMode, &rule.Enabled, &rule.Priority, &rule.Action,
 		&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
-		&rule.Scope, &rawConditions, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+		&rule.Scope, &rawGuardrails, &rule.SchemaJSON, &rawUnsafeCategories, &rule.RolloutPercent, &rule.Version,
+		&rawConditions, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	rule.Guardrails = decodePolicyStringSlice(rawGuardrails)
+	rule.UnsafeCategories = decodePolicyStringSlice(rawUnsafeCategories)
 	rule.RuleConditions = decodePolicyConditions(rawConditions)
 	return &rule, nil
 }
@@ -1376,7 +1494,17 @@ func (s *PostgresStore) UpsertPolicyRule(ctx context.Context, rule models.Policy
 		rule.Scope = "both"
 	}
 	rule.RuleConditions = clonePolicyConditions(rule.RuleConditions)
+	rule.Guardrails = clonePolicyStringSlice(rule.Guardrails)
+	rule.UnsafeCategories = clonePolicyStringSlice(rule.UnsafeCategories)
 	conditionsJSON, err := encodePolicyConditions(rule.RuleConditions)
+	if err != nil {
+		return rule, err
+	}
+	guardrailsJSON, err := encodePolicyStringSlice(rule.Guardrails)
+	if err != nil {
+		return rule, err
+	}
+	unsafeCategoriesJSON, err := encodePolicyStringSlice(rule.UnsafeCategories)
 	if err != nil {
 		return rule, err
 	}
@@ -1396,37 +1524,53 @@ func (s *PostgresStore) UpsertPolicyRule(ctx context.Context, rule models.Policy
 			    max_tokens = $12,
 			    detector = $13,
 			    scope = $14,
-			    rule_conditions = $15,
-			    rego_module = $16,
-			    description = $17,
+			    guardrails = $15,
+			    schema_json = $16,
+			    unsafe_categories = $17,
+			    rollout_percent = $18,
+			    version = $19,
+			    rule_conditions = $20,
+			    rego_module = $21,
+			    description = $22,
 			    updated_at = NOW()
 			WHERE id = $1
 			RETURNING id, tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
-			          environment, max_tokens, detector, scope, rule_conditions, rego_module, description, created_at, updated_at
+			          environment, max_tokens, detector, scope, guardrails, schema_json, unsafe_categories, rollout_percent, version,
+			          rule_conditions, rego_module, description, created_at, updated_at
 		`, rule.ID, rule.TenantID, rule.Name, rule.RuleType, rule.DecisionMode, rule.Enabled, rule.Priority, rule.Action,
-			rule.Provider, rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope, conditionsJSON,
+			rule.Provider, rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope, guardrailsJSON,
+			rule.SchemaJSON, unsafeCategoriesJSON, rule.RolloutPercent, rule.Version, conditionsJSON,
 			rule.RegoModule, rule.Description).Scan(
 			&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.DecisionMode, &rule.Enabled, &rule.Priority, &rule.Action,
 			&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
-			&rule.Scope, &conditionsJSON, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+			&rule.Scope, &guardrailsJSON, &rule.SchemaJSON, &unsafeCategoriesJSON, &rule.RolloutPercent, &rule.Version,
+			&conditionsJSON, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 		)
+		rule.Guardrails = decodePolicyStringSlice(guardrailsJSON)
+		rule.UnsafeCategories = decodePolicyStringSlice(unsafeCategoriesJSON)
 		rule.RuleConditions = decodePolicyConditions(conditionsJSON)
 		return rule, err
 	}
 	err = s.pool.QueryRow(ctx, `
 		INSERT INTO policy_rules (
 			tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
-			environment, max_tokens, detector, scope, rule_conditions, rego_module, description
+			environment, max_tokens, detector, scope, guardrails, schema_json, unsafe_categories, rollout_percent, version,
+			rule_conditions, rego_module, description
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 		RETURNING id, tenant_id, name, rule_type, decision_mode, enabled, priority, action, provider, model_pattern,
-		          environment, max_tokens, detector, scope, rule_conditions, rego_module, description, created_at, updated_at
+		          environment, max_tokens, detector, scope, guardrails, schema_json, unsafe_categories, rollout_percent, version,
+		          rule_conditions, rego_module, description, created_at, updated_at
 	`, rule.TenantID, rule.Name, rule.RuleType, rule.DecisionMode, rule.Enabled, rule.Priority, rule.Action, rule.Provider,
-		rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope, conditionsJSON, rule.RegoModule, rule.Description).Scan(
+		rule.ModelPattern, rule.Environment, rule.MaxTokens, rule.Detector, rule.Scope, guardrailsJSON, rule.SchemaJSON,
+		unsafeCategoriesJSON, rule.RolloutPercent, rule.Version, conditionsJSON, rule.RegoModule, rule.Description).Scan(
 		&rule.ID, &rule.TenantID, &rule.Name, &rule.RuleType, &rule.DecisionMode, &rule.Enabled, &rule.Priority, &rule.Action,
 		&rule.Provider, &rule.ModelPattern, &rule.Environment, &rule.MaxTokens, &rule.Detector,
-		&rule.Scope, &conditionsJSON, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
+		&rule.Scope, &guardrailsJSON, &rule.SchemaJSON, &unsafeCategoriesJSON, &rule.RolloutPercent, &rule.Version,
+		&conditionsJSON, &rule.RegoModule, &rule.Description, &rule.CreatedAt, &rule.UpdatedAt,
 	)
+	rule.Guardrails = decodePolicyStringSlice(guardrailsJSON)
+	rule.UnsafeCategories = decodePolicyStringSlice(unsafeCategoriesJSON)
 	rule.RuleConditions = decodePolicyConditions(conditionsJSON)
 	return rule, err
 }
@@ -1468,6 +1612,33 @@ func clonePolicyConditions(conditions map[string]string) map[string]string {
 	for key, value := range conditions {
 		out[key] = value
 	}
+	return out
+}
+
+func encodePolicyStringSlice(values []string) ([]byte, error) {
+	if len(values) == 0 {
+		return []byte(`[]`), nil
+	}
+	return json.Marshal(values)
+}
+
+func decodePolicyStringSlice(raw []byte) []string {
+	if len(raw) == 0 {
+		return []string{}
+	}
+	out := []string{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return []string{}
+	}
+	return out
+}
+
+func clonePolicyStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	out := make([]string, len(values))
+	copy(out, values)
 	return out
 }
 

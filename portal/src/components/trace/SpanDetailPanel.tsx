@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { PolicyEvent, Span } from '../../hooks/api'
 
 function fmtDuration(ns: number) {
@@ -34,6 +35,10 @@ export default function SpanDetailPanel({
           ['Environment', span.environment],
           ['User', span.user_id],
           ['Session', span.session_id],
+          ['Prompt ID', span.prompt_id],
+          ['Prompt Version', span.prompt_version != null && span.prompt_version > 0 ? `v${span.prompt_version}` : undefined],
+          ['Prompt Release', span.prompt_release_tag],
+          ['Prompt Environment', span.prompt_environment],
           ['Status', span.status_code === 2 ? 'ERROR' : 'OK'],
           ['Failure', span.failure_summary],
           ['Duration', span.duration_ns ? fmtDuration(span.duration_ns) : undefined],
@@ -78,6 +83,19 @@ export default function SpanDetailPanel({
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 9, color: '#3B82F6' }}>Prompt Preview</div>
           <div style={{ fontSize: 10, color: '#94A3B8', whiteSpace: 'pre-wrap' }}>{span.prompt_preview}</div>
+        </div>
+      )}
+
+      {span.prompt_id && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 9, color: '#3B82F6' }}>Prompt Lifecycle</div>
+          <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 4 }}>
+            <Link to={`/prompts/${encodeURIComponent(span.prompt_id)}`} style={{ color: '#60A5FA', textDecoration: 'none' }}>
+              Open {span.prompt_id}
+            </Link>
+            {span.prompt_version ? ` · v${span.prompt_version}` : ''}
+            {span.prompt_release_tag ? ` · ${span.prompt_release_tag}` : ''}
+          </div>
         </div>
       )}
 

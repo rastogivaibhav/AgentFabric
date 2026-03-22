@@ -28,6 +28,18 @@ export const SUPPORTED_KEY_PROVIDERS: SupportedProviderOption[] = [
     route_hint: '/proxy/google/v1beta/models/gemini-1.5-pro:generateContent',
     key_placeholder: 'AIza...',
   },
+  {
+    value: 'vertexai',
+    label: 'Google Vertex AI',
+    route_hint: '/proxy/vertexai/v1/projects/demo/locations/us-central1/publishers/google/models/gemini-1.5-pro:generateContent',
+    key_placeholder: 'ya29....',
+  },
+  {
+    value: 'bedrock',
+    label: 'AWS Bedrock',
+    route_hint: '/proxy/bedrock/model/anthropic.claude-3-5-sonnet-20240620-v1:0/invoke',
+    key_placeholder: 'temporary bearer token',
+  },
 ]
 
 // apiFetch uses credentials:'include' so the browser automatically sends the
@@ -79,6 +91,10 @@ export interface Span {
   environment?: string
   user_id?: string
   session_id?: string
+  prompt_id?: string
+  prompt_version?: number
+  prompt_release_tag?: string
+  prompt_environment?: string
   error_class?: string
   prompt_preview?: string
   response_preview?: string
@@ -115,6 +131,7 @@ export interface Trace {
   total_tokens: number
   status: 'ok' | 'error' | 'partial'
   insights?: TraceInsights
+  timeline?: TraceTimeline
   spans?: Span[]
   policy_events?: PolicyEvent[]
 }
@@ -135,6 +152,84 @@ export interface TraceInsights {
   retry_count?: number
   max_depth?: number
   workflow_summary?: string[]
+}
+
+export interface TraceTimeline {
+  trace_id: string
+  start_time: string
+  duration_ns: number
+  items: TraceTimelineItem[]
+  highlights?: string[]
+  policy_event_ids?: string[]
+}
+
+export interface TraceTimelineItem {
+  span_id: string
+  parent_span_id?: string
+  name: string
+  step_type?: string
+  provider?: string
+  model?: string
+  app_name?: string
+  environment?: string
+  status: string
+  failure_summary?: string
+  blocked?: boolean
+  blocked_reason?: string
+  redaction_count?: number
+  depth: number
+  lineage?: string[]
+  start_offset_ns: number
+  end_offset_ns: number
+  duration_ns: number
+  total_tokens: number
+  cost_usd?: number
+  policy_event_count?: number
+}
+
+export interface TraceComparisonSide {
+  trace_id: string
+  root_span_name: string
+  framework: string
+  start_time: string
+  duration_ns: number
+  status: string
+  span_count: number
+  error_count: number
+  total_cost_usd: number
+  total_tokens: number
+  retry_count?: number
+  blocked_spans?: number
+  redacted_spans?: number
+  failed_spans?: number
+  models?: string[]
+  providers?: string[]
+  workflow_summary?: string[]
+}
+
+export interface TraceComparisonDiff {
+  field: string
+  left: string
+  right: string
+  severity: string
+}
+
+export interface TraceComparison {
+  left: TraceComparisonSide
+  right: TraceComparisonSide
+  diffs?: TraceComparisonDiff[]
+  highlights?: string[]
+}
+
+export interface TraceSavedView {
+  id: number
+  name: string
+  description?: string
+  filters: Record<string, string>
+  created_by?: string
+  is_pinned?: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface Page<T> {
@@ -219,11 +314,34 @@ export function useTrace(traceId: string) {
   })
 }
 
+export function useTraceTimeline(traceId: string) {
+  return useQuery<TraceTimeline>({
+    queryKey: ['trace-timeline', traceId],
+    queryFn: () => apiFetch(`/traces/${traceId}/timeline`),
+    enabled: !!traceId,
+  })
+}
+
 export function useTraceGraph(traceId: string) {
   return useQuery({
     queryKey: ['trace-graph', traceId],
     queryFn: () => apiFetch(`/traces/${traceId}/graph`),
     enabled: !!traceId,
+  })
+}
+
+export function useTraceComparison(left?: string, right?: string) {
+  return useQuery<TraceComparison>({
+    queryKey: ['trace-compare', left, right],
+    queryFn: () => apiFetch('/traces/compare', { left: left ?? '', right: right ?? '' }),
+    enabled: Boolean(left && right),
+  })
+}
+
+export function useTraceSavedViews() {
+  return useQuery<TraceSavedView[]>({
+    queryKey: ['trace-saved-views'],
+    queryFn: () => apiFetch('/traces/saved-views'),
   })
 }
 
@@ -467,6 +585,11 @@ export interface PolicyRule {
   max_tokens?: number
   detector?: string
   scope?: 'request' | 'response' | 'both'
+  guardrails?: string[]
+  schema_json?: string
+  unsafe_categories?: string[]
+  rollout_percent?: number
+  version?: number
   rule_conditions?: Record<string, string>
   rego_module?: string
   description?: string
@@ -480,6 +603,9 @@ export interface PolicyPreviewRequest {
   model: string
   environment?: string
   estimated_tokens?: number
+  actor?: string
+  app?: string
+  session?: string
   request_body?: string
   response_body?: string
 }
@@ -492,11 +618,14 @@ export interface PolicyPreviewDecision {
   reason?: string
   scope?: string
   matched_names?: string[]
+  guardrail_matches?: string[]
   redactions?: number
   redacted_preview?: string
   final?: boolean
   engine?: string
   decision_mode?: string
+  version?: number
+  rollout_percent?: number
   evaluation_path?: string[]
   matched_fields?: string[]
   condition_trace?: Array<{
@@ -516,6 +645,144 @@ export interface PolicyPreviewResponse {
   traffic: PolicyPreviewDecision
   request_dlp: PolicyPreviewDecision
   response_dlp: PolicyPreviewDecision
+}
+
+export interface PolicySimulationSample {
+  label?: string
+  tenant_id?: string
+  provider: string
+  model: string
+  environment?: string
+  estimated_tokens?: number
+  actor?: string
+  app?: string
+  session?: string
+  request_body?: string
+  response_body?: string
+}
+
+export interface PolicySimulationResult {
+  label?: string
+  traffic: PolicyPreviewDecision
+  request_dlp: PolicyPreviewDecision
+  response_dlp: PolicyPreviewDecision
+}
+
+export interface PolicySimulationResponse {
+  count: number
+  results: PolicySimulationResult[]
+}
+
+export interface PolicyEffectivenessSummary {
+  total_events: number
+  allows: number
+  denies: number
+  warns: number
+  redacts: number
+  blocked_spans: number
+  redacted_spans: number
+  covered_llm_calls: number
+  total_llm_calls: number
+  coverage_ratio: number
+  prevented_failures?: number
+}
+
+export interface TraceEvalScore {
+  metric: string
+  score: number
+  weight: number
+  severity?: string
+  summary?: string
+}
+
+export interface TraceEvalRun {
+  id: number
+  trace_id: string
+  release_tag?: string
+  eval_suite: string
+  overall_score: number
+  risk_level: string
+  summary?: string
+  policy_effectiveness: PolicyEffectivenessSummary
+  created_at: string
+  scores?: TraceEvalScore[]
+}
+
+export interface TraceEvalRequest {
+  trace_id: string
+  release_tag?: string
+  eval_suite?: string
+}
+
+export interface RegressionCompareRequest {
+  baseline_tag: string
+  candidate_tag: string
+  eval_suite?: string
+}
+
+export interface RegressionMetricDelta {
+  metric: string
+  baseline_score: number
+  candidate_score: number
+  delta: number
+  severity: string
+  summary?: string
+}
+
+export interface RegressionReport {
+  baseline_tag: string
+  candidate_tag: string
+  eval_suite: string
+  compared_runs: number
+  overall_delta: number
+  risk_level: string
+  highlights?: string[]
+  metrics?: RegressionMetricDelta[]
+  generated_at: string
+}
+
+export interface PromptRelease {
+  id: number
+  tenant_id?: string
+  prompt_id: string
+  environment: string
+  version: number
+  release_tag: string
+  notes?: string
+  promoted_by?: string
+  created_at: string
+}
+
+export interface PromptVersion {
+  id?: number
+  tenant_id?: string
+  prompt_id: string
+  version?: number
+  environment: string
+  release_tag?: string
+  content: string
+  config?: Record<string, string>
+  description?: string
+  created_by?: string
+  created_at?: string
+  updated_at?: string
+  is_latest?: boolean
+  promoted?: boolean
+  current_release?: PromptRelease
+}
+
+export interface PromptCatalog {
+  items: PromptVersion[]
+  releases: PromptRelease[]
+  count: number
+}
+
+export interface PromptPromotionRequest {
+  prompt_id: string
+  environment: string
+  version: number
+  release_tag: string
+  notes?: string
 }
 
 export interface AdminAuditEntry {
@@ -541,6 +808,27 @@ export async function apiMutate<T>(path: string, method: string, body?: unknown)
   if (!res.ok) throw new Error(`API ${res.status}: ${path}`)
   if (res.status === 204) return undefined as T
   return res.json()
+}
+
+export function useUpsertTraceSavedView() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (view: Partial<TraceSavedView> & { name: string; filters: Record<string, string> }) =>
+      apiMutate<TraceSavedView>('/traces/saved-views', 'PUT', view),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['trace-saved-views'] })
+    },
+  })
+}
+
+export function useDeleteTraceSavedView() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => apiMutate<void>(`/traces/saved-views/${id}`, 'DELETE'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['trace-saved-views'] })
+    },
+  })
 }
 
 export function useBudget(tenantId: string) {
@@ -662,10 +950,71 @@ export function usePreviewPolicyRule() {
   })
 }
 
+export function useSimulatePolicyRule() {
+  return useMutation({
+    mutationFn: (samples: PolicySimulationSample[]) =>
+      apiMutate<PolicySimulationResponse>('/policies/simulate', 'POST', { samples }),
+  })
+}
+
+export function useEvalRuns(limit = 20) {
+  return useQuery<Page<TraceEvalRun>>({
+    queryKey: ['eval-runs', limit],
+    queryFn: () => apiFetch('/evals', { limit: String(limit) }),
+    retry: false,
+  })
+}
+
+export function useScoreTraceEval() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: TraceEvalRequest) => apiMutate<TraceEvalRun>('/evals/score', 'POST', req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['eval-runs'] })
+    },
+  })
+}
+
+export function useCompareEvalRegressions() {
+  return useMutation({
+    mutationFn: (req: RegressionCompareRequest) => apiMutate<RegressionReport>('/evals/regressions', 'POST', req),
+  })
+}
+
 export function useControlAudit(limit = 50) {
   return useQuery<{ items: AdminAuditEntry[]; count: number; limit: number }>({
     queryKey: ['control-audit', limit],
     queryFn: () => apiFetch('/audit/control', { limit: String(limit) }),
     retry: false,
+  })
+}
+
+export function usePrompts() {
+  return useQuery<PromptCatalog>({
+    queryKey: ['prompts'],
+    queryFn: () => apiFetch('/prompts'),
+    retry: false,
+  })
+}
+
+export function useUpsertPromptVersion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (version: PromptVersion) => apiMutate<PromptVersion>('/prompts', 'PUT', version),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prompts'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+    },
+  })
+}
+
+export function usePromotePromptRelease() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: PromptPromotionRequest) => apiMutate<PromptRelease>('/prompts/promote', 'POST', req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prompts'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+    },
   })
 }

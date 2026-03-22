@@ -73,6 +73,10 @@ func defaultPricingRules() []pricingRule {
 		{Provider: ProviderOpenAI, ModelPattern: "gpt-3.5-turbo", InputPerMillion: 0.50, OutputPerMillion: 1.50, CacheReadPerMillion: 0.25, ReasoningPerMillion: 1.50, Active: true, Priority: 100},
 		{Provider: ProviderGoogle, ModelPattern: "gemini-1.5-pro", InputPerMillion: 3.5, OutputPerMillion: 10.5, CacheReadPerMillion: 1.75, ReasoningPerMillion: 10.5, Active: true, Priority: 100},
 		{Provider: ProviderGoogle, ModelPattern: "gemini-1.5-flash", InputPerMillion: 0.35, OutputPerMillion: 1.05, CacheReadPerMillion: 0.175, ReasoningPerMillion: 1.05, Active: true, Priority: 100},
+		{Provider: ProviderVertexAI, ModelPattern: "gemini-1.5-pro", InputPerMillion: 3.75, OutputPerMillion: 11.25, CacheReadPerMillion: 1.875, ReasoningPerMillion: 11.25, Active: true, Priority: 100},
+		{Provider: ProviderVertexAI, ModelPattern: "gemini-1.5-flash", InputPerMillion: 0.40, OutputPerMillion: 1.20, CacheReadPerMillion: 0.20, ReasoningPerMillion: 1.20, Active: true, Priority: 100},
+		{Provider: ProviderBedrock, ModelPattern: "anthropic.claude-3-5-sonnet", InputPerMillion: 3.0, OutputPerMillion: 15.0, Active: true, Priority: 100},
+		{Provider: ProviderBedrock, ModelPattern: "anthropic.claude-3-5-haiku", InputPerMillion: 0.80, OutputPerMillion: 4.00, Active: true, Priority: 100},
 		{Provider: "meta", ModelPattern: "llama-3.1-405b", InputPerMillion: 5.0, OutputPerMillion: 15.0, Active: true, Priority: 100},
 	}
 }

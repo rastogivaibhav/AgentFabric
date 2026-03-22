@@ -44,6 +44,8 @@ const PROVIDER_COLORS: Record<string, string> = {
   openai: '#10a37f',
   anthropic: '#c96a3a',
   google: '#4285f4',
+  vertexai: '#0f9d58',
+  bedrock: '#f59e0b',
 }
 
 const providerHintFor = (provider: string) =>

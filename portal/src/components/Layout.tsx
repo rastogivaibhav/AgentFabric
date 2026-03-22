@@ -3,6 +3,8 @@ import {
   LayoutDashboard, Activity, Radio,
   Bot, DollarSign, Server, Zap, LogOut, User, Users, ClipboardList, KeyRound, SlidersHorizontal
   , Shield
+  , FlaskConical
+  , FileText
 } from 'lucide-react'
 import { useAuth } from '../hooks/auth'
 
@@ -32,6 +34,8 @@ const NAV: NavItem[] = [
   { to: '/users',        icon: Users,          label: 'Users',      adminOnly: true },
   { to: '/keys',         icon: KeyRound,       label: 'API Keys',   adminOnly: true },
   { to: '/policies',     icon: Shield,         label: 'Policies',   adminOnly: true },
+  { to: '/prompts',      icon: FileText,       label: 'Prompts',    adminOnly: true },
+  { to: '/evals',        icon: FlaskConical,   label: 'Evals',      adminOnly: true },
   { to: '/pricing',      icon: SlidersHorizontal, label: 'Pricing', adminOnly: true },
   { to: '/audit',        icon: ClipboardList,  label: 'Audit Log',  adminOnly: true },
 ]

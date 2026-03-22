@@ -59,6 +59,9 @@ type LLMProxy struct {
 	store          spanStore
 	policyEngine   *policy.Engine
 	broadcaster    eventBroadcaster
+	router         *ProviderRouter
+	cache          *proxyResponseCache
+	rateLimiter    *requestRateLimiter
 	httpClient     *http.Client
 	logger         *zap.Logger
 }
@@ -77,6 +80,9 @@ func New(v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, policyEngin
 		store:          store,
 		policyEngine:   policyEngine,
 		broadcaster:    broadcaster,
+		router:         NewProviderRouter(),
+		cache:          newProxyResponseCache(),
+		rateLimiter:    newRequestRateLimiter(),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Minute, // generous for long streaming responses
 		},
@@ -145,6 +151,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			EstimatedTokens: estimatedTokens,
 			RequestHeaders:  policy.HeadersFromHTTP(r.Header),
 			RequestBody:     body,
+			Actor:           strings.TrimSpace(r.Header.Get("X-AF-User")),
 			App:             strings.TrimSpace(r.Header.Get("X-AF-App")),
 			Session:         strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
@@ -171,6 +178,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Scope:          "request",
 			Body:           body,
 			RequestHeaders: policy.HeadersFromHTTP(r.Header),
+			Actor:          strings.TrimSpace(r.Header.Get("X-AF-User")),
 			App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
 			Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
@@ -209,59 +217,124 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 5. Build the upstream request.
-	upstreamURL := parser.Upstream() + r.URL.Path
-	if r.URL.RawQuery != "" {
-		upstreamURL += "?" + r.URL.RawQuery
+	limiter := p.rateLimiter
+	if limiter == nil {
+		limiter = newRequestRateLimiter()
 	}
-
-	upReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(body))
-	if err != nil {
-		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
-		return
-	}
-
-	// Copy all original headers, then overwrite the auth header with the real key.
-	for k, vv := range r.Header {
-		for _, v := range vv {
-			upReq.Header.Add(k, v)
+	if err := limiter.Check(map[string]string{
+		"key":      vk,
+		"user":     strings.TrimSpace(r.Header.Get("X-AF-User")),
+		"team":     strings.TrimSpace(r.Header.Get("X-AF-Team")),
+		"tenant":   tenantID,
+		"provider": provider,
+	}); err != nil {
+		extraAttrs := map[string]string{
+			"af.error.type":     "rate_limited",
+			"af.policy.blocked": "true",
+			"af.span.step_type": "policy",
 		}
-	}
-	// Remove any virtual key from Authorization before forwarding.
-	upReq.Header.Del("Authorization")
-	upReq.Header.Del("x-api-key")
-	upReq.Header.Set(parser.AuthHeader(), parser.AuthValue(realKey))
-	upReq.Header.Set("Content-Type", "application/json")
-
-	start := time.Now()
-
-	// 6. Forward and handle the response.
-	upResp, err := p.httpClient.Do(upReq)
-	if err != nil {
-		p.logger.Warn("upstream request failed", zap.Error(err))
-		go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
-			"af.error.type":     "upstream_request_failed",
-			"af.error.message":  err.Error(),
-			"af.span.step_type": "llm",
-		})
-		http.Error(w, "upstream request failed", http.StatusBadGateway)
+		if rateErr, ok := err.(*RateLimitError); ok {
+			extraAttrs["af.rate_limit.scope"] = rateErr.Scope
+		}
+		go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusTooManyRequests, priced.Usage{}, 0, extraAttrs)
+		http.Error(w, `{"error":{"message":"request rate limit exceeded","type":"rate_limited"}}`, http.StatusTooManyRequests)
 		return
 	}
-	defer upResp.Body.Close()
 
+	router := p.router
+	if router == nil {
+		router = NewProviderRouter()
+	}
+	cacheStore := p.cache
+	if cacheStore == nil {
+		cacheStore = newProxyResponseCache()
+	}
+
+	candidates := router.Resolve(tenantID, provider, model, r.URL.Path)
+	start := time.Now()
 	usage := priced.Usage{}
 	extraAttrs := map[string]string{}
+	finalModel := model
+	finalStatusCode := 0
+	finalBody := []byte(nil)
+	finalHeaders := http.Header{}
+	finalSource := "primary"
+	streamed := false
 
-	if streaming && upResp.StatusCode == http.StatusOK {
-		for k, vv := range upResp.Header {
-			for _, v := range vv {
-				w.Header().Add(k, v)
+	for idx, candidate := range candidates {
+		candidateBody, candidatePath, routeErr := router.Apply(provider, body, candidate, r.URL.Path)
+		if routeErr != nil {
+			p.logger.Debug("route candidate rewrite failed", zap.String("provider", provider), zap.String("model", candidate.Model), zap.Error(routeErr))
+			candidateBody = body
+			candidatePath = r.URL.Path
+		}
+		activeModel := candidate.Model
+		if strings.TrimSpace(activeModel) == "" {
+			activeModel = model
+		}
+		finalModel = activeModel
+		finalSource = candidate.Source
+
+		cacheKey := ""
+		if !streaming {
+			cacheKey = cacheStore.Key(tenantID, provider, activeModel, candidatePath, r.URL.RawQuery, candidateBody)
+			if cached, ok := cacheStore.Get(cacheKey); ok {
+				copyProxyHeaders(w.Header(), cached.Header)
+				w.Header().Set("X-AgentFabric-Cache", "HIT")
+				w.WriteHeader(cached.StatusCode)
+				w.Write(cached.Body) //nolint:errcheck
+				extraAttrs["af.cache.hit"] = "true"
+				extraAttrs["af.gateway.route_source"] = candidate.Source
+				if activeModel != model && strings.TrimSpace(model) != "" {
+					extraAttrs["af.gateway.fallback_from"] = model
+				}
+				go p.recordSpan(traceID, spanID, tenantID, provider, activeModel, vk, cached.StatusCode, cached.Usage, time.Since(start), extraAttrs)
+				return
 			}
 		}
-		w.WriteHeader(upResp.StatusCode)
-		usage = p.handleStreaming(w, upResp, provider, parser)
-	} else {
+
+		upReq, err := p.buildUpstreamRequest(r, parser, realKey, candidateBody, candidatePath)
+		if err != nil {
+			http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
+			return
+		}
+
+		upResp, err := p.httpClient.Do(upReq)
+		if err != nil {
+			if idx < len(candidates)-1 && shouldAttemptFallback(0, err) {
+				extraAttrs["af.gateway.fallback_trigger"] = classifyUpstreamFailure(0, err)
+				extraAttrs["af.gateway.fallback_from"] = activeModel
+				continue
+			}
+			p.logger.Warn("upstream request failed", zap.Error(err))
+			go p.recordSpan(traceID, spanID, tenantID, provider, activeModel, vk, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
+				"af.error.type":           "upstream_request_failed",
+				"af.error.message":        err.Error(),
+				"af.span.step_type":       "llm",
+				"af.gateway.route_source": candidate.Source,
+			})
+			http.Error(w, "upstream request failed", http.StatusBadGateway)
+			return
+		}
+
+		if streaming && upResp.StatusCode == http.StatusOK {
+			copyProxyHeaders(w.Header(), upResp.Header)
+			w.WriteHeader(upResp.StatusCode)
+			usage = p.handleStreaming(w, upResp, provider, parser)
+			upResp.Body.Close()
+			finalStatusCode = upResp.StatusCode
+			streamed = true
+			break
+		}
+
 		respBody, _ := io.ReadAll(upResp.Body)
+		upResp.Body.Close()
+		if upResp.StatusCode >= 400 && idx < len(candidates)-1 && shouldAttemptFallback(upResp.StatusCode, nil) {
+			extraAttrs["af.gateway.fallback_trigger"] = classifyUpstreamFailure(upResp.StatusCode, nil)
+			extraAttrs["af.gateway.fallback_from"] = activeModel
+			continue
+		}
+
 		if upResp.StatusCode == http.StatusOK {
 			usage, _ = ParseDetailedUsage(provider, respBody)
 			if usage.TotalTokens() == 0 {
@@ -271,16 +344,17 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				dlpDecision := p.policyEngine.EvaluateDLP(policy.DLPInput{
 					TenantID:       tenantID,
 					Provider:       provider,
-					Model:          model,
+					Model:          activeModel,
 					Environment:    environment,
 					Scope:          "response",
 					Body:           respBody,
 					RequestHeaders: policy.HeadersFromHTTP(r.Header),
+					Actor:          strings.TrimSpace(r.Header.Get("X-AF-User")),
 					App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
 					Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 				})
 				if dlpDecision.Matched {
-					p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", dlpDecision)
+					p.recordPolicyDecision(tenantID, traceID, spanID, provider, activeModel, environment, "proxy", dlpDecision)
 					extraAttrs["af.policy.reason"] = dlpDecision.Reason
 					extraAttrs["af.policy.decision"] = dlpDecision.Action
 					if dlpDecision.Action == "deny" {
@@ -293,24 +367,49 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-		}
-		for k, vv := range upResp.Header {
-			for _, v := range vv {
-				w.Header().Add(k, v)
+			if cacheKey != "" {
+				cacheStore.Put(cacheKey, cachedProxyResponse{
+					StatusCode: upResp.StatusCode,
+					Header:     cloneProxyHeaders(upResp.Header),
+					Body:       respBody,
+					Usage:      usage,
+				})
 			}
 		}
+
+		finalStatusCode = upResp.StatusCode
+		finalHeaders = cloneProxyHeaders(upResp.Header)
+		finalBody = respBody
+		break
+	}
+
+	if finalStatusCode == 0 {
+		go p.recordSpan(traceID, spanID, tenantID, provider, finalModel, vk, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
+			"af.error.type":           "fallback_exhausted",
+			"af.gateway.route_source": finalSource,
+			"af.span.step_type":       "llm",
+		})
+		http.Error(w, "upstream request failed after fallbacks", http.StatusBadGateway)
+		return
+	}
+
+	if !streamed {
+		copyProxyHeaders(w.Header(), finalHeaders)
 		w.Header().Del("Content-Length")
-		w.WriteHeader(upResp.StatusCode)
-		w.Write(respBody) //nolint:errcheck
+		w.Header().Set("X-AgentFabric-Cache", "MISS")
+		w.WriteHeader(finalStatusCode)
+		w.Write(finalBody) //nolint:errcheck
 	}
 
 	duration := time.Since(start)
-
-	// 7. Record span (non-blocking, best-effort).
-	if upResp.StatusCode >= 400 {
-		extraAttrs["af.error.type"] = classifyProxyStatus(upResp.StatusCode)
+	if finalModel != model && strings.TrimSpace(model) != "" {
+		extraAttrs["af.gateway.fallback_from"] = model
 	}
-	go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, upResp.StatusCode, usage, duration, extraAttrs)
+	extraAttrs["af.gateway.route_source"] = finalSource
+	if finalStatusCode >= 400 && strings.TrimSpace(extraAttrs["af.error.type"]) == "" {
+		extraAttrs["af.error.type"] = classifyProxyStatus(finalStatusCode)
+	}
+	go p.recordSpan(traceID, spanID, tenantID, provider, finalModel, vk, finalStatusCode, usage, duration, extraAttrs)
 }
 
 // handleStreaming forwards SSE chunks as they arrive, buffering them for usage parsing.
@@ -342,6 +441,45 @@ func (p *LLMProxy) handleStreaming(w http.ResponseWriter, resp *http.Response, p
 	}
 
 	return ParseDetailedStreamingUsage(provider, chunks, parser)
+}
+
+func (p *LLMProxy) buildUpstreamRequest(r *http.Request, parser ProviderParser, realKey string, body []byte, path string) (*http.Request, error) {
+	upstreamURL := parser.Upstream() + path
+	if r.URL.RawQuery != "" {
+		upstreamURL += "?" + r.URL.RawQuery
+	}
+	upReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	for k, vv := range r.Header {
+		for _, v := range vv {
+			upReq.Header.Add(k, v)
+		}
+	}
+	upReq.Header.Del("Authorization")
+	upReq.Header.Del("x-api-key")
+	upReq.Header.Set(parser.AuthHeader(), parser.AuthValue(realKey))
+	upReq.Header.Set("Content-Type", "application/json")
+	return upReq, nil
+}
+
+func cloneProxyHeaders(src http.Header) http.Header {
+	dst := make(http.Header, len(src))
+	for key, values := range src {
+		copied := make([]string, len(values))
+		copy(copied, values)
+		dst[key] = copied
+	}
+	return dst
+}
+
+func copyProxyHeaders(dst, src http.Header) {
+	for key, values := range src {
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
 }
 
 // recordSpan writes a single proxy span to PostgreSQL.
@@ -428,7 +566,7 @@ func classifyProxyStatus(statusCode int) string {
 	case statusCode == http.StatusForbidden:
 		return "policy_denied"
 	case statusCode == http.StatusTooManyRequests:
-		return "budget_exceeded"
+		return "rate_limited"
 	case statusCode >= 500:
 		return "upstream_error"
 	case statusCode >= 400:

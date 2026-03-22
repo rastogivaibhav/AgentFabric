@@ -1,0 +1,5 @@
+# import config
+packagefile internal/abi=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b005\_pkg_.a
+packagefile internal/goarch=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b006\_pkg_.a
+packagefile internal/race=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b027\_pkg_.a
+packagefile sync/atomic=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b044\_pkg_.a

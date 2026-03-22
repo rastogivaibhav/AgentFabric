@@ -61,7 +61,7 @@ func (h *KeyHandler) writeAdminAudit(r *http.Request, action, targetID string, d
 // ─── POST /api/v1/keys ───────────────────────────────────────────────────────
 
 type registerKeyRequest struct {
-	Provider    string `json:"provider"` // openai | anthropic | google
+	Provider    string `json:"provider"` // openai | anthropic | google | vertexai | bedrock
 	RealKey     string `json:"real_key"` // sk-... or sk-ant-...
 	DisplayName string `json:"display_name"`
 	TeamID      string `json:"team_id,omitempty"`

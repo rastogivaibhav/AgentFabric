@@ -101,7 +101,10 @@ func BuildTrace(traceID string, spans []models.Span, policyEvents []models.Polic
 	trace.Insights.WorkflowSummary = workflow
 	trace.Duration = maxEnd - enrichedSpans[0].StartTimeNs
 	trace.SpanCount = len(enrichedSpans)
-	if trace.ErrorCount > 0 {
+	trace.Timeline = BuildTimeline(traceID, enrichedSpans, policyEvents)
+	if trace.Insights.BlockedSpans > 0 {
+		trace.Status = "partial"
+	} else if trace.ErrorCount > 0 {
 		trace.Status = "error"
 	} else {
 		trace.Status = "ok"
@@ -150,6 +153,10 @@ func enrichSpan(span *models.Span, lineage lineageMeta, policyEvents []models.Po
 	span.Environment = firstNonEmpty(span.Attributes["af.environment"], span.Attributes["deployment.environment"], span.Attributes["environment"], span.Attributes["env"])
 	span.UserID = firstNonEmpty(span.Attributes["af.user.id"], span.Attributes["enduser.id"], span.Attributes["user.id"])
 	span.SessionID = firstNonEmpty(span.Attributes["af.session.id"], span.Attributes["session.id"])
+	span.PromptID = firstNonEmpty(span.Attributes["af.prompt.id"])
+	span.PromptVersion = firstInt(span.Attributes, "af.prompt.version")
+	span.PromptReleaseTag = firstNonEmpty(span.Attributes["af.prompt.release_tag"])
+	span.PromptEnvironment = firstNonEmpty(span.Attributes["af.prompt.environment"], span.Environment)
 	span.ErrorClass = classifyError(*span)
 	span.PromptPreview = firstPreview(span.Attributes, "af.preview.prompt", "gen_ai.prompt", "input.value", "prompt", "llm.prompt")
 	span.ResponsePreview = firstPreview(span.Attributes, "af.preview.response", "gen_ai.response", "output.value", "response", "llm.response")

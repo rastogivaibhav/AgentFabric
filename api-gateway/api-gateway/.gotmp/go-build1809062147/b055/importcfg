@@ -1,0 +1,15 @@
+# import config
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b003\_pkg_.a
+packagefile internal/asan=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b025\_pkg_.a
+packagefile internal/bytealg=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b010\_pkg_.a
+packagefile internal/msan=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b026\_pkg_.a
+packagefile internal/oserror=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b052\_pkg_.a
+packagefile internal/race=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b027\_pkg_.a
+packagefile internal/strconv=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b031\_pkg_.a
+packagefile internal/syscall/windows/sysdll=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b053\_pkg_.a
+packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b009\_pkg_.a
+packagefile slices=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b047\_pkg_.a
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b042\_pkg_.a
+packagefile sync/atomic=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b044\_pkg_.a
+packagefile unicode/utf16=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b056\_pkg_.a
+packagefile unicode/utf8=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b041\_pkg_.a

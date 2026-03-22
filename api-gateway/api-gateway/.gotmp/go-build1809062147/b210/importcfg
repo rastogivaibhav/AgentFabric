@@ -1,0 +1,6 @@
+# import config
+packagefile container/list=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b131\_pkg_.a
+packagefile crypto/sha256=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b107\_pkg_.a
+packagefile encoding/hex=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b108\_pkg_.a
+packagefile github.com/jackc/pgx/v5/pgconn=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b211\_pkg_.a
+packagefile math=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b039\_pkg_.a

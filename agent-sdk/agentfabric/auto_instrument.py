@@ -35,6 +35,10 @@ class AutoInstrumentor:
     SERVICE_NAME_ENV = "AF_SERVICE_NAME"  # OTel service.name
     API_KEY_ENV = "AF_API_KEY"  # Optional API key for authentication
     INSECURE_ENV = "AF_INSECURE"  # set to "1" for insecure (default true for localhost)
+    PROMPT_ID_ENV = "AF_PROMPT_ID"
+    PROMPT_VERSION_ENV = "AF_PROMPT_VERSION"
+    PROMPT_RELEASE_TAG_ENV = "AF_PROMPT_RELEASE_TAG"
+    PROMPT_ENVIRONMENT_ENV = "AF_PROMPT_ENVIRONMENT"
 
     def __init__(self):
         self.endpoint: Optional[str] = None
@@ -43,6 +47,10 @@ class AutoInstrumentor:
         self.api_key: Optional[str] = None
         self.insecure: bool = True
         self.enabled: bool = True
+        self.prompt_id: Optional[str] = None
+        self.prompt_version: Optional[str] = None
+        self.prompt_release_tag: Optional[str] = None
+        self.prompt_environment: Optional[str] = None
 
     def run(self) -> None:
         """Entry point called by sitecustomize.py"""
@@ -55,7 +63,8 @@ class AutoInstrumentor:
             self.patch_all_available()
             logger.info(
                 f"AgentFabric auto-instrumentation active "
-                f"(endpoint={self.endpoint}, tenant={self.tenant_id})"
+                f"(endpoint={self.endpoint}, tenant={self.tenant_id}, "
+                f"prompt={self.prompt_id or '-'}:{self.prompt_version or '-'})"
             )
         except Exception as e:
             logger.error(f"AutoInstrumentor.run() failed: {e}", exc_info=False)
@@ -72,6 +81,12 @@ class AutoInstrumentor:
         self.service_name = os.environ.get(
             self.SERVICE_NAME_ENV, self._detect_service_name()
         ).strip()
+        self.prompt_id = os.environ.get(self.PROMPT_ID_ENV, "").strip() or None
+        self.prompt_version = os.environ.get(self.PROMPT_VERSION_ENV, "").strip() or None
+        self.prompt_release_tag = os.environ.get(self.PROMPT_RELEASE_TAG_ENV, "").strip() or None
+        self.prompt_environment = os.environ.get(
+            self.PROMPT_ENVIRONMENT_ENV, ""
+        ).strip() or None
 
         # Determine if we should use insecure (gRPC) or HTTPS
         # Default to insecure=True for localhost, insecure=False otherwise

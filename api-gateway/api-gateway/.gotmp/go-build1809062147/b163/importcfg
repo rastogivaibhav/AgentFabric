@@ -1,0 +1,13 @@
+# import config
+importmap golang.org/x/crypto/chacha20=vendor/golang.org/x/crypto/chacha20
+importmap golang.org/x/crypto/internal/alias=vendor/golang.org/x/crypto/internal/alias
+importmap golang.org/x/crypto/internal/poly1305=vendor/golang.org/x/crypto/internal/poly1305
+importmap golang.org/x/sys/cpu=vendor/golang.org/x/sys/cpu
+packagefile crypto/cipher=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b077\_pkg_.a
+packagefile crypto/fips140=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b099\_pkg_.a
+packagefile encoding/binary=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b129\_pkg_.a
+packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b003\_pkg_.a
+packagefile vendor/golang.org/x/crypto/chacha20=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b164\_pkg_.a
+packagefile vendor/golang.org/x/crypto/internal/alias=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b165\_pkg_.a
+packagefile vendor/golang.org/x/crypto/internal/poly1305=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b166\_pkg_.a
+packagefile vendor/golang.org/x/sys/cpu=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b167\_pkg_.a

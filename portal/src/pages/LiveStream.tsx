@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useLiveStream, Span, LiveEvent, PolicyLiveEventData } from '../hooks/api'
 import { Pause, Play, Trash2, Download } from 'lucide-react'
 import SpanDetailPanel from '../components/trace/SpanDetailPanel'
@@ -33,6 +34,7 @@ function fmtTime(ts: number) {
 }
 
 export default function LiveStream() {
+  const nav = useNavigate()
   const { events, connected, pause, resume, clear } = useLiveStream(1000)
   const [paused, setPaused] = useState(false)
   const [filter, setFilter] = useState('')
@@ -196,7 +198,15 @@ export default function LiveStream() {
                   </span>
                 </div>
                 <div style={{ padding: '5px 12px', fontSize: 10, color: '#3B82F6', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {traceID.substring(0, 16)}
+                  <button
+                    onClick={e => {
+                      e.stopPropagation()
+                      if (traceID) nav(`/traces/${traceID}`)
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: '#3B82F6', cursor: traceID ? 'pointer' : 'default', fontFamily: 'monospace', padding: 0 }}
+                  >
+                    {traceID.substring(0, 16)}
+                  </button>
                 </div>
                 <div style={{ padding: '5px 12px', fontSize: 10, color: '#475569', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {spanID.substring(0, 16)}

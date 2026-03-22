@@ -264,6 +264,10 @@ func TestParserFor_Known(t *testing.T) {
 	assert.True(t, ok)
 	_, ok = ParserFor(ProviderGoogle)
 	assert.True(t, ok)
+	_, ok = ParserFor(ProviderVertexAI)
+	assert.True(t, ok)
+	_, ok = ParserFor(ProviderBedrock)
+	assert.True(t, ok)
 	_, ok = ParserFor("gemini")
 	assert.True(t, ok)
 }
@@ -271,4 +275,51 @@ func TestParserFor_Known(t *testing.T) {
 func TestParserFor_Unknown(t *testing.T) {
 	_, ok := ParserFor("unknown-provider")
 	assert.False(t, ok)
+}
+
+func TestProviderRouter_ResolveIncludesFallback(t *testing.T) {
+	router := NewProviderRouter()
+	candidates := router.Resolve("tenant-1", ProviderOpenAI, "gpt-4o", "/v1/chat/completions")
+	require.Len(t, candidates, 2)
+	assert.Equal(t, "primary", candidates[0].Source)
+	assert.Equal(t, "gpt-4o-mini", candidates[1].Model)
+	assert.Equal(t, "fallback", candidates[1].Source)
+}
+
+func TestProviderRouter_ApplyGoogleFallbackRewritesPathAndBody(t *testing.T) {
+	router := NewProviderRouter()
+	body, path, err := router.Apply(ProviderGoogle, []byte(`{"model":"gemini-1.5-pro","contents":[]}`), RouteCandidate{
+		Provider: ProviderGoogle,
+		Model:    "gemini-1.5-flash",
+		Path:     "/v1beta/models/gemini-1.5-pro:generateContent",
+		Source:   "fallback",
+	}, "/v1beta/models/gemini-1.5-pro:generateContent")
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "gemini-1.5-flash")
+	assert.Contains(t, path, "gemini-1.5-flash")
+}
+
+func TestProxyResponseCache_RoundTrip(t *testing.T) {
+	cache := newProxyResponseCache()
+	key := cache.Key("tenant-1", ProviderOpenAI, "gpt-4o", "/v1/chat/completions", "", []byte(`{"messages":[]}`))
+	cache.Put(key, cachedProxyResponse{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       []byte(`{"ok":true}`),
+		Usage:      priced.Usage{InputTokens: 1, OutputTokens: 2},
+	})
+	cached, ok := cache.Get(key)
+	require.True(t, ok)
+	assert.Equal(t, http.StatusOK, cached.StatusCode)
+	assert.Equal(t, int64(3), cached.Usage.TotalTokens())
+	assert.JSONEq(t, `{"ok":true}`, string(cached.Body))
+}
+
+func TestRequestRateLimiter_EnforcesScope(t *testing.T) {
+	limiter := newRequestRateLimiter()
+	limiter.limits["key"] = 1
+	require.NoError(t, limiter.Check(map[string]string{"key": "af-vk-1"}))
+	err := limiter.Check(map[string]string{"key": "af-vk-1"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "key rate limit exceeded")
 }

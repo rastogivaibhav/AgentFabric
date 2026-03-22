@@ -15,7 +15,8 @@ Run (staging integration mode):
 
 Coverage areas include OTLP ingestion, framework detection, PII scrubbing,
 cost attribution, multi-tenant isolation, live stream delivery, auth, user
-management, and seeded provider traces such as Google/Gemini.
+management, and seeded provider traces across the supported gateway set
+(OpenAI, Anthropic, Google, Vertex AI, and Bedrock-compatible flows).
 """
 import json
 import os

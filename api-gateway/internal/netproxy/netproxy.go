@@ -57,6 +57,7 @@ type NetProxy struct {
 	store          spanStore
 	policyEngine   *policy.Engine
 	broadcaster    eventBroadcaster
+	rateLimiter    *proxyRateLimiter
 	httpClient     *http.Client // dials the REAL upstream with system TLS roots
 	logger         *zap.Logger
 }
@@ -70,6 +71,7 @@ func New(ca *CA, v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, pol
 		store:          store,
 		policyEngine:   policyEngine,
 		broadcaster:    broadcaster,
+		rateLimiter:    newProxyRateLimiter(),
 		// httpClient uses the default system root pool — it verifies the REAL
 		// upstream TLS cert, not our local CA.
 		httpClient: &http.Client{
@@ -217,6 +219,17 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 		r.Header.Set(parser.AuthHeader(), parser.AuthValue(realKey))
 	}
 
+	if err := p.rateLimiter.Check(map[string]string{
+		"key":      rawKey,
+		"user":     strings.TrimSpace(r.Header.Get("X-AF-User")),
+		"team":     strings.TrimSpace(r.Header.Get("X-AF-Team")),
+		"tenant":   tenantID,
+		"provider": provider,
+	}); err != nil {
+		http.Error(w, `{"error":{"message":"request rate limit exceeded","type":"rate_limited"}}`, http.StatusTooManyRequests)
+		return
+	}
+
 	// 3. Buffer request body for token estimation + re-sending.
 	body, err := io.ReadAll(io.LimitReader(r.Body, 8*1024*1024))
 	if err != nil {
@@ -239,6 +252,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 			EstimatedTokens: estimatedTokens,
 			RequestHeaders:  policy.HeadersFromHTTP(r.Header),
 			RequestBody:     body,
+			Actor:           strings.TrimSpace(r.Header.Get("X-AF-User")),
 			App:             strings.TrimSpace(r.Header.Get("X-AF-App")),
 			Session:         strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
@@ -265,6 +279,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 			Scope:          "request",
 			Body:           body,
 			RequestHeaders: policy.HeadersFromHTTP(r.Header),
+			Actor:          strings.TrimSpace(r.Header.Get("X-AF-User")),
 			App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
 			Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
@@ -360,6 +375,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 					Scope:          "response",
 					Body:           respBody,
 					RequestHeaders: policy.HeadersFromHTTP(r.Header),
+					Actor:          strings.TrimSpace(r.Header.Get("X-AF-User")),
 					App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
 					Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 				})
@@ -543,7 +559,7 @@ func classifyNetproxyStatus(statusCode int) string {
 	case statusCode == http.StatusForbidden:
 		return "policy_denied"
 	case statusCode == http.StatusTooManyRequests:
-		return "budget_exceeded"
+		return "rate_limited"
 	case statusCode >= 500:
 		return "upstream_error"
 	case statusCode >= 400:
@@ -704,6 +720,59 @@ func removeHopByHopHeaders(h http.Header) {
 	for _, name := range hopByHopHeaders {
 		h.Del(name)
 	}
+}
+
+type proxyRateLimitCounter struct {
+	Count   int
+	ResetAt time.Time
+}
+
+type proxyRateLimiter struct {
+	mu       sync.Mutex
+	window   time.Duration
+	limits   map[string]int
+	counters map[string]proxyRateLimitCounter
+}
+
+func newProxyRateLimiter() *proxyRateLimiter {
+	return &proxyRateLimiter{
+		window: time.Minute,
+		limits: map[string]int{
+			"key":      120,
+			"user":     180,
+			"team":     300,
+			"tenant":   600,
+			"provider": 400,
+		},
+		counters: make(map[string]proxyRateLimitCounter),
+	}
+}
+
+func (l *proxyRateLimiter) Check(scopes map[string]string) error {
+	if l == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for scope, value := range scopes {
+		limit := l.limits[scope]
+		trimmed := strings.TrimSpace(value)
+		if limit <= 0 || trimmed == "" {
+			continue
+		}
+		key := scope + ":" + trimmed
+		counter := l.counters[key]
+		if counter.ResetAt.IsZero() || now.After(counter.ResetAt) {
+			counter = proxyRateLimitCounter{ResetAt: now.Add(l.window)}
+		}
+		if counter.Count >= limit {
+			return fmt.Errorf("%s rate limit exceeded", scope)
+		}
+		counter.Count++
+		l.counters[key] = counter
+	}
+	return nil
 }
 
 func newID() string {

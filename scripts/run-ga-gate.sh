@@ -11,6 +11,9 @@ PROXY_PATH="${PROXY_PATH:-/proxy/openai/v1/chat/completions}"
 DEFAULT_PROXY_BODY='{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ga gate validation"}],"stream":false}'
 PROXY_BODY_JSON="${PROXY_BODY_JSON:-$DEFAULT_PROXY_BODY}"
 TENANT_ID="${TENANT_ID:-00000000-0000-0000-0000-000000000001}"
+REQUIRE_PILOT_PROOF="${REQUIRE_PILOT_PROOF:-false}"
+PILOT_SCORECARD_PATH="${PILOT_SCORECARD_PATH:-}"
+PILOT_REFERENCE_READY="${PILOT_REFERENCE_READY:-false}"
 OPEN_P0_COUNT="${OPEN_P0_COUNT:--1}"
 OPEN_P1_COUNT="${OPEN_P1_COUNT:--1}"
 OUTPUT_PATH="${OUTPUT_PATH:-}"
@@ -39,10 +42,14 @@ invoke_required() {
 docs_alignment() {
   local checklist="${REPO_ROOT}/docs/PRODUCTION_CHECKLIST.md"
   local boundaries="${REPO_ROOT}/docs/RELEASE_BOUNDARIES.md"
+  local playbook="${REPO_ROOT}/docs/PILOT_PLAYBOOK.md"
+  local scorecard="${REPO_ROOT}/docs/CUSTOMER_VALUE_SCORECARD.md"
   [[ -f "${checklist}" ]] || { echo "missing ${checklist}" >&2; return 1; }
   [[ -f "${boundaries}" ]] || { echo "missing ${boundaries}" >&2; return 1; }
+  [[ -f "${playbook}" ]] || { echo "missing ${playbook}" >&2; return 1; }
+  [[ -f "${scorecard}" ]] || { echo "missing ${scorecard}" >&2; return 1; }
   local combined
-  combined="$(cat "${checklist}" "${boundaries}")"
+  combined="$(cat "${checklist}" "${boundaries}" "${playbook}" "${scorecard}")"
   for provider in openai anthropic google; do
     echo "${combined}" | grep -qi "${provider}" || { echo "missing provider ${provider} in docs" >&2; return 1; }
   done
@@ -51,6 +58,19 @@ docs_alignment() {
       echo "stale runtime reference ${stale} still present in docs" >&2
       return 1
     fi
+  done
+}
+
+pilot_proof() {
+  if [[ "${PILOT_REFERENCE_READY}" =~ ^(true|1|yes|success)$ ]]; then
+    return 0
+  fi
+  [[ -n "${PILOT_SCORECARD_PATH}" ]] || { echo "missing PILOT_SCORECARD_PATH" >&2; return 1; }
+  [[ -f "${PILOT_SCORECARD_PATH}" ]] || { echo "pilot scorecard not found" >&2; return 1; }
+  local content
+  content="$(cat "${PILOT_SCORECARD_PATH}")"
+  for section in "Cost visibility" "Policy" "Debugging" "Recommendation"; do
+    echo "${content}" | grep -q "${section}" || { echo "pilot scorecard missing section ${section}" >&2; return 1; }
   done
 }
 
@@ -191,6 +211,18 @@ if [[ "${OPEN_P0_COUNT}" =~ ^[0-9]+$ && "${OPEN_P1_COUNT}" =~ ^[0-9]+$ ]]; then
   fi
 else
   add_check "Release blockers declared" "false" "OPEN_P0_COUNT and OPEN_P1_COUNT must be provided in GA mode"
+fi
+
+if [[ "${REQUIRE_PILOT_PROOF}" =~ ^(true|1|yes)$ ]]; then
+  if pilot_proof >/dev/null 2>&1; then
+    if [[ -n "${PILOT_SCORECARD_PATH}" ]]; then
+      add_check "Pilot/reference proof" "true" "pilot scorecard present at ${PILOT_SCORECARD_PATH}"
+    else
+      add_check "Pilot/reference proof" "true" "external pilot/reference evidence declared ready"
+    fi
+  else
+    add_check "Pilot/reference proof" "false" "pilot proof missing or incomplete"
+  fi
 fi
 
 failed=0

@@ -50,6 +50,8 @@ func evaluateDLPRules(rules []compiledRule, input EvaluationInput, findings []Fi
 		bestScore = score
 		best = buildDecision(rule, input, "fast-path", traces)
 		best.MatchedNames = matchedNames
+		best.GuardrailMatches = append([]string(nil), filterGuardrailMatches(matchedNames)...)
+		best.Explanation.GuardrailMatches = append([]string(nil), best.GuardrailMatches...)
 	}
 	if best.Matched {
 		return best
@@ -71,6 +73,8 @@ func buildDecision(rule compiledRule, input EvaluationInput, engine string, trac
 	explanation := DecisionExplanation{
 		Engine:         engine,
 		DecisionMode:   rule.decisionMode,
+		Version:        rule.normalized.Version,
+		RolloutPercent: rule.normalized.RolloutPercent,
 		EvaluationPath: []string{engine, rule.normalized.RuleType, rule.normalized.Name},
 		ConditionTrace: traces,
 		RuleConditions: cloneConditions(rule.ruleConditions),
@@ -100,6 +104,7 @@ func matchTrafficRule(rule compiledRule, input EvaluationInput) (int, []Conditio
 		valueTrace("provider", normalized.Provider, input.Provider, "rule.provider"),
 		patternTrace("model", normalized.ModelPattern, input.Model, "rule.model_pattern"),
 		valueTrace("environment", normalized.Environment, input.Environment, "rule.environment"),
+		rolloutTrace(normalized, input),
 	}
 	for _, trace := range evaluateExtraConditions(rule.ruleConditions, input) {
 		traces = append(traces, trace)
@@ -154,6 +159,7 @@ func matchDLPRule(rule compiledRule, input EvaluationInput, findings []Finding) 
 		patternTrace("model", normalized.ModelPattern, input.Model, "rule.model_pattern"),
 		valueTrace("environment", normalized.Environment, input.Environment, "rule.environment"),
 		scopeTrace(normalized.Scope, input.Scope),
+		rolloutTrace(normalized, input),
 	}
 	for _, trace := range evaluateExtraConditions(rule.ruleConditions, input) {
 		traces = append(traces, trace)
@@ -179,9 +185,35 @@ func matchDLPRule(rule compiledRule, input EvaluationInput, findings []Finding) 
 		Matched:  len(matchedNames) > 0,
 		Source:   "rule.detector",
 	})
-	if len(matchedNames) == 0 {
+	guardrailMatches := []string{}
+	guardrailTraces := []ConditionTrace{}
+	guardrailMatched := false
+	if matches, schemaTraces, schemaTriggered := evaluateSchemaGuard(normalized, input); len(schemaTraces) > 0 {
+		guardrailTraces = append(guardrailTraces, schemaTraces...)
+		if schemaTriggered {
+			guardrailMatches = append(guardrailMatches, matches...)
+			guardrailMatched = true
+		}
+	}
+	if matches, injectionTraces, injectionTriggered := evaluateInjectionGuard(normalized, input); len(injectionTraces) > 0 {
+		guardrailTraces = append(guardrailTraces, injectionTraces...)
+		if injectionTriggered {
+			guardrailMatches = append(guardrailMatches, matches...)
+			guardrailMatched = true
+		}
+	}
+	if matches, unsafeTraces, unsafeTriggered := evaluateUnsafeContentGuard(normalized, input); len(unsafeTraces) > 0 {
+		guardrailTraces = append(guardrailTraces, unsafeTraces...)
+		if unsafeTriggered {
+			guardrailMatches = append(guardrailMatches, matches...)
+			guardrailMatched = true
+		}
+	}
+	traces = append(traces, guardrailTraces...)
+	if len(matchedNames) == 0 && !guardrailMatched {
 		return 0, nil, traces, false
 	}
+	matchedNames = append(matchedNames, guardrailMatches...)
 
 	score := normalized.Priority * 100
 	if normalized.TenantID != nil {
@@ -242,10 +274,25 @@ func evaluateExtraConditions(conditions map[string]string, input EvaluationInput
 			trace.Operator = "contains"
 			trace.Actual = string(input.ResponseBody)
 			trace.Matched = strings.Contains(strings.ToLower(trace.Actual), strings.ToLower(expected))
+		case key == "guard":
+			trace.Operator = "includes"
+			trace.Actual = strings.Join(inputGuardrails(input), ",")
+			trace.Matched = strings.Contains(strings.ToLower(trace.Actual), strings.ToLower(expected))
 		}
 		traces = append(traces, trace)
 	}
 	return traces
+}
+
+func inputGuardrails(input EvaluationInput) []string {
+	guards := []string{}
+	if len(input.RequestBody) > 0 {
+		guards = append(guards, "request_body")
+	}
+	if len(input.ResponseBody) > 0 {
+		guards = append(guards, "response_body")
+	}
+	return guards
 }
 
 func tenantTrace(rule models.PolicyRule, input EvaluationInput) ConditionTrace {
@@ -312,6 +359,17 @@ func namesFromFindings(findings []Finding) []string {
 	out := make([]string, 0, len(findings))
 	for _, finding := range findings {
 		out = append(out, finding.Name)
+	}
+	return out
+}
+
+func filterGuardrailMatches(matches []string) []string {
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		switch match {
+		case "schema", "prompt_injection", "tool_escape", "violence", "self_harm", "hate", "sexual", "malware":
+			out = append(out, match)
+		}
 	}
 	return out
 }

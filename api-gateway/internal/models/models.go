@@ -36,6 +36,10 @@ type Span struct {
 	Environment           string            `json:"environment,omitempty" db:"-"`
 	UserID                string            `json:"user_id,omitempty" db:"-"`
 	SessionID             string            `json:"session_id,omitempty" db:"-"`
+	PromptID              string            `json:"prompt_id,omitempty" db:"-"`
+	PromptVersion         int               `json:"prompt_version,omitempty" db:"-"`
+	PromptReleaseTag      string            `json:"prompt_release_tag,omitempty" db:"-"`
+	PromptEnvironment     string            `json:"prompt_environment,omitempty" db:"-"`
 	ErrorClass            string            `json:"error_class,omitempty" db:"-"`
 	PromptPreview         string            `json:"prompt_preview,omitempty" db:"-"`
 	ResponsePreview       string            `json:"response_preview,omitempty" db:"-"`
@@ -64,20 +68,21 @@ type SpanEvent struct {
 // ─── Trace ───────────────────────────────────────────────────────────────────
 
 type Trace struct {
-	ID           string        `json:"id"`
-	RootSpanName string        `json:"root_span_name"`
-	Framework    string        `json:"framework"`
-	StartTime    time.Time     `json:"start_time"`
-	Duration     int64         `json:"duration_ns"`
-	SpanCount    int           `json:"span_count"`
-	ErrorCount   int           `json:"error_count"`
-	TotalCostUSD float64       `json:"total_cost_usd"`
-	TotalTokens  int64         `json:"total_tokens"`
-	Status       string        `json:"status"` // ok|error|partial
-	Insights     TraceInsights `json:"insights,omitempty"`
-	Spans        []Span        `json:"spans,omitempty"`
-	PolicyEvents []PolicyEvent `json:"policy_events,omitempty"`
-	TenantID     string        `json:"-"`
+	ID           string         `json:"id"`
+	RootSpanName string         `json:"root_span_name"`
+	Framework    string         `json:"framework"`
+	StartTime    time.Time      `json:"start_time"`
+	Duration     int64          `json:"duration_ns"`
+	SpanCount    int            `json:"span_count"`
+	ErrorCount   int            `json:"error_count"`
+	TotalCostUSD float64        `json:"total_cost_usd"`
+	TotalTokens  int64          `json:"total_tokens"`
+	Status       string         `json:"status"` // ok|error|partial
+	Insights     TraceInsights  `json:"insights,omitempty"`
+	Timeline     *TraceTimeline `json:"timeline,omitempty"`
+	Spans        []Span         `json:"spans,omitempty"`
+	PolicyEvents []PolicyEvent  `json:"policy_events,omitempty"`
+	TenantID     string         `json:"-"`
 }
 
 type TraceInsights struct {
@@ -98,7 +103,197 @@ type TraceInsights struct {
 	WorkflowSummary []string       `json:"workflow_summary,omitempty"`
 }
 
+type TraceTimeline struct {
+	TraceID        string              `json:"trace_id"`
+	StartTime      time.Time           `json:"start_time"`
+	DurationNs     int64               `json:"duration_ns"`
+	Items          []TraceTimelineItem `json:"items"`
+	Highlights     []string            `json:"highlights,omitempty"`
+	PolicyEventIDs []string            `json:"policy_event_ids,omitempty"`
+}
+
+type TraceTimelineItem struct {
+	SpanID           string   `json:"span_id"`
+	ParentSpanID     string   `json:"parent_span_id,omitempty"`
+	Name             string   `json:"name"`
+	StepType         string   `json:"step_type,omitempty"`
+	Provider         string   `json:"provider,omitempty"`
+	Model            string   `json:"model,omitempty"`
+	AppName          string   `json:"app_name,omitempty"`
+	Environment      string   `json:"environment,omitempty"`
+	Status           string   `json:"status"`
+	FailureSummary   string   `json:"failure_summary,omitempty"`
+	Blocked          bool     `json:"blocked,omitempty"`
+	BlockedReason    string   `json:"blocked_reason,omitempty"`
+	RedactionCount   int      `json:"redaction_count,omitempty"`
+	Depth            int      `json:"depth"`
+	Lineage          []string `json:"lineage,omitempty"`
+	StartOffsetNs    int64    `json:"start_offset_ns"`
+	EndOffsetNs      int64    `json:"end_offset_ns"`
+	DurationNs       int64    `json:"duration_ns"`
+	TotalTokens      int64    `json:"total_tokens"`
+	CostUSD          float64  `json:"cost_usd,omitempty"`
+	PolicyEventCount int      `json:"policy_event_count,omitempty"`
+}
+
+type TraceComparison struct {
+	Left       TraceComparisonSide   `json:"left"`
+	Right      TraceComparisonSide   `json:"right"`
+	Diffs      []TraceComparisonDiff `json:"diffs,omitempty"`
+	Highlights []string              `json:"highlights,omitempty"`
+}
+
+type TraceComparisonSide struct {
+	TraceID         string    `json:"trace_id"`
+	RootSpanName    string    `json:"root_span_name"`
+	Framework       string    `json:"framework"`
+	StartTime       time.Time `json:"start_time"`
+	DurationNs      int64     `json:"duration_ns"`
+	Status          string    `json:"status"`
+	SpanCount       int       `json:"span_count"`
+	ErrorCount      int       `json:"error_count"`
+	TotalCostUSD    float64   `json:"total_cost_usd"`
+	TotalTokens     int64     `json:"total_tokens"`
+	RetryCount      int       `json:"retry_count,omitempty"`
+	BlockedSpans    int       `json:"blocked_spans,omitempty"`
+	RedactedSpans   int       `json:"redacted_spans,omitempty"`
+	FailedSpans     int       `json:"failed_spans,omitempty"`
+	Models          []string  `json:"models,omitempty"`
+	Providers       []string  `json:"providers,omitempty"`
+	WorkflowSummary []string  `json:"workflow_summary,omitempty"`
+}
+
+type TraceComparisonDiff struct {
+	Field    string `json:"field"`
+	Left     string `json:"left"`
+	Right    string `json:"right"`
+	Severity string `json:"severity"`
+}
+
+type TraceSavedView struct {
+	ID          int64             `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Filters     map[string]string `json:"filters"`
+	CreatedBy   string            `json:"created_by,omitempty"`
+	IsPinned    bool              `json:"is_pinned,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+}
+
 // ─── Run ─────────────────────────────────────────────────────────────────────
+
+type PolicyEffectivenessSummary struct {
+	TotalEvents       int     `json:"total_events"`
+	Allows            int     `json:"allows"`
+	Denies            int     `json:"denies"`
+	Warns             int     `json:"warns"`
+	Redacts           int     `json:"redacts"`
+	BlockedSpans      int     `json:"blocked_spans"`
+	RedactedSpans     int     `json:"redacted_spans"`
+	CoveredLLMCalls   int     `json:"covered_llm_calls"`
+	TotalLLMCalls     int     `json:"total_llm_calls"`
+	CoverageRatio     float64 `json:"coverage_ratio"`
+	PreventedFailures int     `json:"prevented_failures,omitempty"`
+}
+
+type TraceEvalScore struct {
+	Metric   string  `json:"metric"`
+	Score    float64 `json:"score"`
+	Weight   float64 `json:"weight"`
+	Severity string  `json:"severity,omitempty"`
+	Summary  string  `json:"summary,omitempty"`
+}
+
+type TraceEvalRun struct {
+	ID                  int64                      `json:"id"`
+	TraceID             string                     `json:"trace_id"`
+	ReleaseTag          string                     `json:"release_tag,omitempty"`
+	EvalSuite           string                     `json:"eval_suite"`
+	OverallScore        float64                    `json:"overall_score"`
+	RiskLevel           string                     `json:"risk_level"`
+	Summary             string                     `json:"summary,omitempty"`
+	PolicyEffectiveness PolicyEffectivenessSummary `json:"policy_effectiveness"`
+	CreatedAt           time.Time                  `json:"created_at"`
+	Scores              []TraceEvalScore           `json:"scores,omitempty"`
+}
+
+type TraceEvalRequest struct {
+	TraceID    string `json:"trace_id"`
+	ReleaseTag string `json:"release_tag,omitempty"`
+	EvalSuite  string `json:"eval_suite,omitempty"`
+}
+
+type RegressionCompareRequest struct {
+	BaselineTag  string `json:"baseline_tag"`
+	CandidateTag string `json:"candidate_tag"`
+	EvalSuite    string `json:"eval_suite,omitempty"`
+}
+
+type RegressionMetricDelta struct {
+	Metric         string  `json:"metric"`
+	BaselineScore  float64 `json:"baseline_score"`
+	CandidateScore float64 `json:"candidate_score"`
+	Delta          float64 `json:"delta"`
+	Severity       string  `json:"severity"`
+	Summary        string  `json:"summary,omitempty"`
+}
+
+type RegressionReport struct {
+	BaselineTag  string                  `json:"baseline_tag"`
+	CandidateTag string                  `json:"candidate_tag"`
+	EvalSuite    string                  `json:"eval_suite"`
+	ComparedRuns int                     `json:"compared_runs"`
+	OverallDelta float64                 `json:"overall_delta"`
+	RiskLevel    string                  `json:"risk_level"`
+	Highlights   []string                `json:"highlights,omitempty"`
+	Metrics      []RegressionMetricDelta `json:"metrics,omitempty"`
+	GeneratedAt  time.Time               `json:"generated_at"`
+}
+
+type PromptVersion struct {
+	ID             int64             `json:"id"`
+	TenantID       string            `json:"tenant_id,omitempty"`
+	PromptID       string            `json:"prompt_id"`
+	Version        int               `json:"version"`
+	Environment    string            `json:"environment"`
+	ReleaseTag     string            `json:"release_tag,omitempty"`
+	Content        string            `json:"content"`
+	Config         map[string]string `json:"config,omitempty"`
+	Description    string            `json:"description,omitempty"`
+	CreatedBy      string            `json:"created_by,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
+	IsLatest       bool              `json:"is_latest,omitempty"`
+	Promoted       bool              `json:"promoted,omitempty"`
+	CurrentRelease *PromptRelease    `json:"current_release,omitempty"`
+}
+
+type PromptRelease struct {
+	ID          int64     `json:"id"`
+	TenantID    string    `json:"tenant_id,omitempty"`
+	PromptID    string    `json:"prompt_id"`
+	Environment string    `json:"environment"`
+	Version     int       `json:"version"`
+	ReleaseTag  string    `json:"release_tag"`
+	Notes       string    `json:"notes,omitempty"`
+	PromotedBy  string    `json:"promoted_by,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type PromptCatalog struct {
+	Items    []PromptVersion `json:"items"`
+	Releases []PromptRelease `json:"releases"`
+	Count    int             `json:"count"`
+}
+
+type PromptPromotionRequest struct {
+	PromptID    string `json:"prompt_id"`
+	Environment string `json:"environment"`
+	Version     int    `json:"version"`
+	ReleaseTag  string `json:"release_tag"`
+	Notes       string `json:"notes,omitempty"`
+}
 
 type Run struct {
 	ID           string            `json:"id" db:"run_id"`
@@ -174,15 +369,22 @@ type OverviewStats struct {
 // ─── Query params ────────────────────────────────────────────────────────────
 
 type TraceQuery struct {
-	Framework string
-	Model     string
-	AgentName string
-	Status    string
-	StartTime int64
-	EndTime   int64
-	Limit     int
-	Cursor    string
-	TenantID  string
+	Framework   string
+	Model       string
+	AgentName   string
+	Search      string
+	Provider    string
+	AppName     string
+	Environment string
+	UserID      string
+	SessionID   string
+	Status      string
+	BlockedOnly bool
+	StartTime   int64
+	EndTime     int64
+	Limit       int
+	Cursor      string
+	TenantID    string
 }
 
 type RunQuery struct {
@@ -324,25 +526,30 @@ type PricingAuditEntry struct {
 }
 
 type PolicyRule struct {
-	ID             int64             `json:"id"`
-	TenantID       *string           `json:"tenant_id,omitempty"`
-	Name           string            `json:"name"`
-	RuleType       string            `json:"rule_type"`
-	DecisionMode   string            `json:"decision_mode,omitempty"`
-	Enabled        bool              `json:"enabled"`
-	Priority       int               `json:"priority"`
-	Action         string            `json:"action"`
-	Provider       string            `json:"provider,omitempty"`
-	ModelPattern   string            `json:"model_pattern,omitempty"`
-	Environment    string            `json:"environment,omitempty"`
-	MaxTokens      int64             `json:"max_tokens,omitempty"`
-	Detector       string            `json:"detector,omitempty"`
-	Scope          string            `json:"scope,omitempty"`
-	RuleConditions map[string]string `json:"rule_conditions,omitempty"`
-	RegoModule     string            `json:"rego_module,omitempty"`
-	Description    string            `json:"description,omitempty"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
+	ID               int64             `json:"id"`
+	TenantID         *string           `json:"tenant_id,omitempty"`
+	Name             string            `json:"name"`
+	RuleType         string            `json:"rule_type"`
+	DecisionMode     string            `json:"decision_mode,omitempty"`
+	Enabled          bool              `json:"enabled"`
+	Priority         int               `json:"priority"`
+	Action           string            `json:"action"`
+	Provider         string            `json:"provider,omitempty"`
+	ModelPattern     string            `json:"model_pattern,omitempty"`
+	Environment      string            `json:"environment,omitempty"`
+	MaxTokens        int64             `json:"max_tokens,omitempty"`
+	Detector         string            `json:"detector,omitempty"`
+	Scope            string            `json:"scope,omitempty"`
+	Guardrails       []string          `json:"guardrails,omitempty"`
+	SchemaJSON       string            `json:"schema_json,omitempty"`
+	UnsafeCategories []string          `json:"unsafe_categories,omitempty"`
+	RolloutPercent   int               `json:"rollout_percent,omitempty"`
+	Version          int               `json:"version,omitempty"`
+	RuleConditions   map[string]string `json:"rule_conditions,omitempty"`
+	RegoModule       string            `json:"rego_module,omitempty"`
+	Description      string            `json:"description,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+	UpdatedAt        time.Time         `json:"updated_at"`
 }
 
 type PolicyDecisionAudit struct {
@@ -381,35 +588,71 @@ type PolicyPreviewRequest struct {
 	Model           string `json:"model"`
 	Environment     string `json:"environment,omitempty"`
 	EstimatedTokens int64  `json:"estimated_tokens,omitempty"`
+	Actor           string `json:"actor,omitempty"`
+	App             string `json:"app,omitempty"`
+	Session         string `json:"session,omitempty"`
 	RequestBody     string `json:"request_body,omitempty"`
 	ResponseBody    string `json:"response_body,omitempty"`
 }
 
 type PolicyPreviewDecision struct {
-	Matched         bool                   `json:"matched"`
-	RuleID          int64                  `json:"rule_id,omitempty"`
-	PolicyName      string                 `json:"policy_name,omitempty"`
-	Action          string                 `json:"action,omitempty"`
-	Reason          string                 `json:"reason,omitempty"`
-	Scope           string                 `json:"scope,omitempty"`
-	MatchedNames    []string               `json:"matched_names,omitempty"`
-	Redactions      int                    `json:"redactions,omitempty"`
-	RedactedPreview string                 `json:"redacted_preview,omitempty"`
-	Final           bool                   `json:"final,omitempty"`
-	Engine          string                 `json:"engine,omitempty"`
-	DecisionMode    string                 `json:"decision_mode,omitempty"`
-	EvaluationPath  []string               `json:"evaluation_path,omitempty"`
-	MatchedFields   []string               `json:"matched_fields,omitempty"`
-	ConditionTrace  []PolicyConditionTrace `json:"condition_trace,omitempty"`
-	RegoQuery       string                 `json:"rego_query,omitempty"`
-	Explain         string                 `json:"explain,omitempty"`
-	RuleConditions  map[string]string      `json:"rule_conditions,omitempty"`
+	Matched          bool                   `json:"matched"`
+	RuleID           int64                  `json:"rule_id,omitempty"`
+	PolicyName       string                 `json:"policy_name,omitempty"`
+	Action           string                 `json:"action,omitempty"`
+	Reason           string                 `json:"reason,omitempty"`
+	Scope            string                 `json:"scope,omitempty"`
+	MatchedNames     []string               `json:"matched_names,omitempty"`
+	GuardrailMatches []string               `json:"guardrail_matches,omitempty"`
+	Redactions       int                    `json:"redactions,omitempty"`
+	RedactedPreview  string                 `json:"redacted_preview,omitempty"`
+	Final            bool                   `json:"final,omitempty"`
+	Engine           string                 `json:"engine,omitempty"`
+	DecisionMode     string                 `json:"decision_mode,omitempty"`
+	Version          int                    `json:"version,omitempty"`
+	RolloutPercent   int                    `json:"rollout_percent,omitempty"`
+	EvaluationPath   []string               `json:"evaluation_path,omitempty"`
+	MatchedFields    []string               `json:"matched_fields,omitempty"`
+	ConditionTrace   []PolicyConditionTrace `json:"condition_trace,omitempty"`
+	RegoQuery        string                 `json:"rego_query,omitempty"`
+	Explain          string                 `json:"explain,omitempty"`
+	RuleConditions   map[string]string      `json:"rule_conditions,omitempty"`
 }
 
 type PolicyPreviewResponse struct {
 	Traffic     PolicyPreviewDecision `json:"traffic"`
 	RequestDLP  PolicyPreviewDecision `json:"request_dlp"`
 	ResponseDLP PolicyPreviewDecision `json:"response_dlp"`
+}
+
+type PolicySimulationSample struct {
+	Label           string `json:"label,omitempty"`
+	TenantID        string `json:"tenant_id,omitempty"`
+	Provider        string `json:"provider"`
+	Model           string `json:"model"`
+	Environment     string `json:"environment,omitempty"`
+	EstimatedTokens int64  `json:"estimated_tokens,omitempty"`
+	Actor           string `json:"actor,omitempty"`
+	App             string `json:"app,omitempty"`
+	Session         string `json:"session,omitempty"`
+	RequestBody     string `json:"request_body,omitempty"`
+	ResponseBody    string `json:"response_body,omitempty"`
+}
+
+type PolicySimulationRequest struct {
+	Samples []PolicySimulationSample `json:"samples"`
+}
+
+type PolicySimulationResult struct {
+	Label       string                `json:"label,omitempty"`
+	Traffic     PolicyPreviewDecision `json:"traffic"`
+	RequestDLP  PolicyPreviewDecision `json:"request_dlp"`
+	ResponseDLP PolicyPreviewDecision `json:"response_dlp"`
+}
+
+type PolicySimulationResponse struct {
+	Count   int                      `json:"count"`
+	Results []PolicySimulationResult `json:"results"`
 }
 
 type PolicyConditionTrace struct {

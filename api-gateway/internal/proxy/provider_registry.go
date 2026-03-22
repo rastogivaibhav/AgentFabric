@@ -10,15 +10,19 @@ const (
 	ProviderOpenAI      = "openai"
 	ProviderAnthropic   = "anthropic"
 	ProviderGoogle      = "google"
+	ProviderVertexAI    = "vertexai"
+	ProviderBedrock     = "bedrock"
 	ProviderAzureOpenAI = "azure-openai"
 )
 
 type providerDefinition struct {
-	Name        string
-	DisplayName string
-	Aliases     []string
-	Hosts       []string
-	NewParser   func() ProviderParser
+	Name         string
+	DisplayName  string
+	Aliases      []string
+	Hosts        []string
+	HostSuffixes []string
+	HostContains []string
+	NewParser    func() ProviderParser
 }
 
 var providerRegistry = map[string]providerDefinition{
@@ -42,6 +46,23 @@ var providerRegistry = map[string]providerDefinition{
 		Aliases:     []string{ProviderGoogle, "gemini"},
 		Hosts:       []string{"generativelanguage.googleapis.com"},
 		NewParser:   func() ProviderParser { return &geminiParser{} },
+	},
+	ProviderVertexAI: {
+		Name:         ProviderVertexAI,
+		DisplayName:  "Google Vertex AI",
+		Aliases:      []string{ProviderVertexAI, "vertex-ai", "vertex"},
+		Hosts:        []string{"us-central1-aiplatform.googleapis.com", "aiplatform.googleapis.com"},
+		HostSuffixes: []string{"-aiplatform.googleapis.com"},
+		HostContains: []string{"aiplatform.googleapis.com"},
+		NewParser:    func() ProviderParser { return &vertexAIParser{} },
+	},
+	ProviderBedrock: {
+		Name:         ProviderBedrock,
+		DisplayName:  "AWS Bedrock",
+		Aliases:      []string{ProviderBedrock, "aws-bedrock"},
+		Hosts:        []string{"bedrock-runtime.us-east-1.amazonaws.com"},
+		HostContains: []string{"bedrock-runtime."},
+		NewParser:    func() ProviderParser { return &bedrockParser{} },
 	},
 }
 
@@ -86,6 +107,16 @@ func ProviderForHost(host string) (string, bool) {
 				return canonical, true
 			}
 		}
+		for _, suffix := range definition.HostSuffixes {
+			if strings.HasSuffix(normalizedHost, suffix) {
+				return canonical, true
+			}
+		}
+		for _, fragment := range definition.HostContains {
+			if strings.Contains(normalizedHost, fragment) {
+				return canonical, true
+			}
+		}
 	}
 	return "", false
 }
@@ -98,6 +129,10 @@ func ProviderRouteHint(provider string) string {
 		return "/proxy/anthropic/v1/messages"
 	case ProviderGoogle:
 		return "/proxy/google/v1beta/models/gemini-1.5-pro:generateContent"
+	case ProviderVertexAI:
+		return "/proxy/vertexai/v1/projects/demo/locations/us-central1/publishers/google/models/gemini-1.5-pro:generateContent"
+	case ProviderBedrock:
+		return "/proxy/bedrock/model/anthropic.claude-3-5-sonnet-20240620-v1:0/invoke"
 	default:
 		return "/proxy/" + NormalizeProvider(provider)
 	}

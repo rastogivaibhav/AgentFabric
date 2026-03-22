@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import { hasRole, useAuth } from '../hooks/auth'
 import {
-  PolicyRule,
+  type PolicyRule,
   useControlAudit,
   useDeletePolicyRule,
   usePreviewPolicyRule,
@@ -9,6 +9,7 @@ import {
   useUpsertPolicyRule,
 } from '../hooks/api'
 import PolicyDecisionExplorer from './PolicyDecisionExplorer'
+import PolicySimulationPage from './PolicySimulationPage'
 
 const emptyRule: PolicyRule = {
   name: '',
@@ -23,6 +24,11 @@ const emptyRule: PolicyRule = {
   max_tokens: 0,
   detector: '',
   scope: 'both',
+  guardrails: [],
+  schema_json: '',
+  unsafe_categories: [],
+  rollout_percent: 100,
+  version: 1,
   rule_conditions: {},
   rego_module: '',
   tenant_id: null,
@@ -44,6 +50,9 @@ export default function PoliciesPage() {
     model: 'gpt-4o',
     environment: 'production',
     estimated_tokens: 128,
+    actor: '',
+    app: '',
+    session: '',
     request_body: '',
     response_body: '',
   })
@@ -71,6 +80,11 @@ export default function PoliciesPage() {
         environment: form.environment?.trim().toLowerCase() ?? '',
         detector: form.detector?.trim().toLowerCase() ?? '',
         decision_mode: form.decision_mode ?? 'fast',
+        guardrails: (form.guardrails ?? []).map(value => value.trim().toLowerCase()).filter(Boolean),
+        schema_json: form.schema_json ?? '',
+        unsafe_categories: (form.unsafe_categories ?? []).map(value => value.trim().toLowerCase()).filter(Boolean),
+        rollout_percent: form.rollout_percent ?? 100,
+        version: form.version ?? 1,
         rule_conditions: form.rule_conditions ?? {},
         rego_module: form.rego_module ?? '',
       },
@@ -83,7 +97,7 @@ export default function PoliciesPage() {
       <div style={{ marginBottom: 24 }}>
         <h1 style={titleStyle}>Policies</h1>
         <p style={subtleText}>
-          Manage live traffic enforcement and DLP rules for the proxy and netproxy paths.
+          Manage live traffic enforcement, built-in guardrails, rollout controls, and DLP rules for proxy and netproxy.
         </p>
       </div>
 
@@ -124,6 +138,15 @@ export default function PoliciesPage() {
                 <option value="rego">rego</option>
               </select>
             </label>
+            <label style={labelStyle}>
+              Guardrails (comma separated)
+              <input
+                value={(form.guardrails ?? []).join(', ')}
+                onChange={e => setForm(f => ({ ...f, guardrails: e.target.value.split(',').map(value => value.trim()).filter(Boolean) }))}
+                style={inputStyle}
+                placeholder="schema, prompt_injection, unsafe_content"
+              />
+            </label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={labelStyle}>
                 Priority
@@ -134,9 +157,19 @@ export default function PoliciesPage() {
                 Enabled
               </label>
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={labelStyle}>
+                Rule Version
+                <input type="number" min={1} value={form.version ?? 1} onChange={e => setForm(f => ({ ...f, version: Number(e.target.value) }))} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Rollout Percent
+                <input type="number" min={1} max={100} value={form.rollout_percent ?? 100} onChange={e => setForm(f => ({ ...f, rollout_percent: Number(e.target.value) }))} style={inputStyle} />
+              </label>
+            </div>
             <label style={labelStyle}>
               Provider
-              <input value={form.provider ?? ''} onChange={e => setForm(f => ({ ...f, provider: e.target.value }))} style={inputStyle} placeholder="openai, anthropic, or *" />
+              <input value={form.provider ?? ''} onChange={e => setForm(f => ({ ...f, provider: e.target.value }))} style={inputStyle} placeholder="openai, anthropic, google, vertexai, bedrock, or *" />
             </label>
             <label style={labelStyle}>
               Model Pattern
@@ -177,6 +210,14 @@ export default function PoliciesPage() {
                 </label>
               </div>
             )}
+            <label style={labelStyle}>
+              Schema JSON
+              <textarea value={form.schema_json ?? ''} onChange={e => setForm(f => ({ ...f, schema_json: e.target.value }))} style={textareaStyle} rows={4} placeholder='{"required":["messages"],"types":{"messages":"array"}}' />
+            </label>
+            <label style={labelStyle}>
+              Unsafe Categories (comma separated)
+              <input value={(form.unsafe_categories ?? []).join(', ')} onChange={e => setForm(f => ({ ...f, unsafe_categories: e.target.value.split(',').map(value => value.trim()).filter(Boolean) }))} style={inputStyle} placeholder="violence, self_harm, hate, sexual, malware" />
+            </label>
             <label style={labelStyle}>
               Description
               <textarea value={form.description ?? ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={textareaStyle} rows={3} />
@@ -244,9 +285,12 @@ export default function PoliciesPage() {
                     <td style={tdStyle}>
                       <div>{rule.provider || '*'}/{rule.model_pattern || '*'}</div>
                       <div style={{ fontSize: 10, color: '#64748B' }}>
-                        env {rule.environment || '*'} · mode {rule.decision_mode || 'fast'}
-                        {rule.rule_type === 'traffic' && rule.max_tokens ? ` · max ${rule.max_tokens}` : ''}
-                        {rule.rule_type === 'dlp' && rule.detector ? ` · ${rule.detector}` : ''}
+                        env {rule.environment || '*'} | mode {rule.decision_mode || 'fast'}
+                        {rule.version ? ` | v${rule.version}` : ''}
+                        {rule.rollout_percent ? ` | rollout ${rule.rollout_percent}%` : ''}
+                        {rule.rule_type === 'traffic' && rule.max_tokens ? ` | max ${rule.max_tokens}` : ''}
+                        {rule.rule_type === 'dlp' && rule.detector ? ` | ${rule.detector}` : ''}
+                        {rule.guardrails && rule.guardrails.length > 0 ? ` | guards ${rule.guardrails.join(',')}` : ''}
                       </div>
                     </td>
                     <td style={tdStyle}>{rule.action}</td>
@@ -269,66 +313,37 @@ export default function PoliciesPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
           <label style={labelStyle}>
             Tenant Override
-            <input
-              value={previewRequest.tenant_id}
-              onChange={e => setPreviewRequest(current => ({ ...current, tenant_id: e.target.value }))}
-              style={inputStyle}
-              placeholder="leave blank for global"
-            />
+            <input value={previewRequest.tenant_id} onChange={e => setPreviewRequest(current => ({ ...current, tenant_id: e.target.value }))} style={inputStyle} placeholder="leave blank for global" />
           </label>
           <label style={labelStyle}>
             Provider
-            <input
-              value={previewRequest.provider}
-              onChange={e => setPreviewRequest(current => ({ ...current, provider: e.target.value }))}
-              style={inputStyle}
-            />
+            <input value={previewRequest.provider} onChange={e => setPreviewRequest(current => ({ ...current, provider: e.target.value }))} style={inputStyle} />
           </label>
           <label style={labelStyle}>
             Model
-            <input
-              value={previewRequest.model}
-              onChange={e => setPreviewRequest(current => ({ ...current, model: e.target.value }))}
-              style={inputStyle}
-            />
+            <input value={previewRequest.model} onChange={e => setPreviewRequest(current => ({ ...current, model: e.target.value }))} style={inputStyle} />
           </label>
           <label style={labelStyle}>
             Environment
-            <input
-              value={previewRequest.environment}
-              onChange={e => setPreviewRequest(current => ({ ...current, environment: e.target.value }))}
-              style={inputStyle}
-            />
+            <input value={previewRequest.environment} onChange={e => setPreviewRequest(current => ({ ...current, environment: e.target.value }))} style={inputStyle} />
           </label>
           <label style={labelStyle}>
             Estimated Tokens
-            <input
-              type="number"
-              min={0}
-              value={previewRequest.estimated_tokens}
-              onChange={e => setPreviewRequest(current => ({ ...current, estimated_tokens: Number(e.target.value) }))}
-              style={inputStyle}
-            />
+            <input type="number" min={0} value={previewRequest.estimated_tokens} onChange={e => setPreviewRequest(current => ({ ...current, estimated_tokens: Number(e.target.value) }))} style={inputStyle} />
+          </label>
+          <label style={labelStyle}>
+            App
+            <input value={previewRequest.app} onChange={e => setPreviewRequest(current => ({ ...current, app: e.target.value }))} style={inputStyle} />
           </label>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
           <label style={labelStyle}>
             Request Body
-            <textarea
-              value={previewRequest.request_body}
-              onChange={e => setPreviewRequest(current => ({ ...current, request_body: e.target.value }))}
-              style={textareaStyle}
-              rows={4}
-            />
+            <textarea value={previewRequest.request_body} onChange={e => setPreviewRequest(current => ({ ...current, request_body: e.target.value }))} style={textareaStyle} rows={4} />
           </label>
           <label style={labelStyle}>
             Response Body
-            <textarea
-              value={previewRequest.response_body}
-              onChange={e => setPreviewRequest(current => ({ ...current, response_body: e.target.value }))}
-              style={textareaStyle}
-              rows={4}
-            />
+            <textarea value={previewRequest.response_body} onChange={e => setPreviewRequest(current => ({ ...current, response_body: e.target.value }))} style={textareaStyle} rows={4} />
           </label>
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
@@ -341,6 +356,9 @@ export default function PoliciesPage() {
                 model: previewRequest.model.trim().toLowerCase(),
                 environment: previewRequest.environment.trim().toLowerCase(),
                 estimated_tokens: previewRequest.estimated_tokens,
+                actor: previewRequest.actor,
+                app: previewRequest.app,
+                session: previewRequest.session,
                 request_body: previewRequest.request_body,
                 response_body: previewRequest.response_body,
               })
@@ -360,17 +378,21 @@ export default function PoliciesPage() {
         )}
       </div>
 
+      <div style={{ marginTop: 16 }}>
+        <PolicySimulationPage />
+      </div>
+
       <div style={{ ...panelStyle, marginTop: 16 }}>
         <div style={sectionLabel}>RECENT CONTROL-PLANE AUDIT</div>
         <div style={{ display: 'grid', gap: 10 }}>
           {(audit?.items ?? []).slice(0, 12).map(entry => (
             <div key={entry.id} style={{ border: '1px solid #0F1F35', borderRadius: 8, padding: 12, background: '#071525' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{entry.category.toUpperCase()} · {entry.action.toUpperCase()}</div>
+                <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{entry.category.toUpperCase()} | {entry.action.toUpperCase()}</div>
                 <div style={{ color: '#475569', fontSize: 10 }}>{new Date(entry.created_at).toLocaleString()}</div>
               </div>
               <div style={{ color: '#64748B', fontSize: 11, marginTop: 4 }}>
-                {(entry.actor || 'system')} · {entry.target_type} {entry.target_id || '—'} · {entry.outcome}
+                {(entry.actor || 'system')} | {entry.target_type} {entry.target_id || 'n/a'} | {entry.outcome}
               </div>
             </div>
           ))}

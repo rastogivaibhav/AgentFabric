@@ -69,6 +69,10 @@ const (
 	AttrUserID        = "af.user.id"
 	AttrSessionID     = "af.session.id"
 	AttrRetryCount    = "af.retry.count"
+	AttrPromptID      = "af.prompt.id"
+	AttrPromptVersion = "af.prompt.version"
+	AttrPromptRelease = "af.prompt.release_tag"
+	AttrPromptEnv     = "af.prompt.environment"
 
 	// SDK-emitted keys used only for detection (not trusted for policy)
 	sdkCrewRole         = "crewai.agent.role"
@@ -275,6 +279,10 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 	attrs[AttrUserID] = firstNonEmptyAttr(attrs, "af.user.id", "enduser.id", "user.id")
 	attrs[AttrSessionID] = firstNonEmptyAttr(attrs, "af.session.id", "session.id")
 	attrs[AttrRetryCount] = fmt.Sprintf("%d", deriveRetryCount(attrs, span.Name, span.Events))
+	attrs[AttrPromptID] = firstNonEmptyAttr(attrs, "af.prompt.id")
+	attrs[AttrPromptVersion] = firstNonEmptyAttr(attrs, "af.prompt.version")
+	attrs[AttrPromptRelease] = firstNonEmptyAttr(attrs, "af.prompt.release_tag")
+	attrs[AttrPromptEnv] = firstNonEmptyAttr(attrs, "af.prompt.environment", AttrEnvironment, "deployment.environment", "environment", "env")
 	if preview := previewValue(attrs, []string{
 		"gen_ai.prompt", "input.value", "prompt", "llm.prompt", "gen_ai.request.prompt",
 	}); preview != "" {

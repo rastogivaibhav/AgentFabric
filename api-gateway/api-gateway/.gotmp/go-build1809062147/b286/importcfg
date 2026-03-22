@@ -1,0 +1,5 @@
+# import config
+packagefile google.golang.org/protobuf/encoding/protowire=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b270\_pkg_.a
+packagefile google.golang.org/protobuf/internal/errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b271\_pkg_.a
+packagefile google.golang.org/protobuf/reflect/protoreflect=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b269\_pkg_.a
+packagefile math=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\api-gateway\.gotmp\go-build1809062147\b039\_pkg_.a

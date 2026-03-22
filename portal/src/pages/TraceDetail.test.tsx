@@ -8,6 +8,7 @@ vi.mock('../hooks/api', () => ({
 
 vi.mock('react-router-dom', () => ({
   useParams: vi.fn(),
+  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }))
 
 vi.mock('../components/TopologyGraph', () => ({

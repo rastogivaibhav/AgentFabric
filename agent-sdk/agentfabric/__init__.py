@@ -82,6 +82,12 @@ class Attrs:
     ANTHROPIC_CACHE_CREATION = "anthropic.cache_creation_tokens"
     ANTHROPIC_CACHE_READ     = "anthropic.cache_read_tokens"
 
+    # Prompt lifecycle
+    PROMPT_ID          = "af.prompt.id"
+    PROMPT_VERSION     = "af.prompt.version"
+    PROMPT_RELEASE_TAG = "af.prompt.release_tag"
+    PROMPT_ENVIRONMENT = "af.prompt.environment"
+
 
 # ─── SDK Initialisation ──────────────────────────────────────────────────────
 
@@ -115,6 +121,10 @@ def instrument(
         "service.name":    service_name,
         "service.version": service_version,
         "deployment.environment": environment,
+        Attrs.PROMPT_ID: os.environ.get("AF_PROMPT_ID", "").strip(),
+        Attrs.PROMPT_VERSION: os.environ.get("AF_PROMPT_VERSION", "").strip(),
+        Attrs.PROMPT_RELEASE_TAG: os.environ.get("AF_PROMPT_RELEASE_TAG", "").strip(),
+        Attrs.PROMPT_ENVIRONMENT: os.environ.get("AF_PROMPT_ENVIRONMENT", environment).strip(),
     })
 
     headers = {}

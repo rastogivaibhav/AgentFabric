@@ -29,6 +29,12 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] `REDIS_URL` points to the production Redis instance
 - [ ] `AF_CORS_ORIGINS` is restricted to the deployed portal origin(s)
 - [ ] If `AF_TLS_ENABLED=true`, both `AF_TLS_CERT_FILE` and `AF_TLS_KEY_FILE` are present
+- [ ] If `AF_SSO_REQUIRED=true`, OIDC settings are complete:
+  - `AF_OIDC_ISSUER`
+  - `AF_OIDC_CLIENT_ID`
+  - `AF_OIDC_CLIENT_SECRET`
+  - `AF_OIDC_REDIRECT_URI`
+- [ ] If SSO cutover is complete, `AF_PASSWORD_LOGIN_DISABLED=true`
 - [ ] Collector production config is complete:
   - `AF_GATEWAY_ENDPOINT`
   - `AF_GATEWAY_AUTH_TOKEN`
@@ -61,6 +67,9 @@ Use this checklist before every production deployment and before declaring the p
   - `scripts/probe_proxy_path.ps1`
   - `scripts/probe-proxy-path.sh`
 - [ ] `scripts/run_release_candidate_validation.ps1` or `scripts/run-release-candidate-validation.sh` passes against the candidate deployment
+- [ ] Backup path passes:
+  - `scripts/backup_postgres.ps1`
+  - `scripts/backup-postgres.sh`
 
 ## 5. Runtime Smoke
 
@@ -107,6 +116,7 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] Admin actions are auditable
 - [ ] DLP enforcement is visible in traces and audit when exercised
 - [ ] Secret material is not exposed through admin list APIs
+- [ ] Security headers are present on gateway responses
 
 ## 8. GA Decision Bar
 
@@ -118,6 +128,8 @@ Only declare GA when all of the following are true:
 - [ ] governance scenarios are green
 - [ ] docs match the deployed product and supported provider scope
 - [ ] no open P0 or P1 release blockers remain
+- [ ] latest successful backup is no older than 24 hours
+- [ ] restore drill has been executed in the current release cycle
 
 ## 9. Final GA Gate
 

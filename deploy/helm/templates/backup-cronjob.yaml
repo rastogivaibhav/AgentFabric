@@ -1,0 +1,64 @@
+{{- if .Values.backups.enabled }}
+{{- if not .Values.backups.pvc.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agentfabric-backups
+  labels:
+    {{- include "agentfabric.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.backups.pvc.size }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: agentfabric-backup
+  labels:
+    {{- include "agentfabric.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backups.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: postgres-backup
+              image: {{ include "agentfabric.image" .Values.backups.image }}
+              imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secrets.name }}
+                      key: database-url
+                - name: BACKUP_RETENTION_DAYS
+                  value: {{ .Values.backups.retentionDays | quote }}
+                - name: BACKUP_FORMAT
+                  value: {{ .Values.backups.export.format | quote }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  mkdir -p /backups
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  pg_dump "$DATABASE_URL" --format="${BACKUP_FORMAT}" --file="/backups/agentfabric-${stamp}.dump"
+                  find /backups -type f -mtime +"${BACKUP_RETENTION_DAYS}" -delete
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+              resources:
+                {{- toYaml .Values.backups.resources | nindent 16 }}
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ default "agentfabric-backups" .Values.backups.pvc.existingClaim }}
+{{- end }}

@@ -62,17 +62,18 @@ type Finding struct {
 }
 
 type Decision struct {
-	Matched      bool
-	Final        bool
-	RuleID       int64
-	PolicyName   string
-	Action       string
-	Reason       string
-	Scope        string
-	MatchedNames []string
-	Redactions   int
-	RedactedBody []byte
-	Explanation  DecisionExplanation
+	Matched          bool
+	Final            bool
+	RuleID           int64
+	PolicyName       string
+	Action           string
+	Reason           string
+	Scope            string
+	MatchedNames     []string
+	GuardrailMatches []string
+	Redactions       int
+	RedactedBody     []byte
+	Explanation      DecisionExplanation
 }
 
 type detector struct {
@@ -160,9 +161,6 @@ func (e *Engine) evaluateTrafficInput(input EvaluationInput) Decision {
 func (e *Engine) evaluateDLPInput(input EvaluationInput) Decision {
 	input = normalizeEvaluationInput(input)
 	findings := scan(decisionBody(input))
-	if len(findings) == 0 {
-		return Decision{}
-	}
 	compiled := e.currentCompiledRules()
 	decision := evaluateDLPRules(compiled, input, findings)
 	if !decision.Matched {

@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"hash/fnv"
 	"net/http"
 	"sort"
 	"strings"
@@ -26,14 +27,17 @@ type EvaluationInput struct {
 type ConditionTrace = models.PolicyConditionTrace
 
 type DecisionExplanation struct {
-	Engine         string
-	DecisionMode   string
-	EvaluationPath []string
-	MatchedFields  []string
-	ConditionTrace []ConditionTrace
-	RegoQuery      string
-	Explain        string
-	RuleConditions map[string]string
+	Engine           string
+	DecisionMode     string
+	Version          int
+	RolloutPercent   int
+	EvaluationPath   []string
+	MatchedFields    []string
+	ConditionTrace   []ConditionTrace
+	RegoQuery        string
+	Explain          string
+	RuleConditions   map[string]string
+	GuardrailMatches []string
 }
 
 type compiledRule struct {
@@ -79,6 +83,29 @@ func normalizeRule(rule models.PolicyRule) models.PolicyRule {
 	if rule.Scope == "" {
 		rule.Scope = "both"
 	}
+	if rule.RolloutPercent <= 0 {
+		rule.RolloutPercent = 100
+	}
+	if rule.Version <= 0 {
+		rule.Version = 1
+	}
+	normalizedGuardrails := make([]string, 0, len(rule.Guardrails))
+	for _, guard := range rule.Guardrails {
+		if trimmed := strings.ToLower(strings.TrimSpace(guard)); trimmed != "" {
+			normalizedGuardrails = append(normalizedGuardrails, trimmed)
+		}
+	}
+	sort.Strings(normalizedGuardrails)
+	rule.Guardrails = normalizedGuardrails
+	rule.SchemaJSON = strings.TrimSpace(rule.SchemaJSON)
+	normalizedUnsafe := make([]string, 0, len(rule.UnsafeCategories))
+	for _, category := range rule.UnsafeCategories {
+		if trimmed := strings.ToLower(strings.TrimSpace(category)); trimmed != "" {
+			normalizedUnsafe = append(normalizedUnsafe, trimmed)
+		}
+	}
+	sort.Strings(normalizedUnsafe)
+	rule.UnsafeCategories = normalizedUnsafe
 	if rule.RuleConditions == nil {
 		rule.RuleConditions = map[string]string{}
 	}
@@ -105,4 +132,74 @@ func HeadersFromHTTP(header http.Header) map[string]string {
 		out[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(values[0])
 	}
 	return out
+}
+
+func rolloutTrace(rule models.PolicyRule, input EvaluationInput) ConditionTrace {
+	rollout := rule.RolloutPercent
+	if rollout <= 0 {
+		rollout = 100
+	}
+	matched := true
+	actual := "100"
+	if rollout < 100 {
+		actual = stableRolloutBucket(rule, input)
+		matched = atoiOrZero(actual) <= rollout
+	}
+	return ConditionTrace{
+		Field:    "rollout_percent",
+		Operator: ">=",
+		Expected: intString(rollout),
+		Actual:   actual,
+		Matched:  matched,
+		Source:   "rule.rollout_percent",
+	}
+}
+
+func stableRolloutBucket(rule models.PolicyRule, input EvaluationInput) string {
+	h := fnv.New32a()
+	h.Write([]byte(strings.Join([]string{
+		rule.Name,
+		rule.RuleType,
+		input.TenantID,
+		input.Provider,
+		input.Model,
+		input.Environment,
+		input.App,
+		input.Session,
+		string(input.RequestBody),
+		string(input.ResponseBody),
+	}, "|")))
+	return intString(int(h.Sum32()%100) + 1)
+}
+
+func intString(value int) string {
+	return strings.TrimSpace(strconvItoa(value))
+}
+
+func strconvItoa(value int) string {
+	if value == 0 {
+		return "0"
+	}
+	sign := ""
+	if value < 0 {
+		sign = "-"
+		value = -value
+	}
+	digits := make([]byte, 0, 12)
+	for value > 0 {
+		digits = append([]byte{byte('0' + value%10)}, digits...)
+		value /= 10
+	}
+	return sign + string(digits)
+}
+
+func atoiOrZero(value string) int {
+	total := 0
+	for _, ch := range strings.TrimSpace(value) {
+		if ch < '0' || ch > '9' {
+			return 0
+		}
+		total = total*10 + int(ch-'0')
+	}
+	return total
 }

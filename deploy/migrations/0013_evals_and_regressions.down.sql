@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS eval_scores;
+DROP TABLE IF EXISTS eval_runs;

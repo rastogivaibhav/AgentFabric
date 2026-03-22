@@ -15,5 +15,19 @@ func explainDecision(rule models.PolicyRule, explanation DecisionExplanation) st
 	if action == "" {
 		action = "match"
 	}
-	return fmt.Sprintf("%s matched on %s via %s", action, strings.Join(explanation.MatchedFields, ", "), explanation.Engine)
+	base := fmt.Sprintf("%s matched on %s via %s", action, strings.Join(explanation.MatchedFields, ", "), explanation.Engine)
+	details := []string{}
+	if len(explanation.GuardrailMatches) > 0 {
+		details = append(details, "guards="+strings.Join(explanation.GuardrailMatches, ","))
+	}
+	if explanation.Version > 0 {
+		details = append(details, fmt.Sprintf("v%d", explanation.Version))
+	}
+	if explanation.RolloutPercent > 0 && explanation.RolloutPercent < 100 {
+		details = append(details, fmt.Sprintf("rollout=%d%%", explanation.RolloutPercent))
+	}
+	if len(details) == 0 {
+		return base
+	}
+	return base + " (" + strings.Join(details, " · ") + ")"
 }

@@ -145,6 +145,10 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: jwt-secrets
+            - name: AF_SSO_REQUIRED
+              value: {{ ternary "true" "false" .Values.auth.ssoRequired | quote }}
+            - name: AF_PASSWORD_LOGIN_DISABLED
+              value: {{ ternary "true" "false" .Values.auth.passwordLoginDisabled | quote }}
             - name: AF_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -157,6 +161,18 @@ spec:
                   key: vault-key
             - name: AF_CORS_ORIGINS
               value: {{ join "," .Values.api.cors.allowedOrigins | quote }}
+            {{- if .Values.auth.oidc.issuer }}
+            - name: AF_OIDC_ISSUER
+              value: {{ .Values.auth.oidc.issuer | quote }}
+            {{- end }}
+            {{- if .Values.auth.oidc.clientId }}
+            - name: AF_OIDC_CLIENT_ID
+              value: {{ .Values.auth.oidc.clientId | quote }}
+            {{- end }}
+            {{- if .Values.auth.oidc.redirectUri }}
+            - name: AF_OIDC_REDIRECT_URI
+              value: {{ .Values.auth.oidc.redirectUri | quote }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /readyz

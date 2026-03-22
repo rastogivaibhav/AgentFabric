@@ -38,6 +38,7 @@ func resolveLineage(spanID string, byID map[string]models.Span, memo map[string]
 		return meta
 	}
 	seen[spanID] = true
+	defer delete(seen, spanID)
 
 	label := labelForSpan(span)
 	if strings.TrimSpace(span.ParentID) == "" {

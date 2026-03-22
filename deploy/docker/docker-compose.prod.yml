@@ -80,6 +80,8 @@ services:
       # AF_OIDC_CLIENT_SECRET: "${AF_OIDC_CLIENT_SECRET:-}"
       # AF_OIDC_REDIRECT_URI:  "${AF_OIDC_REDIRECT_URI:-}"
       # AF_OIDC_LOGOUT_URL:    "${AF_OIDC_LOGOUT_URL:-}"
+      AF_PASSWORD_LOGIN_DISABLED: "${AF_PASSWORD_LOGIN_DISABLED:-false}"
+      AF_SSO_REQUIRED: "${AF_SSO_REQUIRED:-false}"
     restart: always
   # ─── Portal: production build pointing at the live API ─────────────────────
   portal:
@@ -98,3 +100,18 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: ""
       GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-CHANGE_ME_grafana}
       GF_SERVER_DOMAIN: "${GF_DOMAIN:-localhost}"
+
+  postgres-backup:
+    image: postgres:16
+    profiles: ["backup"]
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set for backups}
+      BACKUP_FORMAT: "${BACKUP_FORMAT:-custom}"
+      RETENTION_DAYS: "${RETENTION_DAYS:-7}"
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      pg_dump "$DATABASE_URL" --format="${BACKUP_FORMAT}" --file="/backups/agentfabric-$$(date -u +%Y%m%dT%H%M%SZ).dump"

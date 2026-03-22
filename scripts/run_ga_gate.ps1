@@ -9,6 +9,9 @@ param(
   [string]$ProxyPath = "/proxy/openai/v1/chat/completions",
   [string]$ProxyBodyJson = '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ga gate validation"}],"stream":false}',
   [string]$TenantId = "00000000-0000-0000-0000-000000000001",
+  [switch]$RequirePilotProof,
+  [string]$PilotScorecardPath = "",
+  [switch]$PilotReferenceReady,
   [int]$OpenP0Count = -1,
   [int]$OpenP1Count = -1,
   [switch]$CiGreen,
@@ -69,7 +72,9 @@ function Run-ProcessCheck {
 function Test-DocsAlignment {
   $docsToCheck = @(
     (Join-Path $RepoRoot "docs\PRODUCTION_CHECKLIST.md"),
-    (Join-Path $RepoRoot "docs\RELEASE_BOUNDARIES.md")
+    (Join-Path $RepoRoot "docs\RELEASE_BOUNDARIES.md"),
+    (Join-Path $RepoRoot "docs\PILOT_PLAYBOOK.md"),
+    (Join-Path $RepoRoot "docs\CUSTOMER_VALUE_SCORECARD.md")
   )
   foreach ($doc in $docsToCheck) {
     if (-not (Test-Path $doc)) {
@@ -93,6 +98,25 @@ function Test-DocsAlignment {
 function Add-SummaryLine {
   param([string]$Line)
   $script:SummaryLines.Add($Line) | Out-Null
+}
+
+function Test-PilotEvidence {
+  if ($PilotReferenceReady -or (Get-EnvBool "GA_PILOT_REFERENCE_READY")) {
+    return @{ Passed = $true; Detail = "external pilot/reference evidence declared ready" }
+  }
+  if (-not $PilotScorecardPath) {
+    return @{ Passed = $false; Detail = "set -PilotScorecardPath or -PilotReferenceReady for market-facing GA" }
+  }
+  if (-not (Test-Path $PilotScorecardPath)) {
+    return @{ Passed = $false; Detail = "pilot scorecard not found at $PilotScorecardPath" }
+  }
+  $content = [System.IO.File]::ReadAllText((Resolve-Path $PilotScorecardPath))
+  foreach ($needle in @("Cost visibility", "Policy", "Debugging", "Recommendation")) {
+    if ($content -notmatch [regex]::Escape($needle)) {
+      return @{ Passed = $false; Detail = "pilot scorecard is missing section '$needle'" }
+    }
+  }
+  return @{ Passed = $true; Detail = "pilot scorecard present at $PilotScorecardPath" }
 }
 
 function Render-Summary {
@@ -242,6 +266,11 @@ if ($OpenP0Count -lt 0 -or $OpenP1Count -lt 0) {
 } else {
   $blockersClear = ($OpenP0Count -eq 0 -and $OpenP1Count -eq 0)
   Add-Check -Name "Release blockers declared" -Passed $blockersClear -Detail "P0=$OpenP0Count P1=$OpenP1Count"
+}
+
+if ($RequirePilotProof -or (Get-EnvBool "GA_REQUIRE_PILOT_PROOF")) {
+  $pilotCheck = Test-PilotEvidence
+  Add-Check -Name "Pilot/reference proof" -Passed ([bool]$pilotCheck.Passed) -Detail ([string]$pilotCheck.Detail)
 }
 
 $allRequiredPassed = @($Checks | Where-Object { $_.Required -and -not $_.Passed }).Count -eq 0

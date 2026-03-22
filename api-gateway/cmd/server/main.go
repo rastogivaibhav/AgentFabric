@@ -104,17 +104,23 @@ func main() {
 	// pgStore is passed as the UserLookup implementation so PasswordLogin can
 	// verify credentials against the users table (bcrypt) with an env-var
 	// admin as a break-glass fallback.
-	oidcHandler := auth.NewOIDCHandler(auth.OIDCConfig{
-		Issuer:        envOr("AF_OIDC_ISSUER", ""),
-		ClientID:      envOr("AF_OIDC_CLIENT_ID", ""),
-		ClientSecret:  envOr("AF_OIDC_CLIENT_SECRET", ""),
-		RedirectURI:   envOr("AF_OIDC_REDIRECT_URI", "http://localhost:8080/auth/callback"),
-		JWTSecret:     jwtSecrets[0],
-		JWTSecrets:    jwtSecrets,
-		LogoutURL:     envOr("AF_OIDC_LOGOUT_URL", ""),
-		AdminUser:     envOr("AF_ADMIN_USER", "admin"),
-		AdminPassword: envOr("AF_ADMIN_PASSWORD", "admin"),
-	}, pgStore, logger)
+	oidcCfg := auth.OIDCConfig{
+		Issuer:               envOr("AF_OIDC_ISSUER", ""),
+		ClientID:             envOr("AF_OIDC_CLIENT_ID", ""),
+		ClientSecret:         envOr("AF_OIDC_CLIENT_SECRET", ""),
+		RedirectURI:          envOr("AF_OIDC_REDIRECT_URI", "http://localhost:8080/auth/callback"),
+		JWTSecret:            jwtSecrets[0],
+		JWTSecrets:           jwtSecrets,
+		LogoutURL:            envOr("AF_OIDC_LOGOUT_URL", ""),
+		RequireSSO:           strings.EqualFold(envOr("AF_SSO_REQUIRED", "false"), "true"),
+		DisablePasswordLogin: strings.EqualFold(envOr("AF_PASSWORD_LOGIN_DISABLED", "false"), "true"),
+		AdminUser:            envOr("AF_ADMIN_USER", "admin"),
+		AdminPassword:        envOr("AF_ADMIN_PASSWORD", "admin"),
+	}
+	if err := auth.ValidateConfig(oidcCfg, strictConfigEnabled()); err != nil {
+		logger.Fatal("invalid enterprise auth configuration", zap.Error(err))
+	}
+	oidcHandler := auth.NewOIDCHandler(oidcCfg, pgStore, logger)
 
 	// Budget enforcement
 	budgetEnabled := os.Getenv("AF_BUDGET_ENABLED") != "false"
@@ -234,6 +240,10 @@ func main() {
 		// Traces
 		r.Route("/traces", func(r chi.Router) {
 			r.Get("/", h.ListTraces)
+			r.Get("/compare", h.GetTraceComparison)
+			r.Get("/saved-views", h.ListTraceSavedViews)
+			r.Put("/saved-views", h.UpsertTraceSavedView)
+			r.Delete("/saved-views/{viewId}", h.DeleteTraceSavedView)
 			r.Get("/{traceId}", h.GetTrace)
 			r.Get("/{traceId}/graph", h.GetTraceGraph)
 			r.Get("/{traceId}/timeline", h.GetTraceTimeline)
@@ -305,10 +315,23 @@ func main() {
 			r.With(middleware.RequireRole("admin")).Delete("/{ruleId}", h.DeletePricingRule)
 		})
 
+		r.Route("/evals", func(r chi.Router) {
+			r.With(middleware.RequireRole("admin")).Get("/", h.ListEvalRuns)
+			r.With(middleware.RequireRole("admin")).Post("/score", h.ScoreTraceEval)
+			r.With(middleware.RequireRole("admin")).Post("/regressions", h.CompareEvalRegressions)
+		})
+
+		r.Route("/prompts", func(r chi.Router) {
+			r.With(middleware.RequireRole("admin")).Get("/", h.ListPrompts)
+			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertPromptVersion)
+			r.With(middleware.RequireRole("admin")).Post("/promote", h.PromotePromptRelease)
+		})
+
 		r.Route("/policies", func(r chi.Router) {
 			r.With(middleware.RequireRole("admin")).Get("/", h.ListPolicyRules)
 			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertPolicyRule)
 			r.With(middleware.RequireRole("admin")).Post("/preview", h.PreviewPolicyRule)
+			r.With(middleware.RequireRole("admin")).Post("/simulate", h.SimulatePolicyRule)
 			r.With(middleware.RequireRole("admin")).Delete("/{ruleId}", h.DeletePolicyRule)
 		})
 
@@ -486,6 +509,9 @@ func validateProductionConfig(authDisabled bool, jwtSecrets []string, adminPassw
 	}
 	if strings.TrimSpace(vaultKey) == "" || vaultKey == strings.Repeat("0", 64) {
 		return fmt.Errorf("AF_VAULT_KEY must be set to a non-default value")
+	}
+	if err := vault.ValidateMasterKeyHex(vaultKey); err != nil {
+		return err
 	}
 	return nil
 }

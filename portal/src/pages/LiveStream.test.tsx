@@ -10,6 +10,10 @@ vi.mock('../hooks/api', () => ({
   useLiveStream: vi.fn(),
 }))
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: vi.fn(() => vi.fn()),
+}))
+
 // lucide-react icons — stub them so jsdom doesn't choke
 vi.mock('lucide-react', () => ({
   Pause: () => <span data-testid="icon-pause" />,

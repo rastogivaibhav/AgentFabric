@@ -53,6 +53,9 @@ type OIDCConfig struct {
 	SessionMaxAge time.Duration
 	// Optional: provider-specific logout endpoint override
 	LogoutURL string
+	// Enterprise login controls.
+	RequireSSO           bool
+	DisablePasswordLogin bool
 	// Local password login (non-OIDC). Defaults: admin / admin.
 	// Override via AF_ADMIN_USER + AF_ADMIN_PASSWORD environment variables.
 	AdminUser     string
@@ -161,6 +164,36 @@ func NewOIDCHandler(cfg OIDCConfig, users UserLookup, logger *zap.Logger) *OIDCH
 		cfg.JWTSecret = cfg.JWTSecrets[0]
 	}
 	return &OIDCHandler{cfg: cfg, users: users, logger: logger, jwksCache: newJWKSCache()}
+}
+
+func ValidateConfig(cfg OIDCConfig, strict bool) error {
+	if !strict {
+		return nil
+	}
+	if cfg.RequireSSO {
+		switch {
+		case strings.TrimSpace(cfg.Issuer) == "":
+			return fmt.Errorf("AF_SSO_REQUIRED=true requires AF_OIDC_ISSUER")
+		case strings.TrimSpace(cfg.ClientID) == "":
+			return fmt.Errorf("AF_SSO_REQUIRED=true requires AF_OIDC_CLIENT_ID")
+		case strings.TrimSpace(cfg.ClientSecret) == "":
+			return fmt.Errorf("AF_SSO_REQUIRED=true requires AF_OIDC_CLIENT_SECRET")
+		case strings.TrimSpace(cfg.RedirectURI) == "":
+			return fmt.Errorf("AF_SSO_REQUIRED=true requires AF_OIDC_REDIRECT_URI")
+		}
+	}
+	if cfg.DisablePasswordLogin && !cfg.RequireSSO && strings.TrimSpace(cfg.Issuer) == "" {
+		return fmt.Errorf("AF_PASSWORD_LOGIN_DISABLED=true requires OIDC SSO to be configured")
+	}
+	return nil
+}
+
+func (h *OIDCHandler) SSOEnabled() bool {
+	return strings.TrimSpace(h.cfg.Issuer) != ""
+}
+
+func (h *OIDCHandler) PasswordLoginEnabled() bool {
+	return !h.cfg.DisablePasswordLogin
 }
 
 // ─── Multi-secret helpers (zero-downtime key rotation) ────────────────────────
@@ -890,6 +923,10 @@ type passwordLoginRequest struct {
 const defaultTenantID = "00000000-0000-0000-0000-000000000001"
 
 func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.DisablePasswordLogin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password login disabled"})
+		return
+	}
 	var req passwordLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
@@ -982,4 +1019,3 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("password login successful", zap.String("username", idClaims.Subject))
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }
-

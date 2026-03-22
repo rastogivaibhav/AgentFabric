@@ -25,6 +25,17 @@ AgentFabric should currently be positioned and released as:
 - generic policy-engine replacement for OPA
 - broader managed-key provider scope beyond `openai`, `anthropic`, and `google`
 
+## Market-release proof boundary
+
+For internal GA or controlled platform rollout, the release gate can pass without external references if staging, governance, and blocker checks are clean.
+
+For broader market-facing release language, add:
+
+- at least one completed pilot scorecard
+- at least one real operator story
+- at least one example of measurable value in cost visibility, governance, or debugging workflow
+- optional second pilot before broader external positioning
+
 ## Operational caveats
 
 - Windows local Go test execution can still be affected by application-control policies on generated `*.test.exe` files.
@@ -64,5 +75,15 @@ Use the GA gate scripts as the objective release decision:
 - successful stack and proxy probes
 - successful release-candidate validation with governance scenarios
 - explicit blocker counts showing no open P0/P1 items
+
+For market-facing release decisions, also use:
+
+- `-RequirePilotProof -PilotScorecardPath <path>` on [run_ga_gate.ps1](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run_ga_gate.ps1)
+- `REQUIRE_PILOT_PROOF=true PILOT_SCORECARD_PATH=<path>` with [run-ga-gate.sh](/C:/Users/vrast/Documents/Agentic%20Code/files/scripts/run-ga-gate.sh)
+
+Pilot execution and scorecard templates are here:
+
+- [PILOT_PLAYBOOK.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/PILOT_PLAYBOOK.md)
+- [CUSTOMER_VALUE_SCORECARD.md](/C:/Users/vrast/Documents/Agentic%20Code/files/docs/CUSTOMER_VALUE_SCORECARD.md)
 
 Treat any result other than `GO` as `NO-GO`.

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Span, useTrace } from '../hooks/api'
 import TopologyGraph from '../components/TopologyGraph'
 import TraceHeader from '../components/trace/TraceHeader'
 import PolicyEventPanel from '../components/trace/PolicyEventPanel'
 import SpanDetailPanel from '../components/trace/SpanDetailPanel'
+import SpanTimeline from '../components/trace/SpanTimeline'
 
 const FW_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
@@ -19,82 +20,6 @@ function fmtDuration(ns: number) {
   if (ns < 1_000_000) return `${(ns / 1_000).toFixed(0)}us`
   if (ns < 1_000_000_000) return `${(ns / 1_000_000).toFixed(1)}ms`
   return `${(ns / 1_000_000_000).toFixed(2)}s`
-}
-
-function WaterfallRow({
-  span,
-  minTime,
-  totalDuration,
-  depth,
-}: {
-  span: Span
-  minTime: number
-  totalDuration: number
-  depth: number
-}) {
-  const [hovered, setHovered] = useState(false)
-  const startPct = totalDuration > 0 ? ((span.start_time_ns - minTime) / totalDuration) * 100 : 0
-  const widthPct = totalDuration > 0 ? Math.max(0.3, (span.duration_ns / totalDuration) * 100) : 0
-  const color = FW_COLORS[span.framework] ?? '#3B82F6'
-  const isError = span.status_code === 2
-
-  return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        height: 28,
-        borderBottom: '1px solid #0A1020',
-        position: 'relative',
-        background: hovered ? '#1E3A5F15' : 'transparent',
-        cursor: 'pointer',
-      }}
-    >
-      <div
-        style={{
-          width: 280,
-          flexShrink: 0,
-          padding: '0 12px',
-          paddingLeft: 12 + depth * 16,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          fontSize: 11,
-          color: isError ? '#EF4444' : '#CBD5E1',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-        }}
-      >
-        {depth > 0 && <span style={{ color: '#1E3A5F' }}>-</span>}
-        <span style={{ fontSize: 9, color, marginRight: 2 }}>o</span>
-        {span.name}
-      </div>
-      <div style={{ width: 70, flexShrink: 0, fontSize: 10, color: '#475569', textAlign: 'right', paddingRight: 12 }}>
-        {fmtDuration(span.duration_ns)}
-      </div>
-      <div style={{ flex: 1, position: 'relative', height: 16 }}>
-        <div
-          style={{
-            position: 'absolute',
-            top: 2,
-            height: 12,
-            borderRadius: 2,
-            left: `${startPct}%`,
-            width: `${widthPct}%`,
-            background: isError ? '#EF4444' : color,
-            opacity: 0.8,
-            minWidth: 2,
-          }}
-        />
-      </div>
-      <div style={{ width: 80, flexShrink: 0, fontSize: 10, color: '#F59E0B', textAlign: 'right', paddingRight: 12 }}>
-        {span.cost_usd ? `$${span.cost_usd.toFixed(6)}` : ''}
-      </div>
-    </div>
-  )
 }
 
 function buildSpanTree(spans: Span[]) {
@@ -132,11 +57,37 @@ export default function TraceDetail() {
 
   const spans = trace.spans ?? []
   const policyEvents = trace.policy_events ?? []
-  const minTime = spans.length > 0 ? Math.min(...spans.map(span => span.start_time_ns)) : 0
-  const maxTime = spans.length > 0 ? Math.max(...spans.map(span => span.start_time_ns + span.duration_ns)) : 0
-  const totalDuration = maxTime - minTime
   const tree = buildSpanTree(spans)
   const flatSpans = flattenTree(tree)
+  const timeline = trace.timeline ?? {
+    trace_id: trace.id,
+    start_time: trace.start_time,
+    duration_ns: trace.duration_ns,
+    items: flatSpans.map(({ span, depth }) => ({
+      span_id: span.id,
+      parent_span_id: span.parent_id,
+      name: span.name,
+      step_type: span.step_type,
+      provider: span.provider,
+      model: span.model,
+      app_name: span.app_name,
+      environment: span.environment,
+      status: span.blocked ? 'blocked' : span.status_code === 2 ? 'error' : 'ok',
+      failure_summary: span.failure_summary,
+      blocked: span.blocked,
+      blocked_reason: span.blocked_reason,
+      redaction_count: span.redaction_count,
+      depth,
+      lineage: span.lineage,
+      start_offset_ns: span.start_time_ns - (spans[0]?.start_time_ns ?? 0),
+      end_offset_ns: span.start_time_ns - (spans[0]?.start_time_ns ?? 0) + span.duration_ns,
+      duration_ns: span.duration_ns,
+      total_tokens: (span.input_tokens ?? 0) + (span.output_tokens ?? 0) + (span.cache_read_tokens ?? 0) + (span.cache_write_tokens ?? 0) + (span.reasoning_tokens ?? 0),
+      cost_usd: span.cost_usd,
+      policy_event_count: policyEvents.filter(event => event.span_id === span.id).length,
+    })),
+    highlights: trace.insights?.workflow_summary ?? [],
+  }
 
   const selectedPolicyEvents = useMemo(
     () => (selected ? policyEvents.filter(event => event.span_id === selected.id) : []),
@@ -150,6 +101,15 @@ export default function TraceDetail() {
 
         <div style={{ marginBottom: 12 }}>
           <PolicyEventPanel title="POLICY DECISIONS" events={policyEvents.slice(0, 6)} emptyLabel="No policy evidence recorded for this trace." />
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <Link
+            to="/traces"
+            style={{ color: '#60A5FA', fontSize: 11, textDecoration: 'none' }}
+          >
+            Compare from traces page
+          </Link>
         </div>
 
         <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
@@ -173,19 +133,14 @@ export default function TraceDetail() {
         </div>
 
         {tab === 'waterfall' && (
-          <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 8, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', height: 32, background: '#080C18', borderBottom: '1px solid #0F1F35', fontSize: 9, color: '#334155', letterSpacing: '0.1em' }}>
-              <div style={{ width: 280, paddingLeft: 12 }}>SPAN NAME</div>
-              <div style={{ width: 70, textAlign: 'right', paddingRight: 12 }}>DURATION</div>
-              <div style={{ flex: 1, paddingLeft: 8 }}>TIMELINE</div>
-              <div style={{ width: 80, textAlign: 'right', paddingRight: 12 }}>COST</div>
-            </div>
-            {flatSpans.map(({ span, depth }) => (
-              <div key={span.id} onClick={() => setSelected(selected?.id === span.id ? null : span)}>
-                <WaterfallRow span={span} minTime={minTime} totalDuration={totalDuration} depth={depth} />
-              </div>
-            ))}
-          </div>
+          <SpanTimeline
+            timeline={timeline}
+            selectedSpanId={selected?.id}
+            onSelectSpan={spanId => {
+              const span = spans.find(item => item.id === spanId) ?? null
+              setSelected(prev => (prev?.id === spanId ? null : span))
+            }}
+          />
         )}
 
         {tab === 'spans' && (

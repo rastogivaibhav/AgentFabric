@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -51,13 +52,24 @@ type Vault struct {
 
 // New creates a Vault. masterKeyHex must be a 64-character hex string (32 bytes).
 func New(pool *pgxpool.Pool, masterKeyHex string) (*Vault, error) {
+	if err := ValidateMasterKeyHex(masterKeyHex); err != nil {
+		return nil, err
+	}
 	b, err := hex.DecodeString(masterKeyHex)
-	if err != nil || len(b) != 32 {
-		return nil, fmt.Errorf("AF_VAULT_KEY must be a 64-char hex string (32 bytes): got %d bytes", len(b))
+	if err != nil {
+		return nil, fmt.Errorf("decode AF_VAULT_KEY: %w", err)
 	}
 	v := &Vault{pool: pool}
 	copy(v.masterKey[:], b)
 	return v, nil
+}
+
+func ValidateMasterKeyHex(masterKeyHex string) error {
+	b, err := hex.DecodeString(strings.TrimSpace(masterKeyHex))
+	if err != nil || len(b) != 32 {
+		return fmt.Errorf("AF_VAULT_KEY must be a 64-char hex string (32 bytes): got %d bytes", len(b))
+	}
+	return nil
 }
 
 // Store encrypts realKey and inserts a new virtual key row.

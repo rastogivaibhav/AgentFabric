@@ -18,18 +18,23 @@ export default function PolicyDecisionExplorer({ label, decision }: Props) {
       {decision.engine && (
         <div style={metaStyle}>
           engine {decision.engine}
-          {decision.decision_mode ? ` · mode ${decision.decision_mode}` : ''}
-          {decision.final !== undefined ? ` · final ${decision.final ? 'yes' : 'no'}` : ''}
+          {decision.decision_mode ? ` | mode ${decision.decision_mode}` : ''}
+          {decision.version ? ` | v${decision.version}` : ''}
+          {decision.rollout_percent ? ` | rollout ${decision.rollout_percent}%` : ''}
+          {decision.final !== undefined ? ` | final ${decision.final ? 'yes' : 'no'}` : ''}
         </div>
       )}
       {decision.evaluation_path && decision.evaluation_path.length > 0 && (
-        <div style={metaStyle}>path: {decision.evaluation_path.join(' → ')}</div>
+        <div style={metaStyle}>path: {decision.evaluation_path.join(' -> ')}</div>
       )}
       {decision.matched_fields && decision.matched_fields.length > 0 && (
         <div style={metaStyle}>matched fields: {decision.matched_fields.join(', ')}</div>
       )}
       {decision.matched_names && decision.matched_names.length > 0 && (
         <div style={metaStyle}>detectors: {decision.matched_names.join(', ')}</div>
+      )}
+      {decision.guardrail_matches && decision.guardrail_matches.length > 0 && (
+        <div style={metaStyle}>guardrails: {decision.guardrail_matches.join(', ')}</div>
       )}
       {decision.rule_conditions && Object.keys(decision.rule_conditions).length > 0 && (
         <div style={{ marginTop: 8 }}>
@@ -51,9 +56,9 @@ export default function PolicyDecisionExplorer({ label, decision }: Props) {
                 {trace.matched ? 'MATCH' : 'MISS'}
               </div>
               <div style={{ color: '#CBD5E1', fontSize: 11 }}>
-                {trace.field} {trace.operator} {trace.expected || '∅'}
+                {trace.field} {trace.operator} {trace.expected || 'n/a'}
               </div>
-              <div style={metaStyle}>actual: {trace.actual || '∅'}</div>
+              <div style={metaStyle}>actual: {trace.actual || 'n/a'}</div>
               {trace.source && <div style={metaStyle}>source: {trace.source}</div>}
             </div>
           ))}
