@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useLiveStream, Span, LiveEvent, PolicyLiveEventData } from '../hooks/api'
+import { useLiveStream, Span, LiveEvent, PolicyLiveEventData, getSpanOutcomeStatus } from '../hooks/api'
 import { Pause, Play, Trash2, Download } from 'lucide-react'
 import SpanDetailPanel from '../components/trace/SpanDetailPanel'
 
@@ -85,7 +85,7 @@ export default function LiveStream() {
         const name = e.type === 'policy' ? policy.policy_name : (span.name ?? '')
         const framework = e.type === 'policy' ? 'policy' : (span.framework ?? '')
         const duration = e.type === 'policy' ? 0 : (span.duration_ns ?? 0)
-        const status = e.type === 'policy' ? policy.result : (span.status_code ?? 0)
+        const status = e.type === 'policy' ? policy.result : getSpanOutcomeStatus(span)
         const cost = e.type === 'policy' ? 0 : (span.cost_usd ?? 0)
         return `${e.ts},${e.type},${traceID},${spanID},${name},${framework},${duration},${status},${cost}`
       }),
@@ -167,8 +167,9 @@ export default function LiveStream() {
             const span = ev.data as Span
             const policy = ev.data as PolicyLiveEventData
             const isSelected = selectedEvent === ev
-            const isError = span.status_code === 2
-            const isBlocked = ev.type !== 'policy' && Boolean(span.blocked)
+            const outcomeStatus = ev.type === 'policy' ? 'ok' : getSpanOutcomeStatus(span)
+            const isError = outcomeStatus === 'error'
+            const isBlocked = ev.type !== 'policy' && outcomeStatus === 'blocked'
             const isRedacted = ev.type !== 'policy' && (span.redaction_count ?? 0) > 0
             const traceID = ev.type === 'policy' ? (policy.trace_id ?? '') : (span.trace_id ?? '')
             const spanID = ev.type === 'policy' ? (policy.span_id ?? '') : (span.id ?? '')

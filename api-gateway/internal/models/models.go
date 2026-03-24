@@ -44,6 +44,7 @@ type Span struct {
 	PromptPreview         string            `json:"prompt_preview,omitempty" db:"-"`
 	ResponsePreview       string            `json:"response_preview,omitempty" db:"-"`
 	RetryCount            int               `json:"retry_count,omitempty" db:"-"`
+	OutcomeStatus         string            `json:"outcome_status,omitempty" db:"-"`
 	Blocked               bool              `json:"blocked,omitempty" db:"-"`
 	BlockedReason         string            `json:"blocked_reason,omitempty" db:"-"`
 	ParentName            string            `json:"parent_name,omitempty" db:"-"`
@@ -448,6 +449,7 @@ type UpdateUserRequest struct {
 // It is separate from User (which is the public API type, password excluded).
 type UserRecord struct {
 	ID           string
+	TenantID     string
 	Username     string
 	Email        string
 	DisplayName  string

@@ -1,6 +1,0 @@
-# import config
-packagefile crypto/internal/fips140/hkdf=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b186\_pkg_.a
-packagefile crypto/internal/fips140hash=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b175\_pkg_.a
-packagefile crypto/internal/fips140only=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b104\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
-packagefile hash=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b082\_pkg_.a

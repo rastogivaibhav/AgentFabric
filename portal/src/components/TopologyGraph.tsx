@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Span } from '../hooks/api'
+import { Span, getSpanOutcomeStatus } from '../hooks/api'
 
 const FW_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
@@ -210,7 +210,7 @@ export default function TopologyGraph({ spans, selectedSpanId, onSelectSpan }: T
           const color = FW_COLORS[span.framework] ?? '#475569'
           const isSelected = span.id === selectedSpanId
           const isHovered = span.id === hovered
-          const isError = span.status_code === 2
+          const isError = getSpanOutcomeStatus(span) === 'error'
 
           const borderColor = isError ? '#EF4444' : isSelected ? '#3B82F6' : isHovered ? color : '#1E3A5F'
           const bgColor = isSelected ? '#1E3A5F' : isHovered ? '#0F1F35' : '#060A14'

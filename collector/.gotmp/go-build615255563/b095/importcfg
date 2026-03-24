@@ -1,8 +1,0 @@
-# import config
-packagefile bytes=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b065\_pkg_.a
-packagefile crypto/internal/fips140=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b086\_pkg_.a
-packagefile crypto/internal/fips140/subtle=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b096\_pkg_.a
-packagefile crypto/internal/fips140deps/byteorder=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b092\_pkg_.a
-packagefile crypto/internal/fips140deps/cpu=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b093\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
-packagefile math/bits=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b032\_pkg_.a

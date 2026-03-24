@@ -185,9 +185,10 @@ func TestParseIDToken_InvalidFormat_EmptyString(t *testing.T) {
 func TestIssueAFToken_ValidClaims(t *testing.T) {
 	h := testHandler()
 	claims := &idTokenClaims{
-		Subject: "sub-001",
-		Email:   "admin@company.com",
-		Name:    "Admin User",
+		Subject:  "sub-001",
+		Email:    "admin@company.com",
+		Name:     "Admin User",
+		TenantID: "11111111-2222-3333-4444-555555555555",
 	}
 	tokenStr, err := h.issueAFToken(claims)
 	if err != nil {
@@ -210,12 +211,15 @@ func TestIssueAFToken_ValidClaims(t *testing.T) {
 	if parsed.Email != "admin@company.com" {
 		t.Errorf("email mismatch: %q", parsed.Email)
 	}
+	if parsed.TenantID != "11111111-2222-3333-4444-555555555555" {
+		t.Errorf("tenant_id mismatch: %q", parsed.TenantID)
+	}
 }
 
 func TestIssueAFToken_ExpiresWithinSessionMaxAge(t *testing.T) {
 	h := testHandler()
 	before := time.Now()
-	claims := &idTokenClaims{Subject: "s", Email: "e@e.com"}
+	claims := &idTokenClaims{Subject: "s", Email: "e@e.com", TenantID: "11111111-2222-3333-4444-555555555555"}
 	tokenStr, _ := h.issueAFToken(claims)
 
 	parsed := &afClaims{}
@@ -235,7 +239,7 @@ func TestIssueAFToken_ExpiresWithinSessionMaxAge(t *testing.T) {
 
 func TestIssueAFToken_IssuerIsAgentFabric(t *testing.T) {
 	h := testHandler()
-	claims := &idTokenClaims{Subject: "s"}
+	claims := &idTokenClaims{Subject: "s", TenantID: "11111111-2222-3333-4444-555555555555"}
 	tokenStr, _ := h.issueAFToken(claims)
 	parsed := &afClaims{}
 	jwt.ParseWithClaims(tokenStr, parsed, func(tok *jwt.Token) (interface{}, error) {
@@ -248,7 +252,7 @@ func TestIssueAFToken_IssuerIsAgentFabric(t *testing.T) {
 
 func TestIssueAFToken_AudienceIsPortal(t *testing.T) {
 	h := testHandler()
-	claims := &idTokenClaims{Subject: "s"}
+	claims := &idTokenClaims{Subject: "s", TenantID: "11111111-2222-3333-4444-555555555555"}
 	tokenStr, _ := h.issueAFToken(claims)
 	parsed := &afClaims{}
 	jwt.ParseWithClaims(tokenStr, parsed, func(tok *jwt.Token) (interface{}, error) {
@@ -261,7 +265,7 @@ func TestIssueAFToken_AudienceIsPortal(t *testing.T) {
 
 func TestStateCookieRoundTrip(t *testing.T) {
 	h := testHandler()
-	original := pkceState{Verifier: "test-verifier-abc", Nonce: "test-nonce-xyz"}
+	original := pkceState{Verifier: "test-verifier-abc", Nonce: "test-nonce-xyz", State: "test-state-123"}
 
 	signed, err := h.signStateCookie(original)
 	if err != nil {
@@ -279,11 +283,14 @@ func TestStateCookieRoundTrip(t *testing.T) {
 	if recovered.Nonce != original.Nonce {
 		t.Errorf("nonce mismatch: %q vs %q", recovered.Nonce, original.Nonce)
 	}
+	if recovered.State != original.State {
+		t.Errorf("state mismatch: %q vs %q", recovered.State, original.State)
+	}
 }
 
 func TestStateCookieVerify_TamperedCookie(t *testing.T) {
 	h := testHandler()
-	state := pkceState{Verifier: "v", Nonce: "n"}
+	state := pkceState{Verifier: "v", Nonce: "n", State: "expected-state"}
 	signed, _ := h.signStateCookie(state)
 
 	tampered := signed[:len(signed)-4] + "XXXX"
@@ -305,7 +312,7 @@ func TestStateCookieVerify_WrongSecret(t *testing.T) {
 	h1 := testHandler()
 	h2 := NewOIDCHandler(OIDCConfig{JWTSecret: "different-secret-here-xxxxxx"}, nil, zap.NewNop())
 
-	state := pkceState{Verifier: "v", Nonce: "n"}
+	state := pkceState{Verifier: "v", Nonce: "n", State: "expected-state"}
 	signed, _ := h1.signStateCookie(state)
 
 	_, err := h2.verifyStateCookie(signed)
@@ -441,6 +448,9 @@ func TestPasswordLogin_TokenIsValidJWT(t *testing.T) {
 	}
 	if claims.Email != "admin@agentfabric.local" {
 		t.Errorf("email should be 'admin@agentfabric.local', got %q", claims.Email)
+	}
+	if claims.TenantID != defaultTenantID {
+		t.Errorf("tenant_id should be %q, got %q", defaultTenantID, claims.TenantID)
 	}
 }
 
@@ -663,6 +673,39 @@ func TestRefresh_NewTokenPreservesIdentity(t *testing.T) {
 	}
 	if claims.Email != "admin@agentfabric.local" {
 		t.Errorf("expected email=admin@agentfabric.local, got %q", claims.Email)
+	}
+	if claims.TenantID != defaultTenantID {
+		t.Errorf("expected tenant_id=%s, got %q", defaultTenantID, claims.TenantID)
+	}
+}
+
+func TestCallback_MissingStateQuery_Returns400(t *testing.T) {
+	h := testHandler()
+	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=test-code", nil)
+	rr := httptest.NewRecorder()
+
+	h.Callback(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestCallback_StateMismatch_Returns401(t *testing.T) {
+	h := testHandler()
+	signed, err := h.signStateCookie(pkceState{Verifier: "v", Nonce: "n", State: "expected-state"})
+	if err != nil {
+		t.Fatalf("signStateCookie: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=test-code&state=wrong-state", nil)
+	req.AddCookie(&http.Cookie{Name: "af_oidc_state", Value: signed, Path: "/auth"})
+	rr := httptest.NewRecorder()
+
+	h.Callback(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
 	}
 }
 

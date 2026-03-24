@@ -1,0 +1,6 @@
+./promotion.go
+./releases.go
+./service.go
+./promotion_test.go
+./releases_test.go
+./service_validation_test.go

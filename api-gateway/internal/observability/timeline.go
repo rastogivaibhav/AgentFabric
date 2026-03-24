@@ -48,11 +48,9 @@ func BuildTimeline(traceID string, spans []models.Span, policyEvents []models.Po
 			copySpan := span
 			longest = &copySpan
 		}
-		status := "ok"
-		if span.Blocked {
-			status = "blocked"
-		} else if span.StatusCode == 2 {
-			status = "error"
+		status := span.OutcomeStatus
+		if status == "" {
+			status = models.NormalizeOutcomeStatus(span.StatusCode, span.Attributes)
 		}
 		totalTokens := span.InputTokens + span.OutputTokens + span.CacheReadTokens + span.CacheWriteTokens + span.ReasoningTokens
 		items = append(items, models.TraceTimelineItem{
@@ -97,7 +95,7 @@ func BuildTimeline(traceID string, spans []models.Span, policyEvents []models.Po
 		}
 	}
 	for _, span := range enriched {
-		if span.StatusCode == 2 || span.FailureSummary != "" {
+		if models.OutcomeStatusCountsAsFailure(span.OutcomeStatus) || span.FailureSummary != "" {
 			if span.FailureSummary != "" {
 				highlights = append(highlights, fmt.Sprintf("Failure: %s", span.FailureSummary))
 			} else {

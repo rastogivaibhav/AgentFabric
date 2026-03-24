@@ -23,7 +23,7 @@ func classifyError(span models.Span) string {
 		return "policy_denied"
 	case strings.EqualFold(attrs["af.error.type"], "upstream"):
 		return "upstream_error"
-	case span.StatusCode == 2 && strings.TrimSpace(span.StatusMsg) != "":
+	case span.OutcomeStatus == models.OutcomeStatusError && strings.TrimSpace(span.StatusMsg) != "":
 		return "runtime_error"
 	default:
 		return ""

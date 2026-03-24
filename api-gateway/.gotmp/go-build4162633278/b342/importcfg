@@ -1,9 +1,0 @@
-# import config
-packagefile fmt=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b103\_pkg_.a
-packagefile io=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b005\_pkg_.a
-packagefile net/url=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b187\_pkg_.a
-packagefile os=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b087\_pkg_.a
-packagefile regexp=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b213\_pkg_.a
-packagefile sort=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b056\_pkg_.a
-packagefile strconv=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b044\_pkg_.a
-packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b037\_pkg_.a

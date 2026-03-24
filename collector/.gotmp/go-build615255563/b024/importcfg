@@ -1,8 +1,0 @@
-# import config
-packagefile internal/abi=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b005\_pkg_.a
-packagefile internal/asan=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b025\_pkg_.a
-packagefile internal/goarch=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b006\_pkg_.a
-packagefile internal/msan=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b026\_pkg_.a
-packagefile internal/race=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b027\_pkg_.a
-packagefile internal/runtime/math=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b028\_pkg_.a
-packagefile internal/runtime/sys=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b023\_pkg_.a

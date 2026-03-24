@@ -1,6 +1,0 @@
-# import config
-packagefile github.com/golang-migrate/migrate/v4/source=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b342\_pkg_.a
-packagefile github.com/golang-migrate/migrate/v4/source/iofs=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b351\_pkg_.a
-packagefile net/url=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b187\_pkg_.a
-packagefile os=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b087\_pkg_.a
-packagefile path/filepath=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b200\_pkg_.a

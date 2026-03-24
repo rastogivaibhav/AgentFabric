@@ -2,21 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import React from 'react'
 
-// EnvironmentsPage uses useQuery for environments and useCollectors from hooks/api.
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: vi.fn(),
-}))
-
 vi.mock('../hooks/api', () => ({
   useCollectors: vi.fn(),
+  useEnvironments: vi.fn(),
 }))
 
 import EnvironmentsPage from './EnvironmentsPage'
-import { useCollectors } from '../hooks/api'
-import { useQuery } from '@tanstack/react-query'
+import { useCollectors, useEnvironments } from '../hooks/api'
 
-const mockUseQuery    = vi.mocked(useQuery)
 const mockUseCollectors = vi.mocked(useCollectors)
+const mockUseEnvironments = vi.mocked(useEnvironments)
 
 // Minimal CollectorInfo fixture matching the CollectorInfo interface in hooks/api.
 const makeCollector = (overrides = {}) => ({
@@ -37,7 +32,7 @@ beforeEach(() => {
 
 describe('EnvironmentsPage — loading state', () => {
   it('shows collector loading indicator while data is fetching', () => {
-    mockUseQuery.mockReturnValue({ data: undefined, isLoading: true } as any)
+    mockUseEnvironments.mockReturnValue({ data: undefined, isLoading: true } as any)
     mockUseCollectors.mockReturnValue({ data: undefined, isLoading: true, isError: false } as any)
 
     render(<EnvironmentsPage />)
@@ -50,7 +45,7 @@ describe('EnvironmentsPage — loading state', () => {
 
 describe('EnvironmentsPage — empty state', () => {
   it('shows empty-state message when no environments are returned', () => {
-    mockUseQuery.mockReturnValue({ data: [], isLoading: false } as any)
+    mockUseEnvironments.mockReturnValue({ data: [], isLoading: false } as any)
     mockUseCollectors.mockReturnValue({
       data: [makeCollector()],
       isLoading: false,
@@ -73,7 +68,7 @@ describe('EnvironmentsPage — environment cards', () => {
   ]
 
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: envs, isLoading: false } as any)
+    mockUseEnvironments.mockReturnValue({ data: envs, isLoading: false } as any)
     mockUseCollectors.mockReturnValue({
       data: [makeCollector()],
       isLoading: false,
@@ -122,7 +117,7 @@ describe('EnvironmentsPage — environment cards', () => {
 
 describe('EnvironmentsPage — collector cards', () => {
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: [], isLoading: false } as any)
+    mockUseEnvironments.mockReturnValue({ data: [], isLoading: false } as any)
   })
 
   it('renders live collector data when API returns results', () => {
@@ -180,7 +175,7 @@ describe('EnvironmentsPage — collector cards', () => {
 describe('EnvironmentsPage — normalises string[] API response', () => {
   it('accepts a plain string array from the API (legacy format)', () => {
     // API may return plain strings instead of EnvRecord objects
-    mockUseQuery.mockReturnValue({ data: ['production', 'staging'], isLoading: false } as any)
+    mockUseEnvironments.mockReturnValue({ data: ['production', 'staging'], isLoading: false } as any)
     mockUseCollectors.mockReturnValue({
       data: [makeCollector()],
       isLoading: false,
@@ -200,7 +195,7 @@ describe('EnvironmentsPage — RBAC visibility', () => {
   // This test verifies the page renders without crashing for any role by checking
   // that the heading is always present (role enforcement is at route level in App.tsx).
   it('renders successfully (no role gate inside the component)', () => {
-    mockUseQuery.mockReturnValue({ data: [], isLoading: false } as any)
+    mockUseEnvironments.mockReturnValue({ data: [], isLoading: false } as any)
     mockUseCollectors.mockReturnValue({ data: [], isLoading: false, isError: false } as any)
 
     render(<EnvironmentsPage />)
@@ -212,7 +207,7 @@ describe('EnvironmentsPage — RBAC visibility', () => {
 
 describe('EnvironmentsPage — quick-start section', () => {
   it('renders the quick-start heading', () => {
-    mockUseQuery.mockReturnValue({ data: [], isLoading: false } as any)
+    mockUseEnvironments.mockReturnValue({ data: [], isLoading: false } as any)
     mockUseCollectors.mockReturnValue({ data: [], isLoading: false, isError: false } as any)
 
     render(<EnvironmentsPage />)
@@ -220,7 +215,7 @@ describe('EnvironmentsPage — quick-start section', () => {
   })
 
   it('shows pip install agentfabric in the quick-start code block', () => {
-    mockUseQuery.mockReturnValue({ data: [], isLoading: false } as any)
+    mockUseEnvironments.mockReturnValue({ data: [], isLoading: false } as any)
     mockUseCollectors.mockReturnValue({ data: [], isLoading: false, isError: false } as any)
 
     render(<EnvironmentsPage />)

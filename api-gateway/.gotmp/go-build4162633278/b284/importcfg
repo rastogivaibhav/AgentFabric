@@ -1,7 +1,0 @@
-# import config
-packagefile go/token=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b285\_pkg_.a
-packagefile google.golang.org/protobuf/internal/flags=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b283\_pkg_.a
-packagefile google.golang.org/protobuf/reflect/protoreflect=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b269\_pkg_.a
-packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b046\_pkg_.a
-packagefile unicode=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b047\_pkg_.a
-packagefile unicode/utf8=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b045\_pkg_.a

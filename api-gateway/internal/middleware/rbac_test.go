@@ -183,6 +183,7 @@ func TestJWTAuth_AcceptsTokenSignedWithFirstSecret(t *testing.T) {
 	secret := "secret-one"
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
 		Role:             "admin",
+		TenantID:         testTenantUUID,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "alice"},
 	})
 	signed, _ := token.SignedString([]byte(secret))
@@ -201,6 +202,7 @@ func TestJWTAuth_AcceptsTokenSignedWithRotatedSecret(t *testing.T) {
 	oldSecret := "secret-old"
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
 		Role:             "viewer",
+		TenantID:         testTenantUUID,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "bob"},
 	})
 	signed, _ := token.SignedString([]byte(oldSecret))
@@ -216,6 +218,7 @@ func TestJWTAuth_AcceptsTokenSignedWithRotatedSecret(t *testing.T) {
 
 func TestJWTAuth_RejectsTokenWithUnknownSecret(t *testing.T) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
+		TenantID:         testTenantUUID,
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "eve"},
 	})
 	signed, _ := token.SignedString([]byte("attacker-secret"))

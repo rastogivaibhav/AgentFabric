@@ -1,3 +1,0 @@
-def internal/runtime/syscall/windows.StdCall ABIInternal
-ref internal/runtime/syscall/windows.asmstdcall ABI0
-def internal/runtime/syscall/windows.asmstdcall ABI0

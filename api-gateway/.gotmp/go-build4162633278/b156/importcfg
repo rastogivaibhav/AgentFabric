@@ -1,8 +1,0 @@
-# import config
-packagefile crypto/internal/constanttime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b078\_pkg_.a
-packagefile crypto/internal/fips140/check=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b070\_pkg_.a
-packagefile crypto/internal/fips140/edwards25519/field=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b139\_pkg_.a
-packagefile crypto/internal/fips140deps/byteorder=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b073\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b006\_pkg_.a
-packagefile math/bits=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b034\_pkg_.a
-packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b037\_pkg_.a

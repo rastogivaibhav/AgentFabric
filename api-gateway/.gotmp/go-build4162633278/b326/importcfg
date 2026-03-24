@@ -1,7 +1,0 @@
-# import config
-packagefile os=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b087\_pkg_.a
-packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b105\_pkg_.a
-packagefile testing=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b256\_pkg_.a
-packagefile testing/internal/testdeps=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b315\_pkg_.a
-packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b012\_pkg_.a
-packagefile github.com/agentfabric/api-gateway/cmd/server=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b327\_pkg_.a

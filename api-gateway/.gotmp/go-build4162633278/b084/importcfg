@@ -1,9 +1,0 @@
-# import config
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b006\_pkg_.a
-packagefile internal/oserror=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b054\_pkg_.a
-packagefile internal/runtime/syscall/windows=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b032\_pkg_.a
-packagefile internal/syscall/windows/sysdll=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b052\_pkg_.a
-packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b012\_pkg_.a
-packagefile structs=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b085\_pkg_.a
-packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b037\_pkg_.a
-packagefile syscall=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b053\_pkg_.a

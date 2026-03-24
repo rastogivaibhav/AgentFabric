@@ -12,6 +12,7 @@ import (
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const testSecret = "test-jwt-secret-for-middleware-tests"
+const testTenantUUID = "11111111-2222-3333-4444-555555555555"
 
 func makeToken(secret string, tenantID string, valid bool) string {
 	claims := &Claims{
@@ -42,7 +43,7 @@ func okHandler(w http.ResponseWriter, r *http.Request) {
 // ─── JWTAuth ─────────────────────────────────────────────────────────────────
 
 func TestJWTAuth_ValidToken_Passes(t *testing.T) {
-	tok := makeToken(testSecret, "tenant-abc", true)
+	tok := makeToken(testSecret, testTenantUUID, true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
@@ -78,7 +79,7 @@ func TestJWTAuth_InvalidFormat_Returns401(t *testing.T) {
 }
 
 func TestJWTAuth_ExpiredToken_Returns401(t *testing.T) {
-	tok := makeToken(testSecret, "tenant-abc", false)
+	tok := makeToken(testSecret, testTenantUUID, false)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
@@ -91,7 +92,7 @@ func TestJWTAuth_ExpiredToken_Returns401(t *testing.T) {
 }
 
 func TestJWTAuth_WrongSecret_Returns401(t *testing.T) {
-	tok := makeToken("different-secret-xxxxx", "tenant-abc", true)
+	tok := makeToken("different-secret-xxxxx", testTenantUUID, true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
@@ -104,7 +105,7 @@ func TestJWTAuth_WrongSecret_Returns401(t *testing.T) {
 }
 
 func TestJWTAuth_InjectsClaims_IntoContext(t *testing.T) {
-	tok := makeToken(testSecret, "tenant-xyz", true)
+	tok := makeToken(testSecret, testTenantUUID, true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
@@ -120,13 +121,13 @@ func TestJWTAuth_InjectsClaims_IntoContext(t *testing.T) {
 	if gotClaims == nil {
 		t.Fatal("claims not injected into context")
 	}
-	if gotClaims.TenantID != "tenant-xyz" {
+	if gotClaims.TenantID != testTenantUUID {
 		t.Errorf("tenant_id mismatch: %q", gotClaims.TenantID)
 	}
 }
 
 func TestJWTAuth_BearerCaseInsensitive(t *testing.T) {
-	tok := makeToken(testSecret, "t", true)
+	tok := makeToken(testSecret, testTenantUUID, true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "BEARER "+tok)
 	rr := httptest.NewRecorder()
@@ -138,12 +139,24 @@ func TestJWTAuth_BearerCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestJWTAuth_MissingTenantClaim_Returns401(t *testing.T) {
+	tok := makeToken(testSecret, "", true)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+
+	JWTAuth(testSecret)(http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for missing tenant_id, got %d", rr.Code)
+	}
+}
+
 // ─── TenantInjector ──────────────────────────────────────────────────────────
 
 func TestTenantInjector_WithClaims_UsesTenantID(t *testing.T) {
 	// tenant_id must be a valid UUID — the DB schema defines the column as UUID type.
-	const validTenantUUID = "11111111-2222-3333-4444-555555555555"
-	tok := makeToken(testSecret, validTenantUUID, true)
+	tok := makeToken(testSecret, testTenantUUID, true)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rr := httptest.NewRecorder()
@@ -157,8 +170,8 @@ func TestTenantInjector_WithClaims_UsesTenantID(t *testing.T) {
 	// Chain JWTAuth → TenantInjector so claims are present
 	JWTAuth(testSecret)(TenantInjector(inner)).ServeHTTP(rr, req)
 
-	if gotTenant != validTenantUUID {
-		t.Errorf("expected %q, got %q", validTenantUUID, gotTenant)
+	if gotTenant != testTenantUUID {
+		t.Errorf("expected %q, got %q", testTenantUUID, gotTenant)
 	}
 }
 

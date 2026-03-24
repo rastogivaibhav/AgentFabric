@@ -169,6 +169,41 @@ func TestRecordSpan_UsesCanonicalModelAttributeAndCost(t *testing.T) {
 	assert.Equal(t, "gpt-4o-mini", ms.spans[0].Attributes["gen_ai.request.model"])
 	assert.Equal(t, "gpt-4o-mini", ms.spans[0].Attributes["proxy.model"])
 	assert.Greater(t, ms.spans[0].CostUSD, float64(0))
+	assert.Equal(t, "ok", ms.spans[0].Attributes["af.outcome_status"])
+}
+
+func TestRecordSpan_ClassifiesBlockedOutcome(t *testing.T) {
+	ms := &mockStore{}
+	lp := &LLMProxy{store: ms, logger: zap.NewNop()}
+
+	lp.recordSpan("", "", "tenant-1", ProviderOpenAI, "gpt-4o", "af-vk-12345678abcdef", http.StatusForbidden, priced.Usage{}, 10*time.Millisecond, map[string]string{
+		"af.policy.blocked": "true",
+	})
+
+	require.Len(t, ms.spans, 1)
+	assert.Equal(t, "blocked", ms.spans[0].Attributes["af.outcome_status"])
+}
+
+func TestRecordSpan_ClassifiesErrorOutcome(t *testing.T) {
+	ms := &mockStore{}
+	lp := &LLMProxy{store: ms, logger: zap.NewNop()}
+
+	lp.recordSpan("", "", "tenant-1", ProviderOpenAI, "gpt-4o", "af-vk-12345678abcdef", http.StatusBadGateway, priced.Usage{}, 10*time.Millisecond, nil)
+
+	require.Len(t, ms.spans, 1)
+	assert.Equal(t, "error", ms.spans[0].Attributes["af.outcome_status"])
+}
+
+func TestRecordSpan_ClassifiesDegradedOutcomeForFallbackSuccess(t *testing.T) {
+	ms := &mockStore{}
+	lp := &LLMProxy{store: ms, logger: zap.NewNop()}
+
+	lp.recordSpan("", "", "tenant-1", ProviderOpenAI, "gpt-4o-mini", "af-vk-12345678abcdef", http.StatusOK, priced.Usage{}, 10*time.Millisecond, map[string]string{
+		"af.gateway.route_source": "fallback",
+	})
+
+	require.Len(t, ms.spans, 1)
+	assert.Equal(t, "degraded", ms.spans[0].Attributes["af.outcome_status"])
 }
 
 // ─── LLMProxy HTTP handler ───────────────────────────────────────────────────

@@ -1,9 +1,0 @@
-# import config
-packagefile cmp=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b042\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b006\_pkg_.a
-packagefile internal/bytealg=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b013\_pkg_.a
-packagefile internal/byteorder=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b004\_pkg_.a
-packagefile math=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b094\_pkg_.a
-packagefile math/bits=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b034\_pkg_.a
-packagefile strconv=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b044\_pkg_.a
-packagefile unique=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b186\_pkg_.a

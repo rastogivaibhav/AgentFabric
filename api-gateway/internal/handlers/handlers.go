@@ -1027,11 +1027,14 @@ func buildTrace(traceID string, spans []models.Span) models.Trace {
 		if sp.Blocked {
 			t.Insights.BlockedSpans++
 		}
+		if models.OutcomeStatusCountsAsFailure(sp.OutcomeStatus) {
+			t.Insights.FailedSpans++
+		}
 		t.Insights.RetryCount += sp.RetryCount
 		if sp.Depth > t.Insights.MaxDepth {
 			t.Insights.MaxDepth = sp.Depth
 		}
-		if sp.StatusCode == 2 {
+		if sp.OutcomeStatus == models.OutcomeStatusError {
 			t.ErrorCount++
 		}
 	}
@@ -1043,6 +1046,8 @@ func buildTrace(traceID string, spans []models.Span) models.Trace {
 	t.SpanCount = len(spans)
 	if t.ErrorCount > 0 {
 		t.Status = "error"
+	} else if t.Insights.BlockedSpans > 0 || t.Insights.FailedSpans > 0 {
+		t.Status = "partial"
 	} else {
 		t.Status = "ok"
 	}
@@ -1177,8 +1182,9 @@ func decorateSpan(sp *models.Span, byID map[string]models.Span, depthMemo map[st
 	sp.PromptPreview = firstPreview(sp.Attributes, "af.preview.prompt", "gen_ai.prompt", "input.value", "prompt", "llm.prompt")
 	sp.ResponsePreview = firstPreview(sp.Attributes, "af.preview.response", "gen_ai.response", "output.value", "response", "llm.response")
 	sp.RetryCount = firstInt(sp.Attributes, "retry.count", "http.retry_count", "af.retry.count")
+	sp.OutcomeStatus = models.NormalizeOutcomeStatus(sp.StatusCode, sp.Attributes)
 	sp.BlockedReason = firstNonEmpty(sp.Attributes["af.policy.reason"], sp.Attributes["policy.reason"], sp.Attributes["budget.reason"])
-	sp.Blocked = isTrue(sp.Attributes["af.policy.blocked"]) || strings.EqualFold(sp.Attributes["af.policy.decision"], "deny") || sp.BlockedReason != ""
+	sp.Blocked = sp.OutcomeStatus == models.OutcomeStatusBlocked || isTrue(sp.Attributes["af.policy.blocked"]) || strings.EqualFold(sp.Attributes["af.policy.decision"], "deny") || sp.BlockedReason != ""
 	sp.PricingRuleID = firstInt64(sp.Attributes, "af.pricing.rule_id")
 	sp.PricingScope = sp.Attributes["af.pricing.scope"]
 }

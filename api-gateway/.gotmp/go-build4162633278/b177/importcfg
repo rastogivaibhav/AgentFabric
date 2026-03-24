@@ -1,6 +1,0 @@
-# import config
-packagefile crypto/internal/fips140only=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b095\_pkg_.a
-packagefile crypto/internal/rand=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b099\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b006\_pkg_.a
-packagefile io=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b005\_pkg_.a
-packagefile math/big=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b102\_pkg_.a

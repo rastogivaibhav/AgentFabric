@@ -1,3 +1,4 @@
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
@@ -57,6 +58,8 @@ export async function apiFetch<T>(path: string, params?: Record<string, string>)
   return res.json()
 }
 
+export type OutcomeStatus = 'ok' | 'blocked' | 'error' | 'degraded'
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface Span {
@@ -70,6 +73,7 @@ export interface Span {
   duration_ns: number
   status_code: number
   status_msg?: string
+  outcome_status?: OutcomeStatus
   attributes: Record<string, string>
   events?: SpanEvent[]
   input_tokens?: number
@@ -291,6 +295,50 @@ export interface PolicyEvent {
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
+export interface EnvironmentInfo {
+  name: string
+  status: string
+  span_count: number
+}
+
+function isTruthyOutcomeAttr(value?: string) {
+  switch ((value ?? '').trim().toLowerCase()) {
+    case '1':
+    case 'true':
+    case 'yes':
+    case 'blocked':
+      return true
+    default:
+      return false
+  }
+}
+
+export function getSpanOutcomeStatus(span: Pick<Span, 'status_code' | 'attributes' | 'blocked' | 'outcome_status'>): OutcomeStatus {
+  const explicit = span.outcome_status ?? span.attributes?.['af.outcome_status']
+  if (explicit === 'ok' || explicit === 'blocked' || explicit === 'error' || explicit === 'degraded') {
+    return explicit
+  }
+  if (span.blocked || isTruthyOutcomeAttr(span.attributes?.['af.policy.blocked']) || span.attributes?.['af.policy.decision']?.toLowerCase() === 'deny') {
+    return 'blocked'
+  }
+  if ([401, 403, 429].includes(span.status_code)) {
+    return 'blocked'
+  }
+  if (span.status_code === 2 || span.status_code >= 500) {
+    return 'error'
+  }
+  if (span.attributes?.['af.gateway.route_source']?.toLowerCase() === 'fallback') {
+    return 'degraded'
+  }
+  return 'ok'
+}
+
+export function outcomeStatusColor(status: string) {
+  if (status === 'error') return '#EF4444'
+  if (status === 'blocked' || status === 'degraded' || status === 'partial') return '#F59E0B'
+  return '#10B981'
+}
+
 export function useOverview(since = '24h') {
   return useQuery<OverviewStats>({
     queryKey: ['overview', since],
@@ -385,7 +433,13 @@ export function useCollectors() {
 
 // ─── WebSocket hook ───────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useCallback, useState } from 'react'
+export function useEnvironments() {
+  return useQuery<EnvironmentInfo[] | string[]>({
+    queryKey: ['environments'],
+    queryFn: () => apiFetch('/environments'),
+    refetchInterval: 30_000,
+  })
+}
 
 export function useLiveStream(maxEvents = 500) {
   const [events, setEvents] = useState<LiveEvent[]>([])

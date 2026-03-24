@@ -1,6 +1,0 @@
-# import config
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
-packagefile internal/bytealg=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b010\_pkg_.a
-packagefile internal/strconv=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b031\_pkg_.a
-packagefile internal/stringslite=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b033\_pkg_.a
-packagefile unicode/utf8=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b049\_pkg_.a

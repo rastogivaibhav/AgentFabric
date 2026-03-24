@@ -8,6 +8,10 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/agentfabric/collector/internal/config"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 // ─── computeCost ─────────────────────────────────────────────────────────────
@@ -316,6 +320,65 @@ func TestScrubPII_EmptyAttrs(t *testing.T) {
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
+func TestEnrichSpan_PreservesGatewayDecisionAttributes(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Processor.MaxAttributeLen = 4096
+	p := &AgentProcessor{cfg: cfg}
+
+	cases := []struct {
+		name   string
+		attrs  map[string]string
+		status tracepb.Status_StatusCode
+	}{
+		{
+			name: "policy blocked",
+			attrs: map[string]string{
+				"af.policy.blocked": "true",
+				"af.error.type":     "policy_denied",
+			},
+			status: tracepb.Status_STATUS_CODE_ERROR,
+		},
+		{
+			name: "budget blocked",
+			attrs: map[string]string{
+				"af.policy.blocked": "true",
+				"af.error.type":     "budget_exceeded",
+			},
+			status: tracepb.Status_STATUS_CODE_ERROR,
+		},
+		{
+			name: "upstream error",
+			attrs: map[string]string{
+				"af.error.type": "upstream_error",
+			},
+			status: tracepb.Status_STATUS_CODE_ERROR,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			span := &tracepb.Span{
+				TraceId:    []byte("0123456789abcdef"),
+				SpanId:     []byte("12345678"),
+				Name:       "gateway.test",
+				Status:     &tracepb.Status{Code: tc.status, Message: tc.name},
+				Attributes: toKVList(tc.attrs),
+			}
+
+			enriched := p.enrichSpan(span, map[string]string{})
+
+			for key, value := range tc.attrs {
+				if enriched.Attributes[key] != value {
+					t.Fatalf("expected %s=%q, got %q", key, value, enriched.Attributes[key])
+				}
+			}
+			if enriched.StatusCode != int32(tc.status) {
+				t.Fatalf("expected status=%d, got %d", tc.status, enriched.StatusCode)
+			}
+		})
+	}
+}
+
 func assertAlmost(t *testing.T, expected, actual float64, msg string) {
 	t.Helper()
 	if math.Abs(expected-actual) > 1e-9 {
@@ -339,4 +402,17 @@ func assertContains(t *testing.T, s, substr string, msgAndArgs ...interface{}) {
 			t.Errorf("expected %q to contain %q", s, substr)
 		}
 	}
+}
+
+func toKVList(attrs map[string]string) []*commonpb.KeyValue {
+	out := make([]*commonpb.KeyValue, 0, len(attrs))
+	for key, value := range attrs {
+		out = append(out, &commonpb.KeyValue{
+			Key: key,
+			Value: &commonpb.AnyValue{
+				Value: &commonpb.AnyValue_StringValue{StringValue: value},
+			},
+		})
+	}
+	return out
 }

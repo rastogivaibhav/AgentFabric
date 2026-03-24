@@ -1,4 +1,4 @@
-import { useOverview, useTraces } from '../hooks/api'
+import { outcomeStatusColor, useOverview, useTraces } from '../hooks/api'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const FRAMEWORK_COLORS: Record<string, string> = {
@@ -115,7 +115,9 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {(traces?.items ?? []).map((t, i) => (
+            {(traces?.items ?? []).map((t, i) => {
+              const statusColor = outcomeStatusColor(t.status)
+              return (
               <tr key={t.id} style={{ background: i % 2 === 0 ? 'transparent' : '#060A1430' }}>
                 <td style={{ padding:'8px 16px', color:'#3B82F6', fontFamily:'monospace', fontSize:11 }}>
                   <a href={`/traces/${t.id}`} style={{ color:'#3B82F6', textDecoration:'none' }}>
@@ -138,12 +140,13 @@ export default function Dashboard() {
                 <td style={{ padding:'8px 16px' }}>
                   <span style={{
                     padding:'2px 8px', borderRadius:4, fontSize:10,
-                    background: t.status === 'error' ? '#EF444420' : '#10B98120',
-                    color: t.status === 'error' ? '#EF4444' : '#10B981',
+                    background: `${statusColor}20`,
+                    color: statusColor,
                   }}>{t.status}</span>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useCollectors, CollectorInfo } from '../hooks/api'
-
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+import { useCollectors, useEnvironments, CollectorInfo, EnvironmentInfo } from '../hooks/api'
 
 const ENV_COLORS: Record<string, string> = {
   production: '#EF4444',
@@ -15,12 +12,6 @@ const COLLECTOR_STATUS_COLORS: Record<string, string> = {
   healthy: '#10B981',
   degraded: '#F59E0B',
   unreachable: '#EF4444',
-}
-
-interface EnvRecord {
-  name: string
-  status: string
-  span_count: number
 }
 
 // Static fallback collector cards shown when the API returns no data
@@ -155,21 +146,13 @@ function CollectorCard({ collector }: { collector: CollectorInfo }) {
 }
 
 export default function EnvironmentsPage() {
-  const { data: rawEnvs, isLoading: envsLoading } = useQuery<EnvRecord[] | string[]>({
-    queryKey: ['environments'],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}/api/v1/environments`)
-      if (!res.ok) throw new Error('fetch failed')
-      return res.json()
-    },
-    refetchInterval: 30_000,
-  })
+  const { data: rawEnvs, isLoading: envsLoading } = useEnvironments()
 
   const { data: collectorsData, isLoading: collectorsLoading, isError: collectorsError } = useCollectors()
 
   // Normalise environments — API may return objects or plain strings
-  const envs: EnvRecord[] = (rawEnvs ?? []).map((e) =>
-    typeof e === 'string' ? { name: e, status: 'active', span_count: 0 } : e as EnvRecord
+  const envs: EnvironmentInfo[] = (rawEnvs ?? []).map((e) =>
+    typeof e === 'string' ? { name: e, status: 'active', span_count: 0 } : e as EnvironmentInfo
   )
 
   // Decide which collector cards to show: dynamic if data returned, otherwise static fallback

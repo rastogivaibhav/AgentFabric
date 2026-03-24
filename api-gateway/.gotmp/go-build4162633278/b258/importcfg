@@ -1,9 +1,0 @@
-# import config
-packagefile fmt=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b103\_pkg_.a
-packagefile internal/poll=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b091\_pkg_.a
-packagefile os=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b087\_pkg_.a
-packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b012\_pkg_.a
-packagefile slices=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b041\_pkg_.a
-packagefile strconv=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b044\_pkg_.a
-packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b046\_pkg_.a
-packagefile time=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b048\_pkg_.a

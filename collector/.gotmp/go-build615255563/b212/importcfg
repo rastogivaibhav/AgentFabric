@@ -1,7 +1,0 @@
-# import config
-importmap golang.org/x/text/transform=vendor/golang.org/x/text/transform
-importmap golang.org/x/text/unicode/bidi=vendor/golang.org/x/text/unicode/bidi
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
-packagefile vendor/golang.org/x/text/transform=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b213\_pkg_.a
-packagefile vendor/golang.org/x/text/unicode/bidi=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b214\_pkg_.a
-packagefile unicode/utf8=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b049\_pkg_.a

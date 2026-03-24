@@ -1,8 +1,0 @@
-# import config
-packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b066\_pkg_.a
-packagefile crypto/tls=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b161\_pkg_.a
-packagefile internal/nettrace=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b136\_pkg_.a
-packagefile net=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b134\_pkg_.a
-packagefile net/textproto=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b216\_pkg_.a
-packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b060\_pkg_.a
-packagefile time=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b053\_pkg_.a

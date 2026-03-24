@@ -73,14 +73,14 @@ func BuildTrace(traceID string, spans []models.Span, policyEvents []models.Polic
 		if span.RedactionCount > 0 {
 			trace.Insights.RedactedSpans++
 		}
-		if span.ErrorClass != "" || span.StatusCode == 2 {
+		if models.OutcomeStatusCountsAsFailure(span.OutcomeStatus) || span.ErrorClass != "" {
 			trace.Insights.FailedSpans++
 		}
 		trace.Insights.RetryCount += span.RetryCount
 		if span.Depth > trace.Insights.MaxDepth {
 			trace.Insights.MaxDepth = span.Depth
 		}
-		if span.StatusCode == 2 {
+		if span.OutcomeStatus == models.OutcomeStatusError {
 			trace.ErrorCount++
 		}
 		if len(workflow) < 8 {
@@ -102,10 +102,10 @@ func BuildTrace(traceID string, spans []models.Span, policyEvents []models.Polic
 	trace.Duration = maxEnd - enrichedSpans[0].StartTimeNs
 	trace.SpanCount = len(enrichedSpans)
 	trace.Timeline = BuildTimeline(traceID, enrichedSpans, policyEvents)
-	if trace.Insights.BlockedSpans > 0 {
-		trace.Status = "partial"
-	} else if trace.ErrorCount > 0 {
+	if trace.ErrorCount > 0 {
 		trace.Status = "error"
+	} else if trace.Insights.BlockedSpans > 0 || trace.Insights.FailedSpans > 0 {
+		trace.Status = "partial"
 	} else {
 		trace.Status = "ok"
 	}
@@ -157,12 +157,13 @@ func enrichSpan(span *models.Span, lineage lineageMeta, policyEvents []models.Po
 	span.PromptVersion = firstInt(span.Attributes, "af.prompt.version")
 	span.PromptReleaseTag = firstNonEmpty(span.Attributes["af.prompt.release_tag"])
 	span.PromptEnvironment = firstNonEmpty(span.Attributes["af.prompt.environment"], span.Environment)
+	span.OutcomeStatus = models.NormalizeOutcomeStatus(span.StatusCode, span.Attributes)
 	span.ErrorClass = classifyError(*span)
 	span.PromptPreview = firstPreview(span.Attributes, "af.preview.prompt", "gen_ai.prompt", "input.value", "prompt", "llm.prompt")
 	span.ResponsePreview = firstPreview(span.Attributes, "af.preview.response", "gen_ai.response", "output.value", "response", "llm.response")
 	span.RetryCount = firstInt(span.Attributes, "af.retry.count", "retry.count", "http.retry_count")
 	span.BlockedReason = firstNonEmpty(span.Attributes["af.policy.reason"], span.Attributes["policy.reason"], span.Attributes["budget.reason"])
-	span.Blocked = isTrue(span.Attributes["af.policy.blocked"]) || strings.EqualFold(span.Attributes["af.policy.decision"], "deny") || span.BlockedReason != ""
+	span.Blocked = span.OutcomeStatus == models.OutcomeStatusBlocked || isTrue(span.Attributes["af.policy.blocked"]) || strings.EqualFold(span.Attributes["af.policy.decision"], "deny") || span.BlockedReason != ""
 	span.PricingRuleID = firstInt64(span.Attributes, "af.pricing.rule_id")
 	span.PricingScope = span.Attributes["af.pricing.scope"]
 	span.PricingModelPattern = span.Attributes["af.pricing.model_pattern"]

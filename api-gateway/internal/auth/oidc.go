@@ -38,7 +38,11 @@ import (
 // user credentials against the database.
 // Implemented by *store.PostgresStore; accepts nil for env-var-only auth (dev/test).
 type UserLookup interface {
-	GetUserByUsername(ctx context.Context, username, tenantID string) (*models.UserRecord, error)
+	GetUserByUsername(ctx context.Context, username string) (*models.UserRecord, error)
+}
+
+type userLookupByEmail interface {
+	GetUserByEmail(ctx context.Context, email string) (*models.UserRecord, error)
 }
 
 // OIDCConfig holds OIDC provider configuration from environment.
@@ -68,6 +72,7 @@ type OIDCConfig struct {
 type pkceState struct {
 	Verifier string
 	Nonce    string
+	State    string
 }
 
 // jwkKey represents a single JSON Web Key (RFC 7517).
@@ -264,7 +269,7 @@ func (h *OIDCHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Persist PKCE verifier + nonce in a signed, HttpOnly cookie so we can
 	// verify them in /callback without server-side session storage.
-	stateCookie, err := h.signStateCookie(pkceState{Verifier: verifier, Nonce: nonce})
+	stateCookie, err := h.signStateCookie(pkceState{Verifier: verifier, Nonce: nonce, State: state})
 	if err != nil {
 		h.logger.Error("state cookie signing failed", zap.Error(err))
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -316,6 +321,11 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing authorization code", http.StatusBadRequest)
 		return
 	}
+	queryState := strings.TrimSpace(q.Get("state"))
+	if queryState == "" {
+		http.Error(w, "missing state parameter", http.StatusBadRequest)
+		return
+	}
 
 	// Retrieve and verify PKCE state cookie
 	cookie, err := r.Cookie("af_oidc_state")
@@ -328,6 +338,12 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Warn("OIDC state cookie verification failed", zap.Error(err))
 		http.Error(w, "invalid state — possible CSRF or expired session", http.StatusBadRequest)
+		return
+	}
+
+	if subtle.ConstantTimeCompare([]byte(queryState), []byte(state.State)) != 1 {
+		h.logger.Warn("OIDC state mismatch - possible CSRF", zap.String("query_state", queryState))
+		http.Error(w, "state mismatch", http.StatusUnauthorized)
 		return
 	}
 
@@ -360,6 +376,12 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	if claims.Nonce != state.Nonce {
 		h.logger.Warn("OIDC nonce mismatch — possible replay attack")
 		http.Error(w, "nonce mismatch", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.resolveTenantIdentity(r.Context(), claims); err != nil {
+		h.logger.Warn("OIDC tenant resolution failed", zap.Error(err), zap.String("email", claims.Email))
+		http.Error(w, "tenant resolution failed", http.StatusUnauthorized)
 		return
 	}
 
@@ -444,11 +466,12 @@ func (h *OIDCHandler) Me(w http.ResponseWriter, r *http.Request) {
 		exp = claims.ExpiresAt.Unix()
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"sub":   claims.Subject,
-		"email": claims.Email,
-		"name":  claims.Name,
-		"role":  claims.Role,
-		"exp":   exp, // Unix timestamp; portal uses this to schedule silent refresh
+		"sub":       claims.Subject,
+		"email":     claims.Email,
+		"name":      claims.Name,
+		"role":      claims.Role,
+		"tenant_id": claims.TenantID,
+		"exp":       exp, // Unix timestamp; portal uses this to schedule silent refresh
 	})
 }
 
@@ -548,13 +571,15 @@ func (h *OIDCHandler) exchangeCode(ctx interface{ Done() <-chan struct{} }, code
 // ─── ID Token parsing ─────────────────────────────────────────────────────────
 
 type idTokenClaims struct {
-	Subject string `json:"sub"`
-	Email   string `json:"email"`
-	Name    string `json:"name"`
-	Nonce   string `json:"nonce"`
-	Iss     string `json:"iss"`
-	Aud     string `json:"aud"`
-	Exp     int64  `json:"exp"`
+	Subject        string `json:"sub"`
+	Email          string `json:"email"`
+	Name           string `json:"name"`
+	Nonce          string `json:"nonce"`
+	Iss            string `json:"iss"`
+	Aud            string `json:"aud"`
+	Exp            int64  `json:"exp"`
+	TenantID       string `json:"tenant_id,omitempty"`
+	ProviderTenant string `json:"tid,omitempty"`
 	// Role is set locally (not from OIDC provider) to carry the platform role.
 	Role string `json:"role,omitempty"`
 }
@@ -705,21 +730,27 @@ func parseIDTokenUnsafe(idToken string) (*idTokenClaims, error) {
 // ─── AgentFabric JWT issuance ─────────────────────────────────────────────────
 
 type afClaims struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
-	Role  string `json:"role"` // admin|editor|viewer — propagated into every AF JWT
+	TenantID string `json:"tenant_id"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Role     string `json:"role"` // admin|editor|viewer — propagated into every AF JWT
 	jwt.RegisteredClaims
 }
 
 func (h *OIDCHandler) issueAFToken(idClaims *idTokenClaims) (string, error) {
+	tenantID := strings.TrimSpace(idClaims.TenantID)
+	if tenantID == "" {
+		return "", fmt.Errorf("tenant_id is required")
+	}
 	role := idClaims.Role
 	if role == "" {
 		role = "viewer" // safe default for OIDC logins without an explicit role claim
 	}
 	claims := afClaims{
-		Email: idClaims.Email,
-		Name:  idClaims.Name,
-		Role:  role,
+		TenantID: tenantID,
+		Email:    idClaims.Email,
+		Name:     idClaims.Name,
+		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   idClaims.Subject,
 			Issuer:    "agentfabric",
@@ -739,11 +770,13 @@ func (h *OIDCHandler) signStateCookie(state pkceState) (string, error) {
 	type stateClaims struct {
 		Verifier string `json:"v"`
 		Nonce    string `json:"n"`
+		State    string `json:"s"`
 		jwt.RegisteredClaims
 	}
 	claims := stateClaims{
 		Verifier: state.Verifier,
 		Nonce:    state.Nonce,
+		State:    state.State,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
 		},
@@ -757,6 +790,7 @@ func (h *OIDCHandler) verifyStateCookie(value string) (*pkceState, error) {
 	type stateClaims struct {
 		Verifier string `json:"v"`
 		Nonce    string `json:"n"`
+		State    string `json:"s"`
 		jwt.RegisteredClaims
 	}
 	claims := &stateClaims{}
@@ -769,7 +803,7 @@ func (h *OIDCHandler) verifyStateCookie(value string) (*pkceState, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid state cookie: %w", err)
 	}
-	return &pkceState{Verifier: claims.Verifier, Nonce: claims.Nonce}, nil
+	return &pkceState{Verifier: claims.Verifier, Nonce: claims.Nonce, State: claims.State}, nil
 }
 
 // ─── OIDC Discovery ──────────────────────────────────────────────────────────
@@ -871,10 +905,11 @@ func (h *OIDCHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	// Re-issue with the same identity + role but a fresh expiry, signed with the active key.
 	freshClaims := &idTokenClaims{
-		Subject: claims.Subject,
-		Email:   claims.Email,
-		Name:    claims.Name,
-		Role:    claims.Role, // preserve role across refresh
+		Subject:  claims.Subject,
+		Email:    claims.Email,
+		Name:     claims.Name,
+		Role:     claims.Role, // preserve role across refresh
+		TenantID: claims.TenantID,
 	}
 	newToken, err := h.issueAFToken(freshClaims)
 	if err != nil {
@@ -944,15 +979,16 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 
 	// ── Primary path: look up user in the database and bcrypt-compare ──────
 	if h.users != nil {
-		rec, err := h.users.GetUserByUsername(r.Context(), req.Username, defaultTenantID)
+		rec, err := h.users.GetUserByUsername(r.Context(), req.Username)
 		if err == nil && rec.PasswordHash != "" {
 			// bcrypt.CompareHashAndPassword is constant-time; no timing leak.
 			if bcryptErr := bcrypt.CompareHashAndPassword([]byte(rec.PasswordHash), []byte(req.Password)); bcryptErr == nil {
 				idClaims = &idTokenClaims{
-					Subject: rec.ID,
-					Email:   rec.Email,
-					Name:    rec.DisplayName,
-					Role:    rec.Role,
+					Subject:  rec.ID,
+					Email:    rec.Email,
+					Name:     rec.DisplayName,
+					Role:     rec.Role,
+					TenantID: rec.TenantID,
 				}
 				h.logger.Info("password login: db auth successful", zap.String("username", req.Username))
 			}
@@ -978,10 +1014,11 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		passOK := subtle.ConstantTimeCompare([]byte(req.Password), []byte(wantPass)) == 1
 		if userOK && passOK {
 			idClaims = &idTokenClaims{
-				Subject: wantUser,
-				Email:   wantUser + "@agentfabric.local",
-				Name:    "Admin",
-				Role:    "admin",
+				Subject:  wantUser,
+				Email:    wantUser + "@agentfabric.local",
+				Name:     "Admin",
+				Role:     "admin",
+				TenantID: defaultTenantID,
 			}
 			h.logger.Info("password login: break-glass env-var auth successful", zap.String("username", wantUser))
 		}
@@ -1018,4 +1055,36 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 	// Authorization: Bearer. Browser clients should ignore this field.
 	h.logger.Info("password login successful", zap.String("username", idClaims.Subject))
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+}
+
+func (h *OIDCHandler) resolveTenantIdentity(ctx context.Context, claims *idTokenClaims) error {
+	if claims == nil {
+		return fmt.Errorf("missing claims")
+	}
+	if strings.TrimSpace(claims.TenantID) != "" {
+		return nil
+	}
+	if strings.TrimSpace(claims.ProviderTenant) != "" {
+		claims.TenantID = strings.TrimSpace(claims.ProviderTenant)
+		return nil
+	}
+	lookup, ok := h.users.(userLookupByEmail)
+	if !ok || strings.TrimSpace(claims.Email) == "" {
+		return fmt.Errorf("tenant_id missing from identity")
+	}
+	rec, err := lookup.GetUserByEmail(ctx, claims.Email)
+	if err != nil {
+		return err
+	}
+	claims.TenantID = rec.TenantID
+	if claims.Role == "" {
+		claims.Role = rec.Role
+	}
+	if strings.TrimSpace(claims.Name) == "" {
+		claims.Name = rec.DisplayName
+	}
+	if strings.TrimSpace(claims.Subject) == "" {
+		claims.Subject = rec.ID
+	}
+	return nil
 }

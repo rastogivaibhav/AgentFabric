@@ -1,8 +1,0 @@
-# import config
-packagefile crypto/cipher=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b084\_pkg_.a
-packagefile crypto/internal/fips140/alias=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b088\_pkg_.a
-packagefile crypto/internal/fips140only=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b104\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
-packagefile internal/byteorder=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b012\_pkg_.a
-packagefile strconv=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b062\_pkg_.a
-packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b040\_pkg_.a

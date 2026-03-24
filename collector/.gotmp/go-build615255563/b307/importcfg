@@ -1,7 +1,0 @@
-# import config
-packagefile google.golang.org/protobuf/internal/descopts=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b294\_pkg_.a
-packagefile google.golang.org/protobuf/internal/filedesc=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b292\_pkg_.a
-packagefile google.golang.org/protobuf/internal/impl=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b308\_pkg_.a
-packagefile google.golang.org/protobuf/reflect/protoreflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b285\_pkg_.a
-packagefile google.golang.org/protobuf/reflect/protoregistry=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b305\_pkg_.a
-packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b060\_pkg_.a

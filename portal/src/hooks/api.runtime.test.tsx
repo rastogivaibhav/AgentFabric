@@ -16,6 +16,7 @@ import {
   apiFetch,
   apiMutate,
   useCollectors,
+  useEnvironments,
   useCompareEvalRegressions,
   useControlAudit,
   useDeletePolicyRule,
@@ -109,6 +110,22 @@ describe('api runtime coverage', () => {
     } as any)
 
     await expect(query.queryFn()).resolves.toEqual([])
+  })
+
+  it('environments query uses the authenticated api fetch path', async () => {
+    renderHook(() => useEnvironments())
+    const query = useQueryMock.mock.calls.at(-1)?.[0] as any
+
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ([{ name: 'production', status: 'active', span_count: 12 }]),
+    } as any)
+
+    await expect(query.queryFn()).resolves.toEqual([{ name: 'production', status: 'active', span_count: 12 }])
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/environments'),
+      expect.objectContaining({ credentials: 'include' }),
+    )
   })
 
   it('live stream records messages and supports clear', async () => {

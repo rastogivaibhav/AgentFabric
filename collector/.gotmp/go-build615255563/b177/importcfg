@@ -1,5 +1,0 @@
-# import config
-packagefile crypto=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b081\_pkg_.a
-packagefile crypto/internal/boring=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b083\_pkg_.a
-packagefile crypto/internal/fips140/sha512=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b098\_pkg_.a
-packagefile hash=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b082\_pkg_.a

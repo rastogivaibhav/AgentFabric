@@ -1,8 +1,0 @@
-# import config
-packagefile crypto/internal/boring=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b083\_pkg_.a
-packagefile crypto/internal/fips140/drbg=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b100\_pkg_.a
-packagefile crypto/internal/fips140only=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b104\_pkg_.a
-packagefile crypto/internal/rand=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b157\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
-packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b051\_pkg_.a
-packagefile math/big=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b160\_pkg_.a

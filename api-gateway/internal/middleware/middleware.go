@@ -168,6 +168,14 @@ func JWTAuth(secrets ...string) func(http.Handler) http.Handler {
 				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 				return
 			}
+			if strings.TrimSpace(validClaims.TenantID) == "" {
+				http.Error(w, `{"error":"missing tenant_id in token"}`, http.StatusUnauthorized)
+				return
+			}
+			if !isValidUUID(validClaims.TenantID) {
+				http.Error(w, `{"error":"invalid tenant_id in token"}`, http.StatusForbidden)
+				return
+			}
 
 			ctx := context.WithValue(r.Context(), claimsKey, validClaims)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -257,7 +265,11 @@ func isValidUUID(s string) bool { return uuidRE.MatchString(s) }
 func TenantInjector(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID := DefaultTenantID
-		if claims := ClaimsFromCtx(r.Context()); claims != nil && claims.TenantID != "" {
+		if claims := ClaimsFromCtx(r.Context()); claims != nil {
+			if strings.TrimSpace(claims.TenantID) == "" {
+				http.Error(w, `{"error":"missing tenant_id in token"}`, http.StatusUnauthorized)
+				return
+			}
 			if !isValidUUID(claims.TenantID) {
 				http.Error(w, `{"error":"invalid tenant_id in token"}`, http.StatusForbidden)
 				return

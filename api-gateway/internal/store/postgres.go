@@ -23,6 +23,28 @@ type PostgresStore struct {
 	logger *zap.Logger
 }
 
+const spanOutcomeExpr = `
+	COALESCE(
+		NULLIF(attributes->>'af.outcome_status', ''),
+		CASE
+			WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true'
+				OR LOWER(COALESCE(attributes->>'af.policy.decision', '')) = 'deny'
+				OR status_code IN (401, 403, 429) THEN 'blocked'
+			WHEN status_code = 2 OR status_code >= 500 THEN 'error'
+			WHEN LOWER(COALESCE(attributes->>'af.gateway.route_source', '')) = 'fallback' THEN 'degraded'
+			ELSE 'ok'
+		END
+	)
+`
+
+func spanOutcomeFailureExpr() string {
+	return "(" + spanOutcomeExpr + " IN ('error', 'blocked', 'degraded'))"
+}
+
+func spanOutcomeBlockedExpr() string {
+	return "(" + spanOutcomeExpr + " = 'blocked')"
+}
+
 func NewPostgresStore(dsn string, logger *zap.Logger) (*PostgresStore, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
@@ -139,7 +161,7 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		argIdx++
 	}
 	if q.BlockedOnly {
-		innerWhere += " AND COALESCE(attributes->>'af.policy.blocked', 'false') = 'true'"
+		innerWhere += " AND " + spanOutcomeBlockedExpr()
 	}
 	if q.Search != "" {
 		needle := "%" + strings.ToLower(strings.TrimSpace(q.Search)) + "%"
@@ -212,12 +234,12 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 				MIN(start_time_ns) AS start_ns,
 				MAX(start_time_ns + duration_ns) - MIN(start_time_ns) AS duration_ns,
 				COUNT(*) AS span_count,
-				SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count,
+				SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS error_count,
 				SUM(cost_usd) AS total_cost,
 				SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens) AS total_tokens,
 				CASE
-					WHEN SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END) > 0 THEN 'partial'
-					WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0 THEN 'error'
+					WHEN SUM(CASE WHEN %s = 'error' THEN 1 ELSE 0 END) > 0 THEN 'error'
+					WHEN SUM(CASE WHEN %s IN ('blocked', 'degraded') THEN 1 ELSE 0 END) > 0 THEN 'partial'
 					ELSE 'ok'
 				END AS status
 			FROM spans
@@ -225,7 +247,7 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 			GROUP BY trace_id
 		)
 		SELECT COUNT(*) FROM agg%s
-	`, innerWhere, countWhere)
+	`, spanOutcomeFailureExpr(), spanOutcomeExpr, spanOutcomeExpr, innerWhere, countWhere)
 
 	var total int64
 	if err := s.pool.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
@@ -244,12 +266,12 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 				MIN(start_time_ns)                                                   AS start_ns,
 				MAX(start_time_ns + duration_ns) - MIN(start_time_ns)               AS duration_ns,
 				COUNT(*)                                                             AS span_count,
-				SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)                   AS error_count,
+				SUM(CASE WHEN %s THEN 1 ELSE 0 END)                               AS error_count,
 				SUM(cost_usd)                                                        AS total_cost,
 				SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens) AS total_tokens,
 				CASE
-					WHEN SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END) > 0 THEN 'partial'
-					WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0 THEN 'error'
+					WHEN SUM(CASE WHEN %s = 'error' THEN 1 ELSE 0 END) > 0 THEN 'error'
+					WHEN SUM(CASE WHEN %s IN ('blocked', 'degraded') THEN 1 ELSE 0 END) > 0 THEN 'partial'
 					ELSE 'ok'
 				END                                                                  AS status
 			FROM spans
@@ -262,7 +284,7 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		%s
 		ORDER BY start_ns DESC, trace_id DESC
 		LIMIT $%d`,
-		innerWhere, outerWhere, limitIdx,
+		spanOutcomeFailureExpr(), spanOutcomeExpr, spanOutcomeExpr, innerWhere, outerWhere, limitIdx,
 	)
 
 	rows, err := s.pool.Query(ctx, query, args...)
@@ -395,19 +417,20 @@ func (s *PostgresStore) GetOverview(ctx context.Context, tenantID string, since 
 	cutoff := time.Now().Add(-since).UnixNano()
 	var stats models.OverviewStats
 
-	err := s.pool.QueryRow(ctx, `
+	err := s.pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT
 			COUNT(DISTINCT trace_id),
 			COALESCE(SUM(cost_usd), 0),
 			COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens), 0),
-			COALESCE(AVG(CASE WHEN status_code = 2 THEN 1.0 ELSE 0.0 END), 0),
+			COALESCE(AVG(CASE WHEN %s THEN 1.0 ELSE 0.0 END), 0),
 			COALESCE(AVG(duration_ns) / 1e6, 0),
-			COALESCE(SUM(CASE WHEN COALESCE(attributes->>'af.policy.blocked', 'false') = 'true' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN COALESCE(attributes->>'af.span.step_type', '') = 'llm' THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN COALESCE(attributes->>'af.span.step_type', '') = 'tool' THEN 1 ELSE 0 END), 0)
 		FROM spans
 		WHERE tenant_id = $1 AND start_time_ns >= $2`,
-		tenantID, cutoff,
+		spanOutcomeFailureExpr(), spanOutcomeBlockedExpr(),
+	), tenantID, cutoff,
 	).Scan(
 		&stats.TotalTraces, &stats.TotalCostUSD, &stats.TotalTokens,
 		&stats.ErrorRate, &stats.AvgLatencyMs, &stats.BlockedRequests, &stats.LLMCalls, &stats.ToolCalls,
@@ -719,18 +742,19 @@ type ErrorReportRow struct {
 
 func (s *PostgresStore) GetErrorReport(ctx context.Context, tenantID string, since time.Duration) ([]ErrorReportRow, error) {
 	cutoff := time.Now().Add(-since).UnixNano()
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
 		SELECT
 		    framework,
 		    COALESCE(NULLIF(status_msg, ''), 'unknown error') AS status_msg,
 		    COUNT(*)                                           AS count,
 		    COUNT(DISTINCT trace_id)                          AS affected_traces
 		FROM spans
-		WHERE tenant_id = $1 AND start_time_ns >= $2 AND status_code = 2
+		WHERE tenant_id = $1 AND start_time_ns >= $2 AND %s
 		GROUP BY framework, status_msg
 		ORDER BY count DESC
 		LIMIT 50`,
-		tenantID, cutoff,
+		spanOutcomeFailureExpr(),
+	), tenantID, cutoff,
 	)
 	if err != nil {
 		return nil, err
@@ -1213,22 +1237,75 @@ func (s *PostgresStore) DeleteUser(ctx context.Context, userID, tenantID string)
 	return nil
 }
 
-// GetUserByUsername looks up a user by username within a tenant and returns the
-// minimal auth fields including the bcrypt password hash.
-// Implements auth.UserLookup — called by OIDCHandler.PasswordLogin.
-func (s *PostgresStore) GetUserByUsername(ctx context.Context, username, tenantID string) (*models.UserRecord, error) {
+// GetUserByUsername looks up a user by username across active tenants and returns
+// the minimal auth fields including the bcrypt password hash.
+// Login fails closed if the username is ambiguous across tenants.
+func (s *PostgresStore) GetUserByUsername(ctx context.Context, username string) (*models.UserRecord, error) {
 	var rec models.UserRecord
-	err := s.pool.QueryRow(ctx, `
-		SELECT user_id, username, email, display_name, role, COALESCE(password_hash,'')
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_id, tenant_id, username, email, display_name, role, COALESCE(password_hash,'')
 		FROM users
-		WHERE username = $1 AND tenant_id = $2 AND is_active = TRUE
-	`, username, tenantID).Scan(
-		&rec.ID, &rec.Username, &rec.Email, &rec.DisplayName, &rec.Role, &rec.PasswordHash,
-	)
+		WHERE username = $1 AND is_active = TRUE
+		ORDER BY created_at DESC
+		LIMIT 2
+	`, username)
 	if err != nil {
 		return nil, err
 	}
-	return &rec, nil
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		if err := rows.Scan(&rec.ID, &rec.TenantID, &rec.Username, &rec.Email, &rec.DisplayName, &rec.Role, &rec.PasswordHash); err != nil {
+			return nil, err
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	switch count {
+	case 0:
+		return nil, pgx.ErrNoRows
+	case 1:
+		return &rec, nil
+	default:
+		return nil, fmt.Errorf("ambiguous username %q across tenants", username)
+	}
+}
+
+// GetUserByEmail looks up an active user by email across tenants.
+// OIDC resolution fails closed if multiple tenants share the same email.
+func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (*models.UserRecord, error) {
+	var rec models.UserRecord
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_id, tenant_id, username, email, display_name, role, COALESCE(password_hash,'')
+		FROM users
+		WHERE LOWER(email) = LOWER($1) AND is_active = TRUE
+		ORDER BY created_at DESC
+		LIMIT 2
+	`, email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		if err := rows.Scan(&rec.ID, &rec.TenantID, &rec.Username, &rec.Email, &rec.DisplayName, &rec.Role, &rec.PasswordHash); err != nil {
+			return nil, err
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	switch count {
+	case 0:
+		return nil, pgx.ErrNoRows
+	case 1:
+		return &rec, nil
+	default:
+		return nil, fmt.Errorf("ambiguous email %q across tenants", email)
+	}
 }
 
 // generateStoreID creates a random UUID-format string for new records.

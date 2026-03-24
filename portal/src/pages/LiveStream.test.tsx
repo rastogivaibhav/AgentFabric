@@ -6,9 +6,13 @@ const mockPause = vi.fn()
 const mockResume = vi.fn()
 const mockClear = vi.fn()
 
-vi.mock('../hooks/api', () => ({
-  useLiveStream: vi.fn(),
-}))
+vi.mock('../hooks/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../hooks/api')>()
+  return {
+    ...actual,
+    useLiveStream: vi.fn(),
+  }
+})
 
 vi.mock('react-router-dom', () => ({
   useNavigate: vi.fn(() => vi.fn()),

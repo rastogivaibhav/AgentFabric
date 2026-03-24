@@ -1,8 +1,0 @@
-# import config
-importmap golang.org/x/crypto/internal/alias=vendor/golang.org/x/crypto/internal/alias
-packagefile crypto/cipher=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b064\_pkg_.a
-packagefile encoding/binary=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b129\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b006\_pkg_.a
-packagefile vendor/golang.org/x/crypto/internal/alias=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b165\_pkg_.a
-packagefile math/bits=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b034\_pkg_.a
-packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4162633278\b012\_pkg_.a

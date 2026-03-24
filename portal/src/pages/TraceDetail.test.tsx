@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import React from 'react'
 
-vi.mock('../hooks/api', () => ({
-  useTrace: vi.fn(),
-}))
+vi.mock('../hooks/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../hooks/api')>()
+  return {
+    ...actual,
+    useTrace: vi.fn(),
+  }
+})
 
 vi.mock('react-router-dom', () => ({
   useParams: vi.fn(),
@@ -125,6 +129,26 @@ describe('TraceDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /spans/i }))
     expect(screen.getByText('Span ID')).toBeInTheDocument()
     expect(screen.getAllByText('Duration').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders blocked span outcomes from normalized status', () => {
+    const blockedTrace = {
+      ...MOCK_TRACE,
+      status: 'partial' as const,
+      spans: [
+        MOCK_SPANS[0],
+        {
+          ...MOCK_SPANS[1],
+          status_code: 429,
+          outcome_status: 'blocked' as const,
+          blocked: true,
+        },
+      ],
+    }
+    mockUseTrace.mockReturnValue({ data: blockedTrace, isLoading: false } as never)
+    render(<TraceDetail />)
+    fireEvent.click(screen.getByRole('button', { name: /spans/i }))
+    expect(screen.getByText('BLOCKED')).toBeInTheDocument()
   })
 
   it('renders graph tab content', () => {

@@ -536,6 +536,7 @@ func (p *LLMProxy) recordSpan(traceID, spanID, tenantID, provider, model, vkPref
 			span.Attributes[key] = value
 		}
 	}
+	span.Attributes["af.outcome_status"] = models.NormalizeOutcomeStatus(statusCode, span.Attributes)
 	if match.RuleID > 0 {
 		span.Attributes["af.pricing.rule_id"] = fmt.Sprintf("%d", match.RuleID)
 		span.Attributes["af.pricing.model_pattern"] = match.ModelPattern

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { PolicyEvent, Span } from '../../hooks/api'
+import { PolicyEvent, Span, getSpanOutcomeStatus } from '../../hooks/api'
 
 function fmtDuration(ns: number) {
   if (ns < 1_000_000) return `${(ns / 1_000).toFixed(0)}us`
@@ -18,6 +18,7 @@ export default function SpanDetailPanel({
   title?: string
   showRaw?: boolean
 }) {
+  const outcomeStatus = getSpanOutcomeStatus(span)
   return (
     <div style={{ padding: 16 }}>
       <div style={{ fontSize: 10, color: '#334155', letterSpacing: '0.1em', marginBottom: 12 }}>{title}</div>
@@ -39,7 +40,7 @@ export default function SpanDetailPanel({
           ['Prompt Version', span.prompt_version != null && span.prompt_version > 0 ? `v${span.prompt_version}` : undefined],
           ['Prompt Release', span.prompt_release_tag],
           ['Prompt Environment', span.prompt_environment],
-          ['Status', span.status_code === 2 ? 'ERROR' : 'OK'],
+          ['Status', outcomeStatus.toUpperCase()],
           ['Failure', span.failure_summary],
           ['Duration', span.duration_ns ? fmtDuration(span.duration_ns) : undefined],
           ['Tokens', span.input_tokens != null || span.output_tokens != null ? `${span.input_tokens ?? 0} in / ${span.output_tokens ?? 0} out` : undefined],

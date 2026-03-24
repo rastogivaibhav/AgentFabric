@@ -9,6 +9,7 @@ function fmtDuration(ns: number) {
 function itemColor(item: TraceTimelineItem) {
   if (item.status === 'blocked') return '#F59E0B'
   if (item.status === 'error') return '#EF4444'
+  if (item.status === 'degraded') return '#F59E0B'
   if (item.step_type === 'llm') return '#3B82F6'
   if (item.step_type === 'tool') return '#10B981'
   if (item.step_type === 'policy') return '#A855F7'

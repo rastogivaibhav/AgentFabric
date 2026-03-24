@@ -1,8 +1,0 @@
-# import config
-packagefile bufio=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b078\_pkg_.a
-packagefile encoding/binary=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b108\_pkg_.a
-packagefile fmt=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b069\_pkg_.a
-packagefile google.golang.org/protobuf/encoding/protowire=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b286\_pkg_.a
-packagefile google.golang.org/protobuf/internal/errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b287\_pkg_.a
-packagefile google.golang.org/protobuf/proto=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b303\_pkg_.a
-packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b051\_pkg_.a

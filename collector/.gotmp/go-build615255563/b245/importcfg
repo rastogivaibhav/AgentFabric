@@ -1,8 +1,0 @@
-# import config
-packagefile bytes=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b065\_pkg_.a
-packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b003\_pkg_.a
-packagefile fmt=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b069\_pkg_.a
-packagefile github.com/hashicorp/hcl/hcl/ast=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b242\_pkg_.a
-packagefile github.com/hashicorp/hcl/hcl/scanner=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b246\_pkg_.a
-packagefile github.com/hashicorp/hcl/hcl/token=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b243\_pkg_.a
-packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build615255563\b071\_pkg_.a

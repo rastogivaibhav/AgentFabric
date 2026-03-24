@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Span, useTrace } from '../hooks/api'
+import { Span, getSpanOutcomeStatus, outcomeStatusColor, useTrace } from '../hooks/api'
 import TopologyGraph from '../components/TopologyGraph'
 import TraceHeader from '../components/trace/TraceHeader'
 import PolicyEventPanel from '../components/trace/PolicyEventPanel'
@@ -72,7 +72,7 @@ export default function TraceDetail() {
       model: span.model,
       app_name: span.app_name,
       environment: span.environment,
-      status: span.blocked ? 'blocked' : span.status_code === 2 ? 'error' : 'ok',
+      status: getSpanOutcomeStatus(span),
       failure_summary: span.failure_summary,
       blocked: span.blocked,
       blocked_reason: span.blocked_reason,
@@ -156,7 +156,10 @@ export default function TraceDetail() {
                 </tr>
               </thead>
               <tbody>
-                {spans.map((span, index) => (
+                {spans.map((span, index) => {
+                  const outcomeStatus = getSpanOutcomeStatus(span)
+                  const outcomeColor = outcomeStatusColor(outcomeStatus)
+                  return (
                   <tr
                     key={span.id}
                     onClick={() => setSelected(selected?.id === span.id ? null : span)}
@@ -175,17 +178,18 @@ export default function TraceDetail() {
                           fontSize: 9,
                           padding: '1px 5px',
                           borderRadius: 3,
-                          background: span.status_code === 2 ? '#EF444420' : '#10B98120',
-                          color: span.status_code === 2 ? '#EF4444' : '#10B981',
+                          background: `${outcomeColor}20`,
+                          color: outcomeColor,
                         }}
                       >
-                        {span.status_code === 2 ? 'ERROR' : 'OK'}
+                        {outcomeStatus.toUpperCase()}
                       </span>
                     </td>
                     <td style={{ padding: '7px 12px', color: '#64748B' }}>{(span.input_tokens || 0) + (span.output_tokens || 0)}</td>
                     <td style={{ padding: '7px 12px', color: '#F59E0B' }}>{span.cost_usd ? `$${span.cost_usd.toFixed(6)}` : '-'}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
