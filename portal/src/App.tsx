@@ -11,6 +11,7 @@ import CostPage from './pages/CostPage'
 import EnvironmentsPage from './pages/EnvironmentsPage'
 import UsersPage from './pages/UsersPage'
 import AuditPage from './pages/AuditPage'
+import DecisionsPage from './pages/DecisionsPage'
 import ApiKeysPage from './pages/ApiKeysPage'
 import PricingRulesPage from './pages/PricingRulesPage'
 import PoliciesPage from './pages/PoliciesPage'
@@ -82,6 +83,7 @@ export default function App() {
             <Route path="environments" element={<EnvironmentsPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="audit" element={<AuditPage />} />
+            <Route path="decisions" element={<DecisionsPage />} />
             <Route path="keys" element={<ApiKeysPage />} />
             <Route path="pricing" element={<PricingRulesPage />} />
             <Route path="prompts" element={<PromptsPage />} />

@@ -38,10 +38,10 @@ describe('PromptReleasePage', () => {
       data: {
         items: [
           { id: 1, prompt_id: 'support-bot.system', version: 1, environment: 'development', release_tag: 'dev-1', content: 'dev prompt' },
-          { id: 2, prompt_id: 'support-bot.system', version: 2, environment: 'production', release_tag: 'prod-2', content: 'prod prompt' },
+          { id: 2, prompt_id: 'support-bot.system', version: 2, environment: 'production', release_tag: 'prod-2', content: 'prod prompt', current_release: { id: 4, prompt_id: 'support-bot.system', version: 2, environment: 'production', release_tag: '2026.03', status: 'active', eval_summary: { eval_count: 3, average_score: 84.5, latest_score: 86.1, risk_level: 'low' }, regression_summary: { baseline_tag: '2026.02', candidate_tag: '2026.03', compared_runs: 3, overall_delta: -2.4, risk_level: 'low', summary: 'Average eval score moved by -2.40 points versus 2026.02.' } } },
         ],
         releases: [
-          { id: 4, prompt_id: 'support-bot.system', version: 2, environment: 'production', release_tag: '2026.03' },
+          { id: 4, prompt_id: 'support-bot.system', version: 2, environment: 'production', release_tag: '2026.03', status: 'active', eval_summary: { eval_count: 3, average_score: 84.5, latest_score: 86.1, risk_level: 'low' }, regression_summary: { baseline_tag: '2026.02', candidate_tag: '2026.03', compared_runs: 3, overall_delta: -2.4, risk_level: 'low', summary: 'Average eval score moved by -2.40 points versus 2026.02.' } },
         ],
       },
       isLoading: false,
@@ -53,7 +53,8 @@ describe('PromptReleasePage', () => {
   it('shows selected prompt details', () => {
     render(<MemoryRouter><PromptReleasePage /></MemoryRouter>)
     expect(screen.getByText('support-bot.system')).toBeInTheDocument()
-    expect(screen.getByText('ACTIVE RELEASE POINTERS')).toBeInTheDocument()
+    expect(screen.getByText('RELEASE HISTORY')).toBeInTheDocument()
+    expect(screen.getByText(/Average eval score moved by -2.40 points/i)).toBeInTheDocument()
   })
 
   it('submits a prompt promotion', () => {
@@ -62,6 +63,8 @@ describe('PromptReleasePage', () => {
     render(<MemoryRouter><PromptReleasePage /></MemoryRouter>)
 
     fireEvent.change(screen.getByPlaceholderText('2026.03-prod.1'), { target: { value: '2026.04' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'candidate' } })
+    fireEvent.change(screen.getByPlaceholderText('improve escalation quality and reduce hallucinations'), { target: { value: 'reduce escalations' } })
     fireEvent.click(screen.getByRole('button', { name: 'Promote Release' }))
 
     expect(mutate).toHaveBeenCalledWith({
@@ -69,7 +72,9 @@ describe('PromptReleasePage', () => {
       environment: 'development',
       version: 1,
       release_tag: '2026.04',
+      status: 'candidate',
       notes: '',
+      promotion_reason: 'reduce escalations',
     })
   })
 })

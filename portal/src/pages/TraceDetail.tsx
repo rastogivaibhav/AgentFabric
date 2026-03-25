@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Span, getSpanOutcomeStatus, outcomeStatusColor, useTrace } from '../hooks/api'
+import { Span, getSpanOutcomeStatus, outcomeStatusColor, useTrace, useTraceDecisions } from '../hooks/api'
 import TopologyGraph from '../components/TopologyGraph'
+import DecisionRecordPanel from '../components/trace/DecisionRecordPanel'
 import TraceHeader from '../components/trace/TraceHeader'
 import PolicyEventPanel from '../components/trace/PolicyEventPanel'
 import SpanDetailPanel from '../components/trace/SpanDetailPanel'
@@ -49,6 +50,7 @@ function flattenTree(nodes: (Span & { children?: Span[] })[], depth = 0): { span
 export default function TraceDetail() {
   const { traceId } = useParams<{ traceId: string }>()
   const { data: trace, isLoading } = useTrace(traceId!)
+  const { data: decisionsData } = useTraceDecisions(traceId!)
   const [tab, setTab] = useState<'waterfall' | 'spans' | 'graph'>('waterfall')
   const [selected, setSelected] = useState<Span | null>(null)
 
@@ -57,6 +59,7 @@ export default function TraceDetail() {
 
   const spans = trace.spans ?? []
   const policyEvents = trace.policy_events ?? []
+  const decisionRecords = decisionsData?.items ?? []
   const tree = buildSpanTree(spans)
   const flatSpans = flattenTree(tree)
   const timeline = trace.timeline ?? {
@@ -98,6 +101,10 @@ export default function TraceDetail() {
     <div style={{ padding: 24, display: 'flex', gap: 16, height: '100%', overflow: 'hidden' }}>
       <div style={{ flex: 1, overflow: 'auto' }}>
         <TraceHeader trace={trace} policyEvents={policyEvents} frameworkColor={FW_COLORS[trace.framework] ?? '#475569'} />
+
+        <div style={{ marginBottom: 12 }}>
+          <DecisionRecordPanel title="DECISION EVIDENCE" records={decisionRecords.slice(0, 6)} emptyLabel="No decision evidence recorded for this trace." />
+        </div>
 
         <div style={{ marginBottom: 12 }}>
           <PolicyEventPanel title="POLICY DECISIONS" events={policyEvents.slice(0, 6)} emptyLabel="No policy evidence recorded for this trace." />

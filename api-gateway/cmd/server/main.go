@@ -245,6 +245,7 @@ func main() {
 			r.Put("/saved-views", h.UpsertTraceSavedView)
 			r.Delete("/saved-views/{viewId}", h.DeleteTraceSavedView)
 			r.Get("/{traceId}", h.GetTrace)
+			r.Get("/{traceId}/decisions", h.ListTraceDecisions)
 			r.Get("/{traceId}/graph", h.GetTraceGraph)
 			r.Get("/{traceId}/timeline", h.GetTraceTimeline)
 			r.Get("/{traceId}/cost", h.GetTraceCost)
@@ -280,6 +281,7 @@ func main() {
 		r.Get("/environments", h.ListEnvironments)
 
 		// Audit log (Principle 4: immutable audit trail)
+		r.Get("/decisions", h.ListDecisions)
 		r.Get("/audit", h.ListAudit)
 		r.Get("/audit/verify", h.VerifyAuditChain)
 		r.With(middleware.RequireRole("admin")).Get("/audit/control", h.ListControlAudit)

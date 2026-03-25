@@ -14,7 +14,7 @@ func (s *PostgresStore) ListEvalRuns(ctx context.Context, tenantID string, limit
 		limit = 20
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, trace_id, COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
+		SELECT id, trace_id, COALESCE(prompt_id, ''), COALESCE(prompt_version, 0), COALESCE(prompt_environment, ''), COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
 		FROM eval_runs
 		WHERE tenant_id = $1
 		ORDER BY created_at DESC, id DESC
@@ -29,7 +29,7 @@ func (s *PostgresStore) ListEvalRuns(ctx context.Context, tenantID string, limit
 	for rows.Next() {
 		var run models.TraceEvalRun
 		var rawPolicy string
-		if err := rows.Scan(&run.ID, &run.TraceID, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt); err != nil {
+		if err := rows.Scan(&run.ID, &run.TraceID, &run.PromptID, &run.PromptVersion, &run.PromptEnvironment, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt); err != nil {
 			return nil, err
 		}
 		run.PolicyEffectiveness = decodePolicyEffectiveness(rawPolicy)
@@ -41,13 +41,27 @@ func (s *PostgresStore) ListEvalRuns(ctx context.Context, tenantID string, limit
 	return s.attachEvalScores(ctx, tenantID, runs)
 }
 
-func (s *PostgresStore) ListEvalRunsByRelease(ctx context.Context, tenantID, releaseTag, evalSuite string) ([]models.TraceEvalRun, error) {
+func (s *PostgresStore) ListEvalRunsByRelease(ctx context.Context, tenantID, promptID, promptEnvironment, releaseTag, evalSuite string) ([]models.TraceEvalRun, error) {
+	where := []string{"tenant_id = $1", "release_tag = $2", "eval_suite = $3"}
+	args := []interface{}{tenantID, strings.TrimSpace(releaseTag), strings.TrimSpace(evalSuite)}
+	if trimmed := strings.TrimSpace(promptID); trimmed != "" {
+		where = append(where, "prompt_id = $4")
+		args = append(args, trimmed)
+		if env := strings.TrimSpace(promptEnvironment); env != "" {
+			where = append(where, "prompt_environment = $5")
+			args = append(args, env)
+		}
+	} else if env := strings.TrimSpace(promptEnvironment); env != "" {
+		where = append(where, "prompt_environment = $4")
+		args = append(args, env)
+	}
+
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, trace_id, COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
+		SELECT id, trace_id, COALESCE(prompt_id, ''), COALESCE(prompt_version, 0), COALESCE(prompt_environment, ''), COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
 		FROM eval_runs
-		WHERE tenant_id = $1 AND release_tag = $2 AND eval_suite = $3
+		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY created_at DESC, id DESC
-	`, tenantID, strings.TrimSpace(releaseTag), strings.TrimSpace(evalSuite))
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +71,7 @@ func (s *PostgresStore) ListEvalRunsByRelease(ctx context.Context, tenantID, rel
 	for rows.Next() {
 		var run models.TraceEvalRun
 		var rawPolicy string
-		if err := rows.Scan(&run.ID, &run.TraceID, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt); err != nil {
+		if err := rows.Scan(&run.ID, &run.TraceID, &run.PromptID, &run.PromptVersion, &run.PromptEnvironment, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt); err != nil {
 			return nil, err
 		}
 		run.PolicyEffectiveness = decodePolicyEffectiveness(rawPolicy)
@@ -81,10 +95,10 @@ func (s *PostgresStore) InsertEvalRun(ctx context.Context, tenantID string, run 
 		return run, err
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO eval_runs (tenant_id, trace_id, release_tag, eval_suite, overall_score, risk_level, summary, policy_effectiveness)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+		INSERT INTO eval_runs (tenant_id, trace_id, prompt_id, prompt_version, prompt_environment, release_tag, eval_suite, overall_score, risk_level, summary, policy_effectiveness)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
 		RETURNING id, created_at
-	`, tenantID, strings.TrimSpace(run.TraceID), strings.TrimSpace(run.ReleaseTag), strings.TrimSpace(run.EvalSuite), run.OverallScore, strings.TrimSpace(run.RiskLevel), strings.TrimSpace(run.Summary), string(rawPolicy)).Scan(&run.ID, &run.CreatedAt)
+	`, tenantID, strings.TrimSpace(run.TraceID), strings.TrimSpace(run.PromptID), run.PromptVersion, strings.TrimSpace(run.PromptEnvironment), strings.TrimSpace(run.ReleaseTag), strings.TrimSpace(run.EvalSuite), run.OverallScore, strings.TrimSpace(run.RiskLevel), strings.TrimSpace(run.Summary), string(rawPolicy)).Scan(&run.ID, &run.CreatedAt)
 	if err != nil {
 		return run, err
 	}
@@ -152,10 +166,10 @@ func (s *PostgresStore) GetEvalRun(ctx context.Context, tenantID string, runID i
 	var run models.TraceEvalRun
 	var rawPolicy string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, trace_id, COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
+		SELECT id, trace_id, COALESCE(prompt_id, ''), COALESCE(prompt_version, 0), COALESCE(prompt_environment, ''), COALESCE(release_tag,''), eval_suite, overall_score, risk_level, COALESCE(summary,''), policy_effectiveness::text, created_at
 		FROM eval_runs
 		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, runID).Scan(&run.ID, &run.TraceID, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt)
+	`, tenantID, runID).Scan(&run.ID, &run.TraceID, &run.PromptID, &run.PromptVersion, &run.PromptEnvironment, &run.ReleaseTag, &run.EvalSuite, &run.OverallScore, &run.RiskLevel, &run.Summary, &rawPolicy, &run.CreatedAt)
 	if err != nil {
 		return run, err
 	}

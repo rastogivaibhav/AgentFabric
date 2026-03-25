@@ -293,6 +293,31 @@ export interface PolicyEvent {
   redactions?: number
 }
 
+export interface DecisionRecord {
+  id: number
+  decision_id: string
+  tenant_id?: string
+  trace_id?: string
+  span_id?: string
+  type: 'policy' | 'budget' | 'fallback' | 'routing' | 'retry' | string
+  result: string
+  reason?: string
+  explanation?: string
+  trigger?: string
+  inputs?: Record<string, string>
+  evidence?: Record<string, unknown>
+  action_taken?: string
+  source?: string
+  framework?: string
+  app_name?: string
+  environment?: string
+  provider?: string
+  model?: string
+  prompt_id?: string
+  prompt_release_tag?: string
+  created_at: string
+}
+
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 export interface EnvironmentInfo {
@@ -358,6 +383,21 @@ export function useTrace(traceId: string) {
   return useQuery<Trace>({
     queryKey: ['trace', traceId],
     queryFn: () => apiFetch(`/traces/${traceId}`),
+    enabled: !!traceId,
+  })
+}
+
+export function useDecisions(params: Record<string, string> = {}) {
+  return useQuery<Page<DecisionRecord>>({
+    queryKey: ['decisions', params],
+    queryFn: () => apiFetch('/decisions', params),
+  })
+}
+
+export function useTraceDecisions(traceId: string) {
+  return useQuery<{ items: DecisionRecord[]; count: number }>({
+    queryKey: ['trace-decisions', traceId],
+    queryFn: () => apiFetch(`/traces/${traceId}/decisions`),
     enabled: !!traceId,
   })
 }
@@ -752,6 +792,9 @@ export interface TraceEvalScore {
 export interface TraceEvalRun {
   id: number
   trace_id: string
+  prompt_id?: string
+  prompt_version?: number
+  prompt_environment?: string
   release_tag?: string
   eval_suite: string
   overall_score: number
@@ -771,6 +814,8 @@ export interface TraceEvalRequest {
 export interface RegressionCompareRequest {
   baseline_tag: string
   candidate_tag: string
+  prompt_id?: string
+  environment?: string
   eval_suite?: string
 }
 
@@ -786,6 +831,8 @@ export interface RegressionMetricDelta {
 export interface RegressionReport {
   baseline_tag: string
   candidate_tag: string
+  prompt_id?: string
+  environment?: string
   eval_suite: string
   compared_runs: number
   overall_delta: number
@@ -795,6 +842,24 @@ export interface RegressionReport {
   generated_at: string
 }
 
+export interface PromptReleaseEvalSummary {
+  eval_count: number
+  average_score: number
+  latest_score: number
+  risk_level: string
+  last_evaluated_at?: string
+}
+
+export interface PromptReleaseRegressionSummary {
+  baseline_tag: string
+  candidate_tag: string
+  compared_runs: number
+  overall_delta: number
+  risk_level: string
+  highlights?: string[]
+  summary?: string
+}
+
 export interface PromptRelease {
   id: number
   tenant_id?: string
@@ -802,9 +867,13 @@ export interface PromptRelease {
   environment: string
   version: number
   release_tag: string
+  status?: string
   notes?: string
+  promotion_reason?: string
   promoted_by?: string
   created_at: string
+  eval_summary: PromptReleaseEvalSummary
+  regression_summary?: PromptReleaseRegressionSummary
 }
 
 export interface PromptVersion {
@@ -836,7 +905,9 @@ export interface PromptPromotionRequest {
   environment: string
   version: number
   release_tag: string
+  status?: string
   notes?: string
+  promotion_reason?: string
 }
 
 export interface AdminAuditEntry {

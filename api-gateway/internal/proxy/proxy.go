@@ -35,6 +35,7 @@ import (
 type spanStore interface {
 	BulkInsertSpans(ctx context.Context, spans []models.Span) error
 	CreatePolicyAuditEntry(ctx context.Context, entry models.PolicyDecisionAudit) error
+	CreateDecisionRecord(ctx context.Context, record models.DecisionRecord) error
 }
 
 type eventBroadcaster interface {
@@ -156,7 +157,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Session:         strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
 		if trafficDecision.Matched {
-			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", trafficDecision)
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, strings.TrimSpace(r.Header.Get("X-AF-App")), "proxy", trafficDecision)
 			if trafficDecision.Action == "deny" {
 				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusForbidden, priced.Usage{}, 0, map[string]string{
 					"af.policy.blocked":  "true",
@@ -183,7 +184,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
 		if dlpDecision.Matched {
-			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "proxy", dlpDecision)
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, strings.TrimSpace(r.Header.Get("X-AF-App")), "proxy", dlpDecision)
 			switch dlpDecision.Action {
 			case "deny":
 				p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusForbidden, priced.Usage{}, 0, map[string]string{
@@ -206,6 +207,30 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _, estimatedCostUSD := ComputeEstimatedCostForTenant(provider, model, tenantID, time.Now().UTC(), estimatedTokens)
 		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
+			p.recordDecision(models.DecisionRecord{
+				DecisionID:  newUUID(),
+				TenantID:    normalizeTenantID(tenantID),
+				TraceID:     traceID,
+				SpanID:      spanID,
+				Type:        models.DecisionTypeBudget,
+				Result:      "deny",
+				Reason:      "monthly budget exceeded",
+				Trigger:     "budget_hard_limit",
+				ActionTaken: "block_request",
+				Source:      "proxy",
+				Framework:   "proxy",
+				AppName:     strings.TrimSpace(r.Header.Get("X-AF-App")),
+				Environment: environment,
+				Provider:    provider,
+				Model:       model,
+				Inputs: map[string]string{
+					"estimated_tokens": fmt.Sprintf("%d", estimatedTokens),
+					"estimated_cost":   fmt.Sprintf("%.8f", estimatedCostUSD),
+				},
+				Evidence: map[string]interface{}{
+					"error_type": "budget_exceeded",
+				},
+			})
 			go p.recordSpan(traceID, spanID, tenantID, provider, model, vk, http.StatusTooManyRequests, priced.Usage{}, 0, map[string]string{
 				"af.error.type":     "budget_exceeded",
 				"af.policy.blocked": "true",
@@ -302,6 +327,35 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		upResp, err := p.httpClient.Do(upReq)
 		if err != nil {
 			if idx < len(candidates)-1 && shouldAttemptFallback(0, err) {
+				nextModel := activeModel
+				if idx+1 < len(candidates) {
+					nextModel = candidates[idx+1].Model
+				}
+				p.recordDecision(models.DecisionRecord{
+					DecisionID:  newUUID(),
+					TenantID:    normalizeTenantID(tenantID),
+					TraceID:     traceID,
+					SpanID:      spanID,
+					Type:        models.DecisionTypeFallback,
+					Result:      "retry",
+					Reason:      classifyUpstreamFailure(0, err),
+					Trigger:     "upstream_error",
+					ActionTaken: "retry_with_fallback_model",
+					Source:      "proxy",
+					Framework:   "proxy",
+					AppName:     strings.TrimSpace(r.Header.Get("X-AF-App")),
+					Environment: environment,
+					Provider:    provider,
+					Model:       activeModel,
+					Inputs: map[string]string{
+						"from_model": activeModel,
+						"to_model":   nextModel,
+					},
+					Evidence: map[string]interface{}{
+						"route_source": candidate.Source,
+						"error":        err.Error(),
+					},
+				})
 				extraAttrs["af.gateway.fallback_trigger"] = classifyUpstreamFailure(0, err)
 				extraAttrs["af.gateway.fallback_from"] = activeModel
 				continue
@@ -330,6 +384,33 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respBody, _ := io.ReadAll(upResp.Body)
 		upResp.Body.Close()
 		if upResp.StatusCode >= 400 && idx < len(candidates)-1 && shouldAttemptFallback(upResp.StatusCode, nil) {
+			nextModel := activeModel
+			if idx+1 < len(candidates) {
+				nextModel = candidates[idx+1].Model
+			}
+			p.recordDecision(models.DecisionRecord{
+				DecisionID:  newUUID(),
+				TenantID:    normalizeTenantID(tenantID),
+				TraceID:     traceID,
+				SpanID:      spanID,
+				Type:        models.DecisionTypeFallback,
+				Result:      "retry",
+				Reason:      classifyUpstreamFailure(upResp.StatusCode, nil),
+				Trigger:     fmt.Sprintf("http_%d", upResp.StatusCode),
+				ActionTaken: "retry_with_fallback_model",
+				Source:      "proxy",
+				Framework:   "proxy",
+				AppName:     strings.TrimSpace(r.Header.Get("X-AF-App")),
+				Environment: environment,
+				Provider:    provider,
+				Model:       activeModel,
+				Inputs: map[string]string{
+					"from_model":   activeModel,
+					"to_model":     nextModel,
+					"status_code":  fmt.Sprintf("%d", upResp.StatusCode),
+					"route_source": candidate.Source,
+				},
+			})
 			extraAttrs["af.gateway.fallback_trigger"] = classifyUpstreamFailure(upResp.StatusCode, nil)
 			extraAttrs["af.gateway.fallback_from"] = activeModel
 			continue
@@ -354,7 +435,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 				})
 				if dlpDecision.Matched {
-					p.recordPolicyDecision(tenantID, traceID, spanID, provider, activeModel, environment, "proxy", dlpDecision)
+					p.recordPolicyDecision(tenantID, traceID, spanID, provider, activeModel, environment, strings.TrimSpace(r.Header.Get("X-AF-App")), "proxy", dlpDecision)
 					extraAttrs["af.policy.reason"] = dlpDecision.Reason
 					extraAttrs["af.policy.decision"] = dlpDecision.Action
 					if dlpDecision.Action == "deny" {
@@ -384,6 +465,26 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if finalStatusCode == 0 {
+		p.recordDecision(models.DecisionRecord{
+			DecisionID:  newUUID(),
+			TenantID:    normalizeTenantID(tenantID),
+			TraceID:     traceID,
+			SpanID:      spanID,
+			Type:        models.DecisionTypeFallback,
+			Result:      "error",
+			Reason:      "all fallback candidates failed",
+			Trigger:     "fallback_exhausted",
+			ActionTaken: "return_502",
+			Source:      "proxy",
+			Framework:   "proxy",
+			AppName:     strings.TrimSpace(r.Header.Get("X-AF-App")),
+			Environment: environment,
+			Provider:    provider,
+			Model:       finalModel,
+			Evidence: map[string]interface{}{
+				"route_source": finalSource,
+			},
+		})
 		go p.recordSpan(traceID, spanID, tenantID, provider, finalModel, vk, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
 			"af.error.type":           "fallback_exhausted",
 			"af.gateway.route_source": finalSource,
@@ -577,7 +678,7 @@ func classifyProxyStatus(statusCode int) string {
 	}
 }
 
-func (p *LLMProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, framework string, decision policy.Decision) {
+func (p *LLMProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, appName, framework string, decision policy.Decision) {
 	if !decision.Matched {
 		return
 	}
@@ -624,6 +725,79 @@ func (p *LLMProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, mod
 			},
 		})
 	}
+	p.recordDecision(models.DecisionRecord{
+		DecisionID:  decisionID,
+		TenantID:    tenantID,
+		TraceID:     traceID,
+		SpanID:      spanID,
+		Type:        models.DecisionTypePolicy,
+		Result:      result,
+		Reason:      decision.Reason,
+		Explanation: decision.Explanation.Explain,
+		Trigger:     decision.Scope,
+		ActionTaken: policyActionTaken(result),
+		Source:      framework,
+		Framework:   framework,
+		AppName:     appName,
+		Environment: environment,
+		Provider:    provider,
+		Model:       model,
+		Inputs: map[string]string{
+			"provider":    provider,
+			"model":       model,
+			"environment": environment,
+			"app_name":    appName,
+		},
+		Evidence: map[string]interface{}{
+			"policy_name":       decision.PolicyName,
+			"matched_names":     append([]string(nil), decision.MatchedNames...),
+			"guardrail_matches": append([]string(nil), decision.GuardrailMatches...),
+			"redactions":        decision.Redactions,
+			"decision_mode":     decision.Explanation.DecisionMode,
+			"engine":            decision.Explanation.Engine,
+			"matched_fields":    append([]string(nil), decision.Explanation.MatchedFields...),
+			"evaluation_path":   append([]string(nil), decision.Explanation.EvaluationPath...),
+			"condition_trace":   append([]models.PolicyConditionTrace(nil), decision.Explanation.ConditionTrace...),
+			"rule_conditions":   cloneStringMap(decision.Explanation.RuleConditions),
+			"rollout_percent":   decision.Explanation.RolloutPercent,
+			"version":           decision.Explanation.Version,
+		},
+	})
+}
+
+func (p *LLMProxy) recordDecision(record models.DecisionRecord) {
+	if p == nil || p.store == nil {
+		return
+	}
+	record.Result = models.NormalizeDecisionResult(record.Result)
+	record.Explanation = models.DefaultDecisionExplanation(record)
+	if err := p.store.CreateDecisionRecord(context.Background(), record); err != nil {
+		p.logger.Warn("failed to write decision record", zap.Error(err))
+	}
+}
+
+func policyActionTaken(result string) string {
+	switch models.NormalizeDecisionResult(result) {
+	case "deny":
+		return "block_request"
+	case "sanitize":
+		return "redact_content"
+	case "warn":
+		return "warn_only"
+	default:
+		return "allow_request"
+	}
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

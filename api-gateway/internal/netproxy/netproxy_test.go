@@ -28,8 +28,9 @@ const devVaultKey = "00000000000000000000000000000000000000000000000000000000000
 // ─── Test doubles ─────────────────────────────────────────────────────────────
 
 type fakeStore struct {
-	mu    sync.Mutex
-	spans []models.Span
+	mu        sync.Mutex
+	spans     []models.Span
+	decisions []models.DecisionRecord
 }
 
 func (f *fakeStore) BulkInsertSpans(_ context.Context, spans []models.Span) error {
@@ -43,11 +44,26 @@ func (f *fakeStore) CreatePolicyAuditEntry(_ context.Context, _ models.PolicyDec
 	return nil
 }
 
+func (f *fakeStore) CreateDecisionRecord(_ context.Context, record models.DecisionRecord) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.decisions = append(f.decisions, record)
+	return nil
+}
+
 func (f *fakeStore) Spans() []models.Span {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]models.Span, len(f.spans))
 	copy(out, f.spans)
+	return out
+}
+
+func (f *fakeStore) Decisions() []models.DecisionRecord {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]models.DecisionRecord, len(f.decisions))
+	copy(out, f.decisions)
 	return out
 }
 

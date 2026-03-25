@@ -14,7 +14,9 @@ export default function PromptReleasePage() {
     environment: 'development',
     version: 1,
     release_tag: '',
+    status: 'active',
     notes: '',
+    promotion_reason: '',
   })
 
   const promptVersions = useMemo(
@@ -45,7 +47,9 @@ export default function PromptReleasePage() {
       environment: form.environment.trim().toLowerCase() || 'development',
       version: form.version,
       release_tag: form.release_tag.trim(),
+      status: form.status.trim().toLowerCase() || 'active',
       notes: form.notes.trim(),
+      promotion_reason: form.promotion_reason.trim(),
     })
   }
 
@@ -79,7 +83,7 @@ export default function PromptReleasePage() {
               <select value={form.version} onChange={e => setForm(f => ({ ...f, version: Number(e.target.value) }))} style={inputStyle}>
                 {promptVersions.map(version => (
                   <option key={version.id ?? version.version} value={version.version}>
-                    v{version.version} · {version.environment}
+                    v{version.version} | {version.environment}
                   </option>
                 ))}
               </select>
@@ -89,8 +93,20 @@ export default function PromptReleasePage() {
               <input value={form.release_tag} onChange={e => setForm(f => ({ ...f, release_tag: e.target.value }))} style={inputStyle} placeholder="2026.03-prod.1" />
             </label>
             <label style={labelStyle}>
+              Status
+              <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={inputStyle}>
+                <option value="active">active</option>
+                <option value="candidate">candidate</option>
+                <option value="archived">archived</option>
+              </select>
+            </label>
+            <label style={labelStyle}>
               Notes
               <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={textareaStyle} rows={4} placeholder="promote validated prompt after release-candidate run" />
+            </label>
+            <label style={labelStyle}>
+              Promotion Reason
+              <textarea value={form.promotion_reason} onChange={e => setForm(f => ({ ...f, promotion_reason: e.target.value }))} style={textareaStyle} rows={3} placeholder="improve escalation quality and reduce hallucinations" />
             </label>
           </div>
           <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
@@ -135,6 +151,24 @@ export default function PromptReleasePage() {
               {selectedVersion.description && (
                 <div style={{ marginTop: 12, color: '#94A3B8', fontSize: 11 }}>{selectedVersion.description}</div>
               )}
+              {selectedVersion.current_release && (
+                <div style={healthPanelStyle}>
+                  <div style={{ color: '#F8FAFC', fontSize: 12, fontWeight: 600 }}>
+                    {(selectedVersion.current_release.status ?? 'active')} release health
+                  </div>
+                  <div style={{ color: scoreColor(selectedVersion.current_release.eval_summary?.average_score ?? 0), fontSize: 12, marginTop: 6 }}>
+                    avg {formatScore(selectedVersion.current_release.eval_summary?.average_score)} | latest {formatScore(selectedVersion.current_release.eval_summary?.latest_score)}
+                  </div>
+                  <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>
+                    {selectedVersion.current_release.eval_summary?.eval_count ?? 0} evals | {selectedVersion.current_release.eval_summary?.risk_level ?? 'unknown'} risk
+                  </div>
+                  {selectedVersion.current_release.regression_summary && (
+                    <div style={{ color: selectedVersion.current_release.regression_summary.overall_delta >= 0 ? '#10B981' : '#FCA5A5', fontSize: 11, marginTop: 6 }}>
+                      {selectedVersion.current_release.regression_summary.summary}
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{ marginTop: 12, color: '#CBD5E1', fontSize: 11, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
                 {selectedVersion.content}
               </div>
@@ -169,18 +203,25 @@ export default function PromptReleasePage() {
         </div>
 
         <div style={panelStyle}>
-          <div style={sectionLabel}>ACTIVE RELEASE POINTERS</div>
+          <div style={sectionLabel}>RELEASE HISTORY</div>
           <div style={{ display: 'grid', gap: 10 }}>
             {promptReleases.length === 0 ? (
-              <div style={{ color: '#475569', fontSize: 12 }}>No active releases yet.</div>
+              <div style={{ color: '#475569', fontSize: 12 }}>No releases yet.</div>
             ) : promptReleases.map(release => (
-              <div key={`${release.environment}-${release.release_tag}`} style={releaseCardStyle}>
+              <div key={`${release.environment}-${release.release_tag}-${release.created_at}`} style={releaseCardStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                   <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{release.environment}</div>
                   <div style={{ color: '#60A5FA', fontSize: 11 }}>{release.release_tag}</div>
                 </div>
-                <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>v{release.version} · {release.promoted_by || 'system'}</div>
+                <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>
+                  v{release.version} | {release.promoted_by || 'system'} | {release.status || 'active'}
+                </div>
+                <div style={{ color: scoreColor(release.eval_summary?.average_score ?? 0), fontSize: 11, marginTop: 6 }}>
+                  avg {formatScore(release.eval_summary?.average_score)} | {release.eval_summary?.eval_count ?? 0} evals
+                </div>
+                {release.promotion_reason && <div style={{ color: '#CBD5E1', fontSize: 10, marginTop: 6 }}>{release.promotion_reason}</div>}
                 {release.notes && <div style={{ color: '#64748B', fontSize: 10, marginTop: 6 }}>{release.notes}</div>}
+                {release.regression_summary && <div style={{ color: release.regression_summary.overall_delta >= 0 ? '#10B981' : '#FCA5A5', fontSize: 10, marginTop: 6 }}>{release.regression_summary.summary}</div>}
               </div>
             ))}
           </div>
@@ -203,3 +244,15 @@ const backLinkStyle: CSSProperties = { color: '#60A5FA', fontSize: 12, textDecor
 const statCardStyle: CSSProperties = { border: '1px solid #0F1F35', borderRadius: 8, background: '#071525', padding: 10 }
 const versionBtnStyle: CSSProperties = { background: '#071525', border: '1px solid #0F1F35', borderRadius: 8, color: '#E2E8F0', padding: 12, textAlign: 'left', cursor: 'pointer' }
 const releaseCardStyle: CSSProperties = { border: '1px solid #0F1F35', borderRadius: 8, background: '#071525', padding: 12 }
+const healthPanelStyle: CSSProperties = { marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #10243D', background: '#081221' }
+
+function scoreColor(score: number): string {
+  if (score >= 85) return '#10B981'
+  if (score >= 65) return '#F59E0B'
+  return '#FCA5A5'
+}
+
+function formatScore(score?: number): string {
+  if (score === undefined) return 'n/a'
+  return score.toFixed(1)
+}

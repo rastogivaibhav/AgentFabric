@@ -3,6 +3,7 @@ package prompts
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/agentfabric/api-gateway/internal/models"
 )
@@ -36,14 +37,15 @@ func TestReleaseKey(t *testing.T) {
 }
 
 type fakePromptStore struct {
-	versions      []models.PromptVersion
-	releases      []models.PromptRelease
-	upserted      models.PromptVersion
-	upsertErr     error
-	selected      models.PromptVersion
-	selectedErr   error
-	promoted      models.PromptRelease
-	promoteErr    error
+	versions    []models.PromptVersion
+	releases    []models.PromptRelease
+	upserted    models.PromptVersion
+	upsertErr   error
+	selected    models.PromptVersion
+	selectedErr error
+	promoted    models.PromptRelease
+	promoteErr  error
+	releaseRuns map[string][]models.TraceEvalRun
 }
 
 func (f *fakePromptStore) ListPromptVersions(context.Context, string) ([]models.PromptVersion, error) {
@@ -76,13 +78,25 @@ func (f *fakePromptStore) PromotePromptRelease(_ context.Context, _ string, rele
 	return release, nil
 }
 
+func (f *fakePromptStore) ListEvalRunsByRelease(_ context.Context, _ string, promptID, environment, releaseTag, _ string) ([]models.TraceEvalRun, error) {
+	if f.releaseRuns == nil {
+		return nil, nil
+	}
+	return f.releaseRuns[promptID+"::"+environment+"::"+releaseTag], nil
+}
+
 func TestListCatalogAttachesCurrentRelease(t *testing.T) {
 	fake := &fakePromptStore{
 		versions: []models.PromptVersion{
 			{PromptID: "support", Version: 2, Environment: "production"},
 		},
 		releases: []models.PromptRelease{
-			{PromptID: "support", Version: 2, Environment: "production", ReleaseTag: "2026.03"},
+			{PromptID: "support", Version: 2, Environment: "production", ReleaseTag: "2026.03", Status: "active"},
+		},
+		releaseRuns: map[string][]models.TraceEvalRun{
+			"support::production::2026.03": {
+				{OverallScore: 91.5, RiskLevel: "low", CreatedAt: time.Unix(1700000000, 0).UTC()},
+			},
 		},
 	}
 	svc := &Service{store: fake}
@@ -92,6 +106,9 @@ func TestListCatalogAttachesCurrentRelease(t *testing.T) {
 	}
 	if catalog.Count != 1 || catalog.Items[0].CurrentRelease == nil {
 		t.Fatalf("unexpected catalog: %#v", catalog)
+	}
+	if catalog.Releases[0].EvalSummary.EvalCount != 1 || catalog.Releases[0].EvalSummary.AverageScore != 91.5 {
+		t.Fatalf("expected eval summary to be attached, got %#v", catalog.Releases[0].EvalSummary)
 	}
 }
 
@@ -125,17 +142,22 @@ func TestPromoteBuildsReleaseFromSelectedVersion(t *testing.T) {
 	}
 	svc := &Service{store: fake}
 	release, err := svc.Promote(context.Background(), "tenant-1", "owner", models.PromptPromotionRequest{
-		PromptID:    " support.system ",
-		Environment: " Production ",
-		Version:     4,
-		ReleaseTag:  " 2026.04 ",
-		Notes:       " promote ",
+		PromptID:        " support.system ",
+		Environment:     " Production ",
+		Version:         4,
+		ReleaseTag:      " 2026.04 ",
+		Status:          " candidate ",
+		Notes:           " promote ",
+		PromotionReason: " improve escalation quality ",
 	})
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
 	if fake.promoted.Environment != "production" || fake.promoted.PromotedBy != "owner" {
 		t.Fatalf("unexpected promoted payload: %#v", fake.promoted)
+	}
+	if fake.promoted.Status != "candidate" || fake.promoted.PromotionReason != "improve escalation quality" {
+		t.Fatalf("expected promotion metadata to be normalized, got %#v", fake.promoted)
 	}
 	if release.ID != 22 {
 		t.Fatalf("expected stored release to be returned, got %#v", release)

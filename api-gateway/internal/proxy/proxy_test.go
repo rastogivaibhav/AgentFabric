@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/agentfabric/api-gateway/internal/policy"
 	priced "github.com/agentfabric/api-gateway/internal/pricing"
 	"github.com/agentfabric/api-gateway/internal/vault"
 	"github.com/stretchr/testify/assert"
@@ -23,7 +24,8 @@ const devVaultKey = "00000000000000000000000000000000000000000000000000000000000
 
 // mockStore records spans written through it.
 type mockStore struct {
-	spans []models.Span
+	spans     []models.Span
+	decisions []models.DecisionRecord
 }
 
 func (m *mockStore) BulkInsertSpans(_ context.Context, spans []models.Span) error {
@@ -32,6 +34,11 @@ func (m *mockStore) BulkInsertSpans(_ context.Context, spans []models.Span) erro
 }
 
 func (m *mockStore) CreatePolicyAuditEntry(_ context.Context, _ models.PolicyDecisionAudit) error {
+	return nil
+}
+
+func (m *mockStore) CreateDecisionRecord(_ context.Context, record models.DecisionRecord) error {
+	m.decisions = append(m.decisions, record)
 	return nil
 }
 
@@ -204,6 +211,53 @@ func TestRecordSpan_ClassifiesDegradedOutcomeForFallbackSuccess(t *testing.T) {
 
 	require.Len(t, ms.spans, 1)
 	assert.Equal(t, "degraded", ms.spans[0].Attributes["af.outcome_status"])
+}
+
+func TestRecordPolicyDecision_CreatesCanonicalDecisionRecord(t *testing.T) {
+	ms := &mockStore{}
+	lp := &LLMProxy{store: ms, logger: zap.NewNop()}
+
+	lp.recordPolicyDecision("tenant-1", "trace-1", "span-1", ProviderOpenAI, "gpt-4o", "prod", "ops-ui", "proxy", policyDecision("deny"))
+
+	require.Len(t, ms.decisions, 1)
+	assert.Equal(t, models.DecisionTypePolicy, ms.decisions[0].Type)
+	assert.Equal(t, "deny", ms.decisions[0].Result)
+	assert.Equal(t, "ops-ui", ms.decisions[0].AppName)
+	assert.NotEmpty(t, ms.decisions[0].Explanation)
+}
+
+func TestRecordDecision_NormalizesFallbackExplanation(t *testing.T) {
+	ms := &mockStore{}
+	lp := &LLMProxy{store: ms, logger: zap.NewNop()}
+
+	lp.recordDecision(models.DecisionRecord{
+		DecisionID: "decision-1",
+		TenantID:   "tenant-1",
+		Type:       models.DecisionTypeFallback,
+		Result:     "retry",
+		Reason:     "upstream_error",
+	})
+
+	require.Len(t, ms.decisions, 1)
+	assert.Equal(t, "retry", ms.decisions[0].Result)
+	assert.NotEmpty(t, ms.decisions[0].Explanation)
+}
+
+func policyDecision(action string) policy.Decision {
+	return policy.Decision{
+		Matched:    true,
+		PolicyName: "deny-gpt4o",
+		Action:     action,
+		Reason:     "provider/model policy matched",
+		Scope:      "request",
+		MatchedNames: []string{
+			"model_match",
+		},
+		Explanation: policy.DecisionExplanation{
+			Engine:  "fast",
+			Explain: "matched deny rule",
+		},
+	}
 }
 
 // ─── LLMProxy HTTP handler ───────────────────────────────────────────────────

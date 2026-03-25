@@ -79,11 +79,15 @@ func (f *fakeEvalStore) ListEvalRuns(_ context.Context, _ string, _ int) ([]mode
 	return f.listRuns, f.listRunsErr
 }
 
-func (f *fakeEvalStore) ListEvalRunsByRelease(_ context.Context, _ string, releaseTag, _ string) ([]models.TraceEvalRun, error) {
+func (f *fakeEvalStore) ListEvalRunsByRelease(_ context.Context, _ string, promptID, promptEnvironment, releaseTag, _ string) ([]models.TraceEvalRun, error) {
 	if f.releaseErr != nil {
 		return nil, f.releaseErr
 	}
-	return f.releaseRuns[releaseTag], nil
+	key := releaseTag
+	if promptID != "" || promptEnvironment != "" {
+		key = promptID + "::" + promptEnvironment + "::" + releaseTag
+	}
+	return f.releaseRuns[key], nil
 }
 
 func TestScoreTraceValidatesTraceID(t *testing.T) {
@@ -98,7 +102,7 @@ func TestScoreTraceBuildsAndPersistsEvalRun(t *testing.T) {
 		inputsByTrace: map[string]*store.TraceViewInputs{
 			"trace-1": {
 				Spans: []models.Span{
-					{ID: "root", TraceID: "trace-1", RunID: "run-1", Name: "root", Framework: "langgraph", DurationNs: 1_200_000_000, Attributes: map[string]string{"af.step_type": "llm"}, ReceivedAt: time.Now().UTC()},
+					{ID: "root", TraceID: "trace-1", RunID: "run-1", Name: "root", Framework: "langgraph", DurationNs: 1_200_000_000, Attributes: map[string]string{"af.step_type": "llm", "af.prompt.id": "support.system", "af.prompt.version": "4", "af.prompt.environment": "staging", "af.prompt.release_tag": "candidate-1"}, ReceivedAt: time.Now().UTC()},
 				},
 				AuditEntries: []store.AuditEntry{
 					{DecisionID: "d1", TraceID: "trace-1", SpanID: "root", PolicyName: "allow", Result: "allow", Reason: "ok", TenantID: "tenant-1"},
@@ -117,6 +121,9 @@ func TestScoreTraceBuildsAndPersistsEvalRun(t *testing.T) {
 	}
 	if run.ID != 99 || run.ReleaseTag != "candidate-1" {
 		t.Fatalf("unexpected run: %#v", run)
+	}
+	if run.PromptID != "support.system" || run.PromptVersion != 4 || run.PromptEnvironment != "staging" {
+		t.Fatalf("expected prompt lineage to be inferred, got %#v", run)
 	}
 	if len(run.Scores) != 4 {
 		t.Fatalf("expected 4 scores, got %d", len(run.Scores))
@@ -154,10 +161,10 @@ func TestListRunsDelegatesToStore(t *testing.T) {
 func TestCompareReleaseBuildsRegressionReport(t *testing.T) {
 	fake := &fakeEvalStore{
 		releaseRuns: map[string][]models.TraceEvalRun{
-			"baseline": {
+			"prompt-a::staging::baseline": {
 				{Scores: []models.TraceEvalScore{{Metric: "latency", Score: 80}, {Metric: "reliability", Score: 90}}},
 			},
-			"candidate": {
+			"prompt-a::staging::candidate": {
 				{Scores: []models.TraceEvalScore{{Metric: "latency", Score: 60}, {Metric: "reliability", Score: 70}}},
 			},
 		},
@@ -166,6 +173,8 @@ func TestCompareReleaseBuildsRegressionReport(t *testing.T) {
 	report, err := svc.CompareRelease(context.Background(), "tenant-1", models.RegressionCompareRequest{
 		BaselineTag:  "baseline",
 		CandidateTag: "candidate",
+		PromptID:     "prompt-a",
+		Environment:  "staging",
 	})
 	if err != nil {
 		t.Fatalf("CompareRelease returned error: %v", err)

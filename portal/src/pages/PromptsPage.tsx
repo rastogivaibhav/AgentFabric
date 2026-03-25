@@ -129,9 +129,25 @@ export default function PromptsPage() {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                       {prompt.promoted && <span style={badgeStyle('#10B98120', '#10B981')}>LIVE</span>}
                       {prompt.is_latest && <span style={badgeStyle('#3B82F620', '#60A5FA')}>LATEST</span>}
+                      {prompt.current_release?.status && <span style={badgeStyle('#F59E0B20', '#FBBF24')}>{prompt.current_release.status.toUpperCase()}</span>}
                     </div>
                   </div>
                   {prompt.description && <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 8 }}>{prompt.description}</div>}
+                  {prompt.current_release && (
+                    <div style={releaseMetaStyle}>
+                      <div style={{ color: '#E2E8F0', fontSize: 11 }}>
+                        active release {prompt.current_release.release_tag} · {prompt.current_release.eval_summary?.eval_count ?? 0} evals
+                      </div>
+                      <div style={{ color: evalColor(prompt.current_release.eval_summary?.average_score ?? 0), fontSize: 11, marginTop: 4 }}>
+                        avg {formatScore(prompt.current_release.eval_summary?.average_score)} · {prompt.current_release.eval_summary?.risk_level ?? 'unknown'} risk
+                      </div>
+                      {prompt.current_release.regression_summary && (
+                        <div style={{ color: prompt.current_release.regression_summary.overall_delta >= 0 ? '#10B981' : '#FCA5A5', fontSize: 10, marginTop: 4 }}>
+                          regression {prompt.current_release.regression_summary.overall_delta >= 0 ? '+' : ''}{prompt.current_release.regression_summary.overall_delta.toFixed(2)} vs {prompt.current_release.regression_summary.baseline_tag}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div style={{ color: '#CBD5E1', fontSize: 11, marginTop: 8, whiteSpace: 'pre-wrap' }}>
                     {prompt.content.length > 220 ? `${prompt.content.slice(0, 220)}...` : prompt.content}
                   </div>
@@ -164,6 +180,7 @@ const secondaryBtnSmall: CSSProperties = { ...secondaryBtn, padding: '6px 10px',
 const linkBtnStyle: CSSProperties = { color: '#60A5FA', fontSize: 11, textDecoration: 'none', alignSelf: 'center' }
 const cardStyle: CSSProperties = { border: '1px solid #0F1F35', borderRadius: 8, background: '#071525', padding: 14 }
 const errorStyle: CSSProperties = { color: '#FCA5A5', fontSize: 12, marginTop: 12 }
+const releaseMetaStyle: CSSProperties = { marginTop: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #10243D', background: '#081221' }
 
 function badgeStyle(background: string, color: string): CSSProperties {
   return {
@@ -176,4 +193,15 @@ function badgeStyle(background: string, color: string): CSSProperties {
     fontWeight: 700,
     letterSpacing: '0.08em',
   }
+}
+
+function evalColor(score: number): string {
+  if (score >= 85) return '#10B981'
+  if (score >= 65) return '#F59E0B'
+  return '#FCA5A5'
+}
+
+function formatScore(score?: number): string {
+  if (score === undefined) return 'n/a'
+  return score.toFixed(1)
 }

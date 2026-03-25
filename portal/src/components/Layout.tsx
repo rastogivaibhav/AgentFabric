@@ -37,6 +37,7 @@ const NAV: NavItem[] = [
   { to: '/prompts',      icon: FileText,       label: 'Prompts',    adminOnly: true },
   { to: '/evals',        icon: FlaskConical,   label: 'Evals',      adminOnly: true },
   { to: '/pricing',      icon: SlidersHorizontal, label: 'Pricing', adminOnly: true },
+  { to: '/decisions',    icon: ClipboardList,  label: 'Decisions', adminOnly: true },
   { to: '/audit',        icon: ClipboardList,  label: 'Audit Log',  adminOnly: true },
 ]
 

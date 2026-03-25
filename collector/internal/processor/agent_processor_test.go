@@ -349,7 +349,12 @@ func TestEnrichSpan_PreservesGatewayDecisionAttributes(t *testing.T) {
 		{
 			name: "upstream error",
 			attrs: map[string]string{
-				"af.error.type": "upstream_error",
+				"af.error.type":          "upstream_error",
+				"service.name":           "ops-ui",
+				"deployment.environment": "production",
+				"session.id":             "sess-123",
+				"af.prompt.id":           "support-prompt",
+				"af.prompt.release_tag":  "support-v2",
 			},
 			status: tracepb.Status_STATUS_CODE_ERROR,
 		},
@@ -370,6 +375,20 @@ func TestEnrichSpan_PreservesGatewayDecisionAttributes(t *testing.T) {
 			for key, value := range tc.attrs {
 				if enriched.Attributes[key] != value {
 					t.Fatalf("expected %s=%q, got %q", key, value, enriched.Attributes[key])
+				}
+			}
+			if tc.name == "upstream error" {
+				if enriched.Attributes[AttrAppName] != "ops-ui" {
+					t.Fatalf("expected app context to be preserved")
+				}
+				if enriched.Attributes[AttrEnvironment] != "production" {
+					t.Fatalf("expected environment context to be preserved")
+				}
+				if enriched.Attributes[AttrSessionID] != "sess-123" {
+					t.Fatalf("expected session context to be preserved")
+				}
+				if enriched.Attributes[AttrPromptID] != "support-prompt" || enriched.Attributes[AttrPromptRelease] != "support-v2" {
+					t.Fatalf("expected prompt lineage to be preserved")
 				}
 			}
 			if enriched.StatusCode != int32(tc.status) {

@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -252,6 +253,21 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 			h.logger.Warn("budget check error (fail open)", zap.String("tenant", tenantID), zap.Error(err))
 		}
 		if !allowed {
+			_ = h.pg.CreateDecisionRecord(r.Context(), models.DecisionRecord{
+				DecisionID:  fmt.Sprintf("budget-%d", time.Now().UnixNano()),
+				TenantID:    tenantID,
+				Type:        models.DecisionTypeBudget,
+				Result:      "deny",
+				Reason:      "monthly budget exceeded",
+				Trigger:     "budget_hard_limit",
+				ActionTaken: "reject_ingest_batch",
+				Source:      "ingest",
+				Framework:   "collector",
+				Inputs: map[string]string{
+					"batch_tokens": fmt.Sprintf("%d", totalTokens),
+					"batch_cost":   fmt.Sprintf("%.8f", totalCost),
+				},
+			})
 			writeError(w, http.StatusTooManyRequests, "monthly budget exceeded")
 			return
 		}
@@ -828,6 +844,37 @@ func (h *Handler) ListEnvironments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, envs)
+}
+
+func (h *Handler) ListDecisions(w http.ResponseWriter, r *http.Request) {
+	page, err := h.pg.ListDecisionRecords(r.Context(), models.DecisionQuery{
+		TenantID: tenantFromCtx(r),
+		TraceID:  strings.TrimSpace(r.URL.Query().Get("trace_id")),
+		Type:     strings.TrimSpace(r.URL.Query().Get("type")),
+		Result:   strings.TrimSpace(r.URL.Query().Get("result")),
+		Limit:    parseIntOr(r.URL.Query().Get("limit"), 100),
+		Offset:   parseIntOr(r.URL.Query().Get("offset"), 0),
+	})
+	if err != nil {
+		h.logger.Error("list decisions", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to query decision records")
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) ListTraceDecisions(w http.ResponseWriter, r *http.Request) {
+	traceID := chi.URLParam(r, "traceId")
+	records, err := h.pg.ListDecisionRecordsForTrace(r.Context(), tenantFromCtx(r), traceID)
+	if err != nil {
+		h.logger.Error("list trace decisions", zap.Error(err), zap.String("trace_id", traceID))
+		writeError(w, http.StatusInternalServerError, "failed to query trace decisions")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": records,
+		"count": len(records),
+	})
 }
 
 // ─── Live stream ──────────────────────────────────────────────────────────────

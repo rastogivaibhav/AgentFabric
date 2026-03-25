@@ -95,6 +95,10 @@ func (p promptStoreFuncAdapter) ListPromptReleases(context.Context, string) ([]m
 	return nil, nil
 }
 
+func (p promptStoreFuncAdapter) ListEvalRunsByRelease(context.Context, string, string, string, string, string) ([]models.TraceEvalRun, error) {
+	return nil, nil
+}
+
 func (p promptStoreFuncAdapter) UpsertPromptVersion(context.Context, string, models.PromptVersion) (models.PromptVersion, error) {
 	return models.PromptVersion{}, nil
 }

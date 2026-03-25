@@ -49,6 +49,28 @@ describe('PromptsPage', () => {
           description: 'production prompt',
           promoted: true,
           is_latest: true,
+          current_release: {
+            id: 11,
+            prompt_id: 'support-bot.system',
+            version: 3,
+            environment: 'production',
+            release_tag: '2026.03',
+            status: 'active',
+            eval_summary: {
+              eval_count: 4,
+              average_score: 88.2,
+              latest_score: 89.1,
+              risk_level: 'low',
+            },
+            regression_summary: {
+              baseline_tag: '2026.02',
+              candidate_tag: '2026.03',
+              compared_runs: 4,
+              overall_delta: 3.4,
+              risk_level: 'low',
+              summary: 'Average eval score moved by 3.40 points versus 2026.02.',
+            },
+          },
         }],
         releases: [],
         count: 1,
@@ -61,6 +83,8 @@ describe('PromptsPage', () => {
     expect(screen.getByText('support-bot.system')).toBeInTheDocument()
     expect(screen.getByText('LIVE')).toBeInTheDocument()
     expect(screen.getByText('LATEST')).toBeInTheDocument()
+    expect(screen.getByText('ACTIVE')).toBeInTheDocument()
+    expect(screen.getByText(/active release 2026.03/i)).toBeInTheDocument()
   })
 
   it('submits a prompt version', () => {

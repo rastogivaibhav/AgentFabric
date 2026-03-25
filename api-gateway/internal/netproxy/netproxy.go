@@ -37,6 +37,7 @@ var knownLLMHosts = map[string]string{
 type spanStore interface {
 	BulkInsertSpans(ctx context.Context, spans []models.Span) error
 	CreatePolicyAuditEntry(ctx context.Context, entry models.PolicyDecisionAudit) error
+	CreateDecisionRecord(ctx context.Context, record models.DecisionRecord) error
 }
 
 type eventBroadcaster interface {
@@ -257,7 +258,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 			Session:         strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
 		if trafficDecision.Matched {
-			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", trafficDecision)
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, strings.TrimSpace(r.Header.Get("X-AF-App")), "netproxy", trafficDecision)
 			if trafficDecision.Action == "deny" {
 				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusForbidden, priced.Usage{}, 0, map[string]string{
 					"af.policy.blocked":  "true",
@@ -284,7 +285,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 			Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 		})
 		if dlpDecision.Matched {
-			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", dlpDecision)
+			p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, strings.TrimSpace(r.Header.Get("X-AF-App")), "netproxy", dlpDecision)
 			switch dlpDecision.Action {
 			case "deny":
 				p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusForbidden, priced.Usage{}, 0, map[string]string{
@@ -307,6 +308,30 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 		_, _, estimatedCostUSD := proxy.ComputeEstimatedCostForTenant(provider, model, tenantID, time.Now().UTC(), estimatedTokens)
 		allowed, _ := p.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, estimatedTokens, estimatedCostUSD)
 		if !allowed {
+			p.recordDecision(models.DecisionRecord{
+				DecisionID:  newUUID(),
+				TenantID:    normalizeTenantID(tenantID),
+				TraceID:     traceID,
+				SpanID:      spanID,
+				Type:        models.DecisionTypeBudget,
+				Result:      "deny",
+				Reason:      "monthly budget exceeded",
+				Trigger:     "budget_hard_limit",
+				ActionTaken: "block_request",
+				Source:      "netproxy",
+				Framework:   "netproxy",
+				AppName:     strings.TrimSpace(r.Header.Get("X-AF-App")),
+				Environment: environment,
+				Provider:    provider,
+				Model:       model,
+				Inputs: map[string]string{
+					"estimated_tokens": fmt.Sprintf("%d", estimatedTokens),
+					"estimated_cost":   fmt.Sprintf("%.8f", estimatedCostUSD),
+				},
+				Evidence: map[string]interface{}{
+					"error_type": "budget_exceeded",
+				},
+			})
 			go p.recordSpan(traceID, spanID, tenantID, provider, model, rawKey, http.StatusTooManyRequests, priced.Usage{}, 0, map[string]string{
 				"af.error.type":     "budget_exceeded",
 				"af.policy.blocked": "true",
@@ -380,7 +405,7 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 					Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
 				})
 				if dlpDecision.Matched {
-					p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, "netproxy", dlpDecision)
+					p.recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, strings.TrimSpace(r.Header.Get("X-AF-App")), "netproxy", dlpDecision)
 					extraAttrs["af.policy.reason"] = dlpDecision.Reason
 					extraAttrs["af.policy.decision"] = dlpDecision.Action
 					if dlpDecision.Action == "deny" {
@@ -570,7 +595,7 @@ func classifyNetproxyStatus(statusCode int) string {
 	}
 }
 
-func (p *NetProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, framework string, decision policy.Decision) {
+func (p *NetProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, model, environment, appName, framework string, decision policy.Decision) {
 	if !decision.Matched {
 		return
 	}
@@ -617,6 +642,79 @@ func (p *NetProxy) recordPolicyDecision(tenantID, traceID, spanID, provider, mod
 			},
 		})
 	}
+	p.recordDecision(models.DecisionRecord{
+		DecisionID:  decisionID,
+		TenantID:    tenantID,
+		TraceID:     traceID,
+		SpanID:      spanID,
+		Type:        models.DecisionTypePolicy,
+		Result:      result,
+		Reason:      decision.Reason,
+		Explanation: decision.Explanation.Explain,
+		Trigger:     decision.Scope,
+		ActionTaken: policyActionTaken(result),
+		Source:      framework,
+		Framework:   framework,
+		AppName:     appName,
+		Environment: environment,
+		Provider:    provider,
+		Model:       model,
+		Inputs: map[string]string{
+			"provider":    provider,
+			"model":       model,
+			"environment": environment,
+			"app_name":    appName,
+		},
+		Evidence: map[string]interface{}{
+			"policy_name":       decision.PolicyName,
+			"matched_names":     append([]string(nil), decision.MatchedNames...),
+			"guardrail_matches": append([]string(nil), decision.GuardrailMatches...),
+			"redactions":        decision.Redactions,
+			"decision_mode":     decision.Explanation.DecisionMode,
+			"engine":            decision.Explanation.Engine,
+			"matched_fields":    append([]string(nil), decision.Explanation.MatchedFields...),
+			"evaluation_path":   append([]string(nil), decision.Explanation.EvaluationPath...),
+			"condition_trace":   append([]models.PolicyConditionTrace(nil), decision.Explanation.ConditionTrace...),
+			"rule_conditions":   cloneStringMap(decision.Explanation.RuleConditions),
+			"rollout_percent":   decision.Explanation.RolloutPercent,
+			"version":           decision.Explanation.Version,
+		},
+	})
+}
+
+func (p *NetProxy) recordDecision(record models.DecisionRecord) {
+	if p == nil || p.store == nil {
+		return
+	}
+	record.Result = models.NormalizeDecisionResult(record.Result)
+	record.Explanation = models.DefaultDecisionExplanation(record)
+	if err := p.store.CreateDecisionRecord(context.Background(), record); err != nil {
+		p.logger.Warn("netproxy: failed to write decision record", zap.Error(err))
+	}
+}
+
+func policyActionTaken(result string) string {
+	switch models.NormalizeDecisionResult(result) {
+	case "deny":
+		return "block_request"
+	case "sanitize":
+		return "redact_content"
+	case "warn":
+		return "warn_only"
+	default:
+		return "allow_request"
+	}
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 // ─── singleConnListener ───────────────────────────────────────────────────────

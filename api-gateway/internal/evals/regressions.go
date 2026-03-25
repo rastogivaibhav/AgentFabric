@@ -16,17 +16,21 @@ func (s *Service) CompareRelease(ctx context.Context, tenantID string, req model
 	if suite == "" {
 		suite = defaultSuite
 	}
-	baselineRuns, err := s.store.ListEvalRunsByRelease(ctx, tenantID, strings.TrimSpace(req.BaselineTag), suite)
+	promptID := strings.TrimSpace(req.PromptID)
+	environment := strings.TrimSpace(req.Environment)
+	baselineRuns, err := s.store.ListEvalRunsByRelease(ctx, tenantID, promptID, environment, strings.TrimSpace(req.BaselineTag), suite)
 	if err != nil {
 		return models.RegressionReport{}, err
 	}
-	candidateRuns, err := s.store.ListEvalRunsByRelease(ctx, tenantID, strings.TrimSpace(req.CandidateTag), suite)
+	candidateRuns, err := s.store.ListEvalRunsByRelease(ctx, tenantID, promptID, environment, strings.TrimSpace(req.CandidateTag), suite)
 	if err != nil {
 		return models.RegressionReport{}, err
 	}
 	report := models.RegressionReport{
 		BaselineTag:  strings.TrimSpace(req.BaselineTag),
 		CandidateTag: strings.TrimSpace(req.CandidateTag),
+		PromptID:     promptID,
+		Environment:  environment,
 		EvalSuite:    suite,
 		ComparedRuns: minInt(len(baselineRuns), len(candidateRuns)),
 		GeneratedAt:  time.Now().UTC(),

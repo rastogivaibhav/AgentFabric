@@ -9,7 +9,10 @@ func attachCurrentReleases(versions []models.PromptVersion, releases []models.Pr
 	current := make(map[string]models.PromptRelease, len(releases))
 	for _, release := range releases {
 		key := releaseKey(release.PromptID, release.Environment)
-		current[key] = release
+		existing, exists := current[key]
+		if !exists || (existing.Status != "active" && release.Status == "active") {
+			current[key] = release
+		}
 	}
 	for i := range versions {
 		key := releaseKey(versions[i].PromptID, versions[i].Environment)

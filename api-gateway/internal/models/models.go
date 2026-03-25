@@ -209,6 +209,9 @@ type TraceEvalScore struct {
 type TraceEvalRun struct {
 	ID                  int64                      `json:"id"`
 	TraceID             string                     `json:"trace_id"`
+	PromptID            string                     `json:"prompt_id,omitempty"`
+	PromptVersion       int                        `json:"prompt_version,omitempty"`
+	PromptEnvironment   string                     `json:"prompt_environment,omitempty"`
 	ReleaseTag          string                     `json:"release_tag,omitempty"`
 	EvalSuite           string                     `json:"eval_suite"`
 	OverallScore        float64                    `json:"overall_score"`
@@ -228,6 +231,8 @@ type TraceEvalRequest struct {
 type RegressionCompareRequest struct {
 	BaselineTag  string `json:"baseline_tag"`
 	CandidateTag string `json:"candidate_tag"`
+	PromptID     string `json:"prompt_id,omitempty"`
+	Environment  string `json:"environment,omitempty"`
 	EvalSuite    string `json:"eval_suite,omitempty"`
 }
 
@@ -243,6 +248,8 @@ type RegressionMetricDelta struct {
 type RegressionReport struct {
 	BaselineTag  string                  `json:"baseline_tag"`
 	CandidateTag string                  `json:"candidate_tag"`
+	PromptID     string                  `json:"prompt_id,omitempty"`
+	Environment  string                  `json:"environment,omitempty"`
 	EvalSuite    string                  `json:"eval_suite"`
 	ComparedRuns int                     `json:"compared_runs"`
 	OverallDelta float64                 `json:"overall_delta"`
@@ -250,6 +257,24 @@ type RegressionReport struct {
 	Highlights   []string                `json:"highlights,omitempty"`
 	Metrics      []RegressionMetricDelta `json:"metrics,omitempty"`
 	GeneratedAt  time.Time               `json:"generated_at"`
+}
+
+type PromptReleaseEvalSummary struct {
+	EvalCount       int        `json:"eval_count"`
+	AverageScore    float64    `json:"average_score"`
+	LatestScore     float64    `json:"latest_score"`
+	RiskLevel       string     `json:"risk_level"`
+	LastEvaluatedAt *time.Time `json:"last_evaluated_at,omitempty"`
+}
+
+type PromptReleaseRegressionSummary struct {
+	BaselineTag  string   `json:"baseline_tag"`
+	CandidateTag string   `json:"candidate_tag"`
+	ComparedRuns int      `json:"compared_runs"`
+	OverallDelta float64  `json:"overall_delta"`
+	RiskLevel    string   `json:"risk_level"`
+	Highlights   []string `json:"highlights,omitempty"`
+	Summary      string   `json:"summary,omitempty"`
 }
 
 type PromptVersion struct {
@@ -271,15 +296,19 @@ type PromptVersion struct {
 }
 
 type PromptRelease struct {
-	ID          int64     `json:"id"`
-	TenantID    string    `json:"tenant_id,omitempty"`
-	PromptID    string    `json:"prompt_id"`
-	Environment string    `json:"environment"`
-	Version     int       `json:"version"`
-	ReleaseTag  string    `json:"release_tag"`
-	Notes       string    `json:"notes,omitempty"`
-	PromotedBy  string    `json:"promoted_by,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID                int64                           `json:"id"`
+	TenantID          string                          `json:"tenant_id,omitempty"`
+	PromptID          string                          `json:"prompt_id"`
+	Environment       string                          `json:"environment"`
+	Version           int                             `json:"version"`
+	ReleaseTag        string                          `json:"release_tag"`
+	Status            string                          `json:"status,omitempty"`
+	Notes             string                          `json:"notes,omitempty"`
+	PromotionReason   string                          `json:"promotion_reason,omitempty"`
+	PromotedBy        string                          `json:"promoted_by,omitempty"`
+	CreatedAt         time.Time                       `json:"created_at"`
+	EvalSummary       PromptReleaseEvalSummary        `json:"eval_summary"`
+	RegressionSummary *PromptReleaseRegressionSummary `json:"regression_summary,omitempty"`
 }
 
 type PromptCatalog struct {
@@ -289,11 +318,13 @@ type PromptCatalog struct {
 }
 
 type PromptPromotionRequest struct {
-	PromptID    string `json:"prompt_id"`
-	Environment string `json:"environment"`
-	Version     int    `json:"version"`
-	ReleaseTag  string `json:"release_tag"`
-	Notes       string `json:"notes,omitempty"`
+	PromptID        string `json:"prompt_id"`
+	Environment     string `json:"environment"`
+	Version         int    `json:"version"`
+	ReleaseTag      string `json:"release_tag"`
+	Status          string `json:"status,omitempty"`
+	Notes           string `json:"notes,omitempty"`
+	PromotionReason string `json:"promotion_reason,omitempty"`
 }
 
 type Run struct {

@@ -7,6 +7,7 @@ vi.mock('../hooks/api', async (importOriginal) => {
   return {
     ...actual,
     useTrace: vi.fn(),
+    useTraceDecisions: vi.fn(),
   }
 })
 
@@ -22,10 +23,11 @@ vi.mock('../components/TopologyGraph', () => ({
 }))
 
 import TraceDetail from './TraceDetail'
-import { useTrace } from '../hooks/api'
+import { useTrace, useTraceDecisions } from '../hooks/api'
 import { useParams } from 'react-router-dom'
 
 const mockUseTrace = vi.mocked(useTrace)
+const mockUseTraceDecisions = vi.mocked(useTraceDecisions)
 const mockUseParams = vi.mocked(useParams)
 
 const TRACE_ID = 'aabbccdd-1111-2222-3333-44445566aabb'
@@ -94,6 +96,7 @@ describe('TraceDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUseParams.mockReturnValue({ traceId: TRACE_ID })
+    mockUseTraceDecisions.mockReturnValue({ data: { items: [], count: 0 }, isLoading: false } as never)
   })
 
   it('renders loading state while trace is loading', () => {
@@ -161,6 +164,7 @@ describe('TraceDetail', () => {
   it('shows policy decision cards when trace has policy events', () => {
     mockUseTrace.mockReturnValue({ data: MOCK_TRACE, isLoading: false } as never)
     render(<TraceDetail />)
+    expect(screen.getByText('DECISION EVIDENCE')).toBeInTheDocument()
     expect(screen.getByText('POLICY DECISIONS')).toBeInTheDocument()
     expect(screen.getByText('deny-gpt4o')).toBeInTheDocument()
   })

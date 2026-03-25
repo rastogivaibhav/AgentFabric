@@ -41,6 +41,7 @@ describe('Layout', () => {
     expect(screen.getByText('Policies')).toBeInTheDocument()
     expect(screen.getByText('Prompts')).toBeInTheDocument()
     expect(screen.getByText('Evals')).toBeInTheDocument()
+    expect(screen.getByText('Decisions')).toBeInTheDocument()
   })
 
   it('hides admin-only navigation items for viewers', () => {
@@ -55,6 +56,7 @@ describe('Layout', () => {
     expect(screen.queryByText('API Keys')).not.toBeInTheDocument()
     expect(screen.queryByText('Policies')).not.toBeInTheDocument()
     expect(screen.queryByText('Prompts')).not.toBeInTheDocument()
+    expect(screen.queryByText('Decisions')).not.toBeInTheDocument()
   })
 
   it('calls logout when the sign-out button is pressed', () => {

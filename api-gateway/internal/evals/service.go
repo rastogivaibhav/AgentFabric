@@ -21,7 +21,7 @@ type evalStore interface {
 	LoadTraceViewInputs(ctx context.Context, traceID, tenantID string) (*store.TraceViewInputs, error)
 	InsertEvalRun(ctx context.Context, tenantID string, run models.TraceEvalRun) (models.TraceEvalRun, error)
 	ListEvalRuns(ctx context.Context, tenantID string, limit int) ([]models.TraceEvalRun, error)
-	ListEvalRunsByRelease(ctx context.Context, tenantID, releaseTag, evalSuite string) ([]models.TraceEvalRun, error)
+	ListEvalRunsByRelease(ctx context.Context, tenantID, promptID, promptEnvironment, releaseTag, evalSuite string) ([]models.TraceEvalRun, error)
 }
 
 func NewService(pg *store.PostgresStore) *Service {
@@ -44,6 +44,7 @@ func (s *Service) ScoreTrace(ctx context.Context, tenantID string, req models.Tr
 	policyEvents := policyEventsFromAudit(inputs.AuditEntries, baseSpans)
 	trace := observability.BuildTrace(traceID, inputs.Spans, policyEvents)
 	trace.Timeline = observability.BuildTimeline(traceID, trace.Spans, policyEvents)
+	lineage := derivePromptLineage(trace.Spans)
 
 	suite := strings.TrimSpace(req.EvalSuite)
 	if suite == "" {
@@ -67,7 +68,10 @@ func (s *Service) ScoreTrace(ctx context.Context, tenantID string, req models.Tr
 	risk := severityForScore(overall)
 	run := models.TraceEvalRun{
 		TraceID:             traceID,
-		ReleaseTag:          strings.TrimSpace(req.ReleaseTag),
+		PromptID:            lineage.PromptID,
+		PromptVersion:       lineage.PromptVersion,
+		PromptEnvironment:   lineage.PromptEnvironment,
+		ReleaseTag:          firstNonEmpty(strings.TrimSpace(req.ReleaseTag), lineage.ReleaseTag),
 		EvalSuite:           suite,
 		OverallScore:        overall,
 		RiskLevel:           risk,
@@ -115,4 +119,33 @@ func policyEventsFromAudit(entries []store.AuditEntry, spans []models.Span) []mo
 		events = append(events, event)
 	}
 	return events
+}
+
+type promptLineage struct {
+	PromptID          string
+	PromptVersion     int
+	PromptEnvironment string
+	ReleaseTag        string
+}
+
+func derivePromptLineage(spans []models.Span) promptLineage {
+	var lineage promptLineage
+	for _, span := range spans {
+		if lineage.PromptID == "" && strings.TrimSpace(span.PromptID) != "" {
+			lineage.PromptID = strings.TrimSpace(span.PromptID)
+		}
+		if lineage.PromptVersion == 0 && span.PromptVersion > 0 {
+			lineage.PromptVersion = span.PromptVersion
+		}
+		if lineage.PromptEnvironment == "" && strings.TrimSpace(span.PromptEnvironment) != "" {
+			lineage.PromptEnvironment = strings.TrimSpace(span.PromptEnvironment)
+		}
+		if lineage.ReleaseTag == "" && strings.TrimSpace(span.PromptReleaseTag) != "" {
+			lineage.ReleaseTag = strings.TrimSpace(span.PromptReleaseTag)
+		}
+		if lineage.PromptID != "" && lineage.PromptVersion > 0 && lineage.PromptEnvironment != "" && lineage.ReleaseTag != "" {
+			break
+		}
+	}
+	return lineage
 }
