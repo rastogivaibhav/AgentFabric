@@ -19,7 +19,9 @@ vi.mock('../hooks/auth', () => ({
 vi.mock('../hooks/api', () => ({
   usePrompts: vi.fn(),
   usePromotePromptRelease: vi.fn(),
+  useRecommendations: vi.fn(),
   useRollouts: vi.fn(),
+  useUpdateRecommendationStatus: vi.fn(),
   useUpsertRolloutRule: vi.fn(),
   usePreviewRollout: vi.fn(),
   useUpdateRolloutStatus: vi.fn(),
@@ -30,7 +32,9 @@ import {
   usePreviewRollout,
   usePromotePromptRelease,
   usePrompts,
+  useRecommendations,
   useRollouts,
+  useUpdateRecommendationStatus,
   useUpdateRolloutStatus,
   useUpsertRolloutRule,
 } from '../hooks/api'
@@ -39,7 +43,9 @@ const mockUseAuth = vi.mocked(useAuth)
 const mockHasRole = vi.mocked(hasRole)
 const mockUsePrompts = vi.mocked(usePrompts)
 const mockUsePromotePromptRelease = vi.mocked(usePromotePromptRelease)
+const mockUseRecommendations = vi.mocked(useRecommendations)
 const mockUseRollouts = vi.mocked(useRollouts)
+const mockUseUpdateRecommendationStatus = vi.mocked(useUpdateRecommendationStatus)
 const mockUseUpsertRolloutRule = vi.mocked(useUpsertRolloutRule)
 const mockUsePreviewRollout = vi.mocked(usePreviewRollout)
 const mockUseUpdateRolloutStatus = vi.mocked(useUpdateRolloutStatus)
@@ -63,6 +69,7 @@ describe('PromptReleasePage', () => {
       error: null,
     } as any)
     mockUsePromotePromptRelease.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
+    mockUseRecommendations.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false, error: null } as any)
     mockUseRollouts.mockReturnValue({
       data: {
         items: [
@@ -85,16 +92,40 @@ describe('PromptReleasePage', () => {
       isLoading: false,
       error: null,
     } as any)
+    mockUseUpdateRecommendationStatus.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
     mockUseUpsertRolloutRule.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
     mockUsePreviewRollout.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, data: null } as any)
     mockUseUpdateRolloutStatus.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
   })
 
   it('shows selected prompt details', () => {
+    mockUseRecommendations.mockReturnValue({
+      data: {
+        items: [{
+          id: 31,
+          type: 'rollout',
+          status: 'open',
+          title: 'Pause rollout Prompt canary',
+          summary: 'Prompt canary is above its error threshold.',
+          target: 'support-bot.system | development | candidate-2026.04',
+          suggested_action: 'Pause Prompt canary and inspect the canary path.',
+          confidence: 0.82,
+          evidence: { release_tag: 'candidate-2026.04' },
+          created_at: '2026-03-25T12:00:00Z',
+          updated_at: '2026-03-25T12:00:00Z',
+          last_seen_at: '2026-03-25T12:00:00Z',
+        }],
+        total: 1,
+        has_more: false,
+      },
+      isLoading: false,
+      error: null,
+    } as any)
     render(<MemoryRouter><PromptReleasePage /></MemoryRouter>)
     expect(screen.getByText('support-bot.system')).toBeInTheDocument()
     expect(screen.getByText('RELEASE HISTORY')).toBeInTheDocument()
     expect(screen.getByText(/Average eval score moved by -2.40 points/i)).toBeInTheDocument()
+    expect(screen.getByText(/Pause rollout Prompt canary/i)).toBeInTheDocument()
   })
 
   it('submits a prompt promotion', () => {
@@ -121,6 +152,7 @@ describe('PromptReleasePage', () => {
   it('previews and pauses a prompt rollout', () => {
     const previewMutate = vi.fn()
     const updateStatusMutate = vi.fn()
+    const updateRecommendationStatusMutate = vi.fn()
     mockUsePreviewRollout.mockReturnValue({
       mutate: previewMutate,
       isPending: false,
@@ -136,6 +168,29 @@ describe('PromptReleasePage', () => {
       },
     } as any)
     mockUseUpdateRolloutStatus.mockReturnValue({ mutate: updateStatusMutate, isPending: false } as any)
+    mockUseRecommendations.mockReturnValue({
+      data: {
+        items: [{
+          id: 31,
+          type: 'rollout',
+          status: 'open',
+          title: 'Pause rollout Prompt canary',
+          summary: 'Prompt canary is above its error threshold.',
+          target: 'support-bot.system | development | candidate-2026.04',
+          suggested_action: 'Pause Prompt canary and inspect the canary path.',
+          confidence: 0.82,
+          evidence: { release_tag: 'candidate-2026.04' },
+          created_at: '2026-03-25T12:00:00Z',
+          updated_at: '2026-03-25T12:00:00Z',
+          last_seen_at: '2026-03-25T12:00:00Z',
+        }],
+        total: 1,
+        has_more: false,
+      },
+      isLoading: false,
+      error: null,
+    } as any)
+    mockUseUpdateRecommendationStatus.mockReturnValue({ mutate: updateRecommendationStatusMutate, isPending: false } as any)
 
     render(<MemoryRouter><PromptReleasePage /></MemoryRouter>)
 
@@ -152,5 +207,8 @@ describe('PromptReleasePage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
     expect(updateStatusMutate).toHaveBeenCalledWith({ id: 8, status: 'paused' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Applied' }))
+    expect(updateRecommendationStatusMutate).toHaveBeenCalledWith({ id: 31, status: 'applied' })
   })
 })

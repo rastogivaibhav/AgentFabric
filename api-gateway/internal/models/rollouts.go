@@ -60,6 +60,14 @@ type RolloutEvent struct {
 	CreatedAt         time.Time `json:"created_at"`
 }
 
+type RolloutEventQuery struct {
+	TraceID       string
+	RolloutRuleID int64
+	ReleaseTag    string
+	Environment   string
+	Limit         int
+}
+
 type RolloutPreviewRequest struct {
 	TenantID          string `json:"tenant_id,omitempty"`
 	Provider          string `json:"provider,omitempty"`

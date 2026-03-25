@@ -40,12 +40,15 @@ type DecisionRecord struct {
 }
 
 type DecisionQuery struct {
-	TenantID string
-	TraceID  string
-	Type     string
-	Result   string
-	Limit    int
-	Offset   int
+	TenantID    string
+	TraceID     string
+	Type        string
+	Result      string
+	PromptID    string
+	ReleaseTag  string
+	Environment string
+	Limit       int
+	Offset      int
 }
 
 func NormalizeDecisionResult(result string) string {

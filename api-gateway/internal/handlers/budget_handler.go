@@ -61,6 +61,7 @@ func (h *Handler) UpsertBudget(w http.ResponseWriter, r *http.Request) {
 	if req.ResetDay <= 0 || req.ResetDay > 28 {
 		req.ResetDay = 1
 	}
+	before, _ := h.pg.GetBudget(r.Context(), tenantID)
 
 	b := &budget.Budget{
 		TenantID:       tenantID,
@@ -75,6 +76,8 @@ func (h *Handler) UpsertBudget(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "update failed")
 		return
 	}
+	h.writeAdminAudit(r, "budgets", "upsert", "budget", tenantID, "success", map[string]any{"before": before, "after": b})
+	h.writeControlHistory(r, "budgets", "upsert", "budget", tenantID, "budget updated", "success", before, b, nil)
 	writeJSON(w, http.StatusOK, b)
 }
 
@@ -87,6 +90,7 @@ func (h *Handler) DeleteBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	before, _ := h.pg.GetBudget(r.Context(), tenantID)
 	b := &budget.Budget{
 		TenantID:       tenantID,
 		MonthlyTokens:  0,
@@ -100,6 +104,8 @@ func (h *Handler) DeleteBudget(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
+	h.writeAdminAudit(r, "budgets", "delete", "budget", tenantID, "success", before)
+	h.writeControlHistory(r, "budgets", "delete", "budget", tenantID, "budget removed", "success", before, b, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 

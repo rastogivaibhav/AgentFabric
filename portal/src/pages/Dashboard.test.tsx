@@ -7,6 +7,7 @@ vi.mock('../hooks/api', async (importOriginal) => {
   return {
     ...actual,
     useOverview: vi.fn(),
+    useRecommendations: vi.fn(),
     useTraces: vi.fn(),
   }
 })
@@ -27,15 +28,17 @@ vi.mock('recharts', () => ({
 }))
 
 import Dashboard from './Dashboard'
-import { useOverview, useTraces } from '../hooks/api'
+import { useOverview, useRecommendations, useTraces } from '../hooks/api'
 import React from 'react'
 
 const mockUseOverview = vi.mocked(useOverview)
+const mockUseRecommendations = vi.mocked(useRecommendations)
 const mockUseTraces = vi.mocked(useTraces)
 
 describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockUseRecommendations.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false, error: null } as any)
   })
 
   it('renders loading state when data is loading', () => {
@@ -182,5 +185,36 @@ describe('Dashboard', () => {
     render(<Dashboard />)
 
     expect(screen.getByText('partial')).toBeInTheDocument()
+  })
+
+  it('renders autonomic recommendations when present', () => {
+    mockUseOverview.mockReturnValue({ data: undefined, isLoading: false } as any)
+    mockUseTraces.mockReturnValue({ data: { items: [], total: 0 }, isLoading: false } as any)
+    mockUseRecommendations.mockReturnValue({
+      data: {
+        items: [{
+          id: 7,
+          type: 'rollout',
+          status: 'open',
+          title: 'Pause rollout Prompt canary',
+          summary: 'Prompt canary is above its error threshold.',
+          target: 'rollout Prompt canary',
+          suggested_action: 'Pause Prompt canary and inspect the canary path.',
+          confidence: 0.82,
+          created_at: '2026-03-25T12:00:00Z',
+          updated_at: '2026-03-25T12:00:00Z',
+          last_seen_at: '2026-03-25T12:00:00Z',
+        }],
+        total: 1,
+        has_more: false,
+      },
+      isLoading: false,
+      error: null,
+    } as any)
+
+    render(<Dashboard />)
+
+    expect(screen.getByText('AUTONOMIC RECOMMENDATIONS')).toBeInTheDocument()
+    expect(screen.getByText(/Pause rollout Prompt canary/i)).toBeInTheDocument()
   })
 })

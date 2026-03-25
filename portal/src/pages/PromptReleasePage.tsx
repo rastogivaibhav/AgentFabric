@@ -1,7 +1,8 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import RecommendationFeed from '../components/recommendations/RecommendationFeed'
 import { hasRole, useAuth } from '../hooks/auth'
-import { usePreviewRollout, usePromotePromptRelease, usePrompts, useRollouts, useUpdateRolloutStatus, useUpsertRolloutRule } from '../hooks/api'
+import { usePreviewRollout, usePromotePromptRelease, usePrompts, useRecommendations, useRollouts, useUpdateRecommendationStatus, useUpdateRolloutStatus, useUpsertRolloutRule } from '../hooks/api'
 
 export default function PromptReleasePage() {
   const { promptId = '' } = useParams()
@@ -10,10 +11,12 @@ export default function PromptReleasePage() {
   const isAdmin = hasRole(user, ['admin'])
   const { data, isLoading, error } = usePrompts()
   const { data: rolloutData } = useRollouts()
+  const { data: recommendationData, isLoading: recommendationsLoading, error: recommendationsError } = useRecommendations({ since: '24h', limit: 6 })
   const promote = usePromotePromptRelease()
   const upsertRollout = useUpsertRolloutRule()
   const previewRollout = usePreviewRollout()
   const updateRolloutStatus = useUpdateRolloutStatus()
+  const updateRecommendationStatus = useUpdateRecommendationStatus()
   const [form, setForm] = useState({
     environment: 'development',
     version: 1,
@@ -48,6 +51,14 @@ export default function PromptReleasePage() {
   const rolloutRules = useMemo(
     () => (rolloutData?.items ?? []).filter(item => item.target_type === 'prompt_release' && item.target_id === decodedPromptID),
     [rolloutData, decodedPromptID],
+  )
+  const promptRecommendations = useMemo(
+    () => (recommendationData?.items ?? []).filter(item => {
+      if (item.type !== 'rollout' && item.type !== 'routing') return false
+      if (!decodedPromptID) return true
+      return item.target.includes(decodedPromptID) || String(item.evidence?.release_tag ?? '') !== ''
+    }),
+    [decodedPromptID, recommendationData],
   )
 
   if (!isAdmin) {
@@ -278,6 +289,17 @@ export default function PromptReleasePage() {
             ))}
           </div>
         </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <RecommendationFeed
+          title="PROMPT RELEASE RECOMMENDATIONS"
+          recommendations={promptRecommendations}
+          isLoading={recommendationsLoading}
+          error={recommendationsError}
+          emptyMessage="No active rollout or routing recommendations for this prompt."
+          onUpdateStatus={(id, status) => updateRecommendationStatus.mutate({ id, status })}
+        />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 420px) 1fr', gap: 16, marginTop: 16 }}>

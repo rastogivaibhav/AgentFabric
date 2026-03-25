@@ -1,13 +1,16 @@
 import { useMemo, useState, type CSSProperties } from 'react'
+import RecommendationFeed from '../components/recommendations/RecommendationFeed'
 import { hasRole, useAuth } from '../hooks/auth'
 import {
   type PolicyRule,
   useControlAudit,
   useDeletePolicyRule,
+  useRecommendations,
   usePreviewRollout,
   usePreviewPolicyRule,
   usePolicyRules,
   useRollouts,
+  useUpdateRecommendationStatus,
   useUpdateRolloutStatus,
   useUpsertRolloutRule,
   useUpsertPolicyRule,
@@ -45,12 +48,14 @@ export default function PoliciesPage() {
   const { data, isLoading, error } = usePolicyRules()
   const { data: rolloutData } = useRollouts()
   const { data: audit } = useControlAudit(25)
+  const { data: recommendationData, isLoading: recommendationsLoading, error: recommendationsError } = useRecommendations({ since: '24h', limit: 6 })
   const upsert = useUpsertPolicyRule()
   const remove = useDeletePolicyRule()
   const preview = usePreviewPolicyRule()
   const upsertRollout = useUpsertRolloutRule()
   const previewRollout = usePreviewRollout()
   const updateRolloutStatus = useUpdateRolloutStatus()
+  const updateRecommendationStatus = useUpdateRecommendationStatus()
   const [form, setForm] = useState<PolicyRule>(emptyRule)
   const [previewRequest, setPreviewRequest] = useState({
     tenant_id: '',
@@ -76,6 +81,10 @@ export default function PoliciesPage() {
   const policyRollouts = useMemo(
     () => (rolloutData?.items ?? []).filter(item => item.target_type === 'policy_rule'),
     [rolloutData],
+  )
+  const policyRecommendations = useMemo(
+    () => (recommendationData?.items ?? []).filter(item => item.type === 'policy' || item.type === 'cost'),
+    [recommendationData],
   )
 
   if (!isAdmin) {
@@ -399,6 +408,17 @@ export default function PoliciesPage() {
 
       <div style={{ marginTop: 16 }}>
         <PolicySimulationPage />
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <RecommendationFeed
+          title="POLICY RECOMMENDATIONS"
+          recommendations={policyRecommendations}
+          isLoading={recommendationsLoading}
+          error={recommendationsError}
+          emptyMessage="No active policy or budget recommendations."
+          onUpdateStatus={(id, status) => updateRecommendationStatus.mutate({ id, status })}
+        />
       </div>
 
       <div style={{ ...panelStyle, marginTop: 16 }}>

@@ -12,8 +12,10 @@ vi.mock('../hooks/api', () => ({
   useControlAudit: vi.fn(),
   useUpsertPolicyRule: vi.fn(),
   useDeletePolicyRule: vi.fn(),
+  useRecommendations: vi.fn(),
   usePreviewPolicyRule: vi.fn(),
   useRollouts: vi.fn(),
+  useUpdateRecommendationStatus: vi.fn(),
   useUpsertRolloutRule: vi.fn(),
   usePreviewRollout: vi.fn(),
   useUpdateRolloutStatus: vi.fn(),
@@ -32,9 +34,11 @@ import {
   useControlAudit,
   useDeletePolicyRule,
   usePolicyRules,
+  useRecommendations,
   usePreviewRollout,
   usePreviewPolicyRule,
   useRollouts,
+  useUpdateRecommendationStatus,
   useUpdateRolloutStatus,
   useUpsertRolloutRule,
   useUpsertPolicyRule,
@@ -46,8 +50,10 @@ const mockUsePolicyRules = vi.mocked(usePolicyRules)
 const mockUseControlAudit = vi.mocked(useControlAudit)
 const mockUseUpsertPolicyRule = vi.mocked(useUpsertPolicyRule)
 const mockUseDeletePolicyRule = vi.mocked(useDeletePolicyRule)
+const mockUseRecommendations = vi.mocked(useRecommendations)
 const mockUsePreviewPolicyRule = vi.mocked(usePreviewPolicyRule)
 const mockUseRollouts = vi.mocked(useRollouts)
+const mockUseUpdateRecommendationStatus = vi.mocked(useUpdateRecommendationStatus)
 const mockUseUpsertRolloutRule = vi.mocked(useUpsertRolloutRule)
 const mockUsePreviewRollout = vi.mocked(usePreviewRollout)
 const mockUseUpdateRolloutStatus = vi.mocked(useUpdateRolloutStatus)
@@ -61,8 +67,10 @@ describe('PoliciesPage', () => {
     mockUseControlAudit.mockReturnValue({ data: { items: [], count: 0 } } as any)
     mockUseUpsertPolicyRule.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
     mockUseDeletePolicyRule.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
+    mockUseRecommendations.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false, error: null } as any)
     mockUsePreviewPolicyRule.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
     mockUseRollouts.mockReturnValue({ data: { items: [], count: 0 }, isLoading: false, error: null } as any)
+    mockUseUpdateRecommendationStatus.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
     mockUseUpsertRolloutRule.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
     mockUsePreviewRollout.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, data: null } as any)
     mockUseUpdateRolloutStatus.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
@@ -99,6 +107,7 @@ describe('PoliciesPage', () => {
   it('renders rules, preview decisions, and audit entries', () => {
     const previewMutate = vi.fn()
     const updateRolloutStatusMutate = vi.fn()
+    const updateRecommendationStatusMutate = vi.fn()
     mockUsePolicyRules.mockReturnValue({
       data: {
         items: [{
@@ -164,6 +173,28 @@ describe('PoliciesPage', () => {
       isLoading: false,
       error: null,
     } as any)
+    mockUseRecommendations.mockReturnValue({
+      data: {
+        items: [{
+          id: 21,
+          type: 'policy',
+          status: 'open',
+          title: 'Tighten policy guardrails for openai / gpt-4o / production',
+          summary: '5 policy interventions landed on openai / gpt-4o / production.',
+          target: 'openai / gpt-4o / production',
+          suggested_action: 'Promote the matching guardrail from warn to redact or deny.',
+          confidence: 0.78,
+          created_at: '2026-03-25T12:00:00Z',
+          updated_at: '2026-03-25T12:00:00Z',
+          last_seen_at: '2026-03-25T12:00:00Z',
+        }],
+        total: 1,
+        has_more: false,
+      },
+      isLoading: false,
+      error: null,
+    } as any)
+    mockUseUpdateRecommendationStatus.mockReturnValue({ mutate: updateRecommendationStatusMutate, isPending: false } as any)
     mockUseUpdateRolloutStatus.mockReturnValue({ mutate: updateRolloutStatusMutate, isPending: false } as any)
     mockUsePreviewRollout.mockReturnValue({
       mutate: vi.fn(),
@@ -184,6 +215,7 @@ describe('PoliciesPage', () => {
     expect(screen.getByText(/policy simulation stub/i)).toBeInTheDocument()
     expect(screen.getByText(/architect/i)).toBeInTheDocument()
     expect(screen.getByText(/Preview selected control for rule Policy canary/i)).toBeInTheDocument()
+    expect(screen.getByText(/Tighten policy guardrails/i)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /preview policy match/i }))
     expect(previewMutate).toHaveBeenCalled()
@@ -191,5 +223,8 @@ describe('PoliciesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
     expect(updateRolloutStatusMutate).toHaveBeenCalledWith({ id: 11, status: 'paused' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reviewing' }))
+    expect(updateRecommendationStatusMutate).toHaveBeenCalledWith({ id: 21, status: 'reviewing' })
   })
 })

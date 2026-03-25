@@ -59,6 +59,21 @@ func (s *PostgresStore) ListDecisionRecords(ctx context.Context, query models.De
 		args = append(args, models.NormalizeDecisionResult(query.Result))
 		argIdx++
 	}
+	if strings.TrimSpace(query.PromptID) != "" {
+		where += fmt.Sprintf(" AND prompt_id = $%d", argIdx)
+		args = append(args, strings.TrimSpace(query.PromptID))
+		argIdx++
+	}
+	if strings.TrimSpace(query.ReleaseTag) != "" {
+		where += fmt.Sprintf(" AND prompt_release_tag = $%d", argIdx)
+		args = append(args, strings.TrimSpace(query.ReleaseTag))
+		argIdx++
+	}
+	if strings.TrimSpace(query.Environment) != "" {
+		where += fmt.Sprintf(" AND environment = $%d", argIdx)
+		args = append(args, strings.TrimSpace(query.Environment))
+		argIdx++
+	}
 
 	var total int64
 	countQuery := "SELECT COUNT(*) FROM decision_records " + where

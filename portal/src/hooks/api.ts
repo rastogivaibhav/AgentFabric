@@ -293,6 +293,27 @@ export interface AgentScorecard {
   generated_at: string
 }
 
+export interface Recommendation {
+  id: number
+  key?: string
+  tenant_id?: string
+  type: 'rollout' | 'routing' | 'policy' | 'cost' | string
+  status: 'open' | 'reviewing' | 'applied' | 'dismissed' | 'resolved' | string
+  title: string
+  summary: string
+  target: string
+  target_type?: string
+  target_id?: string
+  suggested_action: string
+  estimated_impact?: string
+  blast_radius?: string
+  confidence: number
+  evidence?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  last_seen_at: string
+}
+
 export interface LiveEvent {
   type: 'span' | 'run_start' | 'run_end' | 'error' | 'policy'
   ts: number
@@ -422,6 +443,20 @@ export function useAgentScorecard(agentId: string, since = '24h') {
     queryFn: () => apiFetch(`/agents/${encodeURIComponent(agentId)}/scorecard`, { since }),
     enabled: !!agentId,
     refetchInterval: 30_000,
+  })
+}
+
+export function useRecommendations(params?: { since?: string; limit?: number; status?: string; type?: string }) {
+  const normalized = {
+    since: params?.since ?? '24h',
+    limit: String(params?.limit ?? 12),
+    status: params?.status ?? '',
+    type: params?.type ?? '',
+  }
+  return useQuery<Page<Recommendation>>({
+    queryKey: ['recommendations', normalized],
+    queryFn: () => apiFetch('/recommendations', normalized),
+    refetchInterval: 60_000,
   })
 }
 
@@ -1114,6 +1149,63 @@ export interface AdminAuditEntry {
   created_at: string
 }
 
+export interface ControlHistoryEntry {
+  id: number
+  tenant_id?: string
+  category: string
+  action: string
+  target_type: string
+  target_id?: string
+  actor?: string
+  reason?: string
+  outcome: string
+  before_state?: string
+  after_state?: string
+  evidence_refs?: string[]
+  previous_hash?: string
+  entry_hash?: string
+  created_at: string
+}
+
+export interface EvidenceBundleItem {
+  id: number
+  bundle_id: number
+  tenant_id?: string
+  item_type: string
+  item_title: string
+  trace_id?: string
+  target_type?: string
+  target_id?: string
+  payload: string
+  created_at: string
+}
+
+export interface EvidenceBundle {
+  id: number
+  tenant_id?: string
+  name: string
+  scope: string
+  status: string
+  filters?: string
+  summary?: string[]
+  created_by?: string
+  created_at: string
+  item_count: number
+  items?: EvidenceBundleItem[]
+}
+
+export interface EvidenceBundleRequest {
+  name: string
+  scope: string
+  trace_id?: string
+  prompt_id?: string
+  environment?: string
+  release_tag?: string
+  rollout_rule_id?: number
+  recommendation_id?: number
+  reason?: string
+}
+
 export async function apiMutate<T>(path: string, method: string, body?: unknown): Promise<T> {
   const res = await fetch(BASE + '/api/v1' + path, {
     method,
@@ -1202,6 +1294,8 @@ export function useUpsertPricingRule() {
     mutationFn: (rule: PricingRule) => apiMutate<PricingRule>('/pricing', 'PUT', rule),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pricing-rules'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
     },
   })
 }
@@ -1212,6 +1306,8 @@ export function useDeletePricingRule() {
     mutationFn: (id: number) => apiMutate<void>(`/pricing/${id}`, 'DELETE'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pricing-rules'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
     },
   })
 }
@@ -1245,6 +1341,7 @@ export function useUpsertPolicyRule() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['policy-rules'] })
       qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
     },
   })
 }
@@ -1256,6 +1353,7 @@ export function useDeletePolicyRule() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['policy-rules'] })
       qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
     },
   })
 }
@@ -1305,6 +1403,39 @@ export function useControlAudit(limit = 50) {
   })
 }
 
+export function useControlHistory(limit = 50, offset = 0, category = '', targetID = '') {
+  return useQuery<Page<ControlHistoryEntry>>({
+    queryKey: ['control-history', limit, offset, category, targetID],
+    queryFn: () => apiFetch('/audit/control-history', {
+      limit: String(limit),
+      offset: String(offset),
+      category,
+      target_id: targetID,
+    }),
+    retry: false,
+  })
+}
+
+export function useEvidenceBundles(limit = 25) {
+  return useQuery<{ items: EvidenceBundle[]; count: number; limit: number }>({
+    queryKey: ['evidence-bundles', limit],
+    queryFn: () => apiFetch('/audit/evidence-bundles', { limit: String(limit) }),
+    retry: false,
+  })
+}
+
+export function useCreateEvidenceBundle() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: EvidenceBundleRequest) => apiMutate<EvidenceBundle>('/audit/evidence-bundles', 'POST', req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['evidence-bundles'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+    },
+  })
+}
+
 export function usePrompts() {
   return useQuery<PromptCatalog>({
     queryKey: ['prompts'],
@@ -1320,6 +1451,7 @@ export function useUpsertPromptVersion() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['prompts'] })
       qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
     },
   })
 }
@@ -1331,6 +1463,7 @@ export function usePromotePromptRelease() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['prompts'] })
       qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
     },
   })
 }
@@ -1352,6 +1485,7 @@ export function useUpsertRolloutRule() {
       qc.invalidateQueries({ queryKey: ['prompts'] })
       qc.invalidateQueries({ queryKey: ['policy-rules'] })
       qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
     },
   })
 }
@@ -1370,6 +1504,20 @@ export function useUpdateRolloutStatus() {
       qc.invalidateQueries({ queryKey: ['rollouts'] })
       qc.invalidateQueries({ queryKey: ['prompts'] })
       qc.invalidateQueries({ queryKey: ['policy-rules'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+    },
+  })
+}
+
+export function useUpdateRecommendationStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'open' | 'reviewing' | 'applied' | 'dismissed' | 'resolved' }) =>
+      apiMutate<Recommendation>(`/recommendations/${id}/status`, 'POST', { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recommendations'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
       qc.invalidateQueries({ queryKey: ['control-audit'] })
     },
   })

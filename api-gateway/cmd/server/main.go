@@ -287,9 +287,16 @@ func main() {
 
 		// Audit log (Principle 4: immutable audit trail)
 		r.Get("/decisions", h.ListDecisions)
+		r.Get("/recommendations", h.ListRecommendations)
 		r.Get("/audit", h.ListAudit)
 		r.Get("/audit/verify", h.VerifyAuditChain)
 		r.With(middleware.RequireRole("admin")).Get("/audit/control", h.ListControlAudit)
+		r.With(middleware.RequireRole("admin")).Get("/audit/control-history", h.ListControlHistory)
+		r.With(middleware.RequireRole("admin")).Get("/audit/evidence-bundles", h.ListEvidenceBundles)
+		r.With(middleware.RequireRole("admin")).Post("/audit/evidence-bundles", h.CreateEvidenceBundle)
+		r.With(middleware.RequireRole("admin")).Get("/audit/evidence-bundles/{bundleId}", h.GetEvidenceBundle)
+		r.With(middleware.RequireRole("admin")).Get("/audit/evidence-bundles/{bundleId}/export", h.ExportEvidenceBundle)
+		r.With(middleware.RequireRole("admin")).Post("/recommendations/{recommendationId}/status", h.UpdateRecommendationStatus)
 
 		// Users CRUD — RBAC + ABAC enforced per operation:
 		//   GET  (list/read):   any authenticated user

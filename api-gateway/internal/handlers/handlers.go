@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentfabric/api-gateway/internal/budget"
 	"github.com/agentfabric/api-gateway/internal/evals"
+	"github.com/agentfabric/api-gateway/internal/memory"
 	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/observability"
@@ -22,6 +23,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/pricing"
 	"github.com/agentfabric/api-gateway/internal/prompts"
 	"github.com/agentfabric/api-gateway/internal/proxy"
+	"github.com/agentfabric/api-gateway/internal/recommendations"
 	"github.com/agentfabric/api-gateway/internal/rollouts"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
@@ -120,6 +122,42 @@ func (h *Handler) writeAdminAudit(r *http.Request, category, action, targetType,
 		TargetID:   targetID,
 		Outcome:    outcome,
 		Details:    detailsJSON,
+	})
+}
+
+func jsonStringOrEmpty(value any) string {
+	if value == nil {
+		return ""
+	}
+	if raw, ok := value.(string); ok {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return ""
+		}
+		return trimmed
+	}
+	if b, err := json.Marshal(value); err == nil {
+		return string(b)
+	}
+	return ""
+}
+
+func (h *Handler) writeControlHistory(r *http.Request, category, action, targetType, targetID, reason, outcome string, before, after any, evidenceRefs []string) {
+	if h == nil || h.pg == nil {
+		return
+	}
+	_ = memory.NewService(h.pg).RecordChange(r.Context(), models.ControlHistoryEntry{
+		TenantID:     tenantFromCtx(r),
+		Category:     category,
+		Action:       action,
+		TargetType:   targetType,
+		TargetID:     targetID,
+		Actor:        actorFromCtx(r),
+		Reason:       reason,
+		Outcome:      outcome,
+		BeforeState:  jsonStringOrEmpty(before),
+		AfterState:   jsonStringOrEmpty(after),
+		EvidenceRefs: evidenceRefs,
 	})
 }
 
@@ -540,6 +578,12 @@ func (h *Handler) UpsertPromptVersion(w http.ResponseWriter, r *http.Request) {
 	if version.Config == nil {
 		version.Config = map[string]string{}
 	}
+	var before any
+	if strings.TrimSpace(version.PromptID) != "" && version.Version > 0 {
+		if existing, err := h.pg.GetPromptVersion(r.Context(), tenantFromCtx(r), version.PromptID, version.Version); err == nil {
+			before = existing
+		}
+	}
 	service := prompts.NewService(h.pg)
 	saved, err := service.UpsertVersion(r.Context(), tenantFromCtx(r), actorFromCtx(r), version)
 	if err != nil {
@@ -554,6 +598,7 @@ func (h *Handler) UpsertPromptVersion(w http.ResponseWriter, r *http.Request) {
 		"description":  saved.Description,
 		"content_size": len(saved.Content),
 	})
+	h.writeControlHistory(r, "prompts", map[bool]string{true: "update", false: "create"}[version.ID > 0 || version.Version > 0], "prompt_version", saved.PromptID, saved.ReleaseTag, "success", before, saved, []string{saved.ReleaseTag})
 	writeJSON(w, http.StatusOK, saved)
 }
 
@@ -562,6 +607,15 @@ func (h *Handler) PromotePromptRelease(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
+	}
+	var before any
+	if releases, err := h.pg.ListPromptReleases(r.Context(), tenantFromCtx(r)); err == nil {
+		for _, candidate := range releases {
+			if candidate.PromptID == strings.TrimSpace(req.PromptID) && candidate.Environment == strings.TrimSpace(req.Environment) && candidate.Status == "active" {
+				before = candidate
+				break
+			}
+		}
 	}
 	service := prompts.NewService(h.pg)
 	release, err := service.Promote(r.Context(), tenantFromCtx(r), actorFromCtx(r), req)
@@ -574,6 +628,7 @@ func (h *Handler) PromotePromptRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeAdminAudit(r, "prompts", "promote", "prompt_release", release.PromptID, "success", release)
+	h.writeControlHistory(r, "prompts", "promote", "prompt_release", release.ReleaseTag, strings.TrimSpace(req.PromotionReason), "success", before, release, []string{release.ReleaseTag})
 	writeJSON(w, http.StatusOK, release)
 }
 
@@ -594,6 +649,18 @@ func (h *Handler) UpsertRolloutRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
+	var before any
+	if rule.ID > 0 {
+		service := rollouts.NewService(h.pg)
+		if items, err := service.ListRules(r.Context(), tenantFromCtx(r)); err == nil {
+			for _, existing := range items {
+				if existing.ID == rule.ID {
+					before = existing
+					break
+				}
+			}
+		}
+	}
 	service := rollouts.NewService(h.pg)
 	saved, err := service.UpsertRule(r.Context(), tenantFromCtx(r), actorFromCtx(r), rule)
 	if err != nil {
@@ -601,6 +668,7 @@ func (h *Handler) UpsertRolloutRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeAdminAudit(r, "rollouts", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "rollout_rule", strconv.FormatInt(saved.ID, 10), "success", saved)
+	h.writeControlHistory(r, "rollouts", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "rollout_rule", strconv.FormatInt(saved.ID, 10), saved.Name, "success", before, saved, []string{saved.CandidateReleaseTag})
 	writeJSON(w, http.StatusOK, saved)
 }
 
@@ -631,13 +699,66 @@ func (h *Handler) UpdateRolloutStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
+	var before any
 	service := rollouts.NewService(h.pg)
+	if items, err := service.ListRules(r.Context(), tenantFromCtx(r)); err == nil {
+		for _, existing := range items {
+			if existing.ID == ruleID {
+				before = existing
+				break
+			}
+		}
+	}
 	updated, err := service.UpdateStatus(r.Context(), tenantFromCtx(r), ruleID, req.Status, actorFromCtx(r))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	h.writeAdminAudit(r, "rollouts", "status_update", "rollout_rule", strconv.FormatInt(updated.ID, 10), "success", updated)
+	h.writeControlHistory(r, "rollouts", "status_update", "rollout_rule", strconv.FormatInt(updated.ID, 10), req.Status, "success", before, updated, nil)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) ListRecommendations(w http.ResponseWriter, r *http.Request) {
+	since := parseDurationOr(r.URL.Query().Get("since"), 24*time.Hour)
+	limit := parseIntOr(r.URL.Query().Get("limit"), 12)
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	recommendationType := strings.TrimSpace(r.URL.Query().Get("type"))
+
+	svc := recommendations.NewService(h.pg, evals.NewService(h.pg))
+	page, err := svc.ListRecommendations(r.Context(), tenantFromCtx(r), since, limit, status, recommendationType)
+	if err != nil {
+		h.logger.Error("list recommendations", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) UpdateRecommendationStatus(w http.ResponseWriter, r *http.Request) {
+	recommendationID, err := strconv.ParseInt(chi.URLParam(r, "recommendationId"), 10, 64)
+	if err != nil || recommendationID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid recommendation id")
+		return
+	}
+	var req models.RecommendationStatusUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	var before any
+	if existing, err := h.pg.GetRecommendation(r.Context(), tenantFromCtx(r), recommendationID); err == nil {
+		before = existing
+	}
+	svc := recommendations.NewService(h.pg, evals.NewService(h.pg))
+	updated, err := svc.UpdateStatus(r.Context(), tenantFromCtx(r), recommendationID, req.Status)
+	if err != nil {
+		h.logger.Error("update recommendation status", zap.Error(err))
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "recommendations", "status_update", "recommendation", strconv.FormatInt(updated.ID, 10), "success", updated)
+	h.writeControlHistory(r, "recommendations", "status_update", "recommendation", strconv.FormatInt(updated.ID, 10), req.Status, "success", before, updated, nil)
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -1047,6 +1168,96 @@ func (h *Handler) ListControlAudit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ListControlHistory(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromCtx(r)
+	limit := parseIntOr(r.URL.Query().Get("limit"), 100)
+	offset := parseIntOr(r.URL.Query().Get("offset"), 0)
+	category := strings.TrimSpace(r.URL.Query().Get("category"))
+	targetID := strings.TrimSpace(r.URL.Query().Get("target_id"))
+
+	page, err := memory.NewService(h.pg).ListControlHistory(r.Context(), tenantID, category, targetID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query control history")
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) ListEvidenceBundles(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromCtx(r)
+	limit := parseIntOr(r.URL.Query().Get("limit"), 25)
+
+	items, err := memory.NewService(h.pg).ListEvidenceBundles(r.Context(), tenantID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query evidence bundles")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"count": len(items),
+		"limit": limit,
+	})
+}
+
+func (h *Handler) CreateEvidenceBundle(w http.ResponseWriter, r *http.Request) {
+	var req models.EvidenceBundleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	bundle, err := memory.NewService(h.pg).CreateEvidenceBundle(r.Context(), tenantFromCtx(r), actorFromCtx(r), req)
+	if err != nil {
+		h.logger.Error("create evidence bundle", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to create evidence bundle")
+		return
+	}
+	h.writeAdminAudit(r, "enterprise_memory", "bundle_create", "evidence_bundle", strconv.FormatInt(bundle.ID, 10), "success", bundle)
+	h.writeControlHistory(r, "enterprise_memory", "bundle_create", "evidence_bundle", strconv.FormatInt(bundle.ID, 10), strings.TrimSpace(req.Reason), "success", nil, bundle, nil)
+	writeJSON(w, http.StatusCreated, bundle)
+}
+
+func (h *Handler) GetEvidenceBundle(w http.ResponseWriter, r *http.Request) {
+	bundleID, err := strconv.ParseInt(chi.URLParam(r, "bundleId"), 10, 64)
+	if err != nil || bundleID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid bundle id")
+		return
+	}
+
+	bundle, err := memory.NewService(h.pg).GetEvidenceBundle(r.Context(), tenantFromCtx(r), bundleID)
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "evidence bundle not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load evidence bundle")
+		return
+	}
+	writeJSON(w, http.StatusOK, bundle)
+}
+
+func (h *Handler) ExportEvidenceBundle(w http.ResponseWriter, r *http.Request) {
+	bundleID, err := strconv.ParseInt(chi.URLParam(r, "bundleId"), 10, 64)
+	if err != nil || bundleID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid bundle id")
+		return
+	}
+
+	bundle, err := memory.NewService(h.pg).GetEvidenceBundle(r.Context(), tenantFromCtx(r), bundleID)
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "evidence bundle not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to export evidence bundle")
+		return
+	}
+	filename := fmt.Sprintf("evidence-bundle-%d.json", bundle.ID)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	writeJSON(w, http.StatusOK, bundle)
+}
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 // ListUsers returns all users for the current tenant.
@@ -1097,6 +1308,8 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "create failed")
 		return
 	}
+	h.writeAdminAudit(r, "auth", "create", "user", user.ID, "success", user)
+	h.writeControlHistory(r, "auth", "create", "user", user.ID, "user created", "success", nil, user, nil)
 	writeJSON(w, http.StatusCreated, user)
 }
 
@@ -1109,22 +1322,30 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.pg.UpdateUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r), req)
+	userID := chi.URLParam(r, "userId")
+	before, _ := h.pg.GetUser(r.Context(), userID, tenantFromCtx(r))
+	user, err := h.pg.UpdateUser(r.Context(), userID, tenantFromCtx(r), req)
 	if err != nil {
 		h.logger.Error("update user", zap.Error(err))
 		writeError(w, http.StatusNotFound, "user not found or no change")
 		return
 	}
+	h.writeAdminAudit(r, "auth", "update", "user", user.ID, "success", map[string]any{"before": before, "after": user})
+	h.writeControlHistory(r, "auth", "update", "user", user.ID, "user updated", "success", before, user, nil)
 	writeJSON(w, http.StatusOK, user)
 }
 
 // DeleteUser removes a user from the current tenant.
 // DELETE /api/v1/users/{userId}
 func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
-	if err := h.pg.DeleteUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r)); err != nil {
+	userID := chi.URLParam(r, "userId")
+	before, _ := h.pg.GetUser(r.Context(), userID, tenantFromCtx(r))
+	if err := h.pg.DeleteUser(r.Context(), userID, tenantFromCtx(r)); err != nil {
 		writeError(w, http.StatusNotFound, "user not found")
 		return
 	}
+	h.writeAdminAudit(r, "auth", "delete", "user", userID, "success", before)
+	h.writeControlHistory(r, "auth", "delete", "user", userID, "user deleted", "success", before, nil, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1668,6 +1889,7 @@ func (h *Handler) UpsertPricingRule(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	h.writeAdminAudit(r, "pricing", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "pricing_rule", strconv.FormatInt(updated.ID, 10), "success", updated)
+	h.writeControlHistory(r, "pricing", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "pricing_rule", strconv.FormatInt(updated.ID, 10), updated.ModelPattern, "success", beforeJSON, updated, nil)
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -1707,6 +1929,7 @@ func (h *Handler) DeletePricingRule(w http.ResponseWriter, r *http.Request) {
 		AfterState:  "{}",
 	})
 	h.writeAdminAudit(r, "pricing", "delete", "pricing_rule", strconv.FormatInt(id, 10), "success", existing)
+	h.writeControlHistory(r, "pricing", "delete", "pricing_rule", strconv.FormatInt(id, 10), "pricing rule deleted", "success", beforeJSON, nil, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1817,6 +2040,7 @@ func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 		"before": before,
 		"after":  updated,
 	})
+	h.writeControlHistory(r, "policy", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "policy_rule", strconv.FormatInt(updated.ID, 10), updated.Name, "success", before, updated, nil)
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -1844,6 +2068,7 @@ func (h *Handler) DeletePolicyRule(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.writeAdminAudit(r, "policy", "delete", "policy_rule", strconv.FormatInt(id, 10), "success", existing)
+	h.writeControlHistory(r, "policy", "delete", "policy_rule", strconv.FormatInt(id, 10), "policy deleted", "success", existing, nil, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 

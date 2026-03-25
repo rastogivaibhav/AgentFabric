@@ -1,4 +1,5 @@
-import { outcomeStatusColor, useOverview, useTraces } from '../hooks/api'
+import RecommendationFeed from '../components/recommendations/RecommendationFeed'
+import { outcomeStatusColor, useOverview, useRecommendations, useTraces } from '../hooks/api'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const FRAMEWORK_COLORS: Record<string, string> = {
@@ -26,6 +27,7 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 export default function Dashboard() {
   const { data: overview, isLoading } = useOverview('24h')
   const { data: traces } = useTraces({ limit: '10' })
+  const { data: recommendationData, isLoading: recommendationsLoading, error: recommendationsError } = useRecommendations({ since: '24h', limit: 4 })
 
   const frameworkData = overview
     ? Object.entries(overview.framework_counts ?? {}).map(([name, count]) => ({ name, count }))
@@ -79,7 +81,8 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        <div style={{ background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:10, padding:24 }}>
+        <div style={{ display:'grid', gap:16 }}>
+          <div style={{ background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:10, padding:24 }}>
           <div style={{ fontSize:12, color:'#475569', marginBottom:16, letterSpacing:'0.1em' }}>TOKEN USAGE</div>
           <div style={{ textAlign:'center', marginBottom:12 }}>
             <div style={{ fontSize:24, fontWeight:700, color:'#F0F9FF' }}>
@@ -97,6 +100,14 @@ export default function Dashboard() {
               <Tooltip contentStyle={{ background:'#0D1B2A', border:'1px solid #1E3A5F', fontSize:11 }} />
             </PieChart>
           </ResponsiveContainer>
+          </div>
+          <RecommendationFeed
+            title="AUTONOMIC RECOMMENDATIONS"
+            recommendations={recommendationData?.items ?? []}
+            isLoading={recommendationsLoading}
+            error={recommendationsError}
+            emptyMessage="No active recommendations. Current signals look stable."
+          />
         </div>
       </div>
 

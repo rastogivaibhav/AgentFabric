@@ -1,7 +1,0 @@
-./compiler.go
-./engine.go
-./evaluator.go
-./explain.go
-./rego_adapter.go
-./schema.go
-./engine_test.go
