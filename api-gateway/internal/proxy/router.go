@@ -1,38 +1,127 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
+
+	"github.com/agentfabric/api-gateway/internal/models"
 )
 
+type rolloutResolver interface {
+	Resolve(ctx context.Context, req models.RolloutPreviewRequest) (models.RolloutAssignment, error)
+}
+
+type RouteRequest struct {
+	TenantID          string
+	Provider          string
+	Model             string
+	Path              string
+	Environment       string
+	App               string
+	Session           string
+	PromptID          string
+	PromptEnvironment string
+	AssignmentKey     string
+}
+
 type RouteCandidate struct {
-	Provider string
-	Model    string
-	Path     string
-	Source   string
+	Provider          string
+	Model             string
+	Path              string
+	Source            string
+	RolloutAssignment *models.RolloutAssignment
 }
 
-type ProviderRouter struct{}
-
-func NewProviderRouter() *ProviderRouter {
-	return &ProviderRouter{}
+type ProviderRouter struct {
+	resolver rolloutResolver
 }
 
-func (r *ProviderRouter) Resolve(_ string, provider, model, path string) []RouteCandidate {
-	canonicalProvider := NormalizeProvider(provider)
-	normalizedModel := strings.TrimSpace(model)
-	normalizedPath := strings.TrimSpace(path)
-	candidates := []RouteCandidate{{
+func NewProviderRouter(resolver ...rolloutResolver) *ProviderRouter {
+	router := &ProviderRouter{}
+	if len(resolver) > 0 {
+		router.resolver = resolver[0]
+	}
+	return router
+}
+
+func (r *ProviderRouter) Resolve(ctx context.Context, req RouteRequest) []RouteCandidate {
+	canonicalProvider := NormalizeProvider(req.Provider)
+	normalizedModel := strings.TrimSpace(req.Model)
+	normalizedPath := strings.TrimSpace(req.Path)
+	basePrimary := RouteCandidate{
 		Provider: canonicalProvider,
 		Model:    normalizedModel,
 		Path:     normalizedPath,
 		Source:   "primary",
-	}}
-	if fallbackModel := defaultFallbackModel(canonicalProvider, normalizedModel); fallbackModel != "" && fallbackModel != normalizedModel {
+	}
+
+	if r == nil || r.resolver == nil {
+		return appendDefaultFallbacks(basePrimary)
+	}
+
+	assignment, err := r.resolver.Resolve(ctx, models.RolloutPreviewRequest{
+		TenantID:          req.TenantID,
+		Provider:          canonicalProvider,
+		Model:             normalizedModel,
+		Environment:       req.Environment,
+		App:               req.App,
+		Session:           req.Session,
+		PromptID:          req.PromptID,
+		PromptEnvironment: req.PromptEnvironment,
+		AssignmentKey:     req.AssignmentKey,
+	})
+	if err != nil || assignment.RuleID <= 0 {
+		return appendDefaultFallbacks(basePrimary)
+	}
+
+	switch assignment.TargetType {
+	case models.RolloutTargetModel:
+		candidates := []RouteCandidate{}
+		if assignment.Selected && strings.TrimSpace(assignment.CandidateModel) != "" {
+			canary := basePrimary
+			canary.Model = assignment.CandidateModel
+			canary.Source = "rollout_canary"
+			canary.RolloutAssignment = &assignment
+			candidates = append(candidates, canary)
+		}
+
+		control := basePrimary
+		control.Source = "rollout_control"
+		control.RolloutAssignment = &assignment
+		candidates = append(candidates, control)
+
+		fallbackModel := defaultFallbackModel(canonicalProvider, normalizedModel)
+		if fallbackModel != "" && fallbackModel != normalizedModel && fallbackModel != assignment.CandidateModel {
+			candidates = append(candidates, RouteCandidate{
+				Provider: canonicalProvider,
+				Model:    fallbackModel,
+				Path:     normalizedPath,
+				Source:   "fallback",
+			})
+		}
+		return candidates
+	case models.RolloutTargetPromptRelease:
+		primary := basePrimary
+		if assignment.Selected {
+			primary.Source = "rollout_canary"
+		} else {
+			primary.Source = "rollout_control"
+		}
+		primary.RolloutAssignment = &assignment
+		return appendDefaultFallbacks(primary)
+	default:
+		return appendDefaultFallbacks(basePrimary)
+	}
+}
+
+func appendDefaultFallbacks(primary RouteCandidate) []RouteCandidate {
+	candidates := []RouteCandidate{primary}
+	if fallbackModel := defaultFallbackModel(primary.Provider, primary.Model); fallbackModel != "" && fallbackModel != primary.Model {
 		candidates = append(candidates, RouteCandidate{
-			Provider: canonicalProvider,
+			Provider: primary.Provider,
 			Model:    fallbackModel,
-			Path:     normalizedPath,
+			Path:     primary.Path,
 			Source:   "fallback",
 		})
 	}
@@ -41,7 +130,7 @@ func (r *ProviderRouter) Resolve(_ string, provider, model, path string) []Route
 
 func (r *ProviderRouter) Apply(provider string, body []byte, candidate RouteCandidate, path string) ([]byte, string, error) {
 	targetModel := strings.TrimSpace(candidate.Model)
-	if targetModel == "" {
+	if len(body) == 0 && targetModel == "" {
 		return body, path, nil
 	}
 	switch NormalizeProvider(provider) {
@@ -66,7 +155,7 @@ func (r *ProviderRouter) Apply(provider string, body []byte, candidate RouteCand
 }
 
 func rewriteJSONModel(body []byte, model string) ([]byte, error) {
-	if len(body) == 0 {
+	if len(body) == 0 || strings.TrimSpace(model) == "" {
 		return body, nil
 	}
 	var payload map[string]any

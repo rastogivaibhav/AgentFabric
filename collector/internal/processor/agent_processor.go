@@ -64,6 +64,7 @@ const (
 	AttrErrorClass    = "af.error.class"
 	AttrPromptPreview = "af.preview.prompt"
 	AttrResponsePrev  = "af.preview.response"
+	AttrAgentName     = "agent.name"
 	AttrAppName       = "af.app.name"
 	AttrEnvironment   = "af.environment"
 	AttrUserID        = "af.user.id"
@@ -274,6 +275,7 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 	attrs[AttrCollectorNode] = p.cfg.NodeName
 	attrs[AttrStepType] = deriveStepType(attrs, span.Name)
 	attrs[AttrErrorClass] = deriveErrorClass(attrs, span.Status.GetMessage())
+	attrs[AttrAgentName] = firstNonEmptyAttr(attrs, AttrAgentName, "af.agent.name", sdkADKAgent, sdkCrewRole, "service.name", "application.name")
 	attrs[AttrAppName] = firstNonEmptyAttr(attrs, "af.app.name", "service.name", "application.name")
 	attrs[AttrEnvironment] = firstNonEmptyAttr(attrs, "af.environment", "deployment.environment", "environment", "env")
 	attrs[AttrUserID] = firstNonEmptyAttr(attrs, "af.user.id", "enduser.id", "user.id")

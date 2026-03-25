@@ -27,6 +27,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/policy"
 	priced "github.com/agentfabric/api-gateway/internal/pricing"
+	"github.com/agentfabric/api-gateway/internal/rollouts"
 	"github.com/agentfabric/api-gateway/internal/vault"
 	"go.uber.org/zap"
 )
@@ -61,6 +62,7 @@ type LLMProxy struct {
 	policyEngine   *policy.Engine
 	broadcaster    eventBroadcaster
 	router         *ProviderRouter
+	rollouts       *rollouts.Service
 	cache          *proxyResponseCache
 	rateLimiter    *requestRateLimiter
 	httpClient     *http.Client
@@ -74,14 +76,15 @@ func ParserFor(provider string) (ProviderParser, bool) {
 }
 
 // New creates an LLMProxy.
-func New(v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, policyEngine *policy.Engine, broadcaster eventBroadcaster, logger *zap.Logger) *LLMProxy {
+func New(v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, policyEngine *policy.Engine, rolloutService *rollouts.Service, broadcaster eventBroadcaster, logger *zap.Logger) *LLMProxy {
 	return &LLMProxy{
 		vault:          v,
 		budgetEnforcer: be,
 		store:          store,
 		policyEngine:   policyEngine,
 		broadcaster:    broadcaster,
-		router:         NewProviderRouter(),
+		router:         NewProviderRouter(rolloutService),
+		rollouts:       rolloutService,
 		cache:          newProxyResponseCache(),
 		rateLimiter:    newRequestRateLimiter(),
 		httpClient: &http.Client{
@@ -275,7 +278,23 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		cacheStore = newProxyResponseCache()
 	}
 
-	candidates := router.Resolve(tenantID, provider, model, r.URL.Path)
+	appName := strings.TrimSpace(r.Header.Get("X-AF-App"))
+	sessionID := strings.TrimSpace(r.Header.Get("X-AF-Session"))
+	promptID := strings.TrimSpace(r.Header.Get("X-AF-Prompt-ID"))
+	promptEnvironment := strings.TrimSpace(r.Header.Get("X-AF-Prompt-Environment"))
+	assignmentKey := strings.TrimSpace(r.Header.Get("X-AF-Assignment-Key"))
+	candidates := router.Resolve(r.Context(), RouteRequest{
+		TenantID:          tenantID,
+		Provider:          provider,
+		Model:             model,
+		Path:              r.URL.Path,
+		Environment:       environment,
+		App:               appName,
+		Session:           sessionID,
+		PromptID:          promptID,
+		PromptEnvironment: promptEnvironment,
+		AssignmentKey:     assignmentKey,
+	})
 	start := time.Now()
 	usage := priced.Usage{}
 	extraAttrs := map[string]string{}
@@ -284,6 +303,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	finalBody := []byte(nil)
 	finalHeaders := http.Header{}
 	finalSource := "primary"
+	var finalRollout *models.RolloutAssignment
 	streamed := false
 
 	for idx, candidate := range candidates {
@@ -299,6 +319,13 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		finalModel = activeModel
 		finalSource = candidate.Source
+		if candidate.RolloutAssignment != nil {
+			finalRollout = candidate.RolloutAssignment
+			applyRolloutAttrs(extraAttrs, *candidate.RolloutAssignment, promptID, promptEnvironment)
+			if idx == 0 {
+				p.recordRolloutDecision(tenantID, traceID, spanID, provider, activeModel, environment, appName, *candidate.RolloutAssignment)
+			}
+		}
 
 		cacheKey := ""
 		if !streaming {
@@ -312,6 +339,9 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				extraAttrs["af.gateway.route_source"] = candidate.Source
 				if activeModel != model && strings.TrimSpace(model) != "" {
 					extraAttrs["af.gateway.fallback_from"] = model
+				}
+				if candidate.RolloutAssignment != nil {
+					p.recordRolloutOutcome(tenantID, traceID, spanID, provider, activeModel, environment, promptID, extraAttrs["af.prompt.release_tag"], cached.StatusCode, time.Since(start), 0, *candidate.RolloutAssignment)
 				}
 				go p.recordSpan(traceID, spanID, tenantID, provider, activeModel, vk, cached.StatusCode, cached.Usage, time.Since(start), extraAttrs)
 				return
@@ -343,7 +373,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					ActionTaken: "retry_with_fallback_model",
 					Source:      "proxy",
 					Framework:   "proxy",
-					AppName:     strings.TrimSpace(r.Header.Get("X-AF-App")),
+					AppName:     appName,
 					Environment: environment,
 					Provider:    provider,
 					Model:       activeModel,
@@ -361,6 +391,9 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			p.logger.Warn("upstream request failed", zap.Error(err))
+			if candidate.RolloutAssignment != nil {
+				p.recordRolloutOutcome(tenantID, traceID, spanID, provider, activeModel, environment, promptID, extraAttrs["af.prompt.release_tag"], http.StatusBadGateway, time.Since(start), 0, *candidate.RolloutAssignment)
+			}
 			go p.recordSpan(traceID, spanID, tenantID, provider, activeModel, vk, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
 				"af.error.type":           "upstream_request_failed",
 				"af.error.message":        err.Error(),
@@ -400,7 +433,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ActionTaken: "retry_with_fallback_model",
 				Source:      "proxy",
 				Framework:   "proxy",
-				AppName:     strings.TrimSpace(r.Header.Get("X-AF-App")),
+				AppName:     appName,
 				Environment: environment,
 				Provider:    provider,
 				Model:       activeModel,
@@ -431,11 +464,11 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Body:           respBody,
 					RequestHeaders: policy.HeadersFromHTTP(r.Header),
 					Actor:          strings.TrimSpace(r.Header.Get("X-AF-User")),
-					App:            strings.TrimSpace(r.Header.Get("X-AF-App")),
-					Session:        strings.TrimSpace(r.Header.Get("X-AF-Session")),
+					App:            appName,
+					Session:        sessionID,
 				})
 				if dlpDecision.Matched {
-					p.recordPolicyDecision(tenantID, traceID, spanID, provider, activeModel, environment, strings.TrimSpace(r.Header.Get("X-AF-App")), "proxy", dlpDecision)
+					p.recordPolicyDecision(tenantID, traceID, spanID, provider, activeModel, environment, appName, "proxy", dlpDecision)
 					extraAttrs["af.policy.reason"] = dlpDecision.Reason
 					extraAttrs["af.policy.decision"] = dlpDecision.Action
 					if dlpDecision.Action == "deny" {
@@ -485,6 +518,9 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"route_source": finalSource,
 			},
 		})
+		if finalRollout != nil {
+			p.recordRolloutOutcome(tenantID, traceID, spanID, provider, finalModel, environment, promptID, extraAttrs["af.prompt.release_tag"], http.StatusBadGateway, time.Since(start), 0, *finalRollout)
+		}
 		go p.recordSpan(traceID, spanID, tenantID, provider, finalModel, vk, http.StatusBadGateway, priced.Usage{}, time.Since(start), map[string]string{
 			"af.error.type":           "fallback_exhausted",
 			"af.gateway.route_source": finalSource,
@@ -509,6 +545,9 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	extraAttrs["af.gateway.route_source"] = finalSource
 	if finalStatusCode >= 400 && strings.TrimSpace(extraAttrs["af.error.type"]) == "" {
 		extraAttrs["af.error.type"] = classifyProxyStatus(finalStatusCode)
+	}
+	if finalRollout != nil {
+		p.recordRolloutOutcome(tenantID, traceID, spanID, provider, finalModel, environment, promptID, extraAttrs["af.prompt.release_tag"], finalStatusCode, duration, 0, *finalRollout)
 	}
 	go p.recordSpan(traceID, spanID, tenantID, provider, finalModel, vk, finalStatusCode, usage, duration, extraAttrs)
 }
@@ -773,6 +812,100 @@ func (p *LLMProxy) recordDecision(record models.DecisionRecord) {
 	record.Explanation = models.DefaultDecisionExplanation(record)
 	if err := p.store.CreateDecisionRecord(context.Background(), record); err != nil {
 		p.logger.Warn("failed to write decision record", zap.Error(err))
+	}
+}
+
+func (p *LLMProxy) recordRolloutDecision(tenantID, traceID, spanID, provider, model, environment, appName string, assignment models.RolloutAssignment) {
+	if assignment.RuleID <= 0 {
+		return
+	}
+	result := "control"
+	if assignment.Selected {
+		result = "canary"
+	}
+	p.recordDecision(models.DecisionRecord{
+		DecisionID:       newUUID(),
+		TenantID:         normalizeTenantID(tenantID),
+		TraceID:          traceID,
+		SpanID:           spanID,
+		Type:             models.DecisionTypeRouting,
+		Result:           result,
+		Reason:           "rollout assignment applied before provider dispatch",
+		Trigger:          "rollout_rule",
+		ActionTaken:      "apply_rollout_variant",
+		Source:           "proxy",
+		Framework:        "proxy",
+		AppName:          appName,
+		Environment:      environment,
+		Provider:         provider,
+		Model:            model,
+		PromptReleaseTag: assignment.ReleaseTag,
+		Inputs: map[string]string{
+			"assignment_key": assignment.AssignmentKey,
+			"target_type":    assignment.TargetType,
+			"target_id":      assignment.TargetID,
+			"variant":        assignment.Variant,
+			"bucket":         fmt.Sprintf("%d", assignment.Bucket),
+		},
+		Evidence: map[string]interface{}{
+			"rule_id":         assignment.RuleID,
+			"rule_name":       assignment.RuleName,
+			"control_model":   assignment.ControlModel,
+			"candidate_model": assignment.CandidateModel,
+			"release_tag":     assignment.ReleaseTag,
+		},
+	})
+}
+
+func (p *LLMProxy) recordRolloutOutcome(tenantID, traceID, spanID, provider, model, environment, promptID, releaseTag string, statusCode int, duration time.Duration, costUSD float64, assignment models.RolloutAssignment) {
+	if p == nil || p.rollouts == nil || assignment.RuleID <= 0 {
+		return
+	}
+	status := models.NormalizeOutcomeStatus(statusCode, map[string]string{})
+	_, err := p.rollouts.RecordOutcome(context.Background(), normalizeTenantID(tenantID), assignment, models.RolloutEvent{
+		TraceID:          traceID,
+		SpanID:           spanID,
+		AssignedVariant:  assignment.Variant,
+		Provider:         provider,
+		Model:            model,
+		Environment:      environment,
+		PromptID:         promptID,
+		PromptReleaseTag: releaseTag,
+		Status:           status,
+		StatusCode:       statusCode,
+		CostUSD:          costUSD,
+		LatencyMS:        duration.Milliseconds(),
+	}, "rollout-service")
+	if err != nil {
+		p.logger.Warn("failed to record rollout event", zap.Error(err))
+	}
+}
+
+func applyRolloutAttrs(attrs map[string]string, assignment models.RolloutAssignment, promptID, promptEnvironment string) {
+	if attrs == nil || assignment.RuleID <= 0 {
+		return
+	}
+	attrs["af.rollout.rule_id"] = fmt.Sprintf("%d", assignment.RuleID)
+	attrs["af.rollout.rule_name"] = assignment.RuleName
+	attrs["af.rollout.target_type"] = assignment.TargetType
+	attrs["af.rollout.target_id"] = assignment.TargetID
+	attrs["af.rollout.assignment_key"] = assignment.AssignmentKey
+	attrs["af.rollout.variant"] = assignment.Variant
+	attrs["af.rollout.bucket"] = fmt.Sprintf("%d", assignment.Bucket)
+	if assignment.CandidateModel != "" {
+		attrs["af.rollout.candidate_model"] = assignment.CandidateModel
+	}
+	if assignment.ControlModel != "" {
+		attrs["af.rollout.control_model"] = assignment.ControlModel
+	}
+	if promptID != "" {
+		attrs["af.prompt.id"] = promptID
+	}
+	if promptEnvironment != "" {
+		attrs["af.prompt.environment"] = promptEnvironment
+	}
+	if assignment.ReleaseTag != "" {
+		attrs["af.prompt.release_tag"] = assignment.ReleaseTag
 	}
 }
 

@@ -4,8 +4,12 @@ import {
   type PolicyRule,
   useControlAudit,
   useDeletePolicyRule,
+  usePreviewRollout,
   usePreviewPolicyRule,
   usePolicyRules,
+  useRollouts,
+  useUpdateRolloutStatus,
+  useUpsertRolloutRule,
   useUpsertPolicyRule,
 } from '../hooks/api'
 import PolicyDecisionExplorer from './PolicyDecisionExplorer'
@@ -39,10 +43,14 @@ export default function PoliciesPage() {
   const { user } = useAuth()
   const isAdmin = hasRole(user, ['admin'])
   const { data, isLoading, error } = usePolicyRules()
+  const { data: rolloutData } = useRollouts()
   const { data: audit } = useControlAudit(25)
   const upsert = useUpsertPolicyRule()
   const remove = useDeletePolicyRule()
   const preview = usePreviewPolicyRule()
+  const upsertRollout = useUpsertRolloutRule()
+  const previewRollout = usePreviewRollout()
+  const updateRolloutStatus = useUpdateRolloutStatus()
   const [form, setForm] = useState<PolicyRule>(emptyRule)
   const [previewRequest, setPreviewRequest] = useState({
     tenant_id: '',
@@ -56,8 +64,19 @@ export default function PoliciesPage() {
     request_body: '',
     response_body: '',
   })
+  const [rolloutForm, setRolloutForm] = useState({
+    id: 0,
+    name: 'Policy canary',
+    policy_rule_id: 0,
+    percentage: 10,
+    environment: 'production',
+  })
 
   const rules = useMemo(() => data?.items ?? [], [data])
+  const policyRollouts = useMemo(
+    () => (rolloutData?.items ?? []).filter(item => item.target_type === 'policy_rule'),
+    [rolloutData],
+  )
 
   if (!isAdmin) {
     return (
@@ -397,6 +416,114 @@ export default function PoliciesPage() {
             </div>
           ))}
           {(audit?.items?.length ?? 0) === 0 && <div style={subtleText}>No control-plane audit entries yet.</div>}
+        </div>
+      </div>
+
+      <div style={{ ...panelStyle, marginTop: 16 }}>
+        <div style={sectionLabel}>ROLLOUT CONTROL</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 420px) 1fr', gap: 16 }}>
+          <div>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <label style={labelStyle}>
+                Rule Name
+                <input value={rolloutForm.name} onChange={e => setRolloutForm(current => ({ ...current, name: e.target.value }))} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Policy Rule
+                <select value={rolloutForm.policy_rule_id} onChange={e => setRolloutForm(current => ({ ...current, policy_rule_id: Number(e.target.value) }))} style={inputStyle}>
+                  <option value={0}>Select policy rule</option>
+                  {rules.map(rule => (
+                    <option key={rule.id} value={rule.id}>{rule.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label style={labelStyle}>
+                  Environment
+                  <input value={rolloutForm.environment} onChange={e => setRolloutForm(current => ({ ...current, environment: e.target.value }))} style={inputStyle} />
+                </label>
+                <label style={labelStyle}>
+                  Canary Percent
+                  <input type="number" min={1} max={100} value={rolloutForm.percentage} onChange={e => setRolloutForm(current => ({ ...current, percentage: Number(e.target.value) }))} style={inputStyle} />
+                </label>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                style={primaryBtn}
+                onClick={() => upsertRollout.mutate({
+                  id: rolloutForm.id || undefined,
+                  name: rolloutForm.name.trim(),
+                  target_type: 'policy_rule',
+                  target_id: String(rolloutForm.policy_rule_id || ''),
+                  policy_rule_id: rolloutForm.policy_rule_id,
+                  environment: rolloutForm.environment.trim().toLowerCase(),
+                  percentage: rolloutForm.percentage,
+                  status: 'active',
+                  conditions: {},
+                  rollback_criteria: { min_requests: '10', max_error_rate_pct: '50' },
+                })}
+                disabled={upsertRollout.isPending || rolloutForm.policy_rule_id <= 0}
+              >
+                {upsertRollout.isPending ? 'Saving...' : 'Save Rollout'}
+              </button>
+              <button
+                style={secondaryBtn}
+                onClick={() => previewRollout.mutate({
+                  environment: rolloutForm.environment.trim().toLowerCase(),
+                  policy_rule_id: rolloutForm.policy_rule_id,
+                  provider: previewRequest.provider,
+                  model: previewRequest.model,
+                  app: previewRequest.app,
+                  session: previewRequest.session,
+                })}
+                disabled={previewRollout.isPending || rolloutForm.policy_rule_id <= 0}
+              >
+                {previewRollout.isPending ? 'Previewing...' : 'Preview Rollout'}
+              </button>
+            </div>
+            {previewRollout.data?.assignment?.rule_id && (
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #10243D', background: '#081221', color: '#94A3B8', fontSize: 11 }}>
+                Preview selected {previewRollout.data.assignment.variant} for rule {previewRollout.data.assignment.rule_name} at bucket {previewRollout.data.assignment.bucket}.
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gap: 10 }}>
+            {policyRollouts.length === 0 ? (
+              <div style={subtleText}>No rollout rules configured for policy canaries yet.</div>
+            ) : policyRollouts.map(rule => (
+              <div key={rule.id} style={{ border: '1px solid #0F1F35', borderRadius: 8, background: '#071525', padding: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{rule.name}</div>
+                  <div style={{ color: rule.status === 'paused' ? '#FCA5A5' : '#10B981', fontSize: 11 }}>{rule.status}</div>
+                </div>
+                <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>
+                  policy #{rule.policy_rule_id} | {rule.percentage}% | env {rule.environment || '*'}
+                </div>
+                <div style={{ color: '#64748B', fontSize: 10, marginTop: 4 }}>
+                  {rule.recent_requests ?? 0} requests | {(Number(rule.recent_error_rate ?? 0) * 100).toFixed(1)}% error rate
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button style={secondaryBtnSmall} onClick={() => setRolloutForm({
+                    id: Number(rule.id ?? 0),
+                    name: rule.name,
+                    policy_rule_id: Number(rule.policy_rule_id ?? 0),
+                    percentage: rule.percentage,
+                    environment: rule.environment ?? 'production',
+                  })}>
+                    Edit
+                  </button>
+                  <button
+                    style={secondaryBtnSmall}
+                    onClick={() => rule.id && updateRolloutStatus.mutate({ id: rule.id, status: rule.status === 'paused' ? 'active' : 'paused' })}
+                  >
+                    {rule.status === 'paused' ? 'Resume' : 'Pause'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

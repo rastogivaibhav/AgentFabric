@@ -18,6 +18,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/netproxy"
 	"github.com/agentfabric/api-gateway/internal/policy"
 	"github.com/agentfabric/api-gateway/internal/proxy"
+	"github.com/agentfabric/api-gateway/internal/rollouts"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/vault"
 	"github.com/agentfabric/api-gateway/internal/ws"
@@ -146,7 +147,8 @@ func main() {
 	}
 
 	keyHandler := handlers.NewKeyHandler(llmVault, pgStore, logger)
-	llmProxy := proxy.New(llmVault, budgetEnforcer, pgStore, policyEngine, hub, logger)
+	rolloutService := rollouts.NewService(pgStore)
+	llmProxy := proxy.New(llmVault, budgetEnforcer, pgStore, policyEngine, rolloutService, hub, logger)
 
 	// ─── NetProxy (Layer 3: transparent HTTPS MITM proxy) ────────────────────
 	// Listens on AF_NETPROXY_ADDR (:8443) and handles HTTP CONNECT tunnelling.
@@ -253,10 +255,12 @@ func main() {
 
 		// Agents
 		r.Route("/agents", func(r chi.Router) {
+			r.Get("/scorecards", h.ListAgentScorecards)
 			r.Get("/", h.ListAgents)
 			r.Get("/{agentId}", h.GetAgent)
 			r.Get("/{agentId}/runs", h.GetAgentRuns)
 			r.Get("/{agentId}/metrics", h.GetAgentMetrics)
+			r.Get("/{agentId}/scorecard", h.GetAgentScorecard)
 			r.Get("/{agentId}/topology", h.GetAgentTopology)
 		})
 
@@ -275,6 +279,7 @@ func main() {
 		r.Get("/analytics/overview", h.GetOverview)
 		r.Get("/analytics/frameworks", h.GetFrameworkStats)
 		r.Get("/analytics/cost", h.GetCostReport)
+		r.Get("/analytics/cost/spikes", h.GetCostSpikes)
 		r.Get("/analytics/errors", h.GetErrorReport)
 
 		// Environments
@@ -327,6 +332,13 @@ func main() {
 			r.With(middleware.RequireRole("admin")).Get("/", h.ListPrompts)
 			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertPromptVersion)
 			r.With(middleware.RequireRole("admin")).Post("/promote", h.PromotePromptRelease)
+		})
+
+		r.Route("/rollouts", func(r chi.Router) {
+			r.With(middleware.RequireRole("admin")).Get("/", h.ListRollouts)
+			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertRolloutRule)
+			r.With(middleware.RequireRole("admin")).Post("/preview", h.PreviewRollout)
+			r.With(middleware.RequireRole("admin")).Post("/{rolloutId}/status", h.UpdateRolloutStatus)
 		})
 
 		r.Route("/policies", func(r chi.Router) {

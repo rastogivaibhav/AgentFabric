@@ -13,6 +13,10 @@ vi.mock('../hooks/api', () => ({
   useUpsertPolicyRule: vi.fn(),
   useDeletePolicyRule: vi.fn(),
   usePreviewPolicyRule: vi.fn(),
+  useRollouts: vi.fn(),
+  useUpsertRolloutRule: vi.fn(),
+  usePreviewRollout: vi.fn(),
+  useUpdateRolloutStatus: vi.fn(),
 }))
 
 vi.mock('./PolicyDecisionExplorer', () => ({
@@ -28,7 +32,11 @@ import {
   useControlAudit,
   useDeletePolicyRule,
   usePolicyRules,
+  usePreviewRollout,
   usePreviewPolicyRule,
+  useRollouts,
+  useUpdateRolloutStatus,
+  useUpsertRolloutRule,
   useUpsertPolicyRule,
 } from '../hooks/api'
 
@@ -39,6 +47,10 @@ const mockUseControlAudit = vi.mocked(useControlAudit)
 const mockUseUpsertPolicyRule = vi.mocked(useUpsertPolicyRule)
 const mockUseDeletePolicyRule = vi.mocked(useDeletePolicyRule)
 const mockUsePreviewPolicyRule = vi.mocked(usePreviewPolicyRule)
+const mockUseRollouts = vi.mocked(useRollouts)
+const mockUseUpsertRolloutRule = vi.mocked(useUpsertRolloutRule)
+const mockUsePreviewRollout = vi.mocked(usePreviewRollout)
+const mockUseUpdateRolloutStatus = vi.mocked(useUpdateRolloutStatus)
 
 describe('PoliciesPage', () => {
   beforeEach(() => {
@@ -50,6 +62,10 @@ describe('PoliciesPage', () => {
     mockUseUpsertPolicyRule.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
     mockUseDeletePolicyRule.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
     mockUsePreviewPolicyRule.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
+    mockUseRollouts.mockReturnValue({ data: { items: [], count: 0 }, isLoading: false, error: null } as any)
+    mockUseUpsertRolloutRule.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
+    mockUsePreviewRollout.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, data: null } as any)
+    mockUseUpdateRolloutStatus.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
   })
 
   it('shows restricted message for non-admin users', () => {
@@ -82,6 +98,7 @@ describe('PoliciesPage', () => {
 
   it('renders rules, preview decisions, and audit entries', () => {
     const previewMutate = vi.fn()
+    const updateRolloutStatusMutate = vi.fn()
     mockUsePolicyRules.mockReturnValue({
       data: {
         items: [{
@@ -128,14 +145,51 @@ describe('PoliciesPage', () => {
         response_dlp: { matched: true, action: 'redact' },
       },
     } as any)
+    mockUseRollouts.mockReturnValue({
+      data: {
+        items: [{
+          id: 11,
+          name: 'Policy canary',
+          target_type: 'policy_rule',
+          target_id: '7',
+          policy_rule_id: 7,
+          environment: 'production',
+          percentage: 10,
+          status: 'active',
+          recent_requests: 20,
+          recent_error_rate: 0.05,
+        }],
+        count: 1,
+      },
+      isLoading: false,
+      error: null,
+    } as any)
+    mockUseUpdateRolloutStatus.mockReturnValue({ mutate: updateRolloutStatusMutate, isPending: false } as any)
+    mockUsePreviewRollout.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: false,
+      data: {
+        assignment: {
+          rule_id: 11,
+          rule_name: 'Policy canary',
+          variant: 'control',
+          bucket: 42,
+        },
+      },
+    } as any)
 
     render(<PoliciesPage />)
-    expect(screen.getByText('Block prod')).toBeInTheDocument()
+    expect(screen.getAllByText('Block prod')[0]).toBeInTheDocument()
     expect(screen.getByText(/policy simulation stub/i)).toBeInTheDocument()
     expect(screen.getByText(/architect/i)).toBeInTheDocument()
+    expect(screen.getByText(/Preview selected control for rule Policy canary/i)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /preview policy match/i }))
     expect(previewMutate).toHaveBeenCalled()
     expect(screen.getByText('Traffic:deny')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    expect(updateRolloutStatusMutate).toHaveBeenCalledWith({ id: 11, status: 'paused' })
   })
 })

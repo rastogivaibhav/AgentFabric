@@ -257,6 +257,42 @@ export interface OverviewStats {
   framework_counts: Record<string, number>
 }
 
+export interface AgentScoreComponent {
+  key: string
+  label: string
+  score: number
+  weight: number
+  severity: string
+  summary: string
+}
+
+export interface AgentScoreTrend {
+  previous_overall_score: number
+  current_overall_score: number
+  delta: number
+  direction: string
+}
+
+export interface AgentScorecard {
+  agent_id: string
+  agent_name: string
+  framework: string
+  app_name?: string
+  environment?: string
+  release_tag?: string
+  run_count: number
+  total_cost_usd: number
+  total_tokens: number
+  avg_latency_ms: number
+  eval_count: number
+  overall_score: number
+  risk_level: string
+  components: AgentScoreComponent[]
+  trend: AgentScoreTrend
+  recommended_actions?: string[]
+  generated_at: string
+}
+
 export interface LiveEvent {
   type: 'span' | 'run_start' | 'run_end' | 'error' | 'policy'
   ts: number
@@ -368,6 +404,23 @@ export function useOverview(since = '24h') {
   return useQuery<OverviewStats>({
     queryKey: ['overview', since],
     queryFn: () => apiFetch('/analytics/overview', { since }),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useAgentScorecards(since = '24h', limit = 24) {
+  return useQuery<Page<AgentScorecard>>({
+    queryKey: ['agent-scorecards', since, limit],
+    queryFn: () => apiFetch('/agents/scorecards', { since, limit: String(limit) }),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useAgentScorecard(agentId: string, since = '24h') {
+  return useQuery<AgentScorecard>({
+    queryKey: ['agent-scorecard', agentId, since],
+    queryFn: () => apiFetch(`/agents/${encodeURIComponent(agentId)}/scorecard`, { since }),
+    enabled: !!agentId,
     refetchInterval: 30_000,
   })
 }
@@ -570,7 +623,9 @@ export interface CostReportRow {
   environment: string
   provider: string
   model: string
-  framework: string
+  prompt_id: string
+  release_tag: string
+  total_tokens: number
   total_cost_usd: number
   input_tokens: number
   output_tokens: number
@@ -586,10 +641,86 @@ export interface CostReportRow {
   blocked_count: number
 }
 
-export function useCostReport(since = '24h') {
+export interface CostReportFilters {
+  since?: string
+  app_name?: string
+  environment?: string
+  provider?: string
+  model?: string
+  prompt_id?: string
+  release_tag?: string
+  limit?: string
+}
+
+export interface CostSpikeRow {
+  app_name: string
+  environment: string
+  provider: string
+  model: string
+  prompt_id: string
+  release_tag: string
+  current_cost_usd: number
+  previous_cost_usd: number
+  delta_cost_usd: number
+  delta_pct: number
+  current_trace_count: number
+  previous_trace_count: number
+  current_total_tokens: number
+  previous_total_tokens: number
+  explanation: string
+}
+
+export interface CostContributorRow {
+  key: string
+  current_cost_usd: number
+  previous_cost_usd: number
+  delta_cost_usd: number
+  delta_pct: number
+  share_of_delta: number
+}
+
+export interface CostContributorGroup {
+  dimension: string
+  items: CostContributorRow[]
+}
+
+export interface CostSpikeReport {
+  current_window_start: string
+  current_window_end: string
+  previous_window_start: string
+  previous_window_end: string
+  filters_applied: Record<string, string>
+  spikes: CostSpikeRow[]
+  contributor_groups: CostContributorGroup[]
+}
+
+function normalizeCostFilters(filters?: CostReportFilters) {
+  return {
+    since: filters?.since ?? '24h',
+    app_name: filters?.app_name ?? '',
+    environment: filters?.environment ?? '',
+    provider: filters?.provider ?? '',
+    model: filters?.model ?? '',
+    prompt_id: filters?.prompt_id ?? '',
+    release_tag: filters?.release_tag ?? '',
+    limit: filters?.limit ?? '100',
+  }
+}
+
+export function useCostReport(filters?: CostReportFilters) {
+  const normalized = normalizeCostFilters(filters)
   return useQuery<CostReportRow[]>({
-    queryKey: ['cost-report', since],
-    queryFn: () => apiFetch('/analytics/cost', { since }),
+    queryKey: ['cost-report', normalized],
+    queryFn: () => apiFetch('/analytics/cost', normalized),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useCostSpikes(filters?: CostReportFilters) {
+  const normalized = normalizeCostFilters(filters)
+  return useQuery<CostSpikeReport>({
+    queryKey: ['cost-spikes', normalized],
+    queryFn: () => apiFetch('/analytics/cost/spikes', normalized),
     refetchInterval: 60_000,
   })
 }
@@ -910,6 +1041,66 @@ export interface PromptPromotionRequest {
   promotion_reason?: string
 }
 
+export interface RolloutRule {
+  id?: number
+  tenant_id?: string
+  name: string
+  target_type: 'model' | 'prompt_release' | 'policy_rule'
+  target_id: string
+  environment?: string
+  percentage: number
+  control_model?: string
+  candidate_model?: string
+  control_release_tag?: string
+  candidate_release_tag?: string
+  policy_rule_id?: number
+  conditions?: Record<string, string>
+  rollback_criteria?: Record<string, string>
+  status?: 'active' | 'paused'
+  created_by?: string
+  updated_by?: string
+  created_at?: string
+  updated_at?: string
+  recent_requests?: number
+  recent_failures?: number
+  recent_error_rate?: number
+  last_event_at?: string
+}
+
+export interface RolloutAssignment {
+  selected: boolean
+  rule_id?: number
+  rule_name?: string
+  target_type?: string
+  target_id?: string
+  variant?: string
+  assignment_key?: string
+  bucket?: number
+  control_model?: string
+  candidate_model?: string
+  release_tag?: string
+  metadata?: Record<string, string>
+  rollback_triggered?: boolean
+}
+
+export interface RolloutPreviewRequest {
+  tenant_id?: string
+  provider?: string
+  model?: string
+  environment?: string
+  app?: string
+  session?: string
+  prompt_id?: string
+  prompt_environment?: string
+  assignment_key?: string
+  policy_rule_id?: number
+}
+
+export interface RolloutPreviewResponse {
+  assignment: RolloutAssignment
+  rules: RolloutRule[]
+}
+
 export interface AdminAuditEntry {
   id: number
   tenant_id?: string
@@ -1139,6 +1330,46 @@ export function usePromotePromptRelease() {
     mutationFn: (req: PromptPromotionRequest) => apiMutate<PromptRelease>('/prompts/promote', 'POST', req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['prompts'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+    },
+  })
+}
+
+export function useRollouts() {
+  return useQuery<{ items: RolloutRule[]; count: number }>({
+    queryKey: ['rollouts'],
+    queryFn: () => apiFetch('/rollouts'),
+    retry: false,
+  })
+}
+
+export function useUpsertRolloutRule() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (rule: RolloutRule) => apiMutate<RolloutRule>('/rollouts', 'PUT', rule),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rollouts'] })
+      qc.invalidateQueries({ queryKey: ['prompts'] })
+      qc.invalidateQueries({ queryKey: ['policy-rules'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+    },
+  })
+}
+
+export function usePreviewRollout() {
+  return useMutation({
+    mutationFn: (req: RolloutPreviewRequest) => apiMutate<RolloutPreviewResponse>('/rollouts/preview', 'POST', req),
+  })
+}
+
+export function useUpdateRolloutStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'active' | 'paused' }) => apiMutate<RolloutRule>(`/rollouts/${id}/status`, 'POST', { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rollouts'] })
+      qc.invalidateQueries({ queryKey: ['prompts'] })
+      qc.invalidateQueries({ queryKey: ['policy-rules'] })
       qc.invalidateQueries({ queryKey: ['control-audit'] })
     },
   })

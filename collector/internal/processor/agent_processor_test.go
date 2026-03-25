@@ -350,11 +350,17 @@ func TestEnrichSpan_PreservesGatewayDecisionAttributes(t *testing.T) {
 			name: "upstream error",
 			attrs: map[string]string{
 				"af.error.type":          "upstream_error",
+				"google.adk.agent.name":  "support-bot",
 				"service.name":           "ops-ui",
 				"deployment.environment": "production",
 				"session.id":             "sess-123",
 				"af.prompt.id":           "support-prompt",
 				"af.prompt.release_tag":  "support-v2",
+				"af.rollout.rule_id":     "11",
+				"af.rollout.rule_name":   "Prompt canary",
+				"af.rollout.target_type": "prompt_release",
+				"af.rollout.variant":     "canary",
+				"af.rollout.bucket":      "7",
 			},
 			status: tracepb.Status_STATUS_CODE_ERROR,
 		},
@@ -378,6 +384,9 @@ func TestEnrichSpan_PreservesGatewayDecisionAttributes(t *testing.T) {
 				}
 			}
 			if tc.name == "upstream error" {
+				if enriched.Attributes[AttrAgentName] != "support-bot" {
+					t.Fatalf("expected agent identity to be normalized for grouping")
+				}
 				if enriched.Attributes[AttrAppName] != "ops-ui" {
 					t.Fatalf("expected app context to be preserved")
 				}
@@ -390,11 +399,52 @@ func TestEnrichSpan_PreservesGatewayDecisionAttributes(t *testing.T) {
 				if enriched.Attributes[AttrPromptID] != "support-prompt" || enriched.Attributes[AttrPromptRelease] != "support-v2" {
 					t.Fatalf("expected prompt lineage to be preserved")
 				}
+				if enriched.Attributes["af.rollout.rule_name"] != "Prompt canary" || enriched.Attributes["af.rollout.variant"] != "canary" {
+					t.Fatalf("expected rollout metadata to be preserved")
+				}
 			}
 			if enriched.StatusCode != int32(tc.status) {
 				t.Fatalf("expected status=%d, got %d", tc.status, enriched.StatusCode)
 			}
 		})
+	}
+}
+
+func TestEnrichSpan_NormalizesCostDimensions(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Processor.MaxAttributeLen = 4096
+	p := &AgentProcessor{cfg: cfg}
+
+	span := &tracepb.Span{
+		TraceId: []byte("0123456789abcdef"),
+		SpanId:  []byte("12345678"),
+		Name:    "sdk.llm.call",
+		Status:  &tracepb.Status{Code: tracepb.Status_STATUS_CODE_OK},
+		Attributes: toKVList(map[string]string{
+			"application.name":      "billing-agent",
+			"env":                   "prod-eu",
+			"session.id":            "session-42",
+			"af.prompt.id":          "billing.summary",
+			"af.prompt.release_tag": "billing-v7",
+		}),
+	}
+
+	enriched := p.enrichSpan(span, map[string]string{})
+
+	if enriched.Attributes[AttrAppName] != "billing-agent" {
+		t.Fatalf("expected app name to normalize from application.name")
+	}
+	if enriched.Attributes[AttrEnvironment] != "prod-eu" {
+		t.Fatalf("expected environment to normalize from env")
+	}
+	if enriched.Attributes[AttrSessionID] != "session-42" {
+		t.Fatalf("expected session id to be preserved")
+	}
+	if enriched.Attributes[AttrPromptID] != "billing.summary" {
+		t.Fatalf("expected prompt id to be preserved")
+	}
+	if enriched.Attributes[AttrPromptRelease] != "billing-v7" {
+		t.Fatalf("expected prompt release to be preserved")
 	}
 }
 

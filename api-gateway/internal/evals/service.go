@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/observability"
@@ -22,6 +23,7 @@ type evalStore interface {
 	InsertEvalRun(ctx context.Context, tenantID string, run models.TraceEvalRun) (models.TraceEvalRun, error)
 	ListEvalRuns(ctx context.Context, tenantID string, limit int) ([]models.TraceEvalRun, error)
 	ListEvalRunsByRelease(ctx context.Context, tenantID, promptID, promptEnvironment, releaseTag, evalSuite string) ([]models.TraceEvalRun, error)
+	ListAgentScorecardMetrics(ctx context.Context, tenantID string, windowStart, windowEnd time.Time, limit int, agentName string) ([]models.AgentScorecardMetrics, error)
 }
 
 func NewService(pg *store.PostgresStore) *Service {

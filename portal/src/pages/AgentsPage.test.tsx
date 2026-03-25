@@ -1,142 +1,111 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import React from 'react'
-
-// AgentsPage uses useQuery directly for the traces fetch (not a named hook),
-// and useOverview from hooks/api. We mock both.
-vi.mock('../hooks/api', () => ({
-  useOverview: vi.fn(),
-}))
-
-// AgentsPage also uses @tanstack/react-query's useQuery for its internal traces fetch
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: vi.fn(),
-}))
-
+import { fireEvent, render, screen } from '@testing-library/react'
 import AgentsPage from './AgentsPage'
-import { useOverview } from '../hooks/api'
-import { useQuery } from '@tanstack/react-query'
 
-const mockUseOverview = vi.mocked(useOverview)
-const mockUseQuery = vi.mocked(useQuery)
+vi.mock('../hooks/api', () => ({
+  useAgentScorecards: vi.fn(),
+  useAgentScorecard: vi.fn(),
+}))
 
-const MOCK_TRACES_ITEMS = [
+import { useAgentScorecard, useAgentScorecards } from '../hooks/api'
+
+const mockUseAgentScorecards = vi.mocked(useAgentScorecards)
+const mockUseAgentScorecard = vi.mocked(useAgentScorecard)
+
+const scorecards = [
   {
-    id: 'aabbccdd-0001-0002-0003-000400050006',
-    root_span_name: 'crew_run',
-    framework: 'crewai',
-    start_time: '2024-03-01T10:00:00Z',
-    duration_ns: 1_000_000_000,
-    span_count: 4,
-    total_tokens: 1200,
-    total_cost_usd: 0.001500,
-    status: 'ok',
+    agent_id: 'support-bot',
+    agent_name: 'support-bot',
+    framework: 'openai_agents',
+    app_name: 'ops-ui',
+    environment: 'production',
+    release_tag: '2026.04',
+    run_count: 42,
+    total_cost_usd: 4.25,
+    total_tokens: 52000,
+    avg_latency_ms: 410.5,
+    eval_count: 6,
+    overall_score: 88.4,
+    risk_level: 'low',
+    trend: { previous_overall_score: 81.2, current_overall_score: 88.4, delta: 7.2, direction: 'improving' },
+    components: [
+      { key: 'reliability', label: 'Reliability', score: 92, weight: 0.3, severity: 'low', summary: '4.0% run errors with 2 fallback events across 42 runs' },
+      { key: 'policy_risk', label: 'Policy Risk', score: 84, weight: 0.2, severity: 'low', summary: '2 policy blocks, 1 redactions, 0 budget denials' },
+      { key: 'cost_efficiency', label: 'Cost Efficiency', score: 80, weight: 0.15, severity: 'medium', summary: '$0.0817 per 1K tokens with 410.5ms average latency' },
+      { key: 'regression_risk', label: 'Regression Risk', score: 90, weight: 0.2, severity: 'low', summary: '6 evals, latest 91.0, recent delta 3.20' },
+      { key: 'release_health', label: 'Release Health', score: 88, weight: 0.15, severity: 'low', summary: '10 rollout events, 8.0% error rate, 0 auto-pauses' },
+    ],
+    recommended_actions: ['Maintain the current release posture and monitor for regressions.'],
+    generated_at: '2026-03-25T12:00:00Z',
   },
   {
-    id: 'bbccddee-0002-0003-0004-000500060007',
-    root_span_name: 'graph_exec',
+    agent_id: 'billing-agent',
+    agent_name: 'billing-agent',
     framework: 'langgraph',
-    start_time: '2024-03-01T10:01:00Z',
-    duration_ns: 500_000_000,
-    span_count: 2,
-    total_tokens: 600,
-    total_cost_usd: 0.000750,
-    status: 'ok',
+    app_name: 'billing-ui',
+    environment: 'staging',
+    release_tag: 'candidate-7',
+    run_count: 16,
+    total_cost_usd: 6.75,
+    total_tokens: 14000,
+    avg_latency_ms: 930.2,
+    eval_count: 1,
+    overall_score: 58.1,
+    risk_level: 'high',
+    trend: { previous_overall_score: 64.4, current_overall_score: 58.1, delta: -6.3, direction: 'declining' },
+    components: [
+      { key: 'reliability', label: 'Reliability', score: 61, weight: 0.3, severity: 'high', summary: '22.0% run errors with 4 fallback events across 16 runs' },
+      { key: 'policy_risk', label: 'Policy Risk', score: 55, weight: 0.2, severity: 'high', summary: 'No policy or budget decision evidence recorded in the scoring window.' },
+      { key: 'cost_efficiency', label: 'Cost Efficiency', score: 44, weight: 0.15, severity: 'high', summary: '$0.4821 per 1K tokens with 930.2ms average latency' },
+      { key: 'regression_risk', label: 'Regression Risk', score: 52, weight: 0.2, severity: 'high', summary: '1 evals, latest 52.0, recent delta -6.00' },
+      { key: 'release_health', label: 'Release Health', score: 49, weight: 0.15, severity: 'high', summary: '6 rollout events, 35.0% error rate, 1 auto-pauses' },
+    ],
+    recommended_actions: ['Pause or narrow canaries until rollout error rates stabilize.'],
+    generated_at: '2026-03-25T12:00:00Z',
   },
 ]
-
-const MOCK_OVERVIEW = {
-  total_traces: 150,
-  active_agents: 3,
-  total_cost_usd: 2.5,
-  total_tokens: 500000,
-  error_rate: 0.01,
-  avg_latency_ms: 300,
-  spans_per_second: 5,
-  framework_counts: {
-    crewai: 80,
-    langgraph: 40,
-    google_adk: 15,
-    openai_agents: 10,
-    claude_agents: 5,
-  },
-}
 
 describe('AgentsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-  })
-
-  it('renders 5 framework cards', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseQuery.mockReturnValue({ data: { items: MOCK_TRACES_ITEMS }, isLoading: false } as any)
-    render(<AgentsPage />)
-    // Framework names appear in cards and possibly in activity table rows
-    expect(screen.getAllByText(/crewai/i).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText(/langgraph/i).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/google.adk/i)).toBeInTheDocument()
-    expect(screen.getByText(/openai.agents/i)).toBeInTheDocument()
-    expect(screen.getByText(/claude.agents/i)).toBeInTheDocument()
-  })
-
-  it('framework card shows trace count from mocked useOverview data', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseQuery.mockReturnValue({ data: { items: [] }, isLoading: false } as any)
-    render(<AgentsPage />)
-    // crewai count = 80
-    expect(screen.getByText('80')).toBeInTheDocument()
-    // langgraph count = 40
-    expect(screen.getByText('40')).toBeInTheDocument()
-  })
-
-  it('framework card shows percentage of total', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseQuery.mockReturnValue({ data: { items: [] }, isLoading: false } as any)
-    render(<AgentsPage />)
-    // crewai = 80/150 = 53%
-    expect(screen.getByText('53% of total')).toBeInTheDocument()
-  })
-
-  it('renders recent activity table with trace rows', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseQuery.mockReturnValue({ data: { items: MOCK_TRACES_ITEMS }, isLoading: false } as any)
-    render(<AgentsPage />)
-    expect(screen.getByText('crew_run')).toBeInTheDocument()
-    expect(screen.getByText('graph_exec')).toBeInTheDocument()
-  })
-
-  it('loading state shows loading indicator in recent activity', () => {
-    mockUseOverview.mockReturnValue({ data: undefined, isLoading: true } as any)
-    mockUseQuery.mockReturnValue({ data: undefined, isLoading: true } as any)
-    render(<AgentsPage />)
-    expect(screen.getByText('loading…')).toBeInTheDocument()
-  })
-
-  it('empty state renders no activity message when traces are empty', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseQuery.mockReturnValue({ data: { items: [] }, isLoading: false } as any)
-    render(<AgentsPage />)
-    expect(screen.getByText(/no agent activity yet/i)).toBeInTheDocument()
-  })
-
-  it('framework cards display framework name from server response (not hardcoded client label)', () => {
-    // The overview data drives card counts — verify they match what the server returns
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseQuery.mockReturnValue({ data: { items: [] }, isLoading: false } as any)
-    render(<AgentsPage />)
-    // google_adk count = 15
-    expect(screen.getByText('15')).toBeInTheDocument()
-  })
-
-  it('multi-tenancy: renders zero counts when overview returns no framework_counts', () => {
-    mockUseOverview.mockReturnValue({
-      data: { ...MOCK_OVERVIEW, framework_counts: {}, total_traces: 0 },
+    mockUseAgentScorecards.mockReturnValue({
+      data: { items: scorecards, total: 2, has_more: false },
       isLoading: false,
+      error: null,
     } as any)
-    mockUseQuery.mockReturnValue({ data: { items: [] }, isLoading: false } as any)
+    mockUseAgentScorecard.mockImplementation((agentId: string) => ({
+      data: scorecards.find(item => item.agent_id === agentId) ?? scorecards[0],
+      isLoading: false,
+      error: null,
+    } as any))
+  })
+
+  it('renders scorecard summary cards and selected agent detail', () => {
     render(<AgentsPage />)
-    // All 5 framework cards should show 0
-    const zeros = screen.getAllByText('0')
-    expect(zeros.length).toBeGreaterThanOrEqual(5)
+    expect(screen.getByText('Agent Scorecards')).toBeInTheDocument()
+    expect(screen.getAllByText('support-bot')[0]).toBeInTheDocument()
+    expect(screen.getByText('billing-agent')).toBeInTheDocument()
+    expect(screen.getByText('AVERAGE SCORE')).toBeInTheDocument()
+    expect(screen.getAllByText('88.4')[0]).toBeInTheDocument()
+    expect(screen.getByText(/maintain the current release posture/i)).toBeInTheDocument()
+  })
+
+  it('switches drill-down when a different agent card is selected', () => {
+    render(<AgentsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /billing-agent/i }))
+    expect(screen.getByText(/candidate-7/i)).toBeInTheDocument()
+    expect(screen.getByText(/pause or narrow canaries until rollout error rates stabilize/i)).toBeInTheDocument()
+    expect(screen.getByText('49.0')).toBeInTheDocument()
+  })
+
+  it('shows empty state when no scorecards are returned', () => {
+    mockUseAgentScorecards.mockReturnValue({
+      data: { items: [], total: 0, has_more: false },
+      isLoading: false,
+      error: null,
+    } as any)
+    mockUseAgentScorecard.mockReturnValue({ data: undefined, isLoading: false, error: null } as any)
+    render(<AgentsPage />)
+    expect(screen.getByText(/No scored agents yet/i)).toBeInTheDocument()
   })
 })

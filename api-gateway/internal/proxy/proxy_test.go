@@ -368,11 +368,57 @@ func TestParserFor_Unknown(t *testing.T) {
 
 func TestProviderRouter_ResolveIncludesFallback(t *testing.T) {
 	router := NewProviderRouter()
-	candidates := router.Resolve("tenant-1", ProviderOpenAI, "gpt-4o", "/v1/chat/completions")
+	candidates := router.Resolve(context.Background(), RouteRequest{
+		TenantID: "tenant-1",
+		Provider: ProviderOpenAI,
+		Model:    "gpt-4o",
+		Path:     "/v1/chat/completions",
+	})
 	require.Len(t, candidates, 2)
 	assert.Equal(t, "primary", candidates[0].Source)
 	assert.Equal(t, "gpt-4o-mini", candidates[1].Model)
 	assert.Equal(t, "fallback", candidates[1].Source)
+}
+
+type staticRolloutResolver struct {
+	assignment models.RolloutAssignment
+}
+
+func (s staticRolloutResolver) Resolve(_ context.Context, _ models.RolloutPreviewRequest) (models.RolloutAssignment, error) {
+	return s.assignment, nil
+}
+
+func TestProviderRouter_ResolveCanaryModelRollout(t *testing.T) {
+	router := NewProviderRouter(staticRolloutResolver{
+		assignment: models.RolloutAssignment{
+			Selected:       true,
+			RuleID:         9,
+			RuleName:       "gpt-4o canary",
+			TargetType:     models.RolloutTargetModel,
+			TargetID:       "gpt-4o",
+			Variant:        "canary",
+			AssignmentKey:  "tenant-1|session-1",
+			Bucket:         4,
+			ControlModel:   "gpt-4o",
+			CandidateModel: "gpt-4.1-mini",
+		},
+	})
+	candidates := router.Resolve(context.Background(), RouteRequest{
+		TenantID:    "tenant-1",
+		Provider:    ProviderOpenAI,
+		Model:       "gpt-4o",
+		Path:        "/v1/chat/completions",
+		Environment: "staging",
+		App:         "ops-ui",
+		Session:     "session-1",
+	})
+	require.Len(t, candidates, 3)
+	assert.Equal(t, "rollout_canary", candidates[0].Source)
+	assert.Equal(t, "gpt-4.1-mini", candidates[0].Model)
+	require.NotNil(t, candidates[0].RolloutAssignment)
+	assert.Equal(t, int64(9), candidates[0].RolloutAssignment.RuleID)
+	assert.Equal(t, "rollout_control", candidates[1].Source)
+	assert.Equal(t, "gpt-4o", candidates[1].Model)
 }
 
 func TestProviderRouter_ApplyGoogleFallbackRewritesPathAndBody(t *testing.T) {

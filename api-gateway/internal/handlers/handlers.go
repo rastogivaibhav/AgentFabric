@@ -22,6 +22,7 @@ import (
 	"github.com/agentfabric/api-gateway/internal/pricing"
 	"github.com/agentfabric/api-gateway/internal/prompts"
 	"github.com/agentfabric/api-gateway/internal/proxy"
+	"github.com/agentfabric/api-gateway/internal/rollouts"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
 	"github.com/go-chi/chi/v5"
@@ -576,6 +577,70 @@ func (h *Handler) PromotePromptRelease(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, release)
 }
 
+func (h *Handler) ListRollouts(w http.ResponseWriter, r *http.Request) {
+	service := rollouts.NewService(h.pg)
+	items, err := service.ListRules(r.Context(), tenantFromCtx(r))
+	if err != nil {
+		h.logger.Error("list rollouts", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
+}
+
+func (h *Handler) UpsertRolloutRule(w http.ResponseWriter, r *http.Request) {
+	var rule models.RolloutRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	service := rollouts.NewService(h.pg)
+	saved, err := service.UpsertRule(r.Context(), tenantFromCtx(r), actorFromCtx(r), rule)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "rollouts", map[bool]string{true: "update", false: "create"}[rule.ID > 0], "rollout_rule", strconv.FormatInt(saved.ID, 10), "success", saved)
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (h *Handler) PreviewRollout(w http.ResponseWriter, r *http.Request) {
+	var req models.RolloutPreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	req.TenantID = tenantFromCtx(r)
+	service := rollouts.NewService(h.pg)
+	preview, err := service.Preview(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "preview failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (h *Handler) UpdateRolloutStatus(w http.ResponseWriter, r *http.Request) {
+	ruleID, err := strconv.ParseInt(chi.URLParam(r, "rolloutId"), 10, 64)
+	if err != nil || ruleID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid rollout id")
+		return
+	}
+	var req models.RolloutStatusUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	service := rollouts.NewService(h.pg)
+	updated, err := service.UpdateStatus(r.Context(), tenantFromCtx(r), ruleID, req.Status, actorFromCtx(r))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "rollouts", "status_update", "rollout_rule", strconv.FormatInt(updated.ID, 10), "success", updated)
+	writeJSON(w, http.StatusOK, updated)
+}
+
 func (h *Handler) GetTraceCost(w http.ResponseWriter, r *http.Request) {
 	traceID := chi.URLParam(r, "traceId")
 	spans, err := h.pg.GetTraceSpans(r.Context(), traceID, tenantFromCtx(r))
@@ -687,6 +752,46 @@ func (h *Handler) GetAgentMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (h *Handler) ListAgentScorecards(w http.ResponseWriter, r *http.Request) {
+	since := 24 * time.Hour
+	if s := strings.TrimSpace(r.URL.Query().Get("since")); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			since = d
+		}
+	}
+	limit := parseIntOr(r.URL.Query().Get("limit"), 25)
+	svc := evals.NewService(h.pg)
+	items, err := svc.ListAgentScorecards(r.Context(), tenantFromCtx(r), since, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models.Page[models.AgentScorecard]{
+		Items: items,
+		Total: int64(len(items)),
+	})
+}
+
+func (h *Handler) GetAgentScorecard(w http.ResponseWriter, r *http.Request) {
+	since := 24 * time.Hour
+	if s := strings.TrimSpace(r.URL.Query().Get("since")); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			since = d
+		}
+	}
+	svc := evals.NewService(h.pg)
+	card, err := svc.GetAgentScorecard(r.Context(), tenantFromCtx(r), chi.URLParam(r, "agentId"), since)
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "agent scorecard not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, card)
 }
 
 func (h *Handler) GetAgentTopology(w http.ResponseWriter, r *http.Request) {
@@ -808,18 +913,21 @@ func (h *Handler) GetFrameworkStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetCostReport(w http.ResponseWriter, r *http.Request) {
-	since := 24 * time.Hour
-	if s := r.URL.Query().Get("since"); s != "" {
-		if d, err := time.ParseDuration(s); err == nil {
-			since = d
-		}
-	}
-	rows, err := h.pg.GetCostReport(r.Context(), tenantFromCtx(r), since)
+	rows, err := h.pg.GetCostReport(r.Context(), tenantFromCtx(r), parseCostReportQuery(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, rows)
+}
+
+func (h *Handler) GetCostSpikes(w http.ResponseWriter, r *http.Request) {
+	report, err := h.pg.GetCostSpikeReport(r.Context(), tenantFromCtx(r), parseCostReportQuery(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 func (h *Handler) GetErrorReport(w http.ResponseWriter, r *http.Request) {
@@ -1405,6 +1513,27 @@ func parseIntOr(s string, def int) int {
 		return v
 	}
 	return def
+}
+
+func parseDurationOr(s string, def time.Duration) time.Duration {
+	if parsed, err := time.ParseDuration(strings.TrimSpace(s)); err == nil && parsed > 0 {
+		return parsed
+	}
+	return def
+}
+
+func parseCostReportQuery(r *http.Request) store.CostReportQuery {
+	query := r.URL.Query()
+	return store.CostReportQuery{
+		Since:       parseDurationOr(query.Get("since"), 24*time.Hour),
+		AppName:     strings.TrimSpace(query.Get("app_name")),
+		Environment: strings.TrimSpace(query.Get("environment")),
+		Provider:    strings.TrimSpace(query.Get("provider")),
+		Model:       strings.TrimSpace(query.Get("model")),
+		PromptID:    strings.TrimSpace(query.Get("prompt_id")),
+		ReleaseTag:  strings.TrimSpace(query.Get("release_tag")),
+		Limit:       parseIntOr(query.Get("limit"), 100),
+	}
 }
 
 func (h *Handler) repriceSpan(sp *models.Span) {

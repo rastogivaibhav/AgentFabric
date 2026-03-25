@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
 import React from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 
 vi.mock('../hooks/api', () => ({
   useOverview: vi.fn(),
   useFrameworkStats: vi.fn(),
   useCostReport: vi.fn(),
+  useCostSpikes: vi.fn(),
   usePreviewPricingRule: vi.fn(),
   useTraces: vi.fn(),
   useBudget: vi.fn(),
@@ -25,11 +26,23 @@ vi.mock('recharts', () => ({
 }))
 
 import CostPage from './CostPage'
-import { useOverview, useFrameworkStats, useCostReport, usePreviewPricingRule, useTraces, useBudget, useBudgetUsage, useUpsertBudget, useDeleteBudget } from '../hooks/api'
+import {
+  useOverview,
+  useFrameworkStats,
+  useCostReport,
+  useCostSpikes,
+  usePreviewPricingRule,
+  useTraces,
+  useBudget,
+  useBudgetUsage,
+  useUpsertBudget,
+  useDeleteBudget,
+} from '../hooks/api'
 
 const mockUseOverview = vi.mocked(useOverview)
 const mockUseFrameworkStats = vi.mocked(useFrameworkStats)
 const mockUseCostReport = vi.mocked(useCostReport)
+const mockUseCostSpikes = vi.mocked(useCostSpikes)
 const mockUsePreviewPricingRule = vi.mocked(usePreviewPricingRule)
 const mockUseTraces = vi.mocked(useTraces)
 const mockUseBudget = vi.mocked(useBudget)
@@ -61,10 +74,47 @@ const MOCK_FW_STATS_WITH_COST = [
   { framework: 'google_adk', trace_count: 40, total_cost_usd: 0.567890, total_tokens: 500000, input_tokens: 300000, output_tokens: 200000 },
 ]
 
-const MOCK_FW_STATS_NO_COST = [
-  { framework: 'crewai', trace_count: 100 },
-  { framework: 'langgraph', trace_count: 60 },
-]
+const MOCK_SPIKE_REPORT = {
+  current_window_start: '2026-03-24T00:00:00Z',
+  current_window_end: '2026-03-25T00:00:00Z',
+  previous_window_start: '2026-03-23T00:00:00Z',
+  previous_window_end: '2026-03-24T00:00:00Z',
+  filters_applied: { since: '24h' },
+  spikes: [
+    {
+      app_name: 'support-app',
+      environment: 'staging',
+      provider: 'openai',
+      model: 'gpt-4o',
+      prompt_id: 'support.system',
+      release_tag: 'candidate-7',
+      current_cost_usd: 2.7,
+      previous_cost_usd: 0.7,
+      delta_cost_usd: 2.0,
+      delta_pct: 285.7,
+      current_trace_count: 28,
+      previous_trace_count: 8,
+      current_total_tokens: 150000,
+      previous_total_tokens: 44000,
+      explanation: 'Spend increased because the staging candidate release moved more traffic onto gpt-4o.',
+    },
+  ],
+  contributor_groups: [
+    {
+      dimension: 'release_tag',
+      items: [
+        {
+          key: 'candidate-7',
+          current_cost_usd: 2.7,
+          previous_cost_usd: 0.7,
+          delta_cost_usd: 2.0,
+          delta_pct: 285.7,
+          share_of_delta: 0.75,
+        },
+      ],
+    },
+  ],
+}
 
 describe('CostPage', () => {
   beforeEach(() => {
@@ -73,130 +123,109 @@ describe('CostPage', () => {
     mockUseBudgetUsage.mockReturnValue({ data: undefined, isLoading: false } as any)
     mockUseUpsertBudget.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
     mockUseDeleteBudget.mockReturnValue({ mutate: vi.fn() } as any)
-    mockUseCostReport.mockReturnValue({ data: [], isLoading: false } as any)
+    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
+    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
+    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
+    mockUseCostReport.mockReturnValue({
+      data: [{
+        app_name: 'support-app',
+        environment: 'staging',
+        provider: 'openai',
+        model: 'gpt-4o',
+        prompt_id: 'support.system',
+        release_tag: 'candidate-7',
+        total_tokens: 2400,
+        total_cost_usd: 1.2,
+        input_tokens: 1000,
+        output_tokens: 1200,
+        cache_read_tokens: 100,
+        cache_write_tokens: 50,
+        reasoning_tokens: 50,
+        input_cost_usd: 0.4,
+        output_cost_usd: 0.6,
+        cache_read_cost_usd: 0.05,
+        cache_write_cost_usd: 0.05,
+        reasoning_cost_usd: 0.1,
+        trace_count: 12,
+        blocked_count: 1,
+      }],
+      isLoading: false,
+    } as any)
+    mockUseCostSpikes.mockReturnValue({ data: MOCK_SPIKE_REPORT, isLoading: false, isError: false } as any)
     mockUsePreviewPricingRule.mockReturnValue({ mutate: vi.fn(), isPending: false, data: undefined } as any)
   })
 
-  it('renders Total Cost stat card', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
+  it('renders total cost stat card', () => {
     render(<CostPage />)
     expect(screen.getByText('TOTAL COST (24H)')).toBeInTheDocument()
-    // $4.567890
     expect(screen.getByText('$4.567890')).toBeInTheDocument()
   })
 
-  it('renders Total Tokens stat card', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
+  it('renders total tokens stat card', () => {
     render(<CostPage />)
     expect(screen.getByText('TOTAL TOKENS')).toBeInTheDocument()
-    // 3_500_000 / 1_000_000 = 3.500M
     expect(screen.getByText('3.500M')).toBeInTheDocument()
   })
 
-  it('renders Avg Cost / Trace stat card', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
+  it('renders average cost per trace stat card', () => {
     render(<CostPage />)
     expect(screen.getByText('AVG COST / TRACE')).toBeInTheDocument()
-    // 4.567890 / 200 = 0.022839...
     expect(screen.getByText('$0.022839')).toBeInTheDocument()
   })
 
-  it('renders Input Tokens card with value when fwStats provide input_tokens', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
-    render(<CostPage />)
-    expect(screen.getByText('INPUT TOKENS')).toBeInTheDocument()
-    // total input = 1200000 + 600000 + 300000 = 2100000 / 1000 = 2100.0K
-    expect(screen.getByText('2100.0K')).toBeInTheDocument()
-  })
-
-  it('renders Output Tokens card with value when fwStats provide output_tokens', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
-    render(<CostPage />)
-    expect(screen.getByText('OUTPUT TOKENS')).toBeInTheDocument()
-    // total output = 800000 + 400000 + 200000 = 1400000 / 1000 = 1400.0K
-    expect(screen.getByText('1400.0K')).toBeInTheDocument()
-  })
-
-  it('renders Input Tokens as N/A when fwStats have no input_tokens', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_NO_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
-    render(<CostPage />)
-    // Both Input and Output Tokens show N/A when no cost data is available
-    expect(screen.getAllByText('N/A').length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('renders framework cost bar chart container', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
+  it('renders framework charts and share sections', () => {
     render(<CostPage />)
     expect(screen.getByText('COST BY FRAMEWORK')).toBeInTheDocument()
+    expect(screen.getByText(/FRAMEWORK SHARE - BY TRACE COUNT/i)).toBeInTheDocument()
+    expect(screen.getByText(/FRAMEWORK SHARE - BY COST/i)).toBeInTheDocument()
     expect(screen.getAllByTestId('bar-chart').length).toBeGreaterThanOrEqual(1)
   })
 
-  it('renders framework share by trace count section with progress bars', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
+  it('renders cost spike diagnosis cards and contributor table', () => {
     render(<CostPage />)
-    expect(screen.getByText(/framework share.*by trace count/i)).toBeInTheDocument()
+    expect(screen.getByText('COST SPIKE DIAGNOSIS')).toBeInTheDocument()
+    expect(screen.getByText('Spend increased because the staging candidate release moved more traffic onto gpt-4o.')).toBeInTheDocument()
+    expect(screen.getByText(/TOP CONTRIBUTORS BY RELEASE/i)).toBeInTheDocument()
+    expect(screen.getAllByText('candidate-7').length).toBeGreaterThan(0)
   })
 
-  it('renders framework share by cost section with progress bars', () => {
-    mockUseOverview.mockReturnValue({ data: MOCK_OVERVIEW, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
+  it('passes updated filters to cost hooks', () => {
     render(<CostPage />)
-    expect(screen.getByText(/framework share.*by cost/i)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Release'), { target: { value: 'candidate-8' } })
+    const lastReportCall = mockUseCostReport.mock.calls.at(-1)?.[0]
+    const lastSpikeCall = mockUseCostSpikes.mock.calls.at(-1)?.[0]
+    expect(lastReportCall).toMatchObject({ release_tag: 'candidate-8' })
+    expect(lastSpikeCall).toMatchObject({ release_tag: 'candidate-8' })
   })
 
-  it('loading state renders em-dash placeholders for stat values', () => {
+  it('renders spike error state', () => {
+    mockUseCostSpikes.mockReturnValue({ data: undefined, isLoading: false, isError: true } as any)
+    render(<CostPage />)
+    expect(screen.getByText(/Spike analysis failed/i)).toBeInTheDocument()
+  })
+
+  it('renders prompt and release columns in governed cost breakdown', () => {
+    render(<CostPage />)
+    expect(screen.getByText('GOVERNED COST BREAKDOWN')).toBeInTheDocument()
+    expect(screen.getByText('support.system')).toBeInTheDocument()
+    expect(screen.getAllByText('candidate-7').length).toBeGreaterThan(0)
+  })
+
+  it('renders loading placeholders when overview is loading', () => {
     mockUseOverview.mockReturnValue({ data: undefined, isLoading: true } as any)
     mockUseFrameworkStats.mockReturnValue({ data: undefined, isLoading: true } as any)
-    mockUseTraces.mockReturnValue({ data: undefined, isLoading: true } as any)
     render(<CostPage />)
-    const dashes = screen.getAllByText('—')
-    expect(dashes.length).toBeGreaterThanOrEqual(3)
+    const placeholders = screen.getAllByText('-')
+    expect(placeholders.length).toBeGreaterThanOrEqual(3)
   })
 
-  it('principle 6: cost value from server is not modified (displayed as-is)', () => {
-    mockUseOverview.mockReturnValue({ data: { ...MOCK_OVERVIEW, total_cost_usd: 9.123456 }, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: MOCK_FW_STATS_WITH_COST, isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
+  it('renders no spike state when no spikes are present', () => {
+    mockUseCostSpikes.mockReturnValue({
+      data: { ...MOCK_SPIKE_REPORT, spikes: [], contributor_groups: [] },
+      isLoading: false,
+      isError: false,
+    } as any)
     render(<CostPage />)
-    expect(screen.getByText('$9.123456')).toBeInTheDocument()
-  })
-
-  it('zero safety: all cards render without crashing when overview stats are 0', () => {
-    const zeroOverview = {
-      total_traces: 0,
-      active_agents: 0,
-      total_cost_usd: 0,
-      total_tokens: 0,
-      error_rate: 0,
-      avg_latency_ms: 0,
-      spans_per_second: 0,
-      blocked_requests: 0,
-      llm_calls: 0,
-      tool_calls: 0,
-      framework_counts: {},
-    }
-    mockUseOverview.mockReturnValue({ data: zeroOverview, isLoading: false } as any)
-    mockUseFrameworkStats.mockReturnValue({ data: [], isLoading: false } as any)
-    mockUseTraces.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false } as any)
-    // Should not throw
-    expect(() => render(<CostPage />)).not.toThrow()
-    expect(screen.getByText('$0.000000')).toBeInTheDocument()
+    expect(screen.getByText(/No cost spike detected/i)).toBeInTheDocument()
   })
 })

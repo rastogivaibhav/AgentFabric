@@ -19,15 +19,30 @@ vi.mock('../hooks/auth', () => ({
 vi.mock('../hooks/api', () => ({
   usePrompts: vi.fn(),
   usePromotePromptRelease: vi.fn(),
+  useRollouts: vi.fn(),
+  useUpsertRolloutRule: vi.fn(),
+  usePreviewRollout: vi.fn(),
+  useUpdateRolloutStatus: vi.fn(),
 }))
 
 import { hasRole, useAuth } from '../hooks/auth'
-import { usePromotePromptRelease, usePrompts } from '../hooks/api'
+import {
+  usePreviewRollout,
+  usePromotePromptRelease,
+  usePrompts,
+  useRollouts,
+  useUpdateRolloutStatus,
+  useUpsertRolloutRule,
+} from '../hooks/api'
 
 const mockUseAuth = vi.mocked(useAuth)
 const mockHasRole = vi.mocked(hasRole)
 const mockUsePrompts = vi.mocked(usePrompts)
 const mockUsePromotePromptRelease = vi.mocked(usePromotePromptRelease)
+const mockUseRollouts = vi.mocked(useRollouts)
+const mockUseUpsertRolloutRule = vi.mocked(useUpsertRolloutRule)
+const mockUsePreviewRollout = vi.mocked(usePreviewRollout)
+const mockUseUpdateRolloutStatus = vi.mocked(useUpdateRolloutStatus)
 
 describe('PromptReleasePage', () => {
   beforeEach(() => {
@@ -48,6 +63,31 @@ describe('PromptReleasePage', () => {
       error: null,
     } as any)
     mockUsePromotePromptRelease.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
+    mockUseRollouts.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 8,
+            name: 'Prompt canary',
+            target_type: 'prompt_release',
+            target_id: 'support-bot.system',
+            environment: 'development',
+            percentage: 10,
+            control_release_tag: 'stable-2026.03',
+            candidate_release_tag: 'candidate-2026.04',
+            status: 'active',
+            recent_requests: 12,
+            recent_error_rate: 0.08,
+          },
+        ],
+        count: 1,
+      },
+      isLoading: false,
+      error: null,
+    } as any)
+    mockUseUpsertRolloutRule.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
+    mockUsePreviewRollout.mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, data: null } as any)
+    mockUseUpdateRolloutStatus.mockReturnValue({ mutate: vi.fn(), isPending: false } as any)
   })
 
   it('shows selected prompt details', () => {
@@ -76,5 +116,41 @@ describe('PromptReleasePage', () => {
       notes: '',
       promotion_reason: 'reduce escalations',
     })
+  })
+
+  it('previews and pauses a prompt rollout', () => {
+    const previewMutate = vi.fn()
+    const updateStatusMutate = vi.fn()
+    mockUsePreviewRollout.mockReturnValue({
+      mutate: previewMutate,
+      isPending: false,
+      isError: false,
+      data: {
+        assignment: {
+          rule_id: 8,
+          rule_name: 'Prompt canary',
+          variant: 'canary',
+          bucket: 7,
+          assignment_key: 'session-42',
+        },
+      },
+    } as any)
+    mockUseUpdateRolloutStatus.mockReturnValue({ mutate: updateStatusMutate, isPending: false } as any)
+
+    render(<MemoryRouter><PromptReleasePage /></MemoryRouter>)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Rollout' }))
+    expect(previewMutate).toHaveBeenCalledWith({
+      prompt_id: 'support-bot.system',
+      prompt_environment: 'development',
+      environment: 'development',
+      app: 'ops-ui',
+      session: 'session-42',
+      assignment_key: '',
+    })
+    expect(screen.getByText(/Canary selected/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+    expect(updateStatusMutate).toHaveBeenCalledWith({ id: 8, status: 'paused' })
   })
 })

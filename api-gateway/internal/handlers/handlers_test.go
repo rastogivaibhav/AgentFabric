@@ -5,6 +5,7 @@ package handlers
 // Run: go test ./internal/handlers/...
 
 import (
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -256,6 +257,24 @@ func TestParseIntOr_DefaultOnEmpty(t *testing.T) {
 	result := parseIntOr("", 42)
 	if result != 42 {
 		t.Errorf("empty string should return default 42, got %d", result)
+	}
+}
+
+func TestParseCostReportQuery_ReadsDimensionFilters(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/v1/analytics/cost?since=48h&app_name=support&environment=staging&provider=openai&model=gpt-4o&prompt_id=support.system&release_tag=candidate-7&limit=25", nil)
+	query := parseCostReportQuery(req)
+
+	if query.Since != 48*time.Hour {
+		t.Fatalf("expected since=48h, got %s", query.Since)
+	}
+	if query.AppName != "support" || query.Environment != "staging" || query.Provider != "openai" {
+		t.Fatalf("expected top-level filters to be parsed, got %+v", query)
+	}
+	if query.Model != "gpt-4o" || query.PromptID != "support.system" || query.ReleaseTag != "candidate-7" {
+		t.Fatalf("expected model/prompt/release filters to be parsed, got %+v", query)
+	}
+	if query.Limit != 25 {
+		t.Fatalf("expected limit to be parsed, got %d", query.Limit)
 	}
 }
 

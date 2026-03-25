@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { hasRole, useAuth } from '../hooks/auth'
-import { usePromotePromptRelease, usePrompts } from '../hooks/api'
+import { usePreviewRollout, usePromotePromptRelease, usePrompts, useRollouts, useUpdateRolloutStatus, useUpsertRolloutRule } from '../hooks/api'
 
 export default function PromptReleasePage() {
   const { promptId = '' } = useParams()
@@ -9,7 +9,11 @@ export default function PromptReleasePage() {
   const { user } = useAuth()
   const isAdmin = hasRole(user, ['admin'])
   const { data, isLoading, error } = usePrompts()
+  const { data: rolloutData } = useRollouts()
   const promote = usePromotePromptRelease()
+  const upsertRollout = useUpsertRolloutRule()
+  const previewRollout = usePreviewRollout()
+  const updateRolloutStatus = useUpdateRolloutStatus()
   const [form, setForm] = useState({
     environment: 'development',
     version: 1,
@@ -17,6 +21,20 @@ export default function PromptReleasePage() {
     status: 'active',
     notes: '',
     promotion_reason: '',
+  })
+  const [rolloutForm, setRolloutForm] = useState({
+    id: 0,
+    name: 'Prompt canary',
+    environment: 'development',
+    percentage: 10,
+    control_release_tag: '',
+    candidate_release_tag: '',
+  })
+  const [previewForm, setPreviewForm] = useState({
+    environment: 'development',
+    app: 'ops-ui',
+    session: 'session-42',
+    assignment_key: '',
   })
 
   const promptVersions = useMemo(
@@ -26,6 +44,10 @@ export default function PromptReleasePage() {
   const promptReleases = useMemo(
     () => (data?.releases ?? []).filter(item => item.prompt_id === decodedPromptID),
     [data, decodedPromptID],
+  )
+  const rolloutRules = useMemo(
+    () => (rolloutData?.items ?? []).filter(item => item.target_type === 'prompt_release' && item.target_id === decodedPromptID),
+    [rolloutData, decodedPromptID],
   )
 
   if (!isAdmin) {
@@ -50,6 +72,36 @@ export default function PromptReleasePage() {
       status: form.status.trim().toLowerCase() || 'active',
       notes: form.notes.trim(),
       promotion_reason: form.promotion_reason.trim(),
+    })
+  }
+
+  const saveRollout = () => {
+    upsertRollout.mutate({
+      id: rolloutForm.id || undefined,
+      name: rolloutForm.name.trim(),
+      target_type: 'prompt_release',
+      target_id: decodedPromptID,
+      environment: rolloutForm.environment.trim().toLowerCase(),
+      percentage: rolloutForm.percentage,
+      control_release_tag: rolloutForm.control_release_tag.trim(),
+      candidate_release_tag: rolloutForm.candidate_release_tag.trim(),
+      status: 'active',
+      conditions: {},
+      rollback_criteria: {
+        min_requests: '10',
+        max_error_rate_pct: '50',
+      },
+    })
+  }
+
+  const previewCurrentRollout = () => {
+    previewRollout.mutate({
+      prompt_id: decodedPromptID,
+      prompt_environment: previewForm.environment.trim().toLowerCase(),
+      environment: previewForm.environment.trim().toLowerCase(),
+      app: previewForm.app.trim(),
+      session: previewForm.session.trim(),
+      assignment_key: previewForm.assignment_key.trim(),
     })
   }
 
@@ -227,6 +279,115 @@ export default function PromptReleasePage() {
           </div>
         </div>
       </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 420px) 1fr', gap: 16, marginTop: 16 }}>
+        <div style={panelStyle}>
+          <div style={sectionLabel}>ROLLOUT CONTROL</div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <label style={labelStyle}>
+              Rule Name
+              <input value={rolloutForm.name} onChange={e => setRolloutForm(current => ({ ...current, name: e.target.value }))} style={inputStyle} />
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={labelStyle}>
+                Environment
+                <input value={rolloutForm.environment} onChange={e => setRolloutForm(current => ({ ...current, environment: e.target.value }))} style={inputStyle} />
+              </label>
+              <label style={labelStyle}>
+                Canary Percent
+                <input type="number" min={1} max={100} value={rolloutForm.percentage} onChange={e => setRolloutForm(current => ({ ...current, percentage: Number(e.target.value) }))} style={inputStyle} />
+              </label>
+            </div>
+            <label style={labelStyle}>
+              Control Release Tag
+              <input value={rolloutForm.control_release_tag} onChange={e => setRolloutForm(current => ({ ...current, control_release_tag: e.target.value }))} style={inputStyle} placeholder="stable-2026.03" />
+            </label>
+            <label style={labelStyle}>
+              Candidate Release Tag
+              <input value={rolloutForm.candidate_release_tag} onChange={e => setRolloutForm(current => ({ ...current, candidate_release_tag: e.target.value }))} style={inputStyle} placeholder="candidate-2026.04" />
+            </label>
+          </div>
+          <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+            <button style={primaryBtn} onClick={saveRollout} disabled={upsertRollout.isPending || !decodedPromptID || !rolloutForm.candidate_release_tag.trim()}>
+              {upsertRollout.isPending ? 'Saving...' : 'Save Rollout'}
+            </button>
+          </div>
+          {upsertRollout.isError && <div style={errorStyle}>Failed to save rollout rule.</div>}
+        </div>
+
+        <div style={panelStyle}>
+          <div style={sectionLabel}>ROLLOUT PREVIEW AND STATUS</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
+            <label style={labelStyle}>
+              Environment
+              <input value={previewForm.environment} onChange={e => setPreviewForm(current => ({ ...current, environment: e.target.value }))} style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              App
+              <input value={previewForm.app} onChange={e => setPreviewForm(current => ({ ...current, app: e.target.value }))} style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              Session
+              <input value={previewForm.session} onChange={e => setPreviewForm(current => ({ ...current, session: e.target.value }))} style={inputStyle} />
+            </label>
+            <label style={labelStyle}>
+              Assignment Key
+              <input value={previewForm.assignment_key} onChange={e => setPreviewForm(current => ({ ...current, assignment_key: e.target.value }))} style={inputStyle} placeholder="optional" />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <button style={primaryBtn} onClick={previewCurrentRollout} disabled={previewRollout.isPending}>
+              {previewRollout.isPending ? 'Previewing...' : 'Preview Rollout'}
+            </button>
+          </div>
+          {previewRollout.data?.assignment?.rule_id && (
+            <div style={healthPanelStyle}>
+              <div style={{ color: '#F8FAFC', fontSize: 12, fontWeight: 600 }}>
+                {previewRollout.data.assignment.variant === 'canary' ? 'Canary selected' : 'Control selected'}
+              </div>
+              <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 6 }}>
+                bucket {previewRollout.data.assignment.bucket} | assignment {previewRollout.data.assignment.assignment_key}
+              </div>
+            </div>
+          )}
+          <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+            {rolloutRules.length === 0 ? (
+              <div style={{ color: '#475569', fontSize: 12 }}>No rollout rules for this prompt yet.</div>
+            ) : rolloutRules.map(rule => (
+              <div key={rule.id} style={releaseCardStyle}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{rule.name}</div>
+                  <div style={{ color: rule.status === 'paused' ? '#FCA5A5' : '#10B981', fontSize: 11 }}>{rule.status}</div>
+                </div>
+                <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>
+                  {rule.percentage}% | control {rule.control_release_tag || 'n/a'} {'->'} canary {rule.candidate_release_tag || 'n/a'}
+                </div>
+                <div style={{ color: '#64748B', fontSize: 10, marginTop: 4 }}>
+                  {rule.recent_requests ?? 0} requests | {(Number(rule.recent_error_rate ?? 0) * 100).toFixed(1)}% error rate
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button style={secondaryBtnSmall} onClick={() => setRolloutForm({
+                    id: Number(rule.id ?? 0),
+                    name: rule.name,
+                    environment: rule.environment ?? 'development',
+                    percentage: rule.percentage,
+                    control_release_tag: rule.control_release_tag ?? '',
+                    candidate_release_tag: rule.candidate_release_tag ?? '',
+                  })}>
+                    Edit
+                  </button>
+                  <button
+                    style={secondaryBtnSmall}
+                    onClick={() => rule.id && updateRolloutStatus.mutate({ id: rule.id, status: rule.status === 'paused' ? 'active' : 'paused' })}
+                  >
+                    {rule.status === 'paused' ? 'Resume' : 'Pause'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -239,6 +400,7 @@ const labelStyle: CSSProperties = { display: 'grid', gap: 6, color: '#94A3B8', f
 const inputStyle: CSSProperties = { background: '#071525', border: '1px solid #0F1F35', borderRadius: 8, color: '#E2E8F0', padding: '10px 12px', fontSize: 12 }
 const textareaStyle: CSSProperties = { ...inputStyle, minHeight: 90, fontFamily: 'inherit', resize: 'vertical' }
 const primaryBtn: CSSProperties = { background: '#2563EB', color: '#F8FAFC', border: 'none', borderRadius: 8, padding: '10px 14px', fontSize: 12, cursor: 'pointer' }
+const secondaryBtnSmall: CSSProperties = { background: '#1E3A5F', color: '#F8FAFC', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 11, cursor: 'pointer' }
 const errorStyle: CSSProperties = { color: '#FCA5A5', fontSize: 12, marginTop: 12 }
 const backLinkStyle: CSSProperties = { color: '#60A5FA', fontSize: 12, textDecoration: 'none', alignSelf: 'flex-start' }
 const statCardStyle: CSSProperties = { border: '1px solid #0F1F35', borderRadius: 8, background: '#071525', padding: 10 }

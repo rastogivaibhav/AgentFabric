@@ -56,6 +56,7 @@ type fakeEvalStore struct {
 	listRunsErr   error
 	releaseRuns   map[string][]models.TraceEvalRun
 	releaseErr    error
+	scoreMetrics  []models.AgentScorecardMetrics
 }
 
 func (f *fakeEvalStore) LoadTraceViewInputs(_ context.Context, traceID, _ string) (*store.TraceViewInputs, error) {
@@ -88,6 +89,10 @@ func (f *fakeEvalStore) ListEvalRunsByRelease(_ context.Context, _ string, promp
 		key = promptID + "::" + promptEnvironment + "::" + releaseTag
 	}
 	return f.releaseRuns[key], nil
+}
+
+func (f *fakeEvalStore) ListAgentScorecardMetrics(context.Context, string, time.Time, time.Time, int, string) ([]models.AgentScorecardMetrics, error) {
+	return f.scoreMetrics, nil
 }
 
 func TestScoreTraceValidatesTraceID(t *testing.T) {
