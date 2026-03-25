@@ -1,0 +1,328 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "gauge", "name": "Gauge", "version": "" },
+    { "type": "panel", "id": "alertlist", "name": "Alert list", "version": "" }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+        "enable": true,
+        "expr": "changes(agentfabric_policy_decisions_total{result=\"deny\"}[1m]) > 0",
+        "hide": false,
+        "iconColor": "red",
+        "name": "Policy Block",
+        "step": "60s",
+        "titleFormat": "Policy block"
+      }
+    ]
+  },
+  "description": "AgentFabric — audit log chain health, PII redaction, policy enforcement, and compliance",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Platform Overview", "url": "/d/agentfabric-overview", "type": "dashboards" }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Audit Chain Health",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "0": { "color": "red", "index": 0, "text": "BROKEN" }, "1": { "color": "green", "index": 1, "text": "INTACT" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "agentfabric_audit_chain_valid", "legendFormat": "Chain" }
+      ],
+      "title": "Audit Chain Integrity",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "kube_deployment_spec_replicas{deployment=~\".*af-core.*\"}", "legendFormat": "af-core replicas" }
+      ],
+      "title": "af-core Replica Count",
+      "description": "MUST stay at 1. >1 replica breaks the audit hash chain (single-process Mutex). See runbook.",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["sum"] } },
+      "targets": [
+        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "increase(agentfabric_audit_entries_total[24h])", "legendFormat": "Entries" }
+      ],
+      "title": "Audit Entries Written (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 4,
+      "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "rate(agentfabric_audit_entries_total[5m]) * 60", "legendFormat": "entries/min" }
+      ],
+      "title": "Audit Entry Write Rate",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 101,
+      "title": "PII Redaction",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 10 }, { "color": "red", "value": 100 }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 14 },
+      "id": 5,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "rate(agentfabric_pii_redactions_total[5m]) * 60", "legendFormat": "PII/min" }
+      ],
+      "title": "PII Redactions (per minute)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 14 },
+      "id": 6,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["sum"] } },
+      "targets": [
+        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "increase(agentfabric_pii_redactions_total[24h])", "legendFormat": "24h total" }
+      ],
+      "title": "Total PII Redactions (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 20, "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "id": 7,
+      "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "uid": "agentfabric-prometheus" },
+          "expr": "sum(rate(agentfabric_pii_redactions_total[5m])) by (pii_type) * 60",
+          "legendFormat": "{{ pii_type }}"
+        }
+      ],
+      "title": "PII Redactions by Type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 20, "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "id": 8,
+      "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "uid": "agentfabric-prometheus" },
+          "expr": "sum(rate(agentfabric_pii_redactions_total[5m])) by (framework) * 60",
+          "legendFormat": "{{ framework }}"
+        }
+      ],
+      "title": "PII Redactions by Framework",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 102,
+      "title": "Policy Enforcement",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 } ] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 27 },
+      "id": 9,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "rate(agentfabric_policy_decisions_total{result=\"deny\"}[5m]) * 60", "legendFormat": "Blocks/min" }
+      ],
+      "title": "Policy Blocks (per minute)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 27 },
+      "id": 10,
+      "options": { "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        {
+          "datasource": { "uid": "agentfabric-prometheus" },
+          "expr": "100 * sum(rate(agentfabric_policy_decisions_total{result=\"allow\"}[5m])) / sum(rate(agentfabric_policy_decisions_total[5m]))",
+          "legendFormat": "Allow rate"
+        }
+      ],
+      "title": "Policy Allow Rate %",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 15, "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "id": 11,
+      "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "uid": "agentfabric-prometheus" },
+          "expr": "sum(rate(agentfabric_policy_decisions_total[5m])) by (result) * 60",
+          "legendFormat": "{{ result }}"
+        }
+      ],
+      "title": "Policy Decisions by Result (per minute)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 15, "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
+      "id": 12,
+      "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "uid": "agentfabric-prometheus" },
+          "expr": "sum(rate(agentfabric_policy_decisions_total{result=\"deny\"}[5m])) by (policy_name) * 60",
+          "legendFormat": "{{ policy_name }}"
+        }
+      ],
+      "title": "Policy Blocks by Policy Name",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["agentfabric", "audit", "compliance", "policy", "pii"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AgentFabric — Audit & Policy",
+  "uid": "agentfabric-audit",
+  "version": 1
+}

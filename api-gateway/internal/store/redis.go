@@ -84,6 +84,24 @@ func (r *RedisClient) Incr(ctx context.Context, key string) (int64, error) {
 	return r.client.Incr(ctx, key).Result()
 }
 
+// IncrWithExpiry atomically increments key and sets an expiry on first creation.
+// Implements middleware.RateLimitStore.
+func (r *RedisClient) IncrWithExpiry(ctx context.Context, key string, expiry time.Duration) (int64, error) {
+	pipe := r.client.Pipeline()
+	incrCmd := pipe.Incr(ctx, key)
+	pipe.Expire(ctx, key, expiry)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 0, err
+	}
+	return incrCmd.Val(), nil
+}
+
+// Ping checks the Redis connection with a 2-second timeout.
+// Used by the /healthz handler to detect degraded storage.
+func (r *RedisClient) Ping(ctx context.Context) error {
+	return r.client.Ping(ctx).Err()
+}
+
 func (r *RedisClient) Close() error {
 	return r.client.Close()
 }

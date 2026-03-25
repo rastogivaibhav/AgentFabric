@@ -5,9 +5,9 @@ import "time"
 // ─── Span ────────────────────────────────────────────────────────────────────
 
 type Span struct {
-	ID           string            `json:"id" db:"span_id"`
+	ID           string            `json:"span_id" db:"span_id"`
 	TraceID      string            `json:"trace_id" db:"trace_id"`
-	ParentID     string            `json:"parent_id,omitempty" db:"parent_span_id"`
+	ParentID     string            `json:"parent_span_id,omitempty" db:"parent_span_id"`
 	RunID        string            `json:"run_id" db:"run_id"`
 	Name         string            `json:"name" db:"name"`
 	Framework    string            `json:"framework" db:"framework"`
@@ -147,6 +147,56 @@ type Page[T any] struct {
 	Total      int64  `json:"total"`
 	NextCursor string `json:"next_cursor,omitempty"`
 	HasMore    bool   `json:"has_more"`
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+
+// User represents an AgentFabric platform user within a tenant.
+// Password is never serialised to JSON — use CreateUserRequest/UpdateUserRequest for writes.
+type User struct {
+	ID          string     `json:"user_id"`
+	TenantID    string     `json:"-"`
+	Username    string     `json:"username"`
+	Email       string     `json:"email"`
+	DisplayName string     `json:"display_name"`
+	Role        string     `json:"role"` // admin|editor|viewer
+	IsActive    bool       `json:"is_active"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+// CreateUserRequest is the payload for POST /api/v1/users.
+type CreateUserRequest struct {
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`     // admin|editor|viewer; default "viewer"
+	Password    string `json:"password"` // plaintext — hashed by store before persistence
+}
+
+// UpdateUserRequest is the payload for PUT /api/v1/users/{userId}.
+// Only non-nil fields are applied (partial update semantics).
+type UpdateUserRequest struct {
+	Email       *string `json:"email,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+	Role        *string `json:"role,omitempty"`
+	IsActive    *bool   `json:"is_active,omitempty"`
+	Password    *string `json:"password,omitempty"` // if set, rehashed and stored
+}
+
+// ─── Auth lookup ──────────────────────────────────────────────────────────────
+
+// UserRecord is the auth-layer view of a user row — includes the password hash
+// required for bcrypt comparison during password login.
+// It is separate from User (which is the public API type, password excluded).
+type UserRecord struct {
+	ID           string
+	Username     string
+	Email        string
+	DisplayName  string
+	Role         string
+	PasswordHash string
 }
 
 // ─── Live stream event ───────────────────────────────────────────────────────

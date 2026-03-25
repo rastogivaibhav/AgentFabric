@@ -1,19 +1,46 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { Outlet, NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Activity, GitBranch, Radio,
-  Bot, DollarSign, Server, Settings, Zap
+  LayoutDashboard, Activity, Radio,
+  Bot, DollarSign, Server, Zap, LogOut, User, Users, ClipboardList
 } from 'lucide-react'
+import { useAuth } from '../hooks/auth'
 
-const NAV = [
-  { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/live',         icon: Radio,           label: 'Live Stream', badge: 'LIVE' },
-  { to: '/traces',       icon: Activity,        label: 'Traces' },
-  { to: '/agents',       icon: Bot,             label: 'Agents' },
-  { to: '/cost',         icon: DollarSign,      label: 'Cost' },
-  { to: '/environments', icon: Server,          label: 'Environments' },
+// Role badge colours — kept subtle to match the dark theme.
+const ROLE_BADGE: Record<string, { bg: string; color: string; label: string }> = {
+  admin:  { bg: '#EF444420', color: '#EF4444', label: 'Admin'  },
+  editor: { bg: '#F59E0B20', color: '#F59E0B', label: 'Editor' },
+  viewer: { bg: '#47556920', color: '#64748B', label: 'Viewer' },
+}
+
+interface NavItem {
+  to: string
+  icon: React.ElementType
+  label: string
+  badge?: string
+  adminOnly?: true
+}
+
+const NAV: NavItem[] = [
+  { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'    },
+  { to: '/live',         icon: Radio,           label: 'Live Stream',  badge: 'LIVE' },
+  { to: '/traces',       icon: Activity,        label: 'Traces'        },
+  { to: '/agents',       icon: Bot,             label: 'Agents'        },
+  { to: '/cost',         icon: DollarSign,      label: 'Cost'          },
+  { to: '/environments', icon: Server,          label: 'Environments'  },
+  // Admin-only nav items — hidden from editors and viewers.
+  { to: '/users',        icon: Users,          label: 'Users',      adminOnly: true },
+  { to: '/audit',        icon: ClipboardList,  label: 'Audit Log',  adminOnly: true },
 ]
 
 export default function Layout() {
+  const { user, logout } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
+  // Filter out admin-only items for non-admins.
+  const visibleNav = NAV.filter(item => !item.adminOnly || isAdmin)
+
+  const roleBadge = user?.role ? (ROLE_BADGE[user.role] ?? ROLE_BADGE.viewer) : null
+
   return (
     <div style={{ display:'flex', height:'100vh', background:'#080C18', color:'#E2E8F0', fontFamily:"'JetBrains Mono',monospace", overflow:'hidden' }}>
       {/* Sidebar */}
@@ -33,7 +60,7 @@ export default function Layout() {
 
         {/* Nav */}
         <nav style={{ flex:1, padding:'16px 8px', overflowY:'auto' }}>
-          {NAV.map(({ to, icon: Icon, label, badge }) => (
+          {visibleNav.map(({ to, icon: Icon, label, badge }) => (
             <NavLink key={to} to={to} style={({ isActive }) => ({
               display:'flex', alignItems:'center', gap:10,
               padding:'9px 12px', borderRadius:6, marginBottom:2,
@@ -54,9 +81,46 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Footer */}
-        <div style={{ padding:'12px 16px', borderTop:'1px solid #0F1F35', fontSize:10, color:'#1E3A5F' }}>
-          v1.0.0 · © AgentFabric
+        {/* User info + role badge + logout */}
+        <div style={{ padding:'12px 16px', borderTop:'1px solid #0F1F35' }}>
+          {user ? (
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:24, height:24, background:'#1E3A5F', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <User size={12} color="#60A5FA" />
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:11, color:'#94A3B8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {user.email || user.name || user.sub}
+                </div>
+                {/* Role badge — shows Admin / Editor / Viewer */}
+                {roleBadge && (
+                  <div style={{
+                    display: 'inline-block',
+                    marginTop: 3,
+                    fontSize: 9,
+                    fontWeight: 600,
+                    letterSpacing: '0.1em',
+                    padding: '1px 6px',
+                    borderRadius: 3,
+                    background: roleBadge.bg,
+                    color: roleBadge.color,
+                    border: `1px solid ${roleBadge.color}40`,
+                  }}>
+                    {roleBadge.label.toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={logout}
+                title="Sign out"
+                style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', color:'#475569', flexShrink:0 }}
+              >
+                <LogOut size={13} />
+              </button>
+            </div>
+          ) : (
+            <div style={{ fontSize:10, color:'#1E3A5F' }}>v1.0.0 · © AgentFabric</div>
+          )}
         </div>
       </aside>
 

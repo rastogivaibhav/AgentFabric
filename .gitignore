@@ -32,6 +32,7 @@ agent-sdk/*.egg-info/
 !.env.example
 *.key
 *.pem
+*.crt
 
 # Docker
 *.tar

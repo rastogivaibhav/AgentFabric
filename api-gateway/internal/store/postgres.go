@@ -2,14 +2,19 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type PostgresStore struct {
@@ -37,109 +42,11 @@ func NewPostgresStore(dsn string, logger *zap.Logger) (*PostgresStore, error) {
 	}
 
 	s := &PostgresStore{pool: pool, logger: logger}
-	if err := s.migrate(ctx); err != nil {
-		return nil, fmt.Errorf("migration: %w", err)
-	}
+	// Schema is managed by golang-migrate: deploy/migrations/*.up.sql.
+	// runMigrations() in cmd/server/main.go applies all pending migrations
+	// at process startup before this store is created.
 	return s, nil
 }
-
-func (s *PostgresStore) migrate(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, schema)
-	return err
-}
-
-const schema = `
-CREATE TABLE IF NOT EXISTS tenants (
-    tenant_id   TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-INSERT INTO tenants (tenant_id, name) VALUES ('default', 'Default') ON CONFLICT DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS spans (
-    span_id         TEXT NOT NULL,
-    trace_id        TEXT NOT NULL,
-    parent_span_id  TEXT,
-    run_id          TEXT NOT NULL,
-    name            TEXT NOT NULL,
-    framework       TEXT NOT NULL DEFAULT 'unknown',
-    start_time_ns   BIGINT NOT NULL,
-    duration_ns     BIGINT NOT NULL DEFAULT 0,
-    status_code     SMALLINT NOT NULL DEFAULT 0,
-    status_msg      TEXT,
-    attributes      JSONB NOT NULL DEFAULT '{}',
-    events          JSONB NOT NULL DEFAULT '[]',
-    input_tokens    BIGINT NOT NULL DEFAULT 0,
-    output_tokens   BIGINT NOT NULL DEFAULT 0,
-    cost_usd        NUMERIC(12,8) NOT NULL DEFAULT 0,
-    tenant_id       TEXT NOT NULL DEFAULT 'default',
-    received_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (span_id, tenant_id)
-);
-CREATE INDEX IF NOT EXISTS idx_spans_trace     ON spans(trace_id, tenant_id);
-CREATE INDEX IF NOT EXISTS idx_spans_run       ON spans(run_id, tenant_id);
-CREATE INDEX IF NOT EXISTS idx_spans_framework ON spans(framework, tenant_id, received_at DESC);
-CREATE INDEX IF NOT EXISTS idx_spans_time      ON spans(received_at DESC, tenant_id);
-
-CREATE TABLE IF NOT EXISTS runs (
-    run_id          TEXT NOT NULL,
-    trace_id        TEXT NOT NULL,
-    parent_run_id   TEXT,
-    framework       TEXT NOT NULL DEFAULT 'unknown',
-    agent_name      TEXT NOT NULL DEFAULT 'unknown',
-    model           TEXT NOT NULL DEFAULT '',
-    start_time      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    end_time        TIMESTAMPTZ,
-    status          TEXT NOT NULL DEFAULT 'running',
-    total_tokens    BIGINT NOT NULL DEFAULT 0,
-    total_cost_usd  NUMERIC(12,8) NOT NULL DEFAULT 0,
-    metadata        JSONB NOT NULL DEFAULT '{}',
-    tenant_id       TEXT NOT NULL DEFAULT 'default',
-    PRIMARY KEY (run_id, tenant_id)
-);
-CREATE INDEX IF NOT EXISTS idx_runs_trace     ON runs(trace_id, tenant_id);
-CREATE INDEX IF NOT EXISTS idx_runs_framework ON runs(framework, tenant_id, start_time DESC);
-CREATE INDEX IF NOT EXISTS idx_runs_agent     ON runs(agent_name, tenant_id, start_time DESC);
-
-CREATE TABLE IF NOT EXISTS policy_audit_log (
-    id              BIGSERIAL PRIMARY KEY,
-    decision_id     TEXT NOT NULL UNIQUE,
-    trace_id        TEXT NOT NULL,
-    span_id         TEXT NOT NULL,
-    policy_name     TEXT NOT NULL,
-    result          TEXT NOT NULL,
-    reason          TEXT NOT NULL,
-    tenant_id       TEXT NOT NULL DEFAULT 'default',
-    evaluated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
--- Prevent modification of audit log
-CREATE OR REPLACE RULE no_update_audit AS ON UPDATE TO policy_audit_log DO INSTEAD NOTHING;
-CREATE OR REPLACE RULE no_delete_audit AS ON DELETE TO policy_audit_log DO INSTEAD NOTHING;
-
-CREATE TABLE IF NOT EXISTS feedback (
-    id          BIGSERIAL PRIMARY KEY,
-    run_id      TEXT NOT NULL,
-    score       SMALLINT,
-    comment     TEXT,
-    tenant_id   TEXT NOT NULL DEFAULT 'default',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS environments (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    status      TEXT NOT NULL DEFAULT 'active',
-    tenant_id   TEXT NOT NULL DEFAULT 'default',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-INSERT INTO environments (id, name, description, status, tenant_id)
-VALUES
-    ('production',  'Production',  'Live production workloads', 'active',   'default'),
-    ('staging',     'Staging',     'Pre-release validation',    'active',   'default'),
-    ('development', 'Development', 'Local development & CI',    'inactive', 'default')
-ON CONFLICT DO NOTHING;
-`
 
 // ─── Span writes ─────────────────────────────────────────────────────────────
 
@@ -184,45 +91,70 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		q.Limit = 50
 	}
 
-	query := `
-		SELECT 
-			trace_id,
-			MIN(name) as root_span_name,
-			MAX(framework) as framework,
-			MIN(start_time_ns) as start_ns,
-			MAX(start_time_ns + duration_ns) - MIN(start_time_ns) as duration_ns,
-			COUNT(*) as span_count,
-			SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) as error_count,
-			SUM(cost_usd) as total_cost,
-			SUM(input_tokens + output_tokens) as total_tokens,
-			CASE WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0 THEN 'error' ELSE 'ok' END as status
-		FROM spans
-		WHERE tenant_id = $1`
-
+	// Build the inner WHERE clause (filters applied before GROUP BY).
 	args := []interface{}{q.TenantID}
 	argIdx := 2
+	innerWhere := "WHERE tenant_id = $1"
 
 	if q.Framework != "" {
-		query += fmt.Sprintf(" AND framework = $%d", argIdx)
+		innerWhere += fmt.Sprintf(" AND framework = $%d", argIdx)
 		args = append(args, q.Framework)
 		argIdx++
 	}
 	if q.StartTime > 0 {
-		query += fmt.Sprintf(" AND start_time_ns >= $%d", argIdx)
+		innerWhere += fmt.Sprintf(" AND start_time_ns >= $%d", argIdx)
 		args = append(args, q.StartTime)
 		argIdx++
 	}
 	if q.EndTime > 0 {
-		query += fmt.Sprintf(" AND start_time_ns <= $%d", argIdx)
+		innerWhere += fmt.Sprintf(" AND start_time_ns <= $%d", argIdx)
 		args = append(args, q.EndTime)
 		argIdx++
 	}
 
-	query += fmt.Sprintf(`
-		GROUP BY trace_id
-		ORDER BY MIN(start_time_ns) DESC
-		LIMIT $%d`, argIdx)
-	args = append(args, q.Limit)
+	// Keyset cursor: WHERE (start_ns, trace_id) < (cursor_ns, cursor_trace_id)
+	// applied on the CTE output so the filter runs after aggregation.
+	outerWhere := ""
+	if q.Cursor != "" {
+		if cursorNs, cursorTraceID, ok := models.DecodeTraceCursor(q.Cursor); ok {
+			outerWhere = fmt.Sprintf(
+				" WHERE (start_ns, trace_id) < ($%d, $%d)", argIdx, argIdx+1,
+			)
+			args = append(args, cursorNs, cursorTraceID)
+			argIdx += 2
+		}
+	}
+
+	// Fetch limit+1 to detect whether a next page exists.
+	args = append(args, q.Limit+1)
+	limitIdx := argIdx
+
+	query := fmt.Sprintf(`
+		WITH agg AS (
+			SELECT
+				trace_id,
+				MIN(name)                                                            AS root_span_name,
+				MAX(framework)                                                       AS framework,
+				MIN(start_time_ns)                                                   AS start_ns,
+				MAX(start_time_ns + duration_ns) - MIN(start_time_ns)               AS duration_ns,
+				COUNT(*)                                                             AS span_count,
+				SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)                   AS error_count,
+				SUM(cost_usd)                                                        AS total_cost,
+				SUM(input_tokens + output_tokens)                                   AS total_tokens,
+				CASE WHEN SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0
+				     THEN 'error' ELSE 'ok' END                                     AS status
+			FROM spans
+			%s
+			GROUP BY trace_id
+		)
+		SELECT trace_id, root_span_name, framework, start_ns, duration_ns,
+		       span_count, error_count, total_cost, total_tokens, status
+		FROM agg
+		%s
+		ORDER BY start_ns DESC, trace_id DESC
+		LIMIT $%d`,
+		innerWhere, outerWhere, limitIdx,
+	)
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -245,10 +177,17 @@ func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*m
 		traces = append(traces, t)
 	}
 
-	return &models.Page[models.Trace]{
-		Items:   traces,
-		HasMore: len(traces) == q.Limit,
-	}, nil
+	hasMore := len(traces) > q.Limit
+	if hasMore {
+		traces = traces[:q.Limit]
+	}
+
+	page := &models.Page[models.Trace]{Items: traces, HasMore: hasMore}
+	if hasMore && len(traces) > 0 {
+		last := traces[len(traces)-1]
+		page.NextCursor = models.EncodeTraceCursor(last.StartTime.UnixNano(), last.ID)
+	}
+	return page, nil
 }
 
 func (s *PostgresStore) GetTraceSpans(ctx context.Context, traceID, tenantID string) ([]models.Span, error) {
@@ -261,6 +200,47 @@ func (s *PostgresStore) GetTraceSpans(ctx context.Context, traceID, tenantID str
 		ORDER BY start_time_ns ASC
 		LIMIT 5000`,
 		traceID, tenantID,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var spans []models.Span
+	for rows.Next() {
+		var sp models.Span
+		var attrsJSON, eventsJSON []byte
+		if err := rows.Scan(
+			&sp.ID, &sp.TraceID, &sp.ParentID, &sp.RunID, &sp.Name, &sp.Framework,
+			&sp.StartTimeNs, &sp.DurationNs, &sp.StatusCode, &sp.StatusMsg,
+			&attrsJSON, &eventsJSON, &sp.InputTokens, &sp.OutputTokens, &sp.CostUSD,
+			&sp.ReceivedAt,
+		); err != nil {
+			continue
+		}
+		json.Unmarshal(attrsJSON, &sp.Attributes)
+		json.Unmarshal(eventsJSON, &sp.Events)
+		spans = append(spans, sp)
+	}
+	return spans, nil
+}
+
+// GetSpansForTraces fetches spans for multiple trace IDs in a single query (P0-2 fix).
+// Use this instead of calling GetTraceSpans in a loop.
+func (s *PostgresStore) GetSpansForTraces(ctx context.Context, traceIDs []string, tenantID string) ([]models.Span, error) {
+	if len(traceIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT span_id, trace_id, COALESCE(parent_span_id,''), run_id, name, framework,
+		       start_time_ns, duration_ns, status_code, COALESCE(status_msg,''),
+		       attributes, events, input_tokens, output_tokens, cost_usd, received_at
+		FROM spans
+		WHERE trace_id = ANY($1) AND tenant_id = $2
+		ORDER BY start_time_ns ASC
+		LIMIT 50000`,
+		traceIDs, tenantID,
 	)
 	if err != nil {
 		return nil, err
@@ -291,12 +271,12 @@ func (s *PostgresStore) GetOverview(ctx context.Context, tenantID string, since 
 	var stats models.OverviewStats
 
 	err := s.pool.QueryRow(ctx, `
-		SELECT 
+		SELECT
 			COUNT(DISTINCT trace_id),
-			SUM(cost_usd),
-			SUM(input_tokens + output_tokens),
-			AVG(CASE WHEN status_code = 2 THEN 1.0 ELSE 0.0 END),
-			AVG(duration_ns) / 1e6
+			COALESCE(SUM(cost_usd), 0),
+			COALESCE(SUM(input_tokens + output_tokens), 0),
+			COALESCE(AVG(CASE WHEN status_code = 2 THEN 1.0 ELSE 0.0 END), 0),
+			COALESCE(AVG(duration_ns) / 1e6, 0)
 		FROM spans
 		WHERE tenant_id = $1 AND start_time_ns >= $2`,
 		tenantID, cutoff,
@@ -353,8 +333,18 @@ func (s *PostgresStore) ListRuns(ctx context.Context, q models.RunQuery) (*model
 		args = append(args, q.Framework)
 		idx++
 	}
-	query += fmt.Sprintf(" ORDER BY start_time DESC LIMIT $%d", idx)
-	args = append(args, q.Limit)
+	// Keyset cursor: (start_time, run_id) < (cursor_time, cursor_run_id)
+	// ensures stable, gap-free pagination even under concurrent writes.
+	if q.Cursor != "" {
+		if cursorTime, cursorRunID, ok := models.DecodeRunCursor(q.Cursor); ok {
+			query += fmt.Sprintf(" AND (start_time, run_id) < ($%d, $%d)", idx, idx+1)
+			args = append(args, cursorTime, cursorRunID)
+			idx += 2
+		}
+	}
+	// Fetch limit+1 to detect whether a next page exists.
+	query += fmt.Sprintf(" ORDER BY start_time DESC, run_id DESC LIMIT $%d", idx)
+	args = append(args, q.Limit+1)
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -376,7 +366,18 @@ func (s *PostgresStore) ListRuns(ctx context.Context, q models.RunQuery) (*model
 	if runs == nil {
 		runs = []models.Run{}
 	}
-	return &models.Page[models.Run]{Items: runs, HasMore: len(runs) == q.Limit}, nil
+
+	hasMore := len(runs) > q.Limit
+	if hasMore {
+		runs = runs[:q.Limit]
+	}
+
+	page := &models.Page[models.Run]{Items: runs, HasMore: hasMore}
+	if hasMore && len(runs) > 0 {
+		last := runs[len(runs)-1]
+		page.NextCursor = models.EncodeRunCursor(last.StartTime, last.ID)
+	}
+	return page, nil
 }
 
 func (s *PostgresStore) GetRun(ctx context.Context, runID, tenantID string) (*models.Run, error) {
@@ -480,6 +481,34 @@ func (s *PostgresStore) ListAgents(ctx context.Context, tenantID string, limit i
 		agents = []models.Agent{}
 	}
 	return agents, nil
+}
+
+// GetAgentByName returns a single agent aggregated from the runs table.
+// O(1) indexed lookup — avoids the O(n) full-scan in ListAgents.
+// Returns pgx.ErrNoRows when no runs exist for the given agent name.
+func (s *PostgresStore) GetAgentByName(ctx context.Context, tenantID, agentName string) (models.Agent, error) {
+	var a models.Agent
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+		    agent_name,
+		    MAX(framework)                                             AS framework,
+		    MIN(start_time)                                           AS first_seen,
+		    MAX(COALESCE(end_time, NOW()))                            AS last_seen,
+		    COUNT(*)                                                  AS run_count,
+		    SUM(total_cost_usd)                                       AS total_cost,
+		    AVG(CASE WHEN status = 'error' THEN 1.0 ELSE 0.0 END)    AS error_rate
+		FROM runs
+		WHERE tenant_id = $1
+		  AND agent_name = $2
+		GROUP BY agent_name`,
+		tenantID, agentName,
+	).Scan(&a.Name, &a.Framework, &a.FirstSeen, &a.LastSeen,
+		&a.RunCount, &a.TotalCost, &a.ErrorRate)
+	if err != nil {
+		return models.Agent{}, err
+	}
+	a.ID = a.Name
+	return a, nil
 }
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
@@ -603,6 +632,335 @@ func (s *PostgresStore) ListEnvironments(ctx context.Context, tenantID string) (
 	return envs, nil
 }
 
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+// AuditEntry is the api-gateway view of a policy_audit_log row.
+type AuditEntry struct {
+	ID           int64     `json:"id"`
+	DecisionID   string    `json:"decision_id"`
+	TraceID      string    `json:"trace_id"`
+	SpanID       string    `json:"span_id"`
+	PolicyName   string    `json:"policy_name"`
+	Result       string    `json:"result"`
+	Reason       string    `json:"reason"`
+	TenantID     string    `json:"tenant_id"`
+	EvaluatedAt  time.Time `json:"evaluated_at"`
+	PreviousHash string    `json:"previous_hash"`
+	EntryHash    string    `json:"entry_hash"`
+}
+
+// ChainVerification is the result of replaying the hash chain.
+type ChainVerification struct {
+	Valid          bool   `json:"valid"`
+	EntriesChecked int    `json:"entries_checked"`
+	FirstBrokenAt  *int   `json:"first_broken_at,omitempty"`
+	Message        string `json:"message"`
+}
+
+// ListAuditEntries returns paginated audit log entries for a tenant, oldest first.
+func (s *PostgresStore) ListAuditEntries(ctx context.Context, tenantID string, limit, offset int) ([]AuditEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, decision_id, trace_id, span_id,
+		       policy_name, result, reason, tenant_id, evaluated_at,
+		       COALESCE(previous_hash,''), COALESCE(entry_hash,'')
+		FROM policy_audit_log
+		WHERE tenant_id = $1
+		ORDER BY id ASC
+		LIMIT $2 OFFSET $3`,
+		tenantID, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		if err := rows.Scan(
+			&e.ID, &e.DecisionID, &e.TraceID, &e.SpanID,
+			&e.PolicyName, &e.Result, &e.Reason, &e.TenantID, &e.EvaluatedAt,
+			&e.PreviousHash, &e.EntryHash,
+		); err != nil {
+			continue
+		}
+		entries = append(entries, e)
+	}
+	if entries == nil {
+		entries = []AuditEntry{}
+	}
+	return entries, nil
+}
+
+// VerifyAuditChain replays the SHA-256 hash chain for a tenant and reports
+// the first broken link, if any. This is the Go equivalent of af-core's
+// AuditWriter.verify_chain().
+func (s *PostgresStore) VerifyAuditChain(ctx context.Context, tenantID string) (*ChainVerification, error) {
+	// Load all entries in insertion order — limit to 100k for safety
+	rows, err := s.pool.Query(ctx, `
+		SELECT decision_id, trace_id, policy_name, result,
+		       EXTRACT(EPOCH FROM evaluated_at)::BIGINT * 1000000000 AS evaluated_ns,
+		       previous_hash, entry_hash
+		FROM policy_audit_log
+		WHERE tenant_id = $1
+		ORDER BY id ASC
+		LIMIT 100000`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type chainRow struct {
+		decisionID   string
+		traceID      string
+		policyName   string
+		result       string
+		evaluatedNs  int64
+		previousHash string
+		entryHash    string
+	}
+
+	var chain []chainRow
+	for rows.Next() {
+		var r chainRow
+		if err := rows.Scan(
+			&r.decisionID, &r.traceID, &r.policyName, &r.result,
+			&r.evaluatedNs, &r.previousHash, &r.entryHash,
+		); err != nil {
+			continue
+		}
+		chain = append(chain, r)
+	}
+
+	if len(chain) == 0 {
+		return &ChainVerification{Valid: true, EntriesChecked: 0, Message: "no audit entries"}, nil
+	}
+
+	prevHash := "genesis"
+	for i, r := range chain {
+		// Replicate the exact payload format from af-core/src/policy/audit.rs
+		payload := fmt.Sprintf("%s:%s:%s:%s:%d:%s",
+			r.decisionID, r.traceID, r.policyName, r.result, r.evaluatedNs, prevHash)
+
+		h := sha256.Sum256([]byte(payload))
+		expected := fmt.Sprintf("%x", h)
+
+		if r.entryHash != "" && expected != r.entryHash {
+			idx := i
+			return &ChainVerification{
+				Valid:          false,
+				EntriesChecked: i + 1,
+				FirstBrokenAt:  &idx,
+				Message:        fmt.Sprintf("chain broken at entry %d (decision_id=%s)", i, r.decisionID),
+			}, nil
+		}
+		prevHash = r.entryHash
+	}
+
+	return &ChainVerification{
+		Valid:          true,
+		EntriesChecked: len(chain),
+		Message:        "chain intact",
+	}, nil
+}
+
+// Ping verifies the Postgres connection is alive with a short timeout.
+// Used by the /healthz handler to detect degraded storage.
+func (s *PostgresStore) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
+}
+
 func (s *PostgresStore) Close() {
 	s.pool.Close()
+}
+
+// ─── Users CRUD ───────────────────────────────────────────────────────────────
+
+// ListUsers returns all users for a tenant, newest first.
+func (s *PostgresStore) ListUsers(ctx context.Context, tenantID string, limit, offset int) ([]models.User, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT user_id, tenant_id, username, email, display_name, role,
+		       is_active, last_login_at, created_at, updated_at
+		FROM users
+		WHERE tenant_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`, tenantID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []models.User
+	for rows.Next() {
+		var u models.User
+		if err := rows.Scan(
+			&u.ID, &u.TenantID, &u.Username, &u.Email, &u.DisplayName, &u.Role,
+			&u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	if users == nil {
+		users = []models.User{}
+	}
+	return users, rows.Err()
+}
+
+// GetUser returns a single user by ID within a tenant.
+func (s *PostgresStore) GetUser(ctx context.Context, userID, tenantID string) (*models.User, error) {
+	var u models.User
+	err := s.pool.QueryRow(ctx, `
+		SELECT user_id, tenant_id, username, email, display_name, role,
+		       is_active, last_login_at, created_at, updated_at
+		FROM users
+		WHERE user_id = $1 AND tenant_id = $2
+	`, userID, tenantID).Scan(
+		&u.ID, &u.TenantID, &u.Username, &u.Email, &u.DisplayName, &u.Role,
+		&u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// CreateUser inserts a new user into the tenant. Password is bcrypt-hashed (cost 12)
+// before storage. golang.org/x/crypto/bcrypt is declared in go.mod.
+func (s *PostgresStore) CreateUser(ctx context.Context, tenantID string, req models.CreateUserRequest) (*models.User, error) {
+	if req.Role == "" {
+		req.Role = "viewer"
+	}
+	var u models.User
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO users (user_id, tenant_id, username, password_hash, email, display_name, role)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING user_id, tenant_id, username, email, display_name, role,
+		          is_active, last_login_at, created_at, updated_at
+	`, generateStoreID(), tenantID, req.Username, hashPassword(req.Password),
+		req.Email, req.DisplayName, req.Role).Scan(
+		&u.ID, &u.TenantID, &u.Username, &u.Email, &u.DisplayName, &u.Role,
+		&u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// UpdateUser applies non-nil fields from req to the user record.
+func (s *PostgresStore) UpdateUser(ctx context.Context, userID, tenantID string, req models.UpdateUserRequest) (*models.User, error) {
+	sets := []string{"updated_at = NOW()"}
+	args := []interface{}{userID, tenantID}
+	argIdx := 3
+
+	if req.Email != nil {
+		sets = append(sets, fmt.Sprintf("email = $%d", argIdx))
+		args = append(args, *req.Email)
+		argIdx++
+	}
+	if req.DisplayName != nil {
+		sets = append(sets, fmt.Sprintf("display_name = $%d", argIdx))
+		args = append(args, *req.DisplayName)
+		argIdx++
+	}
+	if req.Role != nil {
+		sets = append(sets, fmt.Sprintf("role = $%d", argIdx))
+		args = append(args, *req.Role)
+		argIdx++
+	}
+	if req.IsActive != nil {
+		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
+		args = append(args, *req.IsActive)
+		argIdx++
+	}
+	if req.Password != nil {
+		sets = append(sets, fmt.Sprintf("password_hash = $%d", argIdx))
+		args = append(args, hashPassword(*req.Password))
+		argIdx++
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE users SET %s
+		WHERE user_id = $1 AND tenant_id = $2
+		RETURNING user_id, tenant_id, username, email, display_name, role,
+		          is_active, last_login_at, created_at, updated_at
+	`, strings.Join(sets, ", "))
+
+	var u models.User
+	err := s.pool.QueryRow(ctx, query, args...).Scan(
+		&u.ID, &u.TenantID, &u.Username, &u.Email, &u.DisplayName, &u.Role,
+		&u.IsActive, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// DeleteUser removes a user from the tenant. Returns an error if the user doesn't exist.
+func (s *PostgresStore) DeleteUser(ctx context.Context, userID, tenantID string) error {
+	result, err := s.pool.Exec(ctx,
+		`DELETE FROM users WHERE user_id = $1 AND tenant_id = $2`,
+		userID, tenantID,
+	)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("user %q not found in tenant %q", userID, tenantID)
+	}
+	return nil
+}
+
+// GetUserByUsername looks up a user by username within a tenant and returns the
+// minimal auth fields including the bcrypt password hash.
+// Implements auth.UserLookup — called by OIDCHandler.PasswordLogin.
+func (s *PostgresStore) GetUserByUsername(ctx context.Context, username, tenantID string) (*models.UserRecord, error) {
+	var rec models.UserRecord
+	err := s.pool.QueryRow(ctx, `
+		SELECT user_id, username, email, display_name, role, COALESCE(password_hash,'')
+		FROM users
+		WHERE username = $1 AND tenant_id = $2 AND is_active = TRUE
+	`, username, tenantID).Scan(
+		&rec.ID, &rec.Username, &rec.Email, &rec.DisplayName, &rec.Role, &rec.PasswordHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+// generateStoreID creates a random UUID-format string for new records.
+func generateStoreID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// hashPassword hashes a password with bcrypt (cost=12) for storage.
+// Falls back to SHA-256 hex on the extremely unlikely event bcrypt fails.
+func hashPassword(password string) string {
+	if password == "" {
+		return ""
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		// Fallback: should never happen; bcrypt only fails on invalid cost or OOM.
+		h := sha256.Sum256([]byte(password))
+		return hex.EncodeToString(h[:])
+	}
+	return string(hash)
 }

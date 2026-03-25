@@ -1,15 +1,19 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/agentfabric/api-gateway/internal/middleware"
 	"github.com/agentfabric/api-gateway/internal/models"
 	"github.com/agentfabric/api-gateway/internal/store"
 	"github.com/agentfabric/api-gateway/internal/ws"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
 
@@ -27,6 +31,12 @@ func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger 
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// isNotFound returns true when err is a pgx "no rows" sentinel,
+// used to translate DB misses into HTTP 404 responses.
+func isNotFound(err error) bool {
+	return errors.Is(err, pgx.ErrNoRows)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -38,10 +48,35 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func tenantFromCtx(r *http.Request) string {
-	if t, ok := r.Context().Value("tenant_id").(string); ok && t != "" {
-		return t
+	return middleware.TenantIDFromCtx(r.Context())
+}
+
+// ─── Health ──────────────────────────────────────────────────────────────────
+
+// Health checks both Postgres and Redis with a 2-second timeout each.
+// Returns 200 {"status":"ok"} when all deps are reachable.
+// Returns 503 {"status":"degraded","error":"..."} if any dep fails.
+func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := h.pg.Ping(ctx); err != nil {
+		h.logger.Warn("healthz: postgres ping failed", zap.Error(err))
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "degraded",
+			"error":  "postgres unavailable",
+		})
+		return
 	}
-	return "default"
+	if err := h.redis.Ping(ctx); err != nil {
+		h.logger.Warn("healthz: redis ping failed", zap.Error(err))
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "degraded",
+			"error":  "redis unavailable",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // ─── Ingest (internal, called by collector) ──────────────────────────────────
@@ -51,8 +86,23 @@ type ingestRequest struct {
 }
 
 func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
+	const maxBody = 32 << 20 // 32 MiB
+	// Fast path: reject immediately if Content-Length is known and too large.
+	if r.ContentLength > maxBody {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 32 MiB limit")
+		return
+	}
+	// Fix D: cap request body at 32 MiB to prevent DoS via unbounded reads.
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+
 	var req ingestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// MaxBytesReader wraps the error when the limit is exceeded.
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) || err.Error() == "http: request body too large" {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 32 MiB limit")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
@@ -66,10 +116,10 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tenant from collector header or default
+	// Tenant from collector header; fall back to the canonical default UUID.
 	tenantID := r.Header.Get("X-AF-Tenant")
 	if tenantID == "" {
-		tenantID = "default"
+		tenantID = middleware.DefaultTenantID
 	}
 	for i := range req.Spans {
 		req.Spans[i].TenantID = tenantID
@@ -107,6 +157,7 @@ func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {
 		AgentName: r.URL.Query().Get("agent"),
 		Status:    r.URL.Query().Get("status"),
 		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
+		Cursor:    r.URL.Query().Get("cursor"),
 	}
 	if s := r.URL.Query().Get("start"); s != "" {
 		q.StartTime, _ = strconv.ParseInt(s, 10, 64)
@@ -217,18 +268,17 @@ func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "agentId")
-	agents, err := h.pg.ListAgents(r.Context(), tenantFromCtx(r), 200)
+	// O(1) indexed SQL lookup — replaces the previous O(n) ListAgents+scan pattern.
+	agent, err := h.pg.GetAgentByName(r.Context(), tenantFromCtx(r), agentID)
 	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	for _, a := range agents {
-		if a.ID == agentID || a.Name == agentID {
-			writeJSON(w, http.StatusOK, a)
-			return
-		}
-	}
-	writeError(w, http.StatusNotFound, "agent not found")
+	writeJSON(w, http.StatusOK, agent)
 }
 
 func (h *Handler) GetAgentRuns(w http.ResponseWriter, r *http.Request) {
@@ -262,9 +312,11 @@ func (h *Handler) GetAgentMetrics(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetAgentTopology(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "agentId")
-	// Fetch recent runs for this agent to get trace IDs, then build topology
+	tenantID := tenantFromCtx(r)
+
+	// Fetch recent runs to collect unique trace IDs
 	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
-		TenantID:  tenantFromCtx(r),
+		TenantID:  tenantID,
 		AgentName: agentID,
 		Limit:     10,
 	})
@@ -272,15 +324,21 @@ func (h *Handler) GetAgentTopology(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var allSpans []models.Span
+
+	// Deduplicate trace IDs, then fetch all spans in a single batch query (P0-2 fix)
 	seen := map[string]bool{}
+	traceIDs := make([]string, 0, len(page.Items))
 	for _, run := range page.Items {
-		if seen[run.TraceID] {
-			continue
+		if !seen[run.TraceID] {
+			seen[run.TraceID] = true
+			traceIDs = append(traceIDs, run.TraceID)
 		}
-		seen[run.TraceID] = true
-		spans, _ := h.pg.GetTraceSpans(r.Context(), run.TraceID, tenantFromCtx(r))
-		allSpans = append(allSpans, spans...)
+	}
+
+	allSpans, err := h.pg.GetSpansForTraces(r.Context(), traceIDs, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, buildTopologyGraph(allSpans))
 }
@@ -294,6 +352,7 @@ func (h *Handler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		Framework: r.URL.Query().Get("framework"),
 		AgentName: r.URL.Query().Get("agent"),
 		Limit:     parseIntOr(r.URL.Query().Get("limit"), 50),
+		Cursor:    r.URL.Query().Get("cursor"),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -412,6 +471,127 @@ func (h *Handler) ListEnvironments(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) LiveStream(w http.ResponseWriter, r *http.Request) {
 	h.hub.ServeWS(w, r, tenantFromCtx(r))
+}
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+
+// ListAudit returns a paginated list of policy decisions for the tenant.
+// GET /api/v1/audit?limit=100&offset=0
+func (h *Handler) ListAudit(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromCtx(r)
+	limit := parseIntOr(r.URL.Query().Get("limit"), 100)
+	offset := parseIntOr(r.URL.Query().Get("offset"), 0)
+
+	entries, err := h.pg.ListAuditEntries(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query audit log")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items":  entries,
+		"limit":  limit,
+		"offset": offset,
+		"count":  len(entries),
+	})
+}
+
+// VerifyAuditChain replays the SHA-256 chain and reports any broken links.
+// GET /api/v1/audit/verify
+func (h *Handler) VerifyAuditChain(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromCtx(r)
+
+	result, err := h.pg.VerifyAuditChain(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "chain verification failed")
+		return
+	}
+
+	status := http.StatusOK
+	if !result.Valid {
+		status = http.StatusConflict // 409: data conflict — chain broken
+	}
+	writeJSON(w, status, result)
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+// ListUsers returns all users for the current tenant.
+// GET /api/v1/users?limit=50&offset=0
+func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	limit := parseIntOr(r.URL.Query().Get("limit"), 50)
+	offset := parseIntOr(r.URL.Query().Get("offset"), 0)
+
+	users, err := h.pg.ListUsers(r.Context(), tenantFromCtx(r), limit, offset)
+	if err != nil {
+		h.logger.Error("list users", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, models.Page[models.User]{
+		Items: users,
+		Total: int64(len(users)),
+	})
+}
+
+// GetUser returns a single user by ID within the current tenant.
+// GET /api/v1/users/{userId}
+func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
+	user, err := h.pg.GetUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+// CreateUser creates a new user in the current tenant.
+// POST /api/v1/users — admin role required in production; enforced by policy layer.
+func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var req models.CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Username == "" || req.Email == "" {
+		writeError(w, http.StatusBadRequest, "username and email are required")
+		return
+	}
+
+	user, err := h.pg.CreateUser(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		h.logger.Error("create user", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "create failed")
+		return
+	}
+	writeJSON(w, http.StatusCreated, user)
+}
+
+// UpdateUser applies partial updates to a user record.
+// PUT /api/v1/users/{userId}
+func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	var req models.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	user, err := h.pg.UpdateUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r), req)
+	if err != nil {
+		h.logger.Error("update user", zap.Error(err))
+		writeError(w, http.StatusNotFound, "user not found or no change")
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+// DeleteUser removes a user from the current tenant.
+// DELETE /api/v1/users/{userId}
+func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	if err := h.pg.DeleteUser(r.Context(), chi.URLParam(r, "userId"), tenantFromCtx(r)); err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ─── Build helpers ────────────────────────────────────────────────────────────

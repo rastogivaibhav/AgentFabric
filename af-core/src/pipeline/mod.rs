@@ -3,6 +3,8 @@
 
 pub mod kafka;
 pub mod span;
+#[cfg(test)]
+mod tests;
 
 use anyhow::Result;
 use std::sync::Arc;

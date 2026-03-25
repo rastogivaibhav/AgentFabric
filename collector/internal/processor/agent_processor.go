@@ -97,7 +97,7 @@ var piiPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(password|passwd|secret|token|api_key|apikey)\s*[:=]\s*\S+`),          // Credentials
 	regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`),                                                   // SSN
 	regexp.MustCompile(`(?i)\b(mr|mrs|ms|dr)\.?\s+[A-Z][a-z]+\s+[A-Z][a-z]+\b`),                 // Name
-	regexp.MustCompile(`\b(?:\+44|0)[\s\-]?(?:\d[\s\-]?){9,10}\b`),                               // UK phone
+	regexp.MustCompile(`(?:^|[\s,\(])(?:\+44|0)[\s\-]?(?:\d[\s\-]?){9,10}\b`),                    // UK phone
 }
 
 // ─── Batch ──────────────────────────────────────────────────────────────────
@@ -123,10 +123,12 @@ type EnrichedSpan struct {
 	CollectorNode string            `json:"collector_node"`
 	ReceivedNs    int64             `json:"received_ns"`
 	RunID         string            `json:"run_id"`
-	// Cost fields
-	InputTokens  int64   `json:"input_tokens,omitempty"`
-	OutputTokens int64   `json:"output_tokens,omitempty"`
-	CostUSD      float64 `json:"cost_usd,omitempty"`
+	// Cost fields — collector computes all three; downstream must not recompute
+	InputTokens    int64   `json:"input_tokens,omitempty"`
+	OutputTokens   int64   `json:"output_tokens,omitempty"`
+	InputCostUSD   float64 `json:"input_cost_usd,omitempty"`
+	OutputCostUSD  float64 `json:"output_cost_usd,omitempty"`
+	CostUSD        float64 `json:"cost_usd,omitempty"`
 }
 
 type SpanEvent struct {
@@ -300,6 +302,8 @@ func (p *AgentProcessor) enrichSpan(span *tracepb.Span, resourceAttrs map[string
 		RunID:         runID,
 		InputTokens:   inputTokens,
 		OutputTokens:  outputTokens,
+		InputCostUSD:  inputCost,
+		OutputCostUSD: outputCost,
 		CostUSD:       inputCost + outputCost,
 	}
 
@@ -407,8 +411,15 @@ func detectFramework(attrs map[string]string, spanName string) Framework {
 
 func computeCost(model string, inputTokens, outputTokens int64) (float64, float64) {
 	model = strings.ToLower(model)
-	for prefix, pricing := range modelPricing {
-		if strings.HasPrefix(model, prefix) {
+	// Exact-match first — prevents "gpt-4o" prefix from shadowing "gpt-4o-mini".
+	if pricing, ok := modelPricing[model]; ok {
+		inputCost := float64(inputTokens) / 1_000_000 * pricing[0]
+		outputCost := float64(outputTokens) / 1_000_000 * pricing[1]
+		return inputCost, outputCost
+	}
+	// Fallback: prefix match for versioned model names (e.g. "gpt-4o-2024-08-06").
+	for key, pricing := range modelPricing {
+		if strings.HasPrefix(model, key) {
 			inputCost := float64(inputTokens) / 1_000_000 * pricing[0]
 			outputCost := float64(outputTokens) / 1_000_000 * pricing[1]
 			return inputCost, outputCost

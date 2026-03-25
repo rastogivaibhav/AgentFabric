@@ -28,9 +28,13 @@ pub struct EnrichedSpan {
     pub tool_name:     String,
     pub tool_status:   String,
     pub run_id:        String,
-    pub input_tokens:  i64,
-    pub output_tokens: i64,
-    pub cost_usd:      f64,
+    pub input_tokens:    i64,
+    pub output_tokens:   i64,
+    pub cost_usd:        f64,
+    #[serde(default)]
+    pub input_cost_usd:  f64,
+    #[serde(default)]
+    pub output_cost_usd: f64,
 
     // Infrastructure
     pub service_name:  String,

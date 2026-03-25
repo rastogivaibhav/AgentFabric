@@ -8,6 +8,10 @@ import LiveStream from './pages/LiveStream'
 import AgentsPage from './pages/AgentsPage'
 import CostPage from './pages/CostPage'
 import EnvironmentsPage from './pages/EnvironmentsPage'
+import UsersPage from './pages/UsersPage'
+import AuditPage from './pages/AuditPage'
+import LoginPage from './pages/LoginPage'
+import { useAuth, isAuthEnabled, hasRole } from './hooks/auth'
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -19,12 +23,46 @@ const qc = new QueryClient({
   },
 })
 
+// RequireAuth: redirect to /login if not authenticated (and auth is enabled).
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth()
+  if (!isAuthEnabled()) return <>{children}</>
+  if (isLoading) return null // brief flicker guard
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+// RequireRole: renders children only when the current user holds one of roles.
+// Returns fallback (default: null) when the check fails — the API enforces 403
+// regardless, but hiding the element removes the invitation to attempt the action.
+// Usage: <RequireRole roles={['admin']}><DeleteButton /></RequireRole>
+export function RequireRole({
+  roles,
+  children,
+  fallback = null,
+}: {
+  roles: string[]
+  children: React.ReactNode
+  fallback?: React.ReactNode
+}) {
+  const { user } = useAuth()
+  return hasRole(user, roles) ? <>{children}</> : <>{fallback}</>
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <Routes>
-          <Route element={<Layout />}>
+          {/* Public routes */}
+          <Route path="login" element={<LoginPage />} />
+
+          {/* Protected routes — wrapped in RequireAuth */}
+          <Route element={
+            <RequireAuth>
+              <Layout />
+            </RequireAuth>
+          }>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="traces" element={<TracesPage />} />
@@ -33,6 +71,8 @@ export default function App() {
             <Route path="agents" element={<AgentsPage />} />
             <Route path="cost" element={<CostPage />} />
             <Route path="environments" element={<EnvironmentsPage />} />
+            <Route path="users" element={<UsersPage />} />
+            <Route path="audit" element={<AuditPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

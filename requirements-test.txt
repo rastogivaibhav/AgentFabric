@@ -1,0 +1,6 @@
+# AgentFabric — Python test dependencies
+# Used by: scripts/e2e.sh, tests/e2e/
+# Install: pip install -r requirements-test.txt
+
+pytest>=7.4,<9
+requests>=2.31,<3
