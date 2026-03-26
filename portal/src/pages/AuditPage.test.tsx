@@ -20,7 +20,17 @@ vi.mock('../hooks/api', () => ({
 
 import AuditPage from './AuditPage'
 import { hasRole, useAuth } from '../hooks/auth'
-import { useControlAudit, useControlHistory, useCreateEvidenceBundle, useEvidenceBundles } from '../hooks/api'
+import {
+  useControlAudit,
+  useControlHistory,
+  useCreateEvidenceBundle,
+  useEvidenceBundles,
+  type AdminAuditEntry,
+  type ControlHistoryEntry,
+  type EvidenceBundle,
+  type LimitedPage,
+  type Page,
+} from '../hooks/api'
 
 const mockUseAuth = vi.mocked(useAuth)
 const mockHasRole = vi.mocked(hasRole)
@@ -32,71 +42,54 @@ const mockUseCreateEvidenceBundle = vi.mocked(useCreateEvidenceBundle)
 const ADMIN_USER = { sub: 'u1', email: 'admin@af.io', name: 'Admin', role: 'admin' }
 const VIEWER_USER = { sub: 'u2', email: 'viewer@af.io', name: 'Viewer', role: 'viewer' }
 
-function makeAuditEntry(overrides: Partial<{
-  id: number
-  trace_id: string
-  result: string
-  policy_name: string
-  reason: string
-  entry_hash: string
-}> = {}) {
+function makeControlAuditEntry(overrides: Partial<AdminAuditEntry> = {}): AdminAuditEntry {
   return {
     id: overrides.id ?? 1,
-    decision_id: 'dec-1',
-    trace_id: overrides.trace_id ?? 'trace-abc123',
-    span_id: 'span-1',
-    policy_name: overrides.policy_name ?? 'pii-block',
-    result: overrides.result ?? 'deny',
-    reason: overrides.reason ?? 'PII detected in prompt',
-    tenant_id: 'default',
-    evaluated_at: '2026-03-25T10:00:00.000Z',
-    previous_hash: 'abc123',
-    entry_hash: overrides.entry_hash ?? 'def456deadbeef00',
+    tenant_id: 'tenant_id' in overrides ? overrides.tenant_id : 'default',
+    actor: 'actor' in overrides ? overrides.actor : 'Admin',
+    category: overrides.category ?? 'policy',
+    action: overrides.action ?? 'upsert',
+    target_type: overrides.target_type ?? 'policy_rule',
+    target_id: 'target_id' in overrides ? overrides.target_id : '7',
+    outcome: overrides.outcome ?? 'success',
+    details: 'details' in overrides ? overrides.details : 'Created deny rule for production traffic.',
+    created_at: overrides.created_at ?? '2026-03-25T10:00:00.000Z',
   }
 }
 
-function makeHistoryEntry(overrides: Partial<{
-  id: number
-  category: string
-  action: string
-  target_type: string
-  target_id: string
-  reason: string
-}> = {}) {
+function makeHistoryEntry(overrides: Partial<ControlHistoryEntry> = {}): ControlHistoryEntry {
   return {
     id: overrides.id ?? 9,
-    tenant_id: 'default',
+    tenant_id: overrides.tenant_id ?? 'default',
     category: overrides.category ?? 'rollouts',
     action: overrides.action ?? 'status_update',
     target_type: overrides.target_type ?? 'rollout_rule',
     target_id: overrides.target_id ?? '17',
-    actor: 'Admin',
+    actor: overrides.actor ?? 'Admin',
     reason: overrides.reason ?? 'paused after error-rate breach',
-    outcome: 'success',
-    evidence_refs: [],
-    previous_hash: 'prev',
-    entry_hash: 'hash',
-    created_at: '2026-03-25T11:00:00.000Z',
+    outcome: overrides.outcome ?? 'success',
+    evidence_refs: overrides.evidence_refs ?? [],
+    previous_hash: overrides.previous_hash ?? 'prev',
+    entry_hash: overrides.entry_hash ?? 'hash',
+    created_at: overrides.created_at ?? '2026-03-25T11:00:00.000Z',
+    before_state: overrides.before_state,
+    after_state: overrides.after_state,
   }
 }
 
-function makeBundle(overrides: Partial<{
-  id: number
-  name: string
-  scope: string
-  item_count: number
-  summary: string[]
-}> = {}) {
+function makeBundle(overrides: Partial<EvidenceBundle> = {}): EvidenceBundle {
   return {
     id: overrides.id ?? 4,
-    tenant_id: 'default',
+    tenant_id: overrides.tenant_id ?? 'default',
     name: overrides.name ?? 'Rollout incident bundle',
     scope: overrides.scope ?? 'incident',
-    status: 'ready',
-    created_by: 'Admin',
-    created_at: '2026-03-25T12:00:00.000Z',
+    status: overrides.status ?? 'ready',
+    created_by: overrides.created_by ?? 'Admin',
+    created_at: overrides.created_at ?? '2026-03-25T12:00:00.000Z',
     item_count: overrides.item_count ?? 5,
     summary: overrides.summary ?? ['2 rollout events show assignment and auto-pause behavior.'],
+    filters: overrides.filters,
+    items: overrides.items,
   }
 }
 
@@ -119,9 +112,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockUseAuth.mockReturnValue({ user: ADMIN_USER } as never)
   mockHasRole.mockImplementation((user, roles) => !!user?.role && (roles as string[]).includes(user.role))
-  mockUseControlAudit.mockReturnValue(queryResult({ items: [], count: 0, limit: 100 }))
-  mockUseControlHistory.mockReturnValue(queryResult({ items: [], total: 0, has_more: false }))
-  mockUseEvidenceBundles.mockReturnValue(queryResult({ items: [], count: 0, limit: 12 }))
+  mockUseControlAudit.mockReturnValue(queryResult<LimitedPage<AdminAuditEntry>>({ items: [], count: 0, limit: 100 }))
+  mockUseControlHistory.mockReturnValue(queryResult<Page<ControlHistoryEntry>>({ items: [], total: 0, has_more: false }))
+  mockUseEvidenceBundles.mockReturnValue(queryResult<LimitedPage<EvidenceBundle>>({ items: [], count: 0, limit: 12 }))
   mockUseCreateEvidenceBundle.mockReturnValue({
     mutateAsync: vi.fn(),
     isPending: false,
@@ -171,25 +164,37 @@ describe('AuditPage data states', () => {
 })
 
 describe('AuditPage renders enterprise memory data', () => {
-  it('renders policy audit entries, history timeline, and bundle summaries', () => {
-    mockUseControlAudit.mockReturnValue(queryResult({ items: [makeAuditEntry()], count: 1, limit: 100 }))
-    mockUseControlHistory.mockReturnValue(queryResult({ items: [makeHistoryEntry()], total: 1, has_more: false }))
-    mockUseEvidenceBundles.mockReturnValue(queryResult({ items: [makeBundle()], count: 1, limit: 12 }))
+  it('renders control audit entries, history timeline, and bundle summaries', () => {
+    mockUseControlAudit.mockReturnValue(queryResult<LimitedPage<AdminAuditEntry>>({ items: [makeControlAuditEntry()], count: 1, limit: 100 }))
+    mockUseControlHistory.mockReturnValue(queryResult<Page<ControlHistoryEntry>>({ items: [makeHistoryEntry()], total: 1, has_more: false }))
+    mockUseEvidenceBundles.mockReturnValue(queryResult<LimitedPage<EvidenceBundle>>({ items: [makeBundle()], count: 1, limit: 12 }))
     render(<AuditPage />)
 
-    expect(screen.getByText('pii-block')).toBeInTheDocument()
+    expect(screen.getByText(/Created deny rule for production traffic\./i)).toBeInTheDocument()
     expect(screen.getByText(/paused after error-rate breach/i)).toBeInTheDocument()
     expect(screen.getByText('Rollout incident bundle')).toBeInTheDocument()
     expect(screen.getByText(/auto-pause behavior/i)).toBeInTheDocument()
   })
 
-  it('renders trace links and export links', () => {
-    mockUseControlAudit.mockReturnValue(queryResult({ items: [makeAuditEntry({ trace_id: 'trace-xyz123456789' })], count: 1, limit: 100 }))
-    mockUseEvidenceBundles.mockReturnValue(queryResult({ items: [makeBundle({ id: 12 })], count: 1, limit: 12 }))
+  it('renders control audit rows without assuming policy decision fields', () => {
+    mockUseControlAudit.mockReturnValue(queryResult<LimitedPage<AdminAuditEntry>>({
+      items: [
+        makeControlAuditEntry({
+          target_type: 'pricing_rule',
+          target_id: undefined,
+          actor: undefined,
+          details: undefined,
+        }),
+      ],
+      count: 1,
+      limit: 100,
+    }))
+    mockUseEvidenceBundles.mockReturnValue(queryResult<LimitedPage<EvidenceBundle>>({ items: [makeBundle({ id: 12 })], count: 1, limit: 12 }))
     render(<AuditPage />)
 
-    const traceLink = screen.getAllByRole('link').find(item => item.getAttribute('href') === '/traces/trace-xyz123456789')
-    expect(traceLink).toHaveAttribute('href', '/traces/trace-xyz123456789')
+    expect(screen.getByText('pricing_rule')).toBeInTheDocument()
+    expect(screen.queryByText('undefined')).not.toBeInTheDocument()
+    expect(document.querySelector('a[href^="/traces/"]')).toBeNull()
     const exportLink = screen.getAllByRole('link').find(item => item.getAttribute('href')?.includes('/api/v1/audit/evidence-bundles/12/export'))
     expect(exportLink).toBeDefined()
   })

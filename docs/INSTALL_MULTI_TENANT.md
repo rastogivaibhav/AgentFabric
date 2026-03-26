@@ -83,7 +83,9 @@ At minimum, configure:
 - `DATABASE_URL`
 - `REDIS_URL`
 - `AF_CORS_ORIGINS`
-- `AF_GATEWAY_AUTH_TOKEN`
+- `AF_GATEWAY_AUTH_TOKEN` shared between collector and gateway for `/internal/ingest` bearer auth
+- `AF_ENV=production` or `AF_STRICT_CONFIG=true` on both gateway and collector
+- `AF_AUTH_REQUIRE_AUTH=true` on the collector
 
 For enterprise auth:
 
@@ -91,11 +93,23 @@ For enterprise auth:
 - `AF_OIDC_CLIENT_ID`
 - `AF_OIDC_CLIENT_SECRET`
 - `AF_OIDC_REDIRECT_URI`
+- optional `AF_OIDC_LOGOUT_URL`
 - `AF_SSO_REQUIRED=true`
+
+In strict production mode, partial OIDC settings are rejected. Set issuer, client ID, client secret, and redirect URI together whenever OIDC is configured.
 
 After full SSO cutover:
 
 - `AF_PASSWORD_LOGIN_DISABLED=true`
+
+For Helm, mirror that with:
+
+- `auth.ssoRequired: true`
+- `auth.oidc.issuer`
+- `auth.oidc.clientId`
+- `auth.oidc.redirectUri`
+- optional `auth.oidc.logoutUrl`
+- a populated `auth.oidc.clientSecretKey` in the shared Kubernetes Secret named by `secrets.name` (default key: `oidc-client-secret`)
 
 ## Installation Sequence
 

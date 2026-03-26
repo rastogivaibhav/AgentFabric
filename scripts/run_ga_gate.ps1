@@ -71,8 +71,10 @@ function Run-ProcessCheck {
 
 function Test-DocsAlignment {
   $docsToCheck = @(
+    (Join-Path $RepoRoot "README.md"),
     (Join-Path $RepoRoot "docs\PRODUCTION_CHECKLIST.md"),
     (Join-Path $RepoRoot "docs\RELEASE_BOUNDARIES.md"),
+    (Join-Path $RepoRoot "docs\REFERENCE_DEPLOYMENT.md"),
     (Join-Path $RepoRoot "docs\PILOT_PLAYBOOK.md"),
     (Join-Path $RepoRoot "docs\CUSTOMER_VALUE_SCORECARD.md")
   )

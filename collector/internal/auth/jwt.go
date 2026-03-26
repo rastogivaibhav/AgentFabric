@@ -42,15 +42,11 @@ func (v *JWTValidator) ValidateHTTP(r *http.Request) error {
 	if v.secret == nil || len(v.secret) == 0 {
 		return nil
 	}
-	h := r.Header.Get("Authorization")
-	if h == "" {
+	token := bearerToken(r.Header.Get("Authorization"))
+	if token == "" {
 		return jwt.ErrTokenNotValidYet
 	}
-	parts := strings.SplitN(h, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-		return jwt.ErrTokenMalformed
-	}
-	return v.ValidateToken(parts[1])
+	return v.ValidateToken(token)
 }
 
 // GRPCTokenValidator returns an interceptor that validates the Authorization header.
@@ -64,15 +60,23 @@ func GRPCTokenValidator(v *JWTValidator) grpc.UnaryServerInterceptor {
 		if len(auths) == 0 {
 			return nil, status.Error(codes.Unauthenticated, "missing authorization header")
 		}
-		parts := strings.SplitN(auths[0], " ", 2)
-		if len(parts) != 2 {
+		token := bearerToken(auths[0])
+		if token == "" {
 			return nil, status.Error(codes.Unauthenticated, "invalid auth format")
 		}
-		if err := v.ValidateToken(parts[1]); err != nil {
+		if err := v.ValidateToken(token); err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid token")
 		}
 		return handler(ctx, req)
 	}
+}
+
+func bearerToken(header string) string {
+	parts := strings.Fields(header)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
 }
 
 // ─── Rate Limiter ────────────────────────────────────────────────────────────

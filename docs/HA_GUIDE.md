@@ -30,6 +30,11 @@ Recommended baseline:
 - PostgreSQL is the critical stateful dependency
 - Redis affects performance and some runtime coordination, but not long-term evidence storage
 
+Important exception:
+
+- `/api/v1/stream/live` is not an HA-safe feature today; it uses an in-memory hub inside one `api-gateway` process
+- if operators require complete live event delivery, run a single `api-gateway` replica for that path or treat live stream as unsupported in the HA topology
+
 ## Kubernetes Controls
 
 Use:
@@ -65,6 +70,7 @@ This keeps the control plane upgrade path predictable and auditable.
 - TLS termination defined
 - OIDC or password-login policy agreed
 - network policy enabled
+- live stream expectations documented honestly: multi-replica gateway deployments do not provide complete `/api/v1/stream/live` delivery
 
 ## Operational Expectations
 

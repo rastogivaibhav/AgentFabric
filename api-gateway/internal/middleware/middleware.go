@@ -3,6 +3,7 @@ package middleware
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net"
 	"net/http"
@@ -283,9 +284,14 @@ func TenantInjector(next http.Handler) http.Handler {
 
 // ─── Collector Auth (service-to-service) ─────────────────────────────────────
 
-func CollectorAuth(secret string) func(http.Handler) http.Handler {
+func CollectorAuth(authToken string) func(http.Handler) http.Handler {
+	expectedToken := strings.TrimSpace(authToken)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if expectedToken == "" {
+				http.Error(w, `{"error":"collector auth misconfigured"}`, http.StatusServiceUnavailable)
+				return
+			}
 			src := r.Header.Get("X-AF-Source")
 			if src != "collector" {
 				http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
@@ -293,14 +299,11 @@ func CollectorAuth(secret string) func(http.Handler) http.Handler {
 			}
 			h := r.Header.Get("Authorization")
 			parts := strings.SplitN(h, " ", 2)
-			if len(parts) != 2 {
+			if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") || strings.TrimSpace(parts[1]) == "" {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
-			_, err := jwt.Parse(parts[1], func(t *jwt.Token) (interface{}, error) {
-				return []byte(secret), nil
-			})
-			if err != nil {
+			if subtle.ConstantTimeCompare([]byte(parts[1]), []byte(expectedToken)) != 1 {
 				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 				return
 			}

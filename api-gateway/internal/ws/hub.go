@@ -13,32 +13,48 @@ import (
 	"go.uber.org/zap"
 )
 
-// allowedWSOrigins is built once at startup from AF_CORS_ORIGINS env var.
-var allowedWSOrigins = func() map[string]bool {
-	m := map[string]bool{
-		"http://localhost:3000": true,
-		"http://localhost:5173": true,
-	}
-	if v := os.Getenv("AF_CORS_ORIGINS"); v != "" {
-		for _, o := range strings.Split(v, ",") {
-			if o = strings.TrimSpace(o); o != "" {
-				m[o] = true
-			}
-		}
-	}
-	return m
-}()
+var strictWSOrigins = strictConfigEnabled()
+
+// allowedWSOrigins is built once at startup from AF_CORS_ORIGINS.
+// Dev mode keeps localhost defaults for operator ergonomics; strict production
+// mode requires explicit origins and rejects empty Origin headers.
+var allowedWSOrigins = buildAllowedWSOrigins(os.Getenv("AF_CORS_ORIGINS"), strictWSOrigins)
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 4096,
 	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true // non-browser / same-origin clients
-		}
-		return allowedWSOrigins[origin]
+		return isAllowedWSOrigin(r.Header.Get("Origin"), allowedWSOrigins, strictWSOrigins)
 	},
+}
+
+func strictConfigEnabled() bool {
+	if os.Getenv("AF_STRICT_CONFIG") == "true" {
+		return true
+	}
+	return strings.EqualFold(os.Getenv("AF_ENV"), "production")
+}
+
+func buildAllowedWSOrigins(raw string, strict bool) map[string]bool {
+	m := make(map[string]bool)
+	if !strict {
+		m["http://localhost:3000"] = true
+		m["http://localhost:5173"] = true
+	}
+	for _, origin := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(origin); trimmed != "" {
+			m[trimmed] = true
+		}
+	}
+	return m
+}
+
+func isAllowedWSOrigin(origin string, allowed map[string]bool, strict bool) bool {
+	trimmed := strings.TrimSpace(origin)
+	if trimmed == "" {
+		return !strict
+	}
+	return allowed[trimmed]
 }
 
 // Client is a single WebSocket connection.
@@ -50,12 +66,13 @@ type Client struct {
 	hub      *Hub
 }
 
-// Hub manages all WebSocket clients and fan-out.
+// Hub manages all WebSocket clients and fan-out inside a single process.
+// It does not coordinate across api-gateway replicas.
 type Hub struct {
-	mu       sync.RWMutex
-	clients  map[string]map[*Client]struct{} // tenantID -> clients
-	logger   *zap.Logger
-	register chan *Client
+	mu         sync.RWMutex
+	clients    map[string]map[*Client]struct{} // tenantID -> clients
+	logger     *zap.Logger
+	register   chan *Client
 	unregister chan *Client
 	broadcast  chan *broadcastMsg
 }

@@ -41,8 +41,10 @@ func main() {
 	jwtSecret := envOr("AF_JWT_SECRET", "dev-secret-change-in-production")
 	listenAddr := envOr("LISTEN_ADDR", ":8080")
 	authDisabled := os.Getenv("AF_AUTH_DISABLED") == "true"
+	collectorAuthToken := strings.TrimSpace(os.Getenv("AF_GATEWAY_AUTH_TOKEN"))
 	rateLimitRPM := int64(parseIntEnv("AF_RATE_LIMIT_RPM", 1000))
 	openapiSpecPath := envOr("AF_OPENAPI_SPEC_PATH", "docs/openapi.yaml")
+	strictMode := strictConfigEnabled()
 
 	// TLS configuration — fail-secure: if AF_TLS_ENABLED=true the server will
 	// refuse to start as plain HTTP when cert/key paths are absent.
@@ -55,8 +57,14 @@ func main() {
 	// Falls back to AF_JWT_SECRET when not set.
 	jwtSecrets := parseSecrets(envOr("AF_JWT_SECRETS", jwtSecret))
 
-	if err := validateProductionConfig(authDisabled, jwtSecrets, envOr("AF_ADMIN_PASSWORD", "admin"), os.Getenv("AF_VAULT_KEY")); err != nil {
+	if err := validateCollectorAuthConfig(authDisabled, collectorAuthToken); err != nil {
+		logger.Fatal("invalid collector ingest auth configuration", zap.Error(err))
+	}
+	if err := validateProductionConfig(authDisabled, jwtSecrets, collectorAuthToken, envOr("AF_ADMIN_PASSWORD", "admin"), os.Getenv("AF_VAULT_KEY")); err != nil {
 		logger.Fatal("unsafe production configuration", zap.Error(err))
+	}
+	if warning := liveStreamTopologyWarning(strictMode); warning != "" {
+		logger.Warn(warning)
 	}
 
 	if authDisabled {
@@ -97,7 +105,9 @@ func main() {
 		logger.Fatal("redis init failed", zap.Error(err))
 	}
 
-	// WebSocket hub for live streaming
+	// WebSocket hub for live streaming.
+	// This hub is process-local today, so complete /api/v1/stream/live delivery
+	// is only supported with a single api-gateway replica.
 	hub := ws.NewHub(logger)
 	go hub.Run(context.Background())
 
@@ -109,7 +119,7 @@ func main() {
 		Issuer:               envOr("AF_OIDC_ISSUER", ""),
 		ClientID:             envOr("AF_OIDC_CLIENT_ID", ""),
 		ClientSecret:         envOr("AF_OIDC_CLIENT_SECRET", ""),
-		RedirectURI:          envOr("AF_OIDC_REDIRECT_URI", "http://localhost:8080/auth/callback"),
+		RedirectURI:          envOr("AF_OIDC_REDIRECT_URI", defaultOIDCRedirectURI(strictMode)),
 		JWTSecret:            jwtSecrets[0],
 		JWTSecrets:           jwtSecrets,
 		LogoutURL:            envOr("AF_OIDC_LOGOUT_URL", ""),
@@ -118,7 +128,7 @@ func main() {
 		AdminUser:            envOr("AF_ADMIN_USER", "admin"),
 		AdminPassword:        envOr("AF_ADMIN_PASSWORD", "admin"),
 	}
-	if err := auth.ValidateConfig(oidcCfg, strictConfigEnabled()); err != nil {
+	if err := auth.ValidateConfig(oidcCfg, strictMode); err != nil {
 		logger.Fatal("invalid enterprise auth configuration", zap.Error(err))
 	}
 	oidcHandler := auth.NewOIDCHandler(oidcCfg, pgStore, logger)
@@ -218,11 +228,12 @@ func main() {
 	r.Post("/auth/refresh", oidcHandler.Refresh)
 
 	// ─── Internal ingest (collector → gateway) ───────────────────────────────
-	// Skip collector auth in dev mode so the collector can send without a signed JWT
+	// Skip collector auth in dev mode so the collector can send without the
+	// shared ingest bearer token.
 	if authDisabled {
 		r.Post("/internal/ingest", h.Ingest)
 	} else {
-		r.With(middleware.CollectorAuth(jwtSecret)).Post("/internal/ingest", h.Ingest)
+		r.With(middleware.CollectorAuth(collectorAuthToken)).Post("/internal/ingest", h.Ingest)
 	}
 
 	// Per-tenant rate limiter (Principle 2: tenant isolation)
@@ -272,7 +283,7 @@ func main() {
 			r.Post("/{runId}/feedback", h.PostFeedback)
 		})
 
-		// Live stream (Wireshark-style WebSocket)
+		// Live stream (Wireshark-style WebSocket, single-process fan-out only)
 		r.Get("/stream/live", h.LiveStream)
 
 		// Analytics
@@ -378,11 +389,13 @@ func main() {
 
 	// ─── Start server ────────────────────────────────────────────────────────
 	srv := &http.Server{
-		Addr:         listenAddr,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              listenAddr,
+		Handler:           r,
+		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MiB is enough for JWT/cookie headers without inviting abuse.
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -400,8 +413,10 @@ func main() {
 		Addr:    netProxyAddr,
 		Handler: np,
 		// No write timeout — CONNECT tunnels are long-lived bidirectional streams.
-		ReadTimeout: 60 * time.Second,
-		IdleTimeout: 120 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 	go func() {
 		logger.Info("net proxy listener starting", zap.String("addr", netProxyAddr))
@@ -515,15 +530,49 @@ func parseSecrets(raw string) []string {
 	return out
 }
 
-func validateProductionConfig(authDisabled bool, jwtSecrets []string, adminPassword, vaultKey string) error {
+func defaultOIDCRedirectURI(strict bool) string {
+	if strict {
+		return ""
+	}
+	return "http://localhost:8080/auth/callback"
+}
+
+func validateCollectorAuthConfig(authDisabled bool, collectorAuthToken string) error {
+	if authDisabled {
+		return nil
+	}
+	if strings.TrimSpace(collectorAuthToken) == "" {
+		return fmt.Errorf("AF_GATEWAY_AUTH_TOKEN must be set when AF_AUTH_DISABLED=false because /internal/ingest expects Authorization: Bearer <AF_GATEWAY_AUTH_TOKEN>")
+	}
+	return nil
+}
+
+func validateProductionConfig(authDisabled bool, jwtSecrets []string, collectorAuthToken, adminPassword, vaultKey string) error {
 	if !strictConfigEnabled() {
 		return nil
 	}
 	if authDisabled {
 		return fmt.Errorf("AF_AUTH_DISABLED=true is not allowed when AF_ENV=production or AF_STRICT_CONFIG=true")
 	}
-	if len(jwtSecrets) == 0 || strings.TrimSpace(jwtSecrets[0]) == "" || jwtSecrets[0] == "dev-secret-change-in-production" {
+	if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		return fmt.Errorf("DATABASE_URL must be set explicitly in production; refusing the built-in local default")
+	}
+	if strings.TrimSpace(os.Getenv("REDIS_URL")) == "" {
+		return fmt.Errorf("REDIS_URL must be set explicitly in production; refusing the built-in local default")
+	}
+	if strings.TrimSpace(os.Getenv("AF_CORS_ORIGINS")) == "" {
+		return fmt.Errorf("AF_CORS_ORIGINS must be set explicitly in production")
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("AF_TLS_ENABLED")), "true") {
+		if strings.TrimSpace(os.Getenv("AF_TLS_CERT_FILE")) == "" || strings.TrimSpace(os.Getenv("AF_TLS_KEY_FILE")) == "" {
+			return fmt.Errorf("AF_TLS_ENABLED=true requires AF_TLS_CERT_FILE and AF_TLS_KEY_FILE in production")
+		}
+	}
+	if len(jwtSecrets) == 0 || strings.TrimSpace(jwtSecrets[0]) == "" || containsDevelopmentJWTSecret(jwtSecrets) {
 		return fmt.Errorf("AF_JWT_SECRET/AF_JWT_SECRETS must be set to a non-default value")
+	}
+	if strings.TrimSpace(collectorAuthToken) == "" {
+		return fmt.Errorf("AF_GATEWAY_AUTH_TOKEN must be set to a non-empty shared bearer token")
 	}
 	if adminPassword == "admin" || strings.TrimSpace(adminPassword) == "" {
 		return fmt.Errorf("AF_ADMIN_PASSWORD must be set to a non-default value")
@@ -535,6 +584,23 @@ func validateProductionConfig(authDisabled bool, jwtSecrets []string, adminPassw
 		return err
 	}
 	return nil
+}
+
+func containsDevelopmentJWTSecret(secrets []string) bool {
+	for _, secret := range secrets {
+		switch strings.TrimSpace(secret) {
+		case "dev-secret-change-in-production", "dev-secret-change-in-prod":
+			return true
+		}
+	}
+	return false
+}
+
+func liveStreamTopologyWarning(strict bool) string {
+	if !strict {
+		return ""
+	}
+	return "/api/v1/stream/live uses an in-memory per-process hub; complete live event delivery is only supported with a single api-gateway replica, and multi-replica gateway deployments are not a supported HA topology for this endpoint"
 }
 
 func strictConfigEnabled() bool {
@@ -575,7 +641,7 @@ func serveSwaggerUI(specURL string) http.HandlerFunc {
         dom_id: '#swagger-ui',
         deepLinking: true,
         docExpansion: 'list',
-        persistAuthorization: true
+        persistAuthorization: false
       });
     </script>
   </body>

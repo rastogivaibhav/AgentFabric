@@ -163,18 +163,41 @@ func TestStripPort(t *testing.T) {
 func TestExtractKey_Bearer(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/chat/completions", nil)
 	r.Header.Set("Authorization", "Bearer sk-test1234")
-	assert.Equal(t, "sk-test1234", extractKey(r))
+	key, err := extractKey(r)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-test1234", key)
 }
 
 func TestExtractKey_XApiKey(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/messages", nil)
 	r.Header.Set("x-api-key", "sk-ant-test")
-	assert.Equal(t, "sk-ant-test", extractKey(r))
+	key, err := extractKey(r)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-ant-test", key)
 }
 
 func TestExtractKey_Missing(t *testing.T) {
 	r := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	assert.Equal(t, "", extractKey(r))
+	key, err := extractKey(r)
+	require.NoError(t, err)
+	assert.Equal(t, "", key)
+}
+
+func TestExtractKey_BearerCaseInsensitive(t *testing.T) {
+	r := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	r.Header.Set("Authorization", "BEARER sk-test1234")
+	key, err := extractKey(r)
+	require.NoError(t, err)
+	assert.Equal(t, "sk-test1234", key)
+}
+
+func TestExtractKey_RejectsConflictingHeaders(t *testing.T) {
+	r := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	r.Header.Set("Authorization", "Bearer sk-test1234")
+	r.Header.Set("x-api-key", "sk-other")
+	_, err := extractKey(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "conflicting")
 }
 
 func TestRemoveHopByHopHeaders(t *testing.T) {

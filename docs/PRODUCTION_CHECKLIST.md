@@ -34,11 +34,17 @@ Use this checklist before every production deployment and before declaring the p
   - `AF_OIDC_CLIENT_ID`
   - `AF_OIDC_CLIENT_SECRET`
   - `AF_OIDC_REDIRECT_URI`
+  - optional `AF_OIDC_LOGOUT_URL` reviewed for provider logout behavior
+- [ ] If using Helm with `AF_SSO_REQUIRED=true`, the Secret named by `secrets.name` contains the key from `auth.oidc.clientSecretKey` (default `oidc-client-secret`)
 - [ ] If SSO cutover is complete, `AF_PASSWORD_LOGIN_DISABLED=true`
+- [ ] If operators depend on `/api/v1/stream/live`, the deployment uses a single `api-gateway` replica; multi-replica gateway deployments are not a supported complete-delivery topology for live stream today
 - [ ] Collector production config is complete:
+  - `AF_ENV=production` or `AF_STRICT_CONFIG=true`
   - `AF_GATEWAY_ENDPOINT`
-  - `AF_GATEWAY_AUTH_TOKEN`
-  - `AF_JWT_SECRET` when auth is required
+  - `AF_GATEWAY_AUTH_TOKEN` is present on both collector and gateway with the same value
+  - `AF_AUTH_REQUIRE_AUTH=true`
+  - `AF_JWT_SECRET`
+  - `AF_GATEWAY_ENDPOINT` is not left at the built-in `http://localhost:8080` default
 
 ## 3. Readiness and Startup
 
@@ -50,28 +56,36 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] Pricing rules loaded successfully at startup
 - [ ] Policy rules loaded successfully at startup
 
-## 4. Automated Validation
+## 4. Merge-Gate CI Evidence
 
-- [ ] Focused Go test suites pass in CI
+- [ ] Collector CI runs `go test ./...`
+- [ ] API gateway CI runs `go test ./...`
 - [ ] Portal tests pass in CI
 - [ ] Portal production build passes in CI
-- [ ] Swagger and OpenAPI checks pass
-- [ ] Packaging validation passes for:
-  - local Docker Compose
-  - production Docker Compose overlay
-  - Helm render or lint
+- [ ] Swagger and OpenAPI smoke checks pass in CI
+- [ ] Packaging validation passes in CI for:
+  - local Docker Compose render
+  - production Docker Compose overlay render
+  - Helm lint or template smoke
+- [ ] Secret scan passes in CI
+- [ ] Release docs and release-boundary docs stay aligned with the current runtime shape
+- [ ] If the release changes `agent-sdk`, framework patching, or provider-compatibility claims, the latest `sdk-integration.yml` workflow run is green
+
+## 5. Candidate Deployment Validation
+
 - [ ] Stack probe passes:
   - `scripts/probe_stack_health.ps1`
   - `scripts/probe-stack-health.sh`
 - [ ] Proxy-path probe passes:
   - `scripts/probe_proxy_path.ps1`
   - `scripts/probe-proxy-path.sh`
-- [ ] `scripts/run_release_candidate_validation.ps1` or `scripts/run-release-candidate-validation.sh` passes against the candidate deployment
-- [ ] Backup path passes:
+- [ ] `scripts/run_release_candidate_validation.ps1` or `scripts/run-release-candidate-validation.sh` passes against the candidate deployment with admin credentials
+- [ ] If governance is part of the go-live bar, release-candidate validation is run with governance scenarios enabled and a real proxy virtual key
+- [ ] Backup path passes for the release window:
   - `scripts/backup_postgres.ps1`
   - `scripts/backup-postgres.sh`
 
-## 5. Runtime Smoke
+## 6. Runtime Smoke
 
 - [ ] Admin login works
 - [ ] `/auth/me` works with the browser or session flow
@@ -93,7 +107,7 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] One policy event is visible in the portal
 - [ ] One control-plane audit event is visible in the portal
 
-## 6. Coverage and Rollout Reality
+## 7. Coverage and Rollout Reality
 
 - [ ] Rollout owners understand the product coverage boundary:
   - SDK-instrumented apps are covered
@@ -108,7 +122,7 @@ Use this checklist before every production deployment and before declaring the p
   - authentication path
   - key-management approach
 
-## 7. Security and Audit
+## 8. Security and Audit
 
 - [ ] Pricing rule changes are auditable
 - [ ] Policy rule changes are auditable
@@ -118,7 +132,7 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] Secret material is not exposed through admin list APIs
 - [ ] Security headers are present on gateway responses
 
-## 8. GA Decision Bar
+## 9. GA Decision Bar
 
 Only declare GA when all of the following are true:
 
@@ -126,12 +140,13 @@ Only declare GA when all of the following are true:
 - [ ] Helm and Docker Compose packaging renders are green
 - [ ] readiness, proxy-path, and release-candidate validation are green in a real staging environment
 - [ ] governance scenarios are green
+- [ ] if the release changes SDK patching or provider compatibility, the latest `sdk-integration.yml` run is green
 - [ ] docs match the deployed product and supported provider scope
 - [ ] no open P0 or P1 release blockers remain
 - [ ] latest successful backup is no older than 24 hours
 - [ ] restore drill has been executed in the current release cycle
 
-## 9. Final GA Gate
+## 10. Final GA Gate
 
 Use the GA gate scripts for the final objective release decision. `ci` mode is for CI evidence. `ga` mode is the actual release decision and must be run with explicit blocker counts plus staging credentials.
 
@@ -169,7 +184,7 @@ OPEN_P1_COUNT=0 \
 bash scripts/run-ga-gate.sh
 ```
 
-## 10. Validation Commands
+## 11. Validation Commands
 
 ### Windows PowerShell
 
@@ -187,7 +202,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\probe_proxy_path.ps1 `
 powershell -ExecutionPolicy Bypass -File .\scripts\run_release_candidate_validation.ps1 `
   -BaseUrl http://<gateway-host>:8080 `
   -AdminUser <admin-user> `
-  -AdminPassword <admin-password>
+  -AdminPassword <admin-password> `
+  -RunGovernanceScenarios `
+  -ProxyVirtualKey <af-vk-key>
 ```
 
 ### macOS / Linux
@@ -205,6 +222,8 @@ bash scripts/probe-proxy-path.sh
 BASE_URL=http://<gateway-host>:8080 \
 ADMIN_USER=<admin-user> \
 ADMIN_PASSWORD=<admin-password> \
+RUN_GOVERNANCE_SCENARIOS=true \
+PROXY_VIRTUAL_KEY=<af-vk-key> \
 bash scripts/run-release-candidate-validation.sh
 ```
 

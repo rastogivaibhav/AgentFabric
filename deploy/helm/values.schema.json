@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "ssoRequired": {
+          "type": "boolean"
+        },
+        "passwordLoginDisabled": {
+          "type": "boolean"
+        },
+        "oidc": {
+          "type": "object",
+          "properties": {
+            "issuer": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "clientSecretKey": {
+              "type": "string"
+            },
+            "redirectUri": {
+              "type": "string"
+            },
+            "logoutUrl": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ssoRequired": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "oidc": {
+                "required": [
+                  "issuer",
+                  "clientId",
+                  "clientSecretKey",
+                  "redirectUri"
+                ],
+                "properties": {
+                  "issuer": {
+                    "minLength": 1
+                  },
+                  "clientId": {
+                    "minLength": 1
+                  },
+                  "clientSecretKey": {
+                    "minLength": 1
+                  },
+                  "redirectUri": {
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "passwordLoginDisabled": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "ssoRequired": {
+                    "const": true
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "oidc": {
+                    "required": [
+                      "issuer"
+                    ],
+                    "properties": {
+                      "issuer": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

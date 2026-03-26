@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	jwtlib "github.com/golang-jwt/jwt/v5"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const testSecret = "test-secret-32-bytes-for-hs256!!"
@@ -98,6 +101,49 @@ func TestValidateHTTP_MalformedHeader(t *testing.T) {
 	req.Header.Set("Authorization", "Token abc123") // not "Bearer"
 	if err := v.ValidateHTTP(req); err == nil {
 		t.Error("non-bearer auth header should be rejected")
+	}
+}
+
+func TestValidateHTTP_BearerCaseInsensitive(t *testing.T) {
+	v := NewJWTValidator(testSecret)
+	tok := signedToken(t, testSecret, jwtlib.MapClaims{
+		"sub": "collector",
+		"exp": jwtlib.NewNumericDate(time.Now().Add(5 * time.Minute)),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Authorization", "BEARER "+tok)
+	if err := v.ValidateHTTP(req); err != nil {
+		t.Errorf("case-insensitive bearer header rejected: %v", err)
+	}
+}
+
+func TestValidateHTTP_EmptyBearerTokenRejected(t *testing.T) {
+	v := NewJWTValidator(testSecret)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Authorization", "Bearer ")
+	if err := v.ValidateHTTP(req); err == nil {
+		t.Error("empty bearer token should be rejected")
+	}
+}
+
+func TestGRPCTokenValidator_BearerCaseInsensitive(t *testing.T) {
+	v := NewJWTValidator(testSecret)
+	tok := signedToken(t, testSecret, jwtlib.MapClaims{
+		"sub": "collector",
+		"exp": jwtlib.NewNumericDate(time.Now().Add(5 * time.Minute)),
+	})
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "BEARER "+tok))
+	interceptor := GRPCTokenValidator(v)
+	called := false
+	_, err := interceptor(ctx, "req", &grpc.UnaryServerInfo{FullMethod: "/otlp.TraceService/Export"}, func(ctx context.Context, req interface{}) (interface{}, error) {
+		called = true
+		return "ok", nil
+	})
+	if err != nil {
+		t.Fatalf("expected case-insensitive bearer token to pass gRPC validation, got %v", err)
+	}
+	if !called {
+		t.Fatal("expected gRPC handler to be invoked")
 	}
 }
 

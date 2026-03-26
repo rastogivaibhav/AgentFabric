@@ -27,6 +27,13 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 )
 
+var gatewayReadyProbeClient = &http.Client{
+	Timeout: 5 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -97,13 +104,7 @@ func main() {
 	httpMux.HandleFunc("/healthz", healthHandler)
 	httpMux.HandleFunc("/readyz", readyHandler)
 
-	httpServer := &http.Server{
-		Addr:         cfg.HTTP.Addr,
-		Handler:      httpMux,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
+	httpServer := newHTTPServer(cfg.HTTP.Addr, httpMux)
 
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -144,16 +145,28 @@ func main() {
 	logger.Info("Collector stopped cleanly")
 }
 
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+}
+
 func collectorReady(w http.ResponseWriter, r *http.Request, cfg *config.Config) {
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]any{
 		"status": "ok",
 		"mode":   "ready",
 		"checks": map[string]map[string]any{
-			"receiver":          {"status": "ok"},
-			"gateway_export":    {"status": "configured"},
-			"pricing_config":    {"status": "loaded"},
-			"gateway_auth_token": {"status": "configured"},
+			"receiver":           {"status": "ok"},
+			"gateway_export":     {"status": "configured"},
+			"pricing_config":     {"status": "loaded"},
+			"gateway_auth_token": {"status": "configured", "contract": "Authorization: Bearer <AF_GATEWAY_AUTH_TOKEN>"},
 		},
 	}
 	checks := response["checks"].(map[string]map[string]any)
@@ -187,7 +200,7 @@ func collectorReady(w http.ResponseWriter, r *http.Request, cfg *config.Config) 
 		_ = json.NewEncoder(w).Encode(response)
 		return
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := gatewayReadyProbeClient.Do(req)
 	if err != nil {
 		response["status"] = "degraded"
 		response["error"] = "gateway readyz unreachable"

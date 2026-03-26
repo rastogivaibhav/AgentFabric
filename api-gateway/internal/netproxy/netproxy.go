@@ -78,10 +78,15 @@ func New(ca *CA, v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, pol
 		httpClient: &http.Client{
 			Timeout: 5 * time.Minute,
 			Transport: &http.Transport{
+				Proxy:             http.ProxyFromEnvironment,
+				DialContext:       (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 				TLSClientConfig:   &tls.Config{},
 				ForceAttemptHTTP2: false,
 				// Generous timeouts for long streaming LLM responses.
+				TLSHandshakeTimeout:   5 * time.Second,
 				ResponseHeaderTimeout: 120 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+				IdleConnTimeout:       90 * time.Second,
 			},
 		},
 		logger: logger,
@@ -204,7 +209,11 @@ func (p *NetProxy) handleIntercepted(w http.ResponseWriter, r *http.Request, hos
 	//    a) af-vk-* virtual key → vault resolves to real key + tenant
 	//    b) raw real key (sk-...) → pass through as-is; still record span
 	//    c) no key → forward without modification; no span
-	rawKey := extractKey(r)
+	rawKey, err := extractKey(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	tenantID := ""
 
 	if strings.HasPrefix(rawKey, "af-vk-") {
@@ -755,13 +764,24 @@ func (l *singleConnListener) Addr() net.Addr {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // extractKey reads the virtual or real key from Authorization: Bearer or x-api-key.
-func extractKey(r *http.Request) string {
-	if auth := r.Header.Get("Authorization"); auth != "" {
-		if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
-			return strings.TrimSpace(after)
-		}
+func extractKey(r *http.Request) (string, error) {
+	bearer := extractBearerKey(r.Header.Get("Authorization"))
+	apiKey := strings.TrimSpace(r.Header.Get("x-api-key"))
+	if bearer != "" && apiKey != "" && bearer != apiKey {
+		return "", fmt.Errorf("conflicting Authorization and x-api-key credentials")
 	}
-	return strings.TrimSpace(r.Header.Get("x-api-key"))
+	if bearer != "" {
+		return bearer, nil
+	}
+	return apiKey, nil
+}
+
+func extractBearerKey(header string) string {
+	parts := strings.Fields(header)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
 }
 
 // stripPort removes the ":443" suffix from a hostport string.

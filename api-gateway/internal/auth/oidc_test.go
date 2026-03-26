@@ -103,6 +103,46 @@ func TestGenerateNonce_UniqueEachCall(t *testing.T) {
 	}
 }
 
+func TestValidateConfig_StrictRejectsPartialOIDCConfiguration(t *testing.T) {
+	err := ValidateConfig(OIDCConfig{
+		Issuer: "https://login.example.com/tenant/v2.0",
+	}, true)
+	if err == nil {
+		t.Fatal("expected strict mode to reject partial OIDC configuration")
+	}
+	if !strings.Contains(err.Error(), "AF_OIDC_CLIENT_ID") {
+		t.Fatalf("expected missing client id error, got %v", err)
+	}
+}
+
+func TestValidateConfig_StrictRejectsMissingRedirectWhenSSORequired(t *testing.T) {
+	err := ValidateConfig(OIDCConfig{
+		Issuer:       "https://login.example.com/tenant/v2.0",
+		ClientID:     "agentfabric-portal",
+		ClientSecret: "oidc-client-secret",
+		RequireSSO:   true,
+	}, true)
+	if err == nil {
+		t.Fatal("expected strict mode to reject missing redirect URI when SSO is required")
+	}
+	if !strings.Contains(err.Error(), "AF_OIDC_REDIRECT_URI") {
+		t.Fatalf("expected missing redirect URI error, got %v", err)
+	}
+}
+
+func TestValidateConfig_StrictAcceptsCompleteOptionalOIDCConfig(t *testing.T) {
+	err := ValidateConfig(OIDCConfig{
+		Issuer:       "https://login.example.com/tenant/v2.0",
+		ClientID:     "agentfabric-portal",
+		ClientSecret: "oidc-client-secret",
+		RedirectURI:  "https://app.agentfabric.io/auth/callback",
+		LogoutURL:    "https://login.example.com/logout",
+	}, true)
+	if err != nil {
+		t.Fatalf("expected strict mode to accept complete optional OIDC config, got %v", err)
+	}
+}
+
 // ─── ID Token Parsing ────────────────────────────────────────────────────────
 
 func makeTestIDToken(sub, email, nonce string, expOffset time.Duration) string {
@@ -331,6 +371,14 @@ func TestIsHTTPS_ForwardedProtoHeader(t *testing.T) {
 	}
 }
 
+func TestIsHTTPS_ForwardedProtoCommaSeparated(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/", bytes.NewReader(nil))
+	r.Header.Set("X-Forwarded-Proto", "http, https")
+	if !isHTTPS(r) {
+		t.Error("comma-separated X-Forwarded-Proto should detect https")
+	}
+}
+
 func TestIsHTTPS_PlainHTTP(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/", bytes.NewReader(nil))
 	if isHTTPS(r) {
@@ -343,6 +391,14 @@ func TestBearerToken_ExtractsBearerPrefix(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer my-token-value")
 	if bearerToken(r) != "my-token-value" {
 		t.Errorf("expected 'my-token-value', got %q", bearerToken(r))
+	}
+}
+
+func TestBearerToken_CaseInsensitive(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/", bytes.NewReader(nil))
+	r.Header.Set("Authorization", "BEARER my-token-value")
+	if bearerToken(r) != "my-token-value" {
+		t.Errorf("expected case-insensitive bearer parsing, got %q", bearerToken(r))
 	}
 }
 
@@ -384,6 +440,13 @@ func TestNewOIDCHandler_DefaultSessionMaxAge(t *testing.T) {
 	h := NewOIDCHandler(OIDCConfig{JWTSecret: "s"}, nil, zap.NewNop())
 	if h.cfg.SessionMaxAge == 0 {
 		t.Error("default session max age should be non-zero")
+	}
+}
+
+func TestNewOIDCHTTPClient_TimeoutConfigured(t *testing.T) {
+	client := newOIDCHTTPClient()
+	if client.Timeout != 15*time.Second {
+		t.Fatalf("expected OIDC HTTP client timeout of 15s, got %v", client.Timeout)
 	}
 }
 

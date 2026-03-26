@@ -120,18 +120,41 @@ func TestAnthropicParser_ParseStreamingUsage(t *testing.T) {
 func TestExtractVirtualKey_Bearer(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	r.Header.Set("Authorization", "Bearer af-vk-abc123")
-	assert.Equal(t, "af-vk-abc123", extractVirtualKey(r))
+	key, err := extractVirtualKey(r)
+	require.NoError(t, err)
+	assert.Equal(t, "af-vk-abc123", key)
 }
 
 func TestExtractVirtualKey_XAPIKey(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 	r.Header.Set("x-api-key", "af-vk-def456")
-	assert.Equal(t, "af-vk-def456", extractVirtualKey(r))
+	key, err := extractVirtualKey(r)
+	require.NoError(t, err)
+	assert.Equal(t, "af-vk-def456", key)
 }
 
 func TestExtractVirtualKey_Missing(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	assert.Equal(t, "", extractVirtualKey(r))
+	key, err := extractVirtualKey(r)
+	require.NoError(t, err)
+	assert.Equal(t, "", key)
+}
+
+func TestExtractVirtualKey_BearerCaseInsensitive(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	r.Header.Set("Authorization", "BEARER af-vk-abc123")
+	key, err := extractVirtualKey(r)
+	require.NoError(t, err)
+	assert.Equal(t, "af-vk-abc123", key)
+}
+
+func TestExtractVirtualKey_RejectsConflictingHeaders(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	r.Header.Set("Authorization", "Bearer af-vk-abc123")
+	r.Header.Set("x-api-key", "af-vk-def456")
+	_, err := extractVirtualKey(r)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "conflicting")
 }
 
 // ─── computeProxyCost ────────────────────────────────────────────────────────

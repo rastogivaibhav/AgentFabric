@@ -158,7 +158,7 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   ga-gate-smoke:
-    name: GA Gate (CI Mode)
+    name: Release Evidence Summary (CI Mode)
     needs: [collector, api-gateway, portal, agent-sdk, helm-smoke, packaging-smoke, secret-scan]
     runs-on: ubuntu-latest
     if: always()

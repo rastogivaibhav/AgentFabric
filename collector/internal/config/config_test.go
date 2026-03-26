@@ -23,6 +23,7 @@ func TestLoad_StrictProductionAcceptsJWTSecret(t *testing.T) {
 	t.Setenv("AF_JWT_SECRET", "collector-secret")
 	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
 	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("AF_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
 
 	cfg, err := Load()
 	if err != nil {
@@ -59,6 +60,48 @@ func TestLoad_StrictProductionRequiresTLSFilesWhenEnabled(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected production config with TLS enabled and no files to fail")
+	}
+}
+
+func TestLoad_StrictProductionRejectsAuthDisabled(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("AF_JWT_SECRET", "collector-secret")
+	t.Setenv("AF_AUTH_REQUIRE_AUTH", "false")
+	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("AF_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected production config with AF_AUTH_REQUIRE_AUTH=false to fail")
+	}
+}
+
+func TestLoad_StrictProductionRejectsDefaultGatewayEndpoint(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("AF_JWT_SECRET", "collector-secret")
+	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("AF_GATEWAY_ENDPOINT", "http://localhost:8080")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected production config with default AF_GATEWAY_ENDPOINT to fail")
+	}
+}
+
+func TestLoad_StrictProductionRejectsDevelopmentJWTSecretAlias(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("AF_JWT_SECRET", "dev-secret-change-in-prod")
+	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("AF_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected development sentinel AF_JWT_SECRET to fail in production")
 	}
 }
 

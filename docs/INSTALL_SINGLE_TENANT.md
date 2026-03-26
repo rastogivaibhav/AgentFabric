@@ -62,7 +62,9 @@ At minimum, configure:
 - `DATABASE_URL`
 - `REDIS_URL`
 - `AF_CORS_ORIGINS`
-- `AF_GATEWAY_AUTH_TOKEN`
+- `AF_GATEWAY_AUTH_TOKEN` shared between collector and gateway for `/internal/ingest` bearer auth
+- `AF_ENV=production` or `AF_STRICT_CONFIG=true` on both gateway and collector
+- `AF_AUTH_REQUIRE_AUTH=true` on the collector
 
 If using OIDC:
 
@@ -70,11 +72,23 @@ If using OIDC:
 - `AF_OIDC_CLIENT_ID`
 - `AF_OIDC_CLIENT_SECRET`
 - `AF_OIDC_REDIRECT_URI`
+- optional `AF_OIDC_LOGOUT_URL`
+
+In strict production mode, do not set only part of the OIDC tuple. Any configured OIDC path must include issuer, client ID, client secret, and redirect URI together.
 
 If enforcing SSO:
 
 - `AF_SSO_REQUIRED=true`
 - `AF_PASSWORD_LOGIN_DISABLED=true` after cutover
+
+For Helm, set:
+
+- `auth.ssoRequired: true`
+- `auth.oidc.issuer`
+- `auth.oidc.clientId`
+- `auth.oidc.redirectUri`
+- optional `auth.oidc.logoutUrl`
+- store the OIDC client secret in the Kubernetes Secret named by `secrets.name` under the key from `auth.oidc.clientSecretKey` (default `oidc-client-secret`)
 
 ## Installation Sequence
 

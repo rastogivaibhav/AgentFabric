@@ -1,0 +1,11 @@
+# import config
+packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\68\68ebcedb076b13fe2277c33e90f8b1a5c487236e93e6d2478b550c2f2f8d5f12-d
+packagefile github.com/golang-jwt/jwt/v5=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\32\320f0c194d0944c4641bca1e8a5d81889b3d711b8b089462d90664d6b2f4aab4-d
+packagefile google.golang.org/grpc=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\2f\2fb567ac1e254d22a5561db4a48535a34c65039c275503c7990806dacd1aedc3-d
+packagefile google.golang.org/grpc/codes=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\10\10c07cb3cd9fb6749c7cbf0af5f6141542f29242f4854ba9c4eab24a9b796b5f-d
+packagefile google.golang.org/grpc/metadata=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\55\556d29c0f08b0f2f7f8aeeba22638e38d736ee1c4732568f88057b440fa5c348-d
+packagefile google.golang.org/grpc/status=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\2f\2f143987c29b0a1202574207e1100d164397bfb064400f82f86a6ad5237f054e-d
+packagefile net/http=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\57\57593cb47a13e03e087b2cfc1e59d87e6bcbab99dcffb2e2887737448aad64df-d
+packagefile strings=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\2d\2ded9dc49b8a817ca9058c2571ad219819355a58d18dffba6e34159a2c220edf-d
+packagefile sync=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\23\2395a0222280fa9f0f415e48ab6e1807a4398967f085c466f77ebbfc5a046808-d
+packagefile time=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\d2\d2c8c6a3dd898f5423875686736ab809019d14593a37bb543b1eb186aa7b8524-d

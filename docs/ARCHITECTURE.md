@@ -104,6 +104,8 @@ Responsibilities:
 - eval and regression review
 - administrative workflows and audit visibility
 
+Live runtime visibility is backed by an in-memory WebSocket hub in the API gateway today, so `/api/v1/stream/live` is only supported with a single gateway replica when complete event delivery matters.
+
 ### Agent SDK
 The SDK provides workload onboarding and runtime linkage.
 
@@ -221,6 +223,7 @@ Production-relevant controls include:
 - `AF_PASSWORD_LOGIN_DISABLED`
 - `AF_JWT_SECRET`
 - `AF_JWT_SECRETS`
+- `AF_GATEWAY_AUTH_TOKEN` for collector -> gateway `/internal/ingest`
 
 See [SSO_RBAC_PLAN.md](SSO_RBAC_PLAN.md).
 

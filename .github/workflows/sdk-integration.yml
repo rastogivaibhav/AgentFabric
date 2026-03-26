@@ -2,6 +2,8 @@ name: SDK Integration Tests
 
 # Runs against REAL framework packages — not mocks.
 # Kept separate from ci.yml so framework install times don't slow down every PR.
+# Treat the latest green run as release evidence when shipping SDK patching or
+# provider-compatibility changes.
 #
 # Triggers:
 #   - Weekly on Monday at 07:00 UTC (catches upstream framework breakages)

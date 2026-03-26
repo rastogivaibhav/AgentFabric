@@ -40,16 +40,20 @@ invoke_required() {
 }
 
 docs_alignment() {
+  local readme="${REPO_ROOT}/README.md"
   local checklist="${REPO_ROOT}/docs/PRODUCTION_CHECKLIST.md"
   local boundaries="${REPO_ROOT}/docs/RELEASE_BOUNDARIES.md"
+  local reference="${REPO_ROOT}/docs/REFERENCE_DEPLOYMENT.md"
   local playbook="${REPO_ROOT}/docs/PILOT_PLAYBOOK.md"
   local scorecard="${REPO_ROOT}/docs/CUSTOMER_VALUE_SCORECARD.md"
+  [[ -f "${readme}" ]] || { echo "missing ${readme}" >&2; return 1; }
   [[ -f "${checklist}" ]] || { echo "missing ${checklist}" >&2; return 1; }
   [[ -f "${boundaries}" ]] || { echo "missing ${boundaries}" >&2; return 1; }
+  [[ -f "${reference}" ]] || { echo "missing ${reference}" >&2; return 1; }
   [[ -f "${playbook}" ]] || { echo "missing ${playbook}" >&2; return 1; }
   [[ -f "${scorecard}" ]] || { echo "missing ${scorecard}" >&2; return 1; }
   local combined
-  combined="$(cat "${checklist}" "${boundaries}" "${playbook}" "${scorecard}")"
+  combined="$(cat "${readme}" "${checklist}" "${boundaries}" "${reference}" "${playbook}" "${scorecard}")"
   for provider in openai anthropic google; do
     echo "${combined}" | grep -qi "${provider}" || { echo "missing provider ${provider} in docs" >&2; return 1; }
   done

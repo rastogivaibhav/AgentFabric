@@ -305,13 +305,13 @@ Agent SDK → OTLP HTTP POST /v1/traces → Collector (:4318)
   → collector/internal/processor → framework detection, PII scrub, cost computation
   → collector/internal/exporter → POST /internal/ingest to api-gateway:8080
       → Header: X-AF-Source: collector
-      → Header: Authorization: Bearer <collector JWT>
+      → Header: Authorization: Bearer <AF_GATEWAY_AUTH_TOKEN>
       → Body: {"spans":[...]}
 
 api-gateway: POST /internal/ingest
   → CollectorAuth middleware
       → Check X-AF-Source == "collector"     [H-4: this check adds nothing]
-      → Validate JWT with AF_JWT_SECRET      [correct]
+      → Constant-time compare against AF_GATEWAY_AUTH_TOKEN
   → Handler.Ingest()
       → No MaxBytesReader                    [D: DoS vector]
       → Read X-AF-Tenant header (unauthenticated) [3.5: tenant injection risk]

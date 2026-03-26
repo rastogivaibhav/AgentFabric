@@ -80,6 +80,7 @@ Typical capabilities:
 
 - subscribe to live runtime events
 - inspect near-real-time traffic and operator signals
+- treat the live stream as a single-gateway convenience path today, not a replica-safe HA feed
 
 Typical use cases:
 

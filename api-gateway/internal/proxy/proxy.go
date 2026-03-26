@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -89,6 +90,15 @@ func New(v *vault.Vault, be *budget.BudgetEnforcer, store spanStore, policyEngin
 		rateLimiter:    newRequestRateLimiter(),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Minute, // generous for long streaming responses
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+				ForceAttemptHTTP2:     true,
+				TLSHandshakeTimeout:   5 * time.Second,
+				ResponseHeaderTimeout: 45 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+				IdleConnTimeout:       90 * time.Second,
+			},
 		},
 		logger: logger,
 	}
@@ -112,7 +122,11 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Extract virtual key from Authorization or x-api-key.
-	vk := extractVirtualKey(r)
+	vk, err := extractVirtualKey(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if vk == "" || !strings.HasPrefix(vk, "af-vk-") {
 		http.Error(w, "missing or invalid virtual key", http.StatusUnauthorized)
 		return
@@ -944,13 +958,24 @@ func WithProvider(r *http.Request, provider string) *http.Request {
 }
 
 // extractVirtualKey pulls the virtual key from Authorization: Bearer or x-api-key.
-func extractVirtualKey(r *http.Request) string {
-	if auth := r.Header.Get("Authorization"); auth != "" {
-		if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
-			return strings.TrimSpace(after)
-		}
+func extractVirtualKey(r *http.Request) (string, error) {
+	bearer := extractBearerCredential(r.Header.Get("Authorization"))
+	apiKey := strings.TrimSpace(r.Header.Get("x-api-key"))
+	if bearer != "" && apiKey != "" && bearer != apiKey {
+		return "", fmt.Errorf("conflicting Authorization and x-api-key credentials")
 	}
-	return strings.TrimSpace(r.Header.Get("x-api-key"))
+	if bearer != "" {
+		return bearer, nil
+	}
+	return apiKey, nil
+}
+
+func extractBearerCredential(header string) string {
+	parts := strings.Fields(header)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
 }
 
 func newID() string {

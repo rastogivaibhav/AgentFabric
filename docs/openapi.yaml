@@ -208,7 +208,7 @@ paths:
       tags: [Internal]
       summary: Internal collector ingest
       description: |
-        Internal ingest endpoint used by the collector. In secured mode this route is protected by collector JWT auth.
+        Internal ingest endpoint used by the collector. In secured mode this route expects Authorization: Bearer <AF_GATEWAY_AUTH_TOKEN>.
         The tenant can also be supplied with X-AF-Tenant.
       security:
         - collectorBearerAuth: []
@@ -643,6 +643,8 @@ paths:
       description: |
         WebSocket upgrade endpoint for real-time tenant-scoped events.
         The connection is authenticated with the same JWT/session middleware used by /api/v1/*.
+        Live fan-out is backed by an in-memory hub inside a single api-gateway process today,
+        so complete event delivery is only supported with a single gateway replica.
       security:
         - bearerAuth: []
         - sessionCookie: []

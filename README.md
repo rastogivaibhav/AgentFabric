@@ -1,8 +1,8 @@
 # AgentFabric
 
-**Enterprise AI runtime governance, observability, and control plane for production LLM and agent workloads.**
+**Enterprise AI runtime governance, observability, and control plane for controlled LLM and agent rollouts.**
 
-Self-hosted. Policy-driven. Cost-aware. Deployment-ready.
+Self-hosted. Policy-driven. Cost-aware. Controlled-production candidate.
 
 ![Maturity](https://img.shields.io/badge/maturity-beta-blue)
 ![Deployment](https://img.shields.io/badge/deployment-self--hosted-2ea44f)
@@ -64,7 +64,7 @@ AgentFabric addresses that by placing AI runtime behavior behind a governed oper
 - self-hosted Docker Compose deployment
 - Kubernetes / Helm deployment path
 - on-premise-friendly operating model
-- staging validation and GA gate workflows
+- staging validation and GA gate workflows for controlled rollouts
 
 ## Architecture
 
@@ -166,9 +166,9 @@ scripts/          probes, pilot validation, release, and GA gate scripts
 1. Deploy with Helm or production Compose
 2. Configure auth, secrets, database, Redis, and ingress
 3. Apply migrations
-4. Run stack health and proxy probes
-5. Validate governance scenarios
-6. Run the GA gate
+4. Run stack health and proxy probes against the candidate deployment
+5. Run release-candidate validation with governance scenarios enabled
+6. Run the GA gate after staging evidence, packaging evidence, and blocker review are complete
 
 ## Documentation
 
@@ -209,7 +209,17 @@ Release claims should stay aligned with [docs/RELEASE_BOUNDARIES.md](docs/RELEAS
 
 ## Validation and Release Gating
 
-The repository includes environment proof and release validation scripts:
+The repository ships two different levels of release evidence:
+
+- merge-gate CI in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which verifies collector and gateway `go test ./...`, portal tests/build, agent-sdk unit tests, OpenAPI smoke, Helm and Compose render smoke, secret scan, and release-doc alignment
+- candidate-environment validation, which still requires stack probes, proxy-path proof, release-candidate validation, governance scenarios, and operational backup/restore review before GA
+
+Framework compatibility evidence is intentionally separate:
+
+- [`.github/workflows/sdk-integration.yml`](.github/workflows/sdk-integration.yml) runs the heavier SDK/framework matrix on schedule, manually, and on SDK workflow changes
+- treat the latest green `sdk-integration.yml` run as required release evidence when a release changes `agent-sdk`, framework patching behavior, or provider-compatibility claims
+
+The repository also includes environment proof and release validation scripts:
 
 - `scripts/probe_stack_health.ps1`
 - `scripts/probe_proxy_path.ps1`

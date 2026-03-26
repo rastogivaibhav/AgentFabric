@@ -140,8 +140,14 @@ func validateConfig(cfg *Config) error {
 	if strings.TrimSpace(cfg.Gateway.Endpoint) == "" {
 		return fmt.Errorf("gateway.endpoint is required in production")
 	}
+	if strings.EqualFold(strings.TrimSpace(cfg.Gateway.Endpoint), "http://localhost:8080") {
+		return fmt.Errorf("gateway.endpoint must be set explicitly in production; refusing the built-in localhost default")
+	}
+	if !cfg.Auth.RequireAuth {
+		return fmt.Errorf("auth.require_auth=false is not supported in production; OTLP auth must remain enabled")
+	}
 	if strings.TrimSpace(cfg.Gateway.AuthToken) == "" {
-		return fmt.Errorf("gateway.auth_token is required in production")
+		return fmt.Errorf("AF_GATEWAY_AUTH_TOKEN is required in production so the collector can authenticate to the gateway /internal/ingest endpoint")
 	}
 	if cfg.Auth.RequireAuth && strings.TrimSpace(cfg.Auth.JWTSecret) == "" {
 		return fmt.Errorf("AF_JWT_SECRET is required when auth.require_auth=true in production")
@@ -151,7 +157,8 @@ func validateConfig(cfg *Config) error {
 			return fmt.Errorf("tls.cert_file and tls.key_file are required when tls.enabled=true in production")
 		}
 	}
-	if strings.TrimSpace(cfg.Auth.JWTSecret) == "dev-secret-change-in-production" {
+	switch strings.TrimSpace(cfg.Auth.JWTSecret) {
+	case "dev-secret-change-in-production", "dev-secret-change-in-prod":
 		return fmt.Errorf("AF_JWT_SECRET must not use the development sentinel in production")
 	}
 	return nil

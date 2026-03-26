@@ -89,6 +89,7 @@ For broader external positioning, add:
 - Windows local Go test execution can still be affected by application-control policies on generated `*.test.exe` files.
 - Linux CI or a less restricted environment should remain the authoritative release gate for full Go execution.
 - Local bootstrap uses demo-friendly defaults and seeded pricing and policy rules. Production must override secrets and auth settings.
+- `/api/v1/stream/live` still uses a process-local hub. Do not describe multi-replica gateway deployments as complete-delivery live-stream HA.
 - Central rollout coverage depends on onboarding:
   - SDK-instrumented applications are covered
   - OTLP-producing services are covered
@@ -97,17 +98,38 @@ For broader external positioning, add:
 
 ## Release Gate Summary
 
-Do not ship a release unless:
+Do not ship a release unless the merge gate and the candidate-environment gate are both satisfied.
 
-- CI is green
-- packaging renders cleanly
-- health and readiness checks pass
-- portal tests and build pass
-- focused Go validation passes
-- staging validation passes against a real candidate environment
-- governance scenarios pass against the candidate environment
+### Merge-gate CI evidence
+
+Current CI in [../.github/workflows/ci.yml](../.github/workflows/ci.yml) verifies:
+
+- collector `go test ./...`
+- api-gateway `go test ./...`
+- portal `npm test -- --run`
+- portal `npm run build`
+- agent-sdk unit tests via `pytest -v`
+- OpenAPI and swagger smoke in the gateway test suite
+- Helm lint/template smoke
+- Docker Compose render smoke for local and production overlay
+- secret scanning
+- release-doc alignment
+
+CI does not prove staging readiness, proxy-path behavior, governance scenarios, or backup/restore execution.
+
+### Candidate-environment evidence
+
+Do not ship unless the release candidate also has:
+
+- stack health and readiness checks against a real candidate environment
+- proxy-path proof against the candidate environment
+- release-candidate validation against the candidate environment
+- governance scenarios against the candidate environment
+- backup and restore evidence reviewed for the release window
 - docs, provider scope, and release claims match code
 - no open P0 or P1 blockers remain
+
+If the release changes `agent-sdk`, framework patching, or provider-compatibility claims, also require the latest green [../.github/workflows/sdk-integration.yml](../.github/workflows/sdk-integration.yml) run before ship.
 
 ## Final GA Decision
 

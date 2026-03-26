@@ -1,24 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { AlertTriangle, Archive, ChevronLeft, ChevronRight, Download, Eraser, History, Lock, RefreshCw, ShieldCheck, ShieldX } from 'lucide-react'
+import { Archive, ChevronLeft, ChevronRight, Download, History, Lock, RefreshCw } from 'lucide-react'
 import { hasRole, useAuth } from '../hooks/auth'
-import { useControlAudit, useControlHistory, useCreateEvidenceBundle, useEvidenceBundles } from '../hooks/api'
+import { useControlAudit, useControlHistory, useCreateEvidenceBundle, useEvidenceBundles, type AdminAuditEntry } from '../hooks/api'
 
 const PAGE_SIZE = 100
-
-interface AuditEntry {
-  id: number
-  decision_id: string
-  trace_id: string
-  span_id: string
-  policy_name: string
-  result: 'allow' | 'deny' | 'warn' | 'sanitize'
-  reason: string
-  tenant_id: string
-  evaluated_at: string
-  previous_hash: string
-  entry_hash: string
-}
 
 function truncate(value: string, len = 8): string {
   if (!value) return '-'
@@ -40,26 +25,22 @@ function formatDate(iso: string): string {
   }
 }
 
-const RESULT_CONFIG = {
-  allow: { label: 'allow', icon: ShieldCheck, bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
-  deny: { label: 'deny', icon: ShieldX, bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
-  warn: { label: 'warn', icon: AlertTriangle, bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
-  sanitize: { label: 'sanitize', icon: Eraser, bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
+const OUTCOME_CONFIG = {
+  success: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+  error: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
+  failed: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
+  blocked: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
 } as const
 
-function ResultBadge({ result }: { result: string }) {
-  const cfg = RESULT_CONFIG[result as keyof typeof RESULT_CONFIG] ?? {
-    label: result,
-    icon: ShieldCheck,
+function OutcomeBadge({ outcome }: { outcome: AdminAuditEntry['outcome'] }) {
+  const cfg = OUTCOME_CONFIG[outcome as keyof typeof OUTCOME_CONFIG] ?? {
     bg: 'bg-slate-100',
     text: 'text-slate-700',
     border: 'border-slate-200',
   }
-  const Icon = cfg.icon
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
-      <Icon size={11} />
-      {cfg.label}
+      {outcome || 'unknown'}
     </span>
   )
 }
@@ -104,7 +85,7 @@ export default function AuditPage() {
 
   if (!isAdmin) return <AccessDenied />
 
-  const entries = (auditQuery.data?.items ?? []) as AuditEntry[]
+  const auditEntries: AdminAuditEntry[] = auditQuery.data?.items ?? []
   const historyEntries = historyQuery.data?.items ?? []
   const bundles = bundlesQuery.data?.items ?? []
   const hasPrev = offset > 0
@@ -137,7 +118,7 @@ export default function AuditPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Audit Log</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Immutable, hash-chained policy decisions plus append-only control history and exportable evidence bundles.
+            Recent control-plane audit records, append-only control history, and exportable evidence bundles.
           </p>
         </div>
         <button
@@ -158,9 +139,9 @@ export default function AuditPage() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Policy Audit</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{entries.length}</p>
-          <p className="mt-1 text-sm text-slate-500">Hash-chained policy decisions in the current view.</p>
+          <p className="text-xs uppercase tracking-wide text-slate-400">Control Audit</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{auditEntries.length}</p>
+          <p className="mt-1 text-sm text-slate-500">Recent control-plane audit records in the current view.</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-400">Control History</p>
@@ -303,7 +284,7 @@ export default function AuditPage() {
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Policy Audit Chain</h2>
-            <p className="text-sm text-slate-500">Immutable, hash-chained record of every policy decision.</p>
+            <p className="text-sm text-slate-500">Recent legacy control-plane audit records captured alongside enterprise memory history.</p>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -312,12 +293,12 @@ export default function AuditPage() {
               <tr>
                 <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">#</th>
                 <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Timestamp</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Policy</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Result</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Trace</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Span</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600">Reason</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Entry hash</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Category</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Action</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Target</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Actor</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600 whitespace-nowrap">Outcome</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
@@ -331,51 +312,40 @@ export default function AuditPage() {
                       ))}
                     </tr>
                   ))
-                : entries.length === 0
+                : auditEntries.length === 0
                   ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
-                        No audit entries found for this tenant.
+                        No control audit entries found for this tenant.
                       </td>
                     </tr>
                   )
-                  : entries.map(entry => (
+                  : auditEntries.map(entry => (
                     <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 text-slate-400 font-mono text-xs">{entry.id}</td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(entry.evaluated_at)}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(entry.created_at)}</td>
                       <td className="px-4 py-3">
-                        <span title={entry.policy_name} className="font-medium text-slate-800 max-w-[160px] truncate block">
-                          {entry.policy_name || '-'}
+                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                          {entry.category}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-slate-700 font-medium">{entry.action}</td>
                       <td className="px-4 py-3">
-                        <ResultBadge result={entry.result} />
-                      </td>
-                      <td className="px-4 py-3">
-                        {entry.trace_id ? (
-                          <Link
-                            to={`/traces/${entry.trace_id}`}
-                            title={entry.trace_id}
-                            className="font-mono text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
-                          >
-                            {truncate(entry.trace_id, 12)}
-                          </Link>
-                        ) : (
-                          <span className="text-slate-400 text-xs">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span title={entry.span_id} className="font-mono text-xs text-slate-500">
-                          {truncate(entry.span_id, 12)}
+                        <span
+                          title={entry.target_id ? `${entry.target_type}:${entry.target_id}` : entry.target_type}
+                          className="font-mono text-xs text-slate-500"
+                        >
+                          {entry.target_id ? `${entry.target_type}:${truncate(entry.target_id, 16)}` : entry.target_type}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-slate-600">{entry.actor || '-'}</td>
                       <td className="px-4 py-3 text-slate-600 max-w-xs">
-                        <span title={entry.reason} className="line-clamp-2 block">
-                          {entry.reason || '-'}
-                        </span>
+                        <OutcomeBadge outcome={entry.outcome} />
                       </td>
-                      <td className="px-4 py-3">
-                        <HashCell hash={entry.entry_hash} />
+                      <td className="px-4 py-3 text-slate-600 max-w-md">
+                        <span title={entry.details || ''} className="line-clamp-2 block">
+                          {entry.details || '-'}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -428,8 +398,8 @@ export default function AuditPage() {
       </section>
 
       <p className="text-xs text-slate-400">
-        Policy entries remain verifiable via <code className="font-mono bg-slate-100 px-1 rounded">GET /api/v1/audit/verify</code>.
-        Enterprise memory exports are tenant-scoped and include only the evidence linked to the requested incident scope.
+        Control-plane records and enterprise memory exports are tenant-scoped.
+        Policy entry verification remains available via <code className="font-mono bg-slate-100 px-1 rounded">GET /api/v1/audit/verify</code>.
       </p>
     </div>
   )

@@ -48,10 +48,12 @@ Required production inputs:
 - `AF_JWT_SECRET`
 - `AF_ADMIN_PASSWORD`
 - `AF_VAULT_KEY`
-- `AF_GATEWAY_AUTH_TOKEN`
+- `AF_GATEWAY_AUTH_TOKEN` shared between collector and gateway for `/internal/ingest`
 - `DATABASE_URL`
 - `REDIS_URL`
 - `AF_CORS_ORIGINS`
+- `AF_ENV=production` or `AF_STRICT_CONFIG=true` on both gateway and collector
+- `AF_AUTH_REQUIRE_AUTH=true` on the collector
 
 ### Kubernetes / Helm
 Use:
@@ -89,6 +91,9 @@ Recommended production auth flags:
 
 - `AF_SSO_REQUIRED=true` once OIDC is live
 - `AF_PASSWORD_LOGIN_DISABLED=true` after SSO cutover
+- when any OIDC fields are set in strict production mode, set issuer, client ID, client secret, and redirect URI together
+- when using Helm, set `auth.oidc.issuer`, `auth.oidc.clientId`, `auth.oidc.redirectUri`, optional `auth.oidc.logoutUrl`, and store `AF_OIDC_CLIENT_SECRET` in the shared Secret under `auth.oidc.clientSecretKey`
+- `/api/v1/stream/live` is a single-process WebSocket fan-out today; do not treat multi-replica `api-gateway` deployments as a supported HA topology for complete live stream delivery
 
 ## Coverage Boundaries
 
@@ -109,16 +114,29 @@ The expectation is that readiness is meaningful, not just process-up.
 
 ## Minimum Release Validation
 
-At minimum, validate:
+At minimum, separate merge-gate CI evidence from candidate-environment proof.
+
+Merge-gate CI currently proves:
+
+- collector and api-gateway `go test ./...`
+- portal test and build
+- agent-sdk unit tests
+- OpenAPI smoke
+- Helm and Docker Compose render smoke
+- secret scan
+- release-doc alignment
+
+Candidate-environment release proof still requires:
 
 - health and readiness checks
 - stack-health probe
 - proxy-path proof
-- portal build and test path
-- focused Go test path
 - release candidate validation script
+- governance scenarios when governance is part of the go-live bar
 - backup script dry run
 - restore command rehearsal for the latest dump
+
+If the release changes `agent-sdk`, framework patching, or provider-compatibility claims, require the latest green `sdk-integration.yml` workflow as release evidence too.
 
 Primary validation entry points:
 

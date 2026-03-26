@@ -17,7 +17,7 @@
 #   AF_ADMIN_PASSWORD      — strong admin password
 #   AF_VAULT_KEY           — 64-char hex key for provider-key encryption
 #   AF_CORS_ORIGINS        — your portal domain (e.g. https://app.agentfabric.io)
-#   AF_GATEWAY_AUTH_TOKEN  — collector -> gateway ingest bearer token
+#   AF_GATEWAY_AUTH_TOKEN  — shared collector -> gateway ingest bearer token (same value on both services)
 #   DATABASE_URL           — production PostgreSQL DSN with sslmode=require
 #   REDIS_URL              — production Redis URL
 #   POSTGRES_PASSWORD      — PostgreSQL superuser password (for the DB container)
@@ -48,12 +48,15 @@ services:
   # ─── Collector: enforce auth, disable debug, enable TLS ────────────────────
   collector:
     environment:
+      AF_ENV: "production"
+      AF_STRICT_CONFIG: "true"
       AF_AUTH_REQUIRE_AUTH: "true"          # Require JWT on all OTLP ingestion
       AF_JWT_SECRET: ${AF_JWT_SECRET:?AF_JWT_SECRET must be set for production}
       AF_DEBUG: "false"
       AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
       AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
       AF_GATEWAY_AUTH_TOKEN: ${AF_GATEWAY_AUTH_TOKEN:?AF_GATEWAY_AUTH_TOKEN must be set for production}
+      # If AF_TLS_ENABLED=true, mount cert/key files and set AF_TLS_CERT_FILE + AF_TLS_KEY_FILE too.
       # Tighten rate limits for production load profile
       AF_RATE_LIMIT_SPANS_PER_SECOND: "${AF_RATE_LIMIT_SPANS_PER_SECOND:-10000}"
       AF_PROCESSOR_WORKERS: "${AF_PROCESSOR_WORKERS:-8}"
@@ -66,6 +69,7 @@ services:
       AF_STRICT_CONFIG: "true"
       AF_JWT_SECRET: ${AF_JWT_SECRET:?AF_JWT_SECRET must be set for production}
       AF_JWT_SECRETS: "${AF_JWT_SECRETS:-}"
+      AF_GATEWAY_AUTH_TOKEN: ${AF_GATEWAY_AUTH_TOKEN:?AF_GATEWAY_AUTH_TOKEN must be set for production}
       AF_ADMIN_PASSWORD: ${AF_ADMIN_PASSWORD:?AF_ADMIN_PASSWORD must be set for production}
       AF_VAULT_KEY: ${AF_VAULT_KEY:?AF_VAULT_KEY must be set for production}
       AF_ADMIN_USER: "${AF_ADMIN_USER:-admin}"
@@ -73,13 +77,15 @@ services:
       REDIS_URL: ${REDIS_URL:?REDIS_URL must be set for production}
       AF_CORS_ORIGINS: ${AF_CORS_ORIGINS:?AF_CORS_ORIGINS must be set for production}
       AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
+      # If AF_TLS_ENABLED=true, mount cert/key files and set AF_TLS_CERT_FILE + AF_TLS_KEY_FILE too.
       AF_LOG_LEVEL: "info"                  # Do not run debug logging in production
-      # OIDC SSO — optional, uncomment to enable enterprise login
+      # OIDC SSO — optional, uncomment to enable enterprise login.
+      # If AF_SSO_REQUIRED=true, set issuer, client ID, client secret, and redirect URI together.
       # AF_OIDC_ISSUER:        "${AF_OIDC_ISSUER:-}"
       # AF_OIDC_CLIENT_ID:     "${AF_OIDC_CLIENT_ID:-}"
       # AF_OIDC_CLIENT_SECRET: "${AF_OIDC_CLIENT_SECRET:-}"
       # AF_OIDC_REDIRECT_URI:  "${AF_OIDC_REDIRECT_URI:-}"
-      # AF_OIDC_LOGOUT_URL:    "${AF_OIDC_LOGOUT_URL:-}"
+      # AF_OIDC_LOGOUT_URL:    "${AF_OIDC_LOGOUT_URL:-}"  # optional provider logout redirect
       AF_PASSWORD_LOGIN_DISABLED: "${AF_PASSWORD_LOGIN_DISABLED:-false}"
       AF_SSO_REQUIRED: "${AF_SSO_REQUIRED:-false}"
     restart: always
@@ -88,7 +94,7 @@ services:
     build:
       args:
         VITE_API_URL: "${VITE_API_URL:?VITE_API_URL must be set for production}"
-        VITE_WS_URL: "${VITE_WS_URL:?VITE_WS_URL must be set for production}"
+        VITE_WS_URL: "${VITE_WS_URL:?VITE_WS_URL must be set for production}" # Live stream is only complete behind a single api-gateway process today
         VITE_AUTH_DISABLED: "false"
         VITE_SHOW_DEFAULT_CREDS: "false"
     restart: always

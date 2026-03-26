@@ -53,6 +53,9 @@ stringData:
   jwt-secret:       "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
   jwt-secrets:      ""   # comma-separated for zero-downtime rotation (optional)
   admin-password:   "REPLACE_WITH_STRONG_ADMIN_PASSWORD"
+  gateway-auth-token: "REPLACE_WITH_SHARED_INGEST_BEARER_TOKEN"
+  vault-key:        "REPLACE_WITH_64_CHAR_HEX_KEY"
+  oidc-client-secret: ""  # set when AF_SSO_REQUIRED=true
   database-url:     "postgres://fabric:REPLACE_PASSWORD@postgres-svc:5432/agentfabric?sslmode=require"
   redis-url:        "redis://:REPLACE_PASSWORD@redis-svc:6379"
 
@@ -96,6 +99,10 @@ spec:
             - containerPort: 9090  # Prometheus
               protocol: TCP
           env:
+            - name: AF_ENV
+              value: "production"
+            - name: AF_STRICT_CONFIG
+              value: "true"
             - name: AF_NODE_NAME
               valueFrom:
                 fieldRef:
@@ -105,6 +112,11 @@ spec:
                 secretKeyRef:
                   name: agentfabric-secrets
                   key: jwt-secret
+            - name: AF_GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: gateway-auth-token
             - name: AF_GATEWAY_ENDPOINT
               value: "http://agentfabric-gateway-svc:8080"
           volumeMounts:
@@ -165,6 +177,8 @@ spec:
 
 ---
 # ─── API Gateway Deployment ───────────────────────────────────────────────────
+# The REST control plane can scale horizontally, but /api/v1/stream/live uses
+# a process-local WebSocket hub and is not a supported multi-replica HA path.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -201,6 +215,10 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: AF_ENV
+              value: "production"
+            - name: AF_STRICT_CONFIG
+              value: "true"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -211,11 +229,18 @@ spec:
                 secretKeyRef:
                   name: agentfabric-secrets
                   key: redis-url
+            - name: AF_CORS_ORIGINS
+              value: "https://app.agentfabric.io"
             - name: AF_JWT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: agentfabric-secrets
                   key: jwt-secret
+            - name: AF_GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: gateway-auth-token
             # AF_JWT_SECRETS: set for zero-downtime key rotation.
             # When empty the gateway falls back to AF_JWT_SECRET.
             - name: AF_JWT_SECRETS
@@ -228,6 +253,30 @@ spec:
                 secretKeyRef:
                   name: agentfabric-secrets
                   key: admin-password
+            - name: AF_VAULT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentfabric-secrets
+                  key: vault-key
+            # Uncomment and populate these when enabling enterprise SSO.
+            # AF_SSO_REQUIRED=true requires issuer, client ID, client secret, and redirect URI together.
+            # - name: AF_SSO_REQUIRED
+            #   value: "true"
+            # - name: AF_PASSWORD_LOGIN_DISABLED
+            #   value: "true"
+            # - name: AF_OIDC_ISSUER
+            #   value: "https://login.example.com/tenant/v2.0"
+            # - name: AF_OIDC_CLIENT_ID
+            #   value: "agentfabric-portal"
+            # - name: AF_OIDC_CLIENT_SECRET
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: agentfabric-secrets
+            #       key: oidc-client-secret
+            # - name: AF_OIDC_REDIRECT_URI
+            #   value: "https://app.agentfabric.io/auth/callback"
+            # - name: AF_OIDC_LOGOUT_URL
+            #   value: "https://login.example.com/logout"
           resources:
             requests:
               cpu: 100m
@@ -409,6 +458,8 @@ spec:
 # can take all pods offline simultaneously.
 #
 # api-gateway: minAvailable:1 with 3 replicas → two pods can drain at once.
+# This improves REST/API availability, but does not make /api/v1/stream/live
+# replica-safe because live fan-out remains in-memory inside each pod.
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

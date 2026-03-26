@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -176,7 +177,7 @@ func TestValidateProductionConfig_StrictDisabled(t *testing.T) {
 	t.Setenv("AF_ENV", "")
 	t.Setenv("AF_STRICT_CONFIG", "false")
 
-	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "admin", "")
+	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "", "admin", "")
 	if err != nil {
 		t.Fatalf("expected nil when strict config disabled, got %v", err)
 	}
@@ -185,8 +186,11 @@ func TestValidateProductionConfig_StrictDisabled(t *testing.T) {
 func TestValidateProductionConfig_RejectsUnsafeDefaults(t *testing.T) {
 	t.Setenv("AF_ENV", "production")
 	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
+	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
 
-	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "admin", "")
+	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "", "admin", "")
 	if err == nil {
 		t.Fatal("expected unsafe production config to be rejected")
 	}
@@ -195,9 +199,136 @@ func TestValidateProductionConfig_RejectsUnsafeDefaults(t *testing.T) {
 func TestValidateProductionConfig_AcceptsSafeValues(t *testing.T) {
 	t.Setenv("AF_ENV", "production")
 	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
+	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
 
-	err := validateProductionConfig(false, []string{"super-secret"}, "strong-password", strings.Repeat("a", 64))
+	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatalf("expected safe production config to pass, got %v", err)
+	}
+}
+
+func TestValidateProductionConfig_RequiresDatabaseURL(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
+	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+
+	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
+	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Fatalf("expected DATABASE_URL validation error, got %v", err)
+	}
+}
+
+func TestValidateProductionConfig_RequiresRedisURL(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("REDIS_URL", "")
+	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+
+	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
+	if err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
+		t.Fatalf("expected REDIS_URL validation error, got %v", err)
+	}
+}
+
+func TestValidateProductionConfig_RequiresCORSOrigins(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
+	t.Setenv("AF_CORS_ORIGINS", "")
+
+	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
+	if err == nil || !strings.Contains(err.Error(), "AF_CORS_ORIGINS") {
+		t.Fatalf("expected AF_CORS_ORIGINS validation error, got %v", err)
+	}
+}
+
+func TestValidateProductionConfig_RequiresTLSFilesWhenEnabled(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
+	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+	t.Setenv("AF_TLS_ENABLED", "true")
+	t.Setenv("AF_TLS_CERT_FILE", "")
+	t.Setenv("AF_TLS_KEY_FILE", "")
+
+	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
+	if err == nil || !strings.Contains(err.Error(), "AF_TLS_CERT_FILE") {
+		t.Fatalf("expected TLS env validation error, got %v", err)
+	}
+}
+
+func TestValidateProductionConfig_RejectsKnownDevelopmentSecretSentinel(t *testing.T) {
+	t.Setenv("AF_ENV", "production")
+	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
+	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+
+	err := validateProductionConfig(false, []string{"dev-secret-change-in-prod"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
+	if err == nil || !strings.Contains(err.Error(), "AF_JWT_SECRET/AF_JWT_SECRETS") {
+		t.Fatalf("expected development sentinel rejection, got %v", err)
+	}
+}
+
+func TestValidateCollectorAuthConfig_RequiresTokenWhenEnabled(t *testing.T) {
+	err := validateCollectorAuthConfig(false, "")
+	if err == nil {
+		t.Fatal("expected missing collector auth token to fail")
+	}
+}
+
+func TestValidateCollectorAuthConfig_AllowsMissingTokenWhenAuthDisabled(t *testing.T) {
+	err := validateCollectorAuthConfig(true, "")
+	if err != nil {
+		t.Fatalf("expected missing collector auth token to be allowed when auth is disabled, got %v", err)
+	}
+}
+
+func TestLiveStreamTopologyWarning_StrictDisabled(t *testing.T) {
+	if got := liveStreamTopologyWarning(false); got != "" {
+		t.Fatalf("expected no warning when strict config is disabled, got %q", got)
+	}
+}
+
+func TestLiveStreamTopologyWarning_StrictEnabled(t *testing.T) {
+	got := liveStreamTopologyWarning(true)
+	if got == "" {
+		t.Fatal("expected live stream topology warning in strict mode")
+	}
+	for _, needle := range []string{"/api/v1/stream/live", "single api-gateway replica", "multi-replica"} {
+		if !strings.Contains(got, needle) {
+			t.Fatalf("expected warning to mention %q, got %q", needle, got)
+		}
+	}
+}
+
+func TestDefaultOIDCRedirectURI(t *testing.T) {
+	if got := defaultOIDCRedirectURI(false); got != "http://localhost:8080/auth/callback" {
+		t.Fatalf("expected dev OIDC redirect default, got %q", got)
+	}
+	if got := defaultOIDCRedirectURI(true); got != "" {
+		t.Fatalf("expected strict mode to require explicit OIDC redirect URI, got %q", got)
+	}
+}
+
+func TestServeSwaggerUI_DoesNotPersistAuthorization(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/docs/swagger", nil)
+	rr := httptest.NewRecorder()
+
+	serveSwaggerUI("/docs/openapi.yaml")(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `persistAuthorization: false`) {
+		t.Fatalf("expected swagger UI to disable persisted authorization, got %s", body)
 	}
 }

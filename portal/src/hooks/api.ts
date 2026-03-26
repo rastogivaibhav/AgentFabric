@@ -243,6 +243,12 @@ export interface Page<T> {
   has_more: boolean
 }
 
+export interface LimitedPage<T> {
+  items: T[]
+  count: number
+  limit: number
+}
+
 export interface OverviewStats {
   total_traces: number
   active_agents: number
@@ -1396,7 +1402,7 @@ export function useCompareEvalRegressions() {
 }
 
 export function useControlAudit(limit = 50) {
-  return useQuery<{ items: AdminAuditEntry[]; count: number; limit: number }>({
+  return useQuery<LimitedPage<AdminAuditEntry>>({
     queryKey: ['control-audit', limit],
     queryFn: () => apiFetch('/audit/control', { limit: String(limit) }),
     retry: false,
@@ -1417,7 +1423,7 @@ export function useControlHistory(limit = 50, offset = 0, category = '', targetI
 }
 
 export function useEvidenceBundles(limit = 25) {
-  return useQuery<{ items: EvidenceBundle[]; count: number; limit: number }>({
+  return useQuery<LimitedPage<EvidenceBundle>>({
     queryKey: ['evidence-bundles', limit],
     queryFn: () => apiFetch('/audit/evidence-bundles', { limit: String(limit) }),
     retry: false,

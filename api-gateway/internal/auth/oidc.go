@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -145,10 +146,11 @@ func parseJWKSPublicKey(k jwkKey) (*rsa.PublicKey, error) {
 
 // OIDCHandler implements the login/callback/logout HTTP handlers.
 type OIDCHandler struct {
-	cfg       OIDCConfig
-	users     UserLookup // nil means env-var-only auth (dev / break-glass)
-	logger    *zap.Logger
-	jwksCache *jwksCache
+	cfg        OIDCConfig
+	users      UserLookup // nil means env-var-only auth (dev / break-glass)
+	logger     *zap.Logger
+	jwksCache  *jwksCache
+	httpClient *http.Client
 }
 
 // NewOIDCHandler creates a new OIDC handler.
@@ -168,26 +170,57 @@ func NewOIDCHandler(cfg OIDCConfig, users UserLookup, logger *zap.Logger) *OIDCH
 	if cfg.JWTSecret == "" && len(cfg.JWTSecrets) > 0 {
 		cfg.JWTSecret = cfg.JWTSecrets[0]
 	}
-	return &OIDCHandler{cfg: cfg, users: users, logger: logger, jwksCache: newJWKSCache()}
+	return &OIDCHandler{
+		cfg:        cfg,
+		users:      users,
+		logger:     logger,
+		jwksCache:  newJWKSCache(),
+		httpClient: newOIDCHTTPClient(),
+	}
+}
+
+func newOIDCHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			ForceAttemptHTTP2:     true,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}
 }
 
 func ValidateConfig(cfg OIDCConfig, strict bool) error {
 	if !strict {
 		return nil
 	}
-	if cfg.RequireSSO {
+	issuer := strings.TrimSpace(cfg.Issuer)
+	clientID := strings.TrimSpace(cfg.ClientID)
+	clientSecret := strings.TrimSpace(cfg.ClientSecret)
+	redirectURI := strings.TrimSpace(cfg.RedirectURI)
+	logoutURL := strings.TrimSpace(cfg.LogoutURL)
+	oidcConfigured := issuer != "" || clientID != "" || clientSecret != "" || redirectURI != "" || logoutURL != ""
+	if cfg.RequireSSO || oidcConfigured {
+		prefix := "OIDC configuration requires "
+		if cfg.RequireSSO {
+			prefix = "AF_SSO_REQUIRED=true requires "
+		}
 		switch {
-		case strings.TrimSpace(cfg.Issuer) == "":
-			return fmt.Errorf("AF_SSO_REQUIRED=true requires AF_OIDC_ISSUER")
-		case strings.TrimSpace(cfg.ClientID) == "":
-			return fmt.Errorf("AF_SSO_REQUIRED=true requires AF_OIDC_CLIENT_ID")
-		case strings.TrimSpace(cfg.ClientSecret) == "":
-			return fmt.Errorf("AF_SSO_REQUIRED=true requires AF_OIDC_CLIENT_SECRET")
-		case strings.TrimSpace(cfg.RedirectURI) == "":
-			return fmt.Errorf("AF_SSO_REQUIRED=true requires AF_OIDC_REDIRECT_URI")
+		case issuer == "":
+			return fmt.Errorf("%sAF_OIDC_ISSUER", prefix)
+		case clientID == "":
+			return fmt.Errorf("%sAF_OIDC_CLIENT_ID", prefix)
+		case clientSecret == "":
+			return fmt.Errorf("%sAF_OIDC_CLIENT_SECRET", prefix)
+		case redirectURI == "":
+			return fmt.Errorf("%sAF_OIDC_REDIRECT_URI", prefix)
 		}
 	}
-	if cfg.DisablePasswordLogin && !cfg.RequireSSO && strings.TrimSpace(cfg.Issuer) == "" {
+	if cfg.DisablePasswordLogin && !oidcConfigured {
 		return fmt.Errorf("AF_PASSWORD_LOGIN_DISABLED=true requires OIDC SSO to be configured")
 	}
 	return nil
@@ -530,7 +563,7 @@ type tokenResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-func (h *OIDCHandler) exchangeCode(ctx interface{ Done() <-chan struct{} }, code, verifier string) (*tokenResponse, error) {
+func (h *OIDCHandler) exchangeCode(ctx context.Context, code, verifier string) (*tokenResponse, error) {
 	tokenEndpoint, err := h.discoverTokenEndpoint()
 	if err != nil {
 		return nil, err
@@ -545,13 +578,19 @@ func (h *OIDCHandler) exchangeCode(ctx interface{ Done() <-chan struct{} }, code
 		"code_verifier": {verifier},
 	}
 
-	resp, err := http.PostForm(tokenEndpoint, body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenEndpoint, strings.NewReader(body.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read token response: %w", err)
 	}
@@ -602,14 +641,21 @@ func (h *OIDCHandler) fetchJWKS() (map[string]*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("OIDC discovery missing jwks_uri")
 	}
 
-	resp, err := http.Get(d.JwksURI) //nolint:gosec — URL from operator-configured issuer
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, d.JwksURI, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch JWKS: %w", err)
+	}
+	resp, err := h.httpClient.Do(req) //nolint:gosec // URL is still operator-configured.
 	if err != nil {
 		return nil, fmt.Errorf("fetch JWKS: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch JWKS: provider returned %d", resp.StatusCode)
+	}
 
 	var jwks jwksResponse
-	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&jwks); err != nil {
 		return nil, fmt.Errorf("parse JWKS: %w", err)
 	}
 
@@ -817,13 +863,20 @@ type oidcDiscovery struct {
 
 func (h *OIDCHandler) discover() (*oidcDiscovery, error) {
 	wellKnown := strings.TrimRight(h.cfg.Issuer, "/") + "/.well-known/openid-configuration"
-	resp, err := http.Get(wellKnown) //nolint:gosec — URL is operator-configured, not user-supplied
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, wellKnown, nil)
+	if err != nil {
+		return nil, fmt.Errorf("discovery fetch: %w", err)
+	}
+	resp, err := h.httpClient.Do(req) //nolint:gosec // URL is operator-configured, not user-supplied.
 	if err != nil {
 		return nil, fmt.Errorf("discovery fetch: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("discovery fetch: provider returned %d", resp.StatusCode)
+	}
 	var d oidcDiscovery
-	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&d); err != nil {
 		return nil, fmt.Errorf("discovery parse: %w", err)
 	}
 	return &d, nil
@@ -848,13 +901,21 @@ func (h *OIDCHandler) discoverTokenEndpoint() (string, error) {
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 func isHTTPS(r *http.Request) bool {
-	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	if r.TLS != nil {
+		return true
+	}
+	for _, value := range strings.Split(r.Header.Get("X-Forwarded-Proto"), ",") {
+		if strings.EqualFold(strings.TrimSpace(value), "https") {
+			return true
+		}
+	}
+	return false
 }
 
 func bearerToken(r *http.Request) string {
-	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimPrefix(auth, "Bearer ")
+	parts := strings.Fields(r.Header.Get("Authorization"))
+	if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+		return strings.TrimSpace(parts[1])
 	}
 	return ""
 }

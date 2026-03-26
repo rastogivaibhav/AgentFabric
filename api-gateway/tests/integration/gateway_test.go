@@ -40,7 +40,6 @@ import (
 
 	chi "github.com/go-chi/chi/v5"
 	chimid "github.com/go-chi/chi/v5/middleware"
-	jwtlib "github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 
 	"github.com/agentfabric/api-gateway/internal/auth"
@@ -64,9 +63,10 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-// testJWTSecret is the shared HMAC-SHA256 secret used by every component
-// in the test router.  Must be ≥ 32 bytes to satisfy HS256 requirements.
+// testJWTSecret is the shared HMAC-SHA256 secret used by the browser/API JWT
+// auth path in the test router. Must be ≥ 32 bytes to satisfy HS256 requirements.
 const testJWTSecret = "integration-test-secret-32bytes!!"
+const testCollectorBearerToken = "integration-collector-bearer-token"
 
 // ─── Test server ──────────────────────────────────────────────────────────────
 
@@ -126,9 +126,9 @@ func newTestServer(t *testing.T) *testServer {
 	// Public
 	r.Get("/healthz", h.Health)
 
-	// Collector ingestion (service-to-service JWT, X-AF-Source: collector)
+	// Collector ingestion (service-to-service shared bearer token, X-AF-Source: collector)
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.CollectorAuth(testJWTSecret))
+		r.Use(middleware.CollectorAuth(testCollectorBearerToken))
 		r.Post("/internal/ingest", h.Ingest)
 	})
 
@@ -201,26 +201,10 @@ func (ts *testServer) mustLogin(t *testing.T, username, password string) string 
 	return token
 }
 
-// collectorToken mints a minimal HS256 JWT accepted by CollectorAuth middleware.
-// CollectorAuth validates only the signature — no specific claims required.
-func collectorToken(t *testing.T) string {
-	t.Helper()
-	tok := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, jwtlib.MapClaims{
-		"sub": "collector",
-		"iss": "agentfabric-collector",
-		"exp": jwtlib.NewNumericDate(time.Now().Add(5 * time.Minute)),
-	})
-	signed, err := tok.SignedString([]byte(testJWTSecret))
-	if err != nil {
-		t.Fatalf("collectorToken sign: %v", err)
-	}
-	return signed
-}
-
 // collectorHeaders returns the headers required by CollectorAuth middleware.
-func collectorHeaders(t *testing.T) map[string]string {
+func collectorHeaders() map[string]string {
 	return map[string]string{
-		"Authorization": "Bearer " + collectorToken(t),
+		"Authorization": "Bearer " + testCollectorBearerToken,
 		"X-AF-Source":   "collector",
 		"X-AF-Tenant":   middleware.DefaultTenantID,
 	}
@@ -250,7 +234,7 @@ func (ts *testServer) ingestSpan(t *testing.T, traceID, spanID, framework string
 			"output_tokens":  50,
 		}},
 	}
-	rr := ts.do("POST", "/internal/ingest", payload, collectorHeaders(t))
+	rr := ts.do("POST", "/internal/ingest", payload, collectorHeaders())
 	if rr.Code != http.StatusAccepted && rr.Code != http.StatusOK {
 		t.Fatalf("ingest span %q: expected 200/202, got %d — %s", spanID, rr.Code, rr.Body.String())
 	}
@@ -347,7 +331,7 @@ func TestIntegration_Ingest_MaxBodySize(t *testing.T) {
 	bigBody := strings.Repeat("x", 33*1024*1024) // 33 MiB
 	req := httptest.NewRequest("POST", "/internal/ingest", strings.NewReader(bigBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+collectorToken(t))
+	req.Header.Set("Authorization", "Bearer "+testCollectorBearerToken)
 	req.Header.Set("X-AF-Source", "collector")
 	req.Header.Set("X-AF-Tenant", middleware.DefaultTenantID)
 

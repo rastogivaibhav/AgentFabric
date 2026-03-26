@@ -29,13 +29,6 @@ func makeToken(secret string, tenantID string, valid bool) string {
 	return tok
 }
 
-func makeCollectorToken(secret string) string {
-	tok, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-	}).SignedString([]byte(secret))
-	return tok
-}
-
 func okHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
@@ -233,10 +226,9 @@ func TestTenantInjector_P2_TenantIsolation_NeverEmpty(t *testing.T) {
 // ─── CollectorAuth ────────────────────────────────────────────────────────────
 
 func TestCollectorAuth_ValidSourceAndToken_Passes(t *testing.T) {
-	tok := makeCollectorToken(testSecret)
 	req := httptest.NewRequest("POST", "/internal/ingest", nil)
 	req.Header.Set("X-AF-Source", "collector")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Authorization", "Bearer "+testSecret)
 	rr := httptest.NewRecorder()
 
 	CollectorAuth(testSecret)(http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
@@ -247,9 +239,8 @@ func TestCollectorAuth_ValidSourceAndToken_Passes(t *testing.T) {
 }
 
 func TestCollectorAuth_MissingSourceHeader_Returns403(t *testing.T) {
-	tok := makeCollectorToken(testSecret)
 	req := httptest.NewRequest("POST", "/internal/ingest", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Authorization", "Bearer "+testSecret)
 	rr := httptest.NewRecorder()
 
 	CollectorAuth(testSecret)(http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
@@ -260,10 +251,9 @@ func TestCollectorAuth_MissingSourceHeader_Returns403(t *testing.T) {
 }
 
 func TestCollectorAuth_WrongSource_Returns403(t *testing.T) {
-	tok := makeCollectorToken(testSecret)
 	req := httptest.NewRequest("POST", "/internal/ingest", nil)
 	req.Header.Set("X-AF-Source", "portal") // wrong source
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Authorization", "Bearer "+testSecret)
 	rr := httptest.NewRecorder()
 
 	CollectorAuth(testSecret)(http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
@@ -288,7 +278,7 @@ func TestCollectorAuth_MissingToken_Returns401(t *testing.T) {
 func TestCollectorAuth_InvalidToken_Returns401(t *testing.T) {
 	req := httptest.NewRequest("POST", "/internal/ingest", nil)
 	req.Header.Set("X-AF-Source", "collector")
-	req.Header.Set("Authorization", "Bearer not.a.valid.jwt")
+	req.Header.Set("Authorization", "Bearer wrong-token")
 	rr := httptest.NewRecorder()
 
 	CollectorAuth(testSecret)(http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
@@ -299,15 +289,40 @@ func TestCollectorAuth_InvalidToken_Returns401(t *testing.T) {
 }
 
 func TestCollectorAuth_WrongSecret_Returns401(t *testing.T) {
-	tok := makeCollectorToken("attacker-secret-xxxxx")
 	req := httptest.NewRequest("POST", "/internal/ingest", nil)
 	req.Header.Set("X-AF-Source", "collector")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Authorization", "Bearer attacker-secret-xxxxx")
 	rr := httptest.NewRecorder()
 
 	CollectorAuth(testSecret)(http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestCollectorAuth_InvalidAuthScheme_Returns401(t *testing.T) {
+	req := httptest.NewRequest("POST", "/internal/ingest", nil)
+	req.Header.Set("X-AF-Source", "collector")
+	req.Header.Set("Authorization", "Token "+testSecret)
+	rr := httptest.NewRecorder()
+
+	CollectorAuth(testSecret)(http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestCollectorAuth_EmptyConfiguredToken_Returns503(t *testing.T) {
+	req := httptest.NewRequest("POST", "/internal/ingest", nil)
+	req.Header.Set("X-AF-Source", "collector")
+	req.Header.Set("Authorization", "Bearer anything")
+	rr := httptest.NewRecorder()
+
+	CollectorAuth("")(http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", rr.Code)
 	}
 }
