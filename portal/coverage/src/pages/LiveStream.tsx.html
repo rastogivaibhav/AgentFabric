@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">86.79% </span>
+                <span class="strong">86.84% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>263/303</span>
+                <span class='fraction'>264/304</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">86.79% </span>
+                <span class="strong">86.84% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>263/303</span>
+                <span class='fraction'>264/304</span>
             </div>
         
             
@@ -366,7 +366,8 @@
 <a name='L301'></a><a href='#L301'>301</a>
 <a name='L302'></a><a href='#L302'>302</a>
 <a name='L303'></a><a href='#L303'>303</a>
-<a name='L304'></a><a href='#L304'>304</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L304'></a><a href='#L304'>304</a>
+<a name='L305'></a><a href='#L305'>305</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -568,6 +569,7 @@
 <span class="cline-any cline-yes">35x</span>
 <span class="cline-any cline-yes">35x</span>
 <span class="cline-any cline-yes">35x</span>
+<span class="cline-any cline-yes">35x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -671,7 +673,7 @@
 <span class="cline-any cline-yes">76x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useLiveStream, Span, LiveEvent, PolicyLiveEventData } from '../hooks/api'
+import { useLiveStream, Span, LiveEvent, PolicyLiveEventData, getSpanOutcomeStatus } from '../hooks/api'
 import { Pause, Play, Trash2, Download } from 'lucide-react'
 import SpanDetailPanel from '../components/trace/SpanDetailPanel'
 &nbsp;
@@ -756,7 +758,7 @@ export default function LiveStream() {
         const name = e.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? policy.policy_name : (s</span>pan.<span class="branch-0 cbranch-no" title="branch not covered" >name ?? '')</span>
         const framework = e.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? 'policy' : (s</span>pan.<span class="branch-0 cbranch-no" title="branch not covered" >framework ?? '')</span>
         const duration = e.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? 0 : (s</span>pan.<span class="branch-0 cbranch-no" title="branch not covered" >duration_ns ?? 0)</span>
-        const status = e.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? policy.result : (s</span>pan.<span class="branch-0 cbranch-no" title="branch not covered" >status_code ?? 0)</span>
+        const status = e.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? policy.result : g</span>etSpanOutcomeStatus(span)
         const cost = e.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? 0 : (s</span>pan.cost_usd ?? 0)
         return `${e.ts},${e.type},${traceID},${spanID},${name},${framework},${duration},${status},${cost}`
       }),
@@ -838,8 +840,9 @@ export default function LiveStream() {
             const span = ev.data as Span
             const policy = ev.data as PolicyLiveEventData
             const isSelected = selectedEvent === ev
-            const isError = span.status_code === 2
-            const isBlocked = ev.type !== 'policy' &amp;&amp; Boolean(span.blocked)
+            const outcomeStatus = ev.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? 'ok' : g</span>etSpanOutcomeStatus(span)
+            const isError = outcomeStatus === 'error'
+            const isBlocked = ev.type !== 'policy' &amp;&amp; outcomeStatus === 'blocked'
             const isRedacted = ev.type !== 'policy' &amp;&amp; (span.redaction_count ?? 0) &gt; 0
             const traceID = ev.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? (policy.trace_id ?? '') : (s</span>pan.<span class="branch-0 cbranch-no" title="branch not covered" >trace_id ?? '')</span>
             const spanID = ev.type === <span class="branch-0 cbranch-no" title="branch not covered" >'policy' ? (policy.span_id ?? '') : (s</span>pan.<span class="branch-0 cbranch-no" title="branch not covered" >id ?? '')</span>
@@ -979,7 +982,7 @@ function btnStyle(color: string) {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-22T22:12:10.086Z
+                at 2026-03-31T14:36:04.137Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

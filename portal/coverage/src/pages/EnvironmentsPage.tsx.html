@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">94.56% </span>
+                <span class="strong">95.75% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>261/276</span>
+                <span class='fraction'>248/259</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">60% </span>
+                <span class="strong">75% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>3/5</span>
+                <span class='fraction'>3/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">94.56% </span>
+                <span class="strong">95.75% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>261/276</span>
+                <span class='fraction'>248/259</span>
             </div>
         
             
@@ -322,33 +322,7 @@
 <a name='L257'></a><a href='#L257'>257</a>
 <a name='L258'></a><a href='#L258'>258</a>
 <a name='L259'></a><a href='#L259'>259</a>
-<a name='L260'></a><a href='#L260'>260</a>
-<a name='L261'></a><a href='#L261'>261</a>
-<a name='L262'></a><a href='#L262'>262</a>
-<a name='L263'></a><a href='#L263'>263</a>
-<a name='L264'></a><a href='#L264'>264</a>
-<a name='L265'></a><a href='#L265'>265</a>
-<a name='L266'></a><a href='#L266'>266</a>
-<a name='L267'></a><a href='#L267'>267</a>
-<a name='L268'></a><a href='#L268'>268</a>
-<a name='L269'></a><a href='#L269'>269</a>
-<a name='L270'></a><a href='#L270'>270</a>
-<a name='L271'></a><a href='#L271'>271</a>
-<a name='L272'></a><a href='#L272'>272</a>
-<a name='L273'></a><a href='#L273'>273</a>
-<a name='L274'></a><a href='#L274'>274</a>
-<a name='L275'></a><a href='#L275'>275</a>
-<a name='L276'></a><a href='#L276'>276</a>
-<a name='L277'></a><a href='#L277'>277</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<a name='L260'></a><a href='#L260'>260</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -495,14 +469,6 @@
 <span class="cline-any cline-yes">25x</span>
 <span class="cline-any cline-yes">25x</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">16x</span>
-<span class="cline-any cline-yes">16x</span>
-<span class="cline-any cline-yes">16x</span>
-<span class="cline-any cline-yes">16x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-yes">16x</span>
@@ -616,10 +582,7 @@
 <span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useCollectors, CollectorInfo } from '../hooks/api'
-&nbsp;
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+import { useCollectors, useEnvironments, CollectorInfo, EnvironmentInfo } from '../hooks/api'
 &nbsp;
 const ENV_COLORS: Record&lt;string, string&gt; = {
   production: '#EF4444',
@@ -632,12 +595,6 @@ const COLLECTOR_STATUS_COLORS: Record&lt;string, string&gt; = {
   healthy: '#10B981',
   degraded: '#F59E0B',
   unreachable: '#EF4444',
-}
-&nbsp;
-interface EnvRecord {
-  name: string
-  status: string
-  span_count: number
 }
 &nbsp;
 // Static fallback collector cards shown when the API returns no data
@@ -772,21 +729,13 @@ function CollectorCard({ collector }: { collector: CollectorInfo }) {
 }
 &nbsp;
 export default function EnvironmentsPage() {
-  const { data: rawEnvs, isLoading: envsLoading } = useQuery&lt;EnvRecord[] | string[]&gt;({
-    queryKey: ['environments'],
-    queryFn: <span class="fstat-no" title="function not covered" >async () =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >      const res = await fetch(`${BASE}/api/v1/environments`)</span>
-<span class="cstat-no" title="statement not covered" >      if (!res.ok) throw new Error('fetch failed')</span>
-<span class="cstat-no" title="statement not covered" >      return res.json()</span>
-<span class="cstat-no" title="statement not covered" >    },</span>
-    refetchInterval: 30_000,
-  })
+  const { data: rawEnvs, isLoading: envsLoading } = useEnvironments()
 &nbsp;
   const { data: collectorsData, isLoading: collectorsLoading, isError: collectorsError } = useCollectors()
 &nbsp;
   // Normalise environments — API may return objects or plain strings
-  const envs: EnvRecord[] = (rawEnvs ?? []).map((e) =&gt;
-    typeof e === 'string' ? { name: e, status: 'active', span_count: 0 } : e as EnvRecord
+  const envs: EnvironmentInfo[] = (rawEnvs ?? []).map((e) =&gt;
+    typeof e === 'string' ? { name: e, status: 'active', span_count: 0 } : e as EnvironmentInfo
   )
 &nbsp;
   // Decide which collector cards to show: dynamic if data returned, otherwise static fallback
@@ -898,7 +847,7 @@ curl -X POST http://localhost:4318/v1/traces \\
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-22T22:12:10.086Z
+                at 2026-03-31T14:36:04.137Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
