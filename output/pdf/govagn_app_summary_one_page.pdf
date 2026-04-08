@@ -1,0 +1,201 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [3 0 R] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R /F2 6 0 R /F3 7 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 3289 >>
+stream
+0.2 w
+BT
+/F2 17 Tf
+1 0 0 1 44 758 Tm
+(Govagn - One-Page App Summary) Tj
+ET
+44 742 m 568 742 l S
+BT
+/F2 11.5 Tf
+1 0 0 1 44 728 Tm
+(What It Is) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 715 Tm
+(Govagn is a self-hosted control plane for enterprise AI runtime governance, observability, and) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 704 Tm
+(control.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 693 Tm
+(It unifies policy enforcement, cost attribution, prompt lifecycle, and runtime visibility for LLM and) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 682 Tm
+(agent traffic.) Tj
+ET
+BT
+/F2 11.5 Tf
+1 0 0 1 44 666 Tm
+(Who It Is For) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 653 Tm
+(Primary persona: enterprise AI platform engineer or governance owner operating internal LLM workloads) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 642 Tm
+(in controlled environments.) Tj
+ET
+BT
+/F2 11.5 Tf
+1 0 0 1 44 626 Tm
+(What It Does) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 613 Tm
+(- Collects OTLP telemetry and runtime metadata for LLM and agent executions.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 602 Tm
+(- Provides trace, span, lineage, redaction, and live runtime visibility in the portal.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 591 Tm
+(- Enforces policy and guardrails, including preview and simulation workflows.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 580 Tm
+(- Calculates per-request and per-span costs with pricing rules and budget workflows.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 569 Tm
+(- Manages prompt versioning, promotion, and trace-to-release linkage.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 558 Tm
+(- Supports provider adapters or routing for OpenAI, Anthropic, Google, Vertex AI, and Bedrock.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 547 Tm
+(- Ships self-hosted deployment paths via Docker Compose and Kubernetes or Helm.) Tj
+ET
+BT
+/F2 11.5 Tf
+1 0 0 1 44 531 Tm
+(How It Works \(Repo-Evidenced Architecture\)) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 518 Tm
+(- Components: agent-sdk \(Python instrumentation\), collector \(OTLP ingest and enrichment\),) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 507 Tm
+(  api-gateway \(policy, pricing, prompt, eval, budget, audit control plane\), portal \(React operations) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 496 Tm
+(  UI\), PostgreSQL \(system of record\), Redis \(cache and coordination\).) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 485 Tm
+(- Data flow: app or agent to SDK or OTLP to collector to api-gateway to PostgreSQL and Redis; portal) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 474 Tm
+(  queries api-gateway for operations and admin workflows.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 463 Tm
+(- Local stack also includes Prometheus, Alertmanager, Grafana, and Jaeger for monitoring and) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 452 Tm
+(  diagnostics.) Tj
+ET
+BT
+/F2 11.5 Tf
+1 0 0 1 44 436 Tm
+(How To Run \(Minimal Getting Started\)) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 423 Tm
+(- Install Docker and Docker Compose.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 412 Tm
+(- From repo root, run: make dev) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 401 Tm
+(- Open portal at http://localhost:3000 \(API gateway at http://localhost:8080\).) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 390 Tm
+(- Register at least one provider key, then send instrumented or proxied traffic.) Tj
+ET
+BT
+/F1 9.5 Tf
+1 0 0 1 44 379 Tm
+(- Initial admin credentials: Not found in repo.) Tj
+ET
+BT
+/F3 7.6 Tf
+1 0 0 1 44 18 Tm
+(Repo evidence: README.md, docker-compose.yml, Makefile, docs/SETUP_AND_ONBOARDING.md) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000261 00000 n 
+0000003601 00000 n 
+0000003671 00000 n 
+0000003746 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+3824
+%%EOF
