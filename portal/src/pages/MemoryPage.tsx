@@ -74,6 +74,10 @@ export default function MemoryPage() {
     <div style={{ padding: 32 }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--prove)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--prove)' }} />
+          PROVE
+        </div>
         <h1 style={titleStyle}>Enterprise Memory</h1>
         <p style={subtleText}>Immutable control-plane change history and compliance evidence bundles — the complete audit trail of who changed what, when, and why.</p>
       </div>

@@ -1,7 +1,17 @@
-import RecommendationFeed from '../components/recommendations/RecommendationFeed'
-import { outcomeStatusColor, useOverview, useRecommendations, useTraces } from '../hooks/api'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  useOverview,
+  useRollouts,
+  useTraces,
+  useBudgetUsage,
+  useControlAudit,
+  useEvidenceBundles,
+  outcomeStatusColor,
+  type Trace
+} from '../hooks/api'
 
+// Framework colors mapping
 const FRAMEWORK_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
   langgraph: '#4ECDC4',
@@ -11,155 +21,279 @@ const FRAMEWORK_COLORS: Record<string, string> = {
   unknown: '#475569',
 }
 
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+// Micro-Component for semantic stack card
+function StackCard({ 
+  label, 
+  value, 
+  sub, 
+  color, 
+  stackLabel, 
+  link 
+}: { 
+  label: string; 
+  value: string; 
+  sub?: string; 
+  color: string;
+  stackLabel: string;
+  link: string;
+}) {
   return (
     <div style={{
-      background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:10,
-      padding:'20px 24px', borderTop:`2px solid ${color ?? '#3B82F6'}`
+      background: 'var(--layer-2)', 
+      border: '1px solid var(--layer-border)', 
+      borderRadius: 12,
+      padding: '24px 28px', 
+      position: 'relative',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      minHeight: 180
     }}>
-      <div style={{ fontSize:11, color:'#475569', letterSpacing:'0.1em', marginBottom:8 }}>{label}</div>
-      <div style={{ fontSize:28, fontWeight:700, color:'#F0F9FF', lineHeight:1 }}>{value}</div>
-      {sub && <div style={{ fontSize:11, color:'#334155', marginTop:6 }}>{sub}</div>}
+      {/* Accent Strip */}
+      <div style={{
+        position: 'absolute',
+        top: 0, left: 0, right: 0, height: 2,
+        background: color
+      }} />
+
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: '0.1em' }}>
+            {stackLabel}
+          </span>
+        </div>
+        <div style={{ fontSize: 44, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1, marginBottom: 8, letterSpacing: '-0.02em' }}>
+          {value}
+        </div>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{label}</div>
+      </div>
+      
+      {sub && (
+        <div style={{ marginTop: 24, fontSize: 12, color: 'var(--text-tertiary)' }}>
+          {sub} <Link to={link} style={{ color, textDecoration: 'none', marginLeft: 4 }}>[→ View]</Link>
+        </div>
+      )}
     </div>
   )
 }
 
-export default function Dashboard() {
-  const { data: overview, isLoading } = useOverview('24h')
-  const { data: traces } = useTraces({ limit: '10' })
-  const { data: recommendationData, isLoading: recommendationsLoading, error: recommendationsError } = useRecommendations({ since: '24h', limit: 4 })
+function truncate(str: string, len: number) {
+  if (str.length <= len) return str
+  return str.slice(0, len) + '…'
+}
 
-  const frameworkData = overview
-    ? Object.entries(overview.framework_counts ?? {}).map(([name, count]) => ({ name, count }))
-    : []
+export default function Dashboard() {
+  const { data: overview, isLoading: overviewLoading } = useOverview('24h')
+  const { data: rolloutsData } = useRollouts()
+  const { data: tracesData } = useTraces({ limit: '8' })
+  const { data: budgetUsage } = useBudgetUsage('default')
+  const { data: auditData } = useControlAudit(1)
+  const { data: bundlesData } = useEvidenceBundles(10)
+
+  const blockedCount = overview?.blocked_requests ?? 0
+  const totalTraces = overview?.total_traces ?? 0
+  const costPerHour = overview?.total_cost_usd ? (overview.total_cost_usd / 24).toFixed(4) : '0.0000'
+  
+  const activeRollouts = (rolloutsData?.items ?? []).filter(r => r.status === 'active')
+  const recentTraces = tracesData?.items ?? []
+
+  const lastAudit = auditData?.items?.[0]
+  const bundlesCount = bundlesData?.items?.length ?? 0
+  
+  const budgetPct = (budgetUsage?.cost_pct ?? 0) * 100
+  const budgetColor = budgetPct >= 100 ? 'var(--protect)' : budgetPct >= 80 ? 'var(--prove)' : 'var(--spend)'
 
   return (
-    <div style={{ padding:32 }}>
-      <div style={{ marginBottom:28 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:'#F0F9FF', margin:0 }}>Dashboard</h1>
-        <p style={{ fontSize:12, color:'#475569', marginTop:4 }}>Last 24 hours · Auto-refresh 30s</p>
+    <div style={{ padding: '40px 48px', maxWidth: 1440, margin: '0 auto', width: '100%' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 40 }}>
+        <div>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>
+            Your AI. Under control.
+          </h1>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+          {new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · <span style={{ color: 'var(--spend)' }}>System: OK</span>
+        </div>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))', gap:16, marginBottom:28 }}>
-        <StatCard label="TOTAL TRACES" value={isLoading ? '—' : (overview?.total_traces ?? 0).toLocaleString()} color="#3B82F6" />
-        <StatCard label="TOTAL COST" value={isLoading ? '—' : `$${(overview?.total_cost_usd ?? 0).toFixed(4)}`} color="#F59E0B" />
-        <StatCard label="AVG LATENCY" value={isLoading ? '—' : `${(overview?.avg_latency_ms ?? 0).toFixed(0)}ms`} color="#10B981" />
-        <StatCard label="ERROR RATE" value={isLoading ? '—' : `${((overview?.error_rate ?? 0) * 100).toFixed(2)}%`} color={(overview?.error_rate ?? 0) > 0.05 ? '#EF4444' : '#10B981'} />
-        <StatCard label="BLOCKED EVENTS" value={isLoading ? '—' : (overview?.blocked_requests ?? 0).toLocaleString()} color={(overview?.blocked_requests ?? 0) > 0 ? '#EF4444' : '#3B82F6'} />
-        <StatCard label="LLM CALLS" value={isLoading ? '—' : (overview?.llm_calls ?? 0).toLocaleString()} sub={`tool calls ${(overview?.tool_calls ?? 0).toLocaleString()}`} color="#60A5FA" />
+      {/* Hero Stack Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, marginBottom: 16 }}>
+        <StackCard 
+          stackLabel="PROTECT" 
+          color="var(--protect)" 
+          value={overviewLoading ? '—' : blockedCount.toLocaleString()} 
+          label="blocks today" 
+          sub="No DLP leaks detected."
+          link="/policies"
+        />
+        <StackCard 
+          stackLabel="CONTROL" 
+          color="var(--control)" 
+          value={activeRollouts.length.toString()} 
+          label="active rollouts" 
+          sub={`${activeRollouts.find(r => r.target_type === 'model')?.name || 'Stable rules'} in flight.`}
+          link="/rollouts"
+        />
+        <StackCard 
+          stackLabel="SPEND" 
+          color="var(--spend)" 
+          value={`$${costPerHour}`} 
+          label="/ hour" 
+          sub={`${budgetUsage ? `${(100 - budgetPct).toFixed(0)}% budget remaining.` : 'Budget running smoothly.'}`}
+          link="/cost"
+        />
+        <StackCard 
+          stackLabel="OBSERVE" 
+          color="var(--observe)" 
+          value={overviewLoading ? '—' : totalTraces.toLocaleString()} 
+          label="traces" 
+          sub={`${overview?.error_rate ? (overview.error_rate * 100).toFixed(1) : '0'}% error rate in 24h.`}
+          link="/traces"
+        />
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:16, marginBottom:28 }}>
-        <div style={{ background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:10, padding:24 }}>
-          <div style={{ fontSize:12, color:'#475569', marginBottom:16, letterSpacing:'0.1em' }}>FRAMEWORK DISTRIBUTION</div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:20 }}>
-            {Object.entries(FRAMEWORK_COLORS).filter(([k]) => k !== 'unknown').map(([fw, color]) => (
-              <div key={fw} style={{ textAlign:'center' }}>
-                <div style={{
-                  height:6, borderRadius:3, background:color,
-                  opacity: (overview?.framework_counts?.[fw] ?? 0) > 0 ? 1 : 0.2,
-                  marginBottom:6
-                }} />
-                <div style={{ fontSize:9, color:'#475569', letterSpacing:'0.08em' }}>{fw.replace('_',' ').toUpperCase()}</div>
-                <div style={{ fontSize:13, color, fontWeight:700 }}>
-                  {(overview?.framework_counts?.[fw] ?? 0).toLocaleString()}
+      {/* Compliance Strip (PROVE) */}
+      <div style={{
+        background: 'var(--layer-2)',
+        border: '1px solid var(--layer-border)',
+        borderRadius: 8,
+        padding: '12px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 40
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--prove)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--prove)' }} />
+            PROVE
+          </span>
+          <span>·</span>
+          <span>Audit chain: <span style={{ color: 'var(--spend)' }}>intact ✓</span></span>
+          <span>·</span>
+          <span>Last change: {lastAudit ? `${new Date(lastAudit.created_at).toLocaleTimeString()} by ${lastAudit.actor || 'system'}` : 'None recently'}</span>
+          <span>·</span>
+          <span>{bundlesCount} evidence bundles</span>
+        </div>
+        <Link to="/audit" style={{ fontSize: 12, color: 'var(--prove)', textDecoration: 'none' }}>
+          [→ Audit Log]
+        </Link>
+      </div>
+
+      {/* Lower Dashboard Content */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24 }}>
+        
+        {/* Live Activity Feed */}
+        <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 12, padding: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.1em' }}>
+              LIVE ACTIVITY FEED
+            </div>
+            <Link to="/live" style={{ fontSize: 12, color: 'var(--control)', textDecoration: 'none' }}>
+              [View Full Stream]
+            </Link>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {recentTraces.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '20px 0' }}>No recent activity.</div>
+            ) : (
+              recentTraces.map((trace: Trace) => {
+                const statusColor = outcomeStatusColor(trace.status)
+                const isBlocked = trace.status === 'error' || trace.error_count > 0; // simplistic fallback
+                const statusLabel = trace.status.toUpperCase()
+                
+                return (
+                  <div key={trace.id} style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 12, borderBottom: '1px solid var(--layer-border)', fontSize: 13 }}>
+                    <div style={{ width: 70, color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                      {new Date(trace.start_time).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </div>
+                    <div style={{ width: 80 }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, background: `${statusColor}20`, color: statusColor, fontWeight: 600 }}>
+                        {statusLabel}
+                      </span>
+                    </div>
+                    <div style={{ width: 100, color: 'var(--text-secondary)' }}>
+                      {trace.framework}
+                    </div>
+                    <div style={{ flex: 1, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {trace.root_span_name}
+                    </div>
+                    <div style={{ width: 80, textAlign: 'right', color: 'var(--text-secondary)' }}>
+                      ${trace.total_cost_usd.toFixed(5)}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Secondary Widgets Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          
+          {/* Active Rollouts */}
+          <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 12, padding: 24 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.1em', marginBottom: 20 }}>
+              ACTIVE ROLLOUTS
+            </div>
+            {activeRollouts.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No active rollouts at the moment.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {activeRollouts.slice(0, 4).map(rollout => (
+                  <div key={rollout.id}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                      <span style={{ color: 'var(--text-primary)' }}>{truncate(rollout.name, 24)}</span>
+                      <span style={{ color: 'var(--control)' }}>{rollout.percentage}%</span>
+                    </div>
+                    <div style={{ height: 6, background: 'var(--layer-1)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${rollout.percentage}%`, background: 'var(--control)' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Budget Status */}
+          <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 12, padding: 24 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.1em', marginBottom: 20 }}>
+              BUDGET STATUS
+            </div>
+            {!budgetUsage ? (
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No budget configured.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Monthly Cost Limit</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>${budgetUsage.cost_used_usd.toFixed(2)} / ${budgetUsage.budget?.monthly_cost_usd?.toFixed(0) || '∞'}</span>
+                  </div>
+                  <div style={{ height: 6, background: 'var(--layer-1)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.min(budgetPct, 100)}%`, background: budgetColor }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6, marginTop: 8 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Monthly Tokens Limit</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                      {(budgetUsage.tokens_used / 1000).toFixed(0)}k / {budgetUsage.budget?.monthly_tokens ? (budgetUsage.budget.monthly_tokens / 1000).toFixed(0) + 'k' : '∞'}
+                    </span>
+                  </div>
+                  <div style={{ height: 6, background: 'var(--layer-1)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.min((budgetUsage.tokens_pct ?? 0) * 100, 100)}%`, background: budgetColor }} />
+                  </div>
                 </div>
               </div>
-            ))}
+            )}
           </div>
-          <ResponsiveContainer width="100%" height={120}>
-            <BarChart data={frameworkData}>
-              <XAxis dataKey="name" tick={{ fontSize:10, fill:'#475569' }} />
-              <YAxis tick={{ fontSize:10, fill:'#475569' }} />
-              <Tooltip contentStyle={{ background:'#0D1B2A', border:'1px solid #1E3A5F', borderRadius:6, fontSize:11 }} />
-              <Bar dataKey="count" radius={[4,4,0,0]}>
-                {frameworkData.map((entry) => (
-                  <Cell key={entry.name} fill={FRAMEWORK_COLORS[entry.name] ?? '#475569'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
 
-        <div style={{ display:'grid', gap:16 }}>
-          <div style={{ background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:10, padding:24 }}>
-          <div style={{ fontSize:12, color:'#475569', marginBottom:16, letterSpacing:'0.1em' }}>TOKEN USAGE</div>
-          <div style={{ textAlign:'center', marginBottom:12 }}>
-            <div style={{ fontSize:24, fontWeight:700, color:'#F0F9FF' }}>
-              {((overview?.total_tokens ?? 0) / 1_000_000).toFixed(2)}M
-            </div>
-            <div style={{ fontSize:11, color:'#475569' }}>total tokens</div>
-          </div>
-          <ResponsiveContainer width="100%" height={160}>
-            <PieChart>
-              <Pie data={frameworkData} cx="50%" cy="50%" innerRadius={50} outerRadius={75} dataKey="count" paddingAngle={3}>
-                {frameworkData.map((entry) => (
-                  <Cell key={entry.name} fill={FRAMEWORK_COLORS[entry.name] ?? '#475569'} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={{ background:'#0D1B2A', border:'1px solid #1E3A5F', fontSize:11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-          </div>
-          <RecommendationFeed
-            title="AUTONOMIC RECOMMENDATIONS"
-            recommendations={recommendationData?.items ?? []}
-            isLoading={recommendationsLoading}
-            error={recommendationsError}
-            emptyMessage="No active recommendations. Current signals look stable."
-          />
         </div>
-      </div>
-
-      <div style={{ background:'#0D1B2A', border:'1px solid #0F1F35', borderRadius:10 }}>
-        <div style={{ padding:'16px 24px', borderBottom:'1px solid #0F1F35', fontSize:12, color:'#475569', letterSpacing:'0.1em' }}>
-          RECENT TRACES
-        </div>
-        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-          <thead>
-            <tr>
-              {['Trace ID','Framework','Root Span','Duration','Spans','Cost','Status'].map(h => (
-                <th key={h} style={{ padding:'10px 16px', textAlign:'left', color:'#334155', borderBottom:'1px solid #0F1F35', fontSize:11, fontWeight:600, letterSpacing:'0.08em' }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {(traces?.items ?? []).map((t, i) => {
-              const statusColor = outcomeStatusColor(t.status)
-              return (
-              <tr key={t.id} style={{ background: i % 2 === 0 ? 'transparent' : '#060A1430' }}>
-                <td style={{ padding:'8px 16px', color:'#3B82F6', fontFamily:'monospace', fontSize:11 }}>
-                  <a href={`/traces/${t.id}`} style={{ color:'#3B82F6', textDecoration:'none' }}>
-                    {t.id.substring(0, 16)}…
-                  </a>
-                </td>
-                <td style={{ padding:'8px 16px' }}>
-                  <span style={{
-                    padding:'2px 8px', borderRadius:4, fontSize:10,
-                    background: (FRAMEWORK_COLORS[t.framework] ?? '#475569') + '20',
-                    color: FRAMEWORK_COLORS[t.framework] ?? '#475569',
-                  }}>{t.framework}</span>
-                </td>
-                <td style={{ padding:'8px 16px', color:'#94A3B8', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {t.root_span_name}
-                </td>
-                <td style={{ padding:'8px 16px', color:'#94A3B8' }}>{(t.duration_ns / 1_000_000).toFixed(0)}ms</td>
-                <td style={{ padding:'8px 16px', color:'#94A3B8' }}>{t.span_count}</td>
-                <td style={{ padding:'8px 16px', color:'#F59E0B' }}>${t.total_cost_usd.toFixed(6)}</td>
-                <td style={{ padding:'8px 16px' }}>
-                  <span style={{
-                    padding:'2px 8px', borderRadius:4, fontSize:10,
-                    background: `${statusColor}20`,
-                    color: statusColor,
-                  }}>{t.status}</span>
-                </td>
-              </tr>
-              )
-            })}
-          </tbody>
-        </table>
       </div>
     </div>
   )

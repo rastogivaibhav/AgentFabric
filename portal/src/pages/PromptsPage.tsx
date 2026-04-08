@@ -50,6 +50,10 @@ export default function PromptsPage() {
   return (
     <div style={{ padding: 32 }}>
       <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--ship)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ship)' }} />
+          SHIP
+        </div>
         <h1 style={titleStyle}>Prompt Registry</h1>
         <p style={subtleText}>
           Version prompt content, annotate releases, and connect trace spans back to the exact prompt revision that was active.

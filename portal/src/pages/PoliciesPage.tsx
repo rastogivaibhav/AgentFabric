@@ -123,6 +123,10 @@ export default function PoliciesPage() {
   return (
     <div style={{ padding: 32 }}>
       <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--protect)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--protect)' }} />
+          PROTECT
+        </div>
         <h1 style={titleStyle}>Policies</h1>
         <p style={subtleText}>
           Manage live traffic enforcement, built-in guardrails, rollout controls, and DLP rules for proxy and netproxy.

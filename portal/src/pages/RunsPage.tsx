@@ -13,6 +13,10 @@ export default function RunsPage() {
     <div style={{ padding: 32 }}>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--observe)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--observe)' }} />
+            OBSERVE
+          </div>
           <h1 style={titleStyle}>Runs</h1>
           <p style={subtleText}>Detailed function execution trees and feedback tracking.</p>
         </div>

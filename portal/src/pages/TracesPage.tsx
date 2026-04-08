@@ -95,6 +95,10 @@ export default function TracesPage() {
     <div style={{ padding: 32 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--observe)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--observe)' }} />
+            OBSERVE
+          </div>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: '#F0F9FF', margin: 0 }}>Traces</h1>
           <div style={{ marginTop: 6, fontSize: 11, color: '#64748B' }}>
             Search, save filtered views, and compare runtime traces side by side.

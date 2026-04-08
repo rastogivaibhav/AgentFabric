@@ -360,6 +360,10 @@ export default function CostPage() {
   return (
     <div style={{ padding: 32 }}>
       <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--spend)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--spend)' }} />
+          SPEND
+        </div>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F0F9FF', margin: 0 }}>Cost Report</h1>
         <p style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>Token and cost breakdown | Last 24 hours</p>
       </div>

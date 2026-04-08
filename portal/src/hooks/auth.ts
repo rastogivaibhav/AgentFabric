@@ -150,6 +150,7 @@ export function useAuth(): AuthState & {
 // the Go RequireRole middleware which uses strings.ToLower. DB roles are always
 // stored lowercase, so this is a defensive guard against JWT claim casing drift.
 export function hasRole(user: AuthUser | null, allowedRoles: string[]): boolean {
+  if (!isAuthEnabled()) return true
   if (!user) return false
   const userRole = user.role.toLowerCase()
   return allowedRoles.map((r) => r.toLowerCase()).includes(userRole)
@@ -163,6 +164,7 @@ export function isSelfOrRole(
   allowedRoles: string[],
   subjectId: string,
 ): boolean {
+  if (!isAuthEnabled()) return true
   if (!user) return false
   const userRole = user.role.toLowerCase()
   return allowedRoles.map((r) => r.toLowerCase()).includes(userRole) || user.sub === subjectId

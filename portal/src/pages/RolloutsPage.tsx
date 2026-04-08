@@ -123,6 +123,10 @@ export default function RolloutsPage() {
       {/* Header */}
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
         <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, color: 'var(--control)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--control)' }} />
+            CONTROL
+          </div>
           <h1 style={titleStyle}>Rollouts</h1>
           <p style={subtleText}>Canary and shadow-mode traffic splitting — route a percentage of requests to a candidate model, prompt release, or policy rule.</p>
         </div>
