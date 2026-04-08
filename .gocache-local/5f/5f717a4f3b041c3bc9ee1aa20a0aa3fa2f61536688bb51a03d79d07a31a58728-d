@@ -1,0 +1,10 @@
+./compiler.go
+./engine.go
+./evaluator.go
+./explain.go
+./guards_injection.go
+./guards_schema.go
+./guards_unsafe_content.go
+./rego_adapter.go
+./schema.go
+./simulator.go

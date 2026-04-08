@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger("af-test")
 
 # ─── JWT helper (generates dev token matching collector's dev-secret) ─────────
-def make_jwt(secret: str = "dev-secret", tenant: str = "test-tenant") -> str:
+def make_jwt(secret: str, tenant: str) -> str:
     header  = base64.urlsafe_b64encode(
         json.dumps({"alg":"HS256","typ":"JWT"}, separators=(',',':')).encode()
     ).rstrip(b'=').decode()
@@ -26,7 +26,9 @@ def make_jwt(secret: str = "dev-secret", tenant: str = "test-tenant") -> str:
     ).rstrip(b'=').decode()
     return f"{header}.{payload}.{sig}"
 
-JWT_TOKEN       = make_jwt()
+JWT_SECRET      = os.environ.get("GV_JWT_SECRET", "dev-secret")
+JWT_TENANT      = os.environ.get("GV_TEST_TENANT", "00000000-0000-0000-0000-000000000001")
+JWT_TOKEN       = make_jwt(secret=JWT_SECRET, tenant=JWT_TENANT)
 COLLECTOR_HTTP  = os.environ.get("GV_HTTP_ENDPOINT", "http://localhost:4318")
 COLLECTOR_GRPC  = os.environ.get("GV_ENDPOINT",      "http://localhost:4317")
 API_BASE        = os.environ.get("GV_API",            "http://localhost:8080")

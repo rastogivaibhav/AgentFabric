@@ -11,21 +11,21 @@
 #   docker compose -f docker-compose.test.yml down -v
 
 networks:
-  af-test-net:
+  gv-test-net:
     driver: bridge
 
 services:
 
   postgres-test:
     image: postgres:16-alpine
-    container_name: af_test_postgres
+    container_name: gv_test_postgres
     environment:
       POSTGRES_DB: govagn
       POSTGRES_USER: fabric
       POSTGRES_PASSWORD: fabric_dev_only
     ports:
       - "5433:5432"     # port 5433 avoids collision with a local dev Postgres on 5432
-    networks: [af-test-net]
+    networks: [gv-test-net]
     tmpfs:
       - /var/lib/postgresql/data   # in-memory — fast teardown, no leftover data between runs
     healthcheck:
@@ -36,10 +36,10 @@ services:
 
   redis-test:
     image: redis:7-alpine
-    container_name: af_test_redis
+    container_name: gv_test_redis
     ports:
       - "6380:6379"     # port 6380 avoids collision with a local dev Redis
-    networks: [af-test-net]
+    networks: [gv-test-net]
     tmpfs:
       - /data
     healthcheck:

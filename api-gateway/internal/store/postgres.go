@@ -106,10 +106,222 @@ func (s *PostgresStore) BulkInsertSpans(ctx context.Context, spans []models.Span
 		},
 		pgx.CopyFromRows(rows),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	s.upsertRunsFromSpans(ctx, spans)
+	return nil
 }
 
 // ─── Trace queries ────────────────────────────────────────────────────────────
+
+type projectedRun struct {
+	RunID       string
+	TraceID     string
+	ParentRunID string
+	Framework   string
+	AgentName   string
+	Model       string
+	StartTime   time.Time
+	EndTime     time.Time
+	Status      string
+	TotalTokens int64
+	TotalCost   float64
+	TenantID    string
+}
+
+func (s *PostgresStore) upsertRunsFromSpans(ctx context.Context, spans []models.Span) {
+	runs := projectRunsFromSpans(spans)
+	if len(runs) == 0 {
+		return
+	}
+	for _, run := range runs {
+		metadata := `{"source":"spans_projection"}`
+		if _, err := s.pool.Exec(ctx, `
+			INSERT INTO runs (
+				run_id, trace_id, parent_run_id, framework, agent_name, model,
+				start_time, end_time, status, total_tokens, total_cost_usd, metadata, tenant_id
+			)
+			VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)
+			ON CONFLICT (run_id, tenant_id) DO UPDATE SET
+				trace_id = EXCLUDED.trace_id,
+				parent_run_id = COALESCE(NULLIF(EXCLUDED.parent_run_id, ''), runs.parent_run_id),
+				framework = CASE WHEN runs.framework = 'unknown' THEN EXCLUDED.framework ELSE runs.framework END,
+				agent_name = CASE WHEN runs.agent_name = 'unknown' THEN EXCLUDED.agent_name ELSE runs.agent_name END,
+				model = COALESCE(NULLIF(EXCLUDED.model, ''), runs.model),
+				start_time = LEAST(runs.start_time, EXCLUDED.start_time),
+				end_time = GREATEST(COALESCE(runs.end_time, EXCLUDED.end_time), EXCLUDED.end_time),
+				status = CASE
+					WHEN runs.status = 'error' OR EXCLUDED.status = 'error' THEN 'error'
+					WHEN GREATEST(COALESCE(runs.end_time, EXCLUDED.end_time), EXCLUDED.end_time) IS NULL THEN 'running'
+					ELSE 'success'
+				END,
+				total_tokens = runs.total_tokens + EXCLUDED.total_tokens,
+				total_cost_usd = runs.total_cost_usd + EXCLUDED.total_cost_usd,
+				metadata = CASE
+					WHEN runs.metadata = '{}'::jsonb THEN EXCLUDED.metadata
+					ELSE runs.metadata
+				END
+		`,
+			run.RunID, run.TraceID, run.ParentRunID, run.Framework, run.AgentName, run.Model,
+			run.StartTime, run.EndTime, run.Status, run.TotalTokens, run.TotalCost, metadata, run.TenantID,
+		); err != nil {
+			if s.logger != nil {
+				s.logger.Warn("project run from spans failed", zap.Error(err), zap.String("run_id", run.RunID), zap.String("tenant_id", run.TenantID))
+			}
+		}
+	}
+}
+
+func projectRunsFromSpans(spans []models.Span) []projectedRun {
+	grouped := make(map[string]*projectedRun, len(spans))
+	for _, sp := range spans {
+		tenantID := strings.TrimSpace(sp.TenantID)
+		if tenantID == "" {
+			continue
+		}
+		runID := canonicalRunID(sp)
+		if runID == "" {
+			continue
+		}
+		key := tenantID + "|" + runID
+		start := time.Unix(0, sp.StartTimeNs).UTC()
+		end := time.Unix(0, sp.StartTimeNs+sp.DurationNs).UTC()
+		entry, ok := grouped[key]
+		if !ok {
+			entry = &projectedRun{
+				RunID:       runID,
+				TraceID:     strings.TrimSpace(sp.TraceID),
+				ParentRunID: deriveParentRunID(sp.Attributes),
+				Framework:   firstNonBlank(strings.TrimSpace(sp.Framework), "unknown"),
+				AgentName:   firstNonBlank(deriveAgentName(sp.Attributes), "unknown"),
+				Model:       deriveModelName(sp.Attributes),
+				StartTime:   start,
+				EndTime:     end,
+				Status:      "success",
+				TenantID:    tenantID,
+			}
+			grouped[key] = entry
+		}
+		if entry.TraceID == "" {
+			entry.TraceID = strings.TrimSpace(sp.TraceID)
+		}
+		if entry.ParentRunID == "" {
+			entry.ParentRunID = deriveParentRunID(sp.Attributes)
+		}
+		if entry.Framework == "unknown" && strings.TrimSpace(sp.Framework) != "" {
+			entry.Framework = strings.TrimSpace(sp.Framework)
+		}
+		if entry.AgentName == "unknown" {
+			if name := deriveAgentName(sp.Attributes); name != "" {
+				entry.AgentName = name
+			}
+		}
+		if entry.Model == "" {
+			entry.Model = deriveModelName(sp.Attributes)
+		}
+		if start.Before(entry.StartTime) {
+			entry.StartTime = start
+		}
+		if end.After(entry.EndTime) {
+			entry.EndTime = end
+		}
+		if spanHasFailure(sp) {
+			entry.Status = "error"
+		}
+		entry.TotalTokens += sp.InputTokens + sp.OutputTokens + sp.CacheReadTokens + sp.CacheWriteTokens + sp.ReasoningTokens
+		entry.TotalCost += sp.CostUSD
+	}
+
+	out := make([]projectedRun, 0, len(grouped))
+	for _, run := range grouped {
+		if run.TraceID == "" {
+			run.TraceID = run.RunID
+		}
+		if run.Framework == "" {
+			run.Framework = "unknown"
+		}
+		if run.AgentName == "" {
+			run.AgentName = "unknown"
+		}
+		out = append(out, *run)
+	}
+	return out
+}
+
+func canonicalRunID(sp models.Span) string {
+	if runID := strings.TrimSpace(sp.RunID); runID != "" {
+		return runID
+	}
+	if traceID := strings.TrimSpace(sp.TraceID); traceID != "" {
+		return traceID
+	}
+	return strings.TrimSpace(sp.ID)
+}
+
+func deriveParentRunID(attrs map[string]string) string {
+	if attrs == nil {
+		return ""
+	}
+	return firstNonBlank(
+		strings.TrimSpace(attrs["af.parent_run_id"]),
+		strings.TrimSpace(attrs["parent.run_id"]),
+		strings.TrimSpace(attrs["run.parent_id"]),
+	)
+}
+
+func deriveAgentName(attrs map[string]string) string {
+	if attrs == nil {
+		return ""
+	}
+	return firstNonBlank(
+		strings.TrimSpace(attrs["af.agent.name"]),
+		strings.TrimSpace(attrs["agent.name"]),
+		strings.TrimSpace(attrs["service.name"]),
+		strings.TrimSpace(attrs["application.name"]),
+	)
+}
+
+func deriveModelName(attrs map[string]string) string {
+	if attrs == nil {
+		return ""
+	}
+	return firstNonBlank(
+		strings.TrimSpace(attrs["gen_ai.request.model"]),
+		strings.TrimSpace(attrs["llm.model"]),
+	)
+}
+
+func spanHasFailure(sp models.Span) bool {
+	outcome := strings.ToLower(strings.TrimSpace(sp.Attributes["af.outcome_status"]))
+	switch outcome {
+	case "error", "blocked", "degraded", "partial":
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(sp.Attributes["af.policy.blocked"]), "true") {
+		return true
+	}
+	decision := strings.ToLower(strings.TrimSpace(sp.Attributes["af.policy.decision"]))
+	if decision == "deny" || decision == "block" {
+		return true
+	}
+	if sp.StatusCode == 2 || sp.StatusCode >= 500 {
+		return true
+	}
+	if sp.StatusCode == 401 || sp.StatusCode == 403 || sp.StatusCode == 429 {
+		return true
+	}
+	return false
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
 
 func (s *PostgresStore) ListTraces(ctx context.Context, q models.TraceQuery) (*models.Page[models.Trace], error) {
 	if q.Limit <= 0 || q.Limit > 200 {
@@ -717,7 +929,18 @@ type Environment struct {
 
 func (s *PostgresStore) ListEnvironments(ctx context.Context, tenantID string) ([]Environment, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, name, description, status FROM environments WHERE tenant_id = $1 ORDER BY name`,
+		`SELECT
+			env_id::text AS id,
+			name,
+			TRIM(BOTH ' ' FROM CONCAT_WS(' ',
+				NULLIF(cluster, ''),
+				NULLIF(cloud, ''),
+				NULLIF(region, '')
+			)) AS description,
+			'active' AS status
+		FROM environments
+		WHERE tenant_id::text = $1
+		ORDER BY name`,
 		tenantID,
 	)
 	if err != nil {
@@ -1315,10 +1538,10 @@ func (s *PostgresStore) GetMonthlyUsage(ctx context.Context, tenantID string, si
 		SELECT
 		  COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens + reasoning_tokens), 0),
 		  COALESCE(SUM(cost_usd), 0),
-		  $2,
+		  $2::timestamptz,
 		  NOW()
 		FROM spans
-		WHERE tenant_id = $1 AND received_at >= $2
+		WHERE tenant_id = $1 AND received_at >= $2::timestamptz
 	`, tenantID, since).Scan(
 		&usage.TokensUsed, &usage.CostUsedUSD, &usage.PeriodStart, &usage.PeriodEnd,
 	)

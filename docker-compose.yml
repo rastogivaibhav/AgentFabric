@@ -1,11 +1,11 @@
 # Govagn — Local development stack
-# Removed: Kafka, Zookeeper, af-core, ClickHouse (unused in production data path)
+# Removed: Kafka, Zookeeper, legacy core service, ClickHouse (unused in production data path)
 # Data path: Agent SDK → Collector → api-gateway → PostgreSQL + Redis → Portal
 #
 # Usage: docker-compose up -d
 
 networks:
-  af-net:
+  gv-net:
     driver: bridge
 
 volumes:
@@ -28,7 +28,7 @@ services:
       # Schema managed by golang-migrate (api-gateway runs migrations on startup).
     ports:
       - "5432:5432"
-    networks: [af-net]
+    networks: [gv-net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fabric -d govagn"]
       interval: 5s
@@ -40,7 +40,7 @@ services:
     command: redis-server --appendonly yes
     volumes: [redis_data:/data]
     ports: ["6379:6379"]
-    networks: [af-net]
+    networks: [gv-net]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -74,7 +74,7 @@ services:
     ports:
       - "8080:8080"
       - "8443:8443"   # Layer 3: transparent HTTPS MITM proxy (HTTP CONNECT)
-    networks: [af-net]
+    networks: [gv-net]
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -95,6 +95,7 @@ services:
       GV_GRPC_ADDR: "0.0.0.0:4317"
       GV_HTTP_ADDR: "0.0.0.0:4318"
       GV_GATEWAY_ENDPOINT: "http://api-gateway:8080"
+      GV_GATEWAY_AUTH_TOKEN: "${GV_GATEWAY_AUTH_TOKEN:-dev-gateway-token}"
       GV_AUTH_REQUIRE_AUTH: "false"
       GV_JWT_SECRET: "dev-secret-change-in-prod"
       GV_TLS_ENABLED: "${GV_TLS_ENABLED:-false}"
@@ -108,7 +109,7 @@ services:
     ports:
       - "4317:4317"
       - "4318:4318"
-    networks: [af-net]
+    networks: [gv-net]
     depends_on:
       api-gateway:
         condition: service_healthy
@@ -130,7 +131,7 @@ services:
         VITE_AUTH_DISABLED: "true"
     ports:
       - "3000:80"
-    networks: [af-net]
+    networks: [gv-net]
     depends_on: [api-gateway]
 
   # ─── Observability ──────────────────────────────────────────────────────────
@@ -141,7 +142,7 @@ services:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
     ports: ["9090:9090"]
-    networks: [af-net]
+    networks: [gv-net]
     depends_on: [alertmanager]
 
   alertmanager:
@@ -153,7 +154,7 @@ services:
       - '--storage.path=/alertmanager'
       - '--web.listen-address=:9093'
     ports: ["9093:9093"]
-    networks: [af-net]
+    networks: [gv-net]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
       interval: 10s
@@ -171,7 +172,7 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports: ["9091:3000"]
-    networks: [af-net]
+    networks: [gv-net]
     depends_on: [prometheus]
 
   jaeger:
@@ -181,4 +182,4 @@ services:
     ports:
       - "16686:16686"
       - "14250:14250"
-    networks: [af-net]
+    networks: [gv-net]

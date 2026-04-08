@@ -44,7 +44,7 @@ route:
 receivers:
   - name: 'ops-webhook'
     webhook_configs:
-      - url: '${GV_ALERTMANAGER_WEBHOOK_URL:-http://localhost:9091/webhook}'
+      - url: 'http://localhost:9091/webhook'
         send_resolved: true
         http_config:
           # bearer_token: '${GV_WEBHOOK_TOKEN}'  # add if webhook requires auth

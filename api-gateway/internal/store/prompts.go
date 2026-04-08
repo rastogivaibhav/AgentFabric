@@ -65,10 +65,10 @@ func (s *PostgresStore) ListPromptVersions(ctx context.Context, tenantID string)
 
 func (s *PostgresStore) ListPromptReleases(ctx context.Context, tenantID string) ([]models.PromptRelease, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, tenant_id, prompt_id, environment, version_num, release_tag, COALESCE(status, 'active'), COALESCE(notes, ''), COALESCE(promotion_reason, ''), COALESCE(promoted_by, ''), created_at
+		SELECT id, tenant_id, prompt_id, environment, version_num, release_tag, 'active' AS status, COALESCE(notes, ''), '' AS promotion_reason, COALESCE(promoted_by, ''), created_at
 		FROM prompt_releases
 		WHERE tenant_id = $1
-		ORDER BY prompt_id ASC, environment ASC, CASE COALESCE(status, 'active') WHEN 'active' THEN 0 WHEN 'candidate' THEN 1 WHEN 'superseded' THEN 2 ELSE 3 END, created_at DESC
+		ORDER BY prompt_id ASC, environment ASC, created_at DESC
 	`, tenantID)
 	if err != nil {
 		return nil, err
@@ -173,32 +173,17 @@ func (s *PostgresStore) GetPromptVersion(ctx context.Context, tenantID, promptID
 }
 
 func (s *PostgresStore) PromotePromptRelease(ctx context.Context, tenantID string, release models.PromptRelease) (models.PromptRelease, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return release, err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	release.Status = strings.TrimSpace(release.Status)
-	if release.Status == "" {
-		release.Status = "active"
-	}
-
-	if release.Status == "active" {
-		if _, err := tx.Exec(ctx, `
-			UPDATE prompt_releases
-			SET status = 'superseded'
-			WHERE tenant_id = $1 AND prompt_id = $2 AND environment = $3 AND COALESCE(status, 'active') = 'active'
-		`, tenantID, strings.TrimSpace(release.PromptID), strings.TrimSpace(release.Environment)); err != nil {
-			return release, err
-		}
-	}
-
-	err = tx.QueryRow(ctx, `
-		INSERT INTO prompt_releases (tenant_id, prompt_id, environment, version_num, release_tag, status, notes, promotion_reason, promoted_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, tenant_id, prompt_id, environment, version_num, release_tag, COALESCE(status, 'active'), COALESCE(notes, ''), COALESCE(promotion_reason, ''), COALESCE(promoted_by, ''), created_at
-	`, tenantID, strings.TrimSpace(release.PromptID), strings.TrimSpace(release.Environment), release.Version, strings.TrimSpace(release.ReleaseTag), strings.TrimSpace(release.Status), strings.TrimSpace(release.Notes), strings.TrimSpace(release.PromotionReason), strings.TrimSpace(release.PromotedBy)).Scan(
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO prompt_releases (tenant_id, prompt_id, environment, version_num, release_tag, notes, promoted_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (tenant_id, prompt_id, environment) DO UPDATE SET
+			version_num = EXCLUDED.version_num,
+			release_tag = EXCLUDED.release_tag,
+			notes = EXCLUDED.notes,
+			promoted_by = EXCLUDED.promoted_by,
+			created_at = NOW()
+		RETURNING id, tenant_id, prompt_id, environment, version_num, release_tag, 'active' AS status, COALESCE(notes, ''), '' AS promotion_reason, COALESCE(promoted_by, ''), created_at
+	`, tenantID, strings.TrimSpace(release.PromptID), strings.TrimSpace(release.Environment), release.Version, strings.TrimSpace(release.ReleaseTag), strings.TrimSpace(release.Notes), strings.TrimSpace(release.PromotedBy)).Scan(
 		&release.ID,
 		&release.TenantID,
 		&release.PromptID,
@@ -212,9 +197,6 @@ func (s *PostgresStore) PromotePromptRelease(ctx context.Context, tenantID strin
 		&release.CreatedAt,
 	)
 	if err != nil {
-		return release, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return release, err
 	}
 	return release, nil

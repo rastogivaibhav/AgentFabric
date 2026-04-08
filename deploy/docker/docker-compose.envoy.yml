@@ -11,7 +11,7 @@ services:
     volumes:
       - ./deploy/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
       - ./deploy/certs:/etc/envoy/certs:ro
-    networks: [af-net]
+    networks: [gv-net]
     depends_on:
       collector:
         condition: service_healthy

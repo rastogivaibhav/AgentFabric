@@ -95,10 +95,10 @@ func (s *PostgresStore) ListAgentScorecardMetrics(ctx context.Context, tenantID 
 			SELECT
 				rr.agent_name,
 				COUNT(*) AS decision_count,
-				COALESCE(SUM(CASE WHEN d.type = 'policy' AND LOWER(d.result) IN ('deny', 'block') THEN 1 ELSE 0 END), 0) AS policy_block_count,
-				COALESCE(SUM(CASE WHEN d.type = 'policy' AND LOWER(d.result) IN ('sanitize', 'redact') THEN 1 ELSE 0 END), 0) AS policy_redaction_count,
-				COALESCE(SUM(CASE WHEN d.type = 'budget' AND LOWER(d.result) = 'deny' THEN 1 ELSE 0 END), 0) AS budget_denied_count,
-				COALESCE(SUM(CASE WHEN d.type IN ('fallback', 'retry') THEN 1 ELSE 0 END), 0) AS fallback_count
+				COALESCE(SUM(CASE WHEN d.decision_type = 'policy' AND LOWER(d.result) IN ('deny', 'block') THEN 1 ELSE 0 END), 0) AS policy_block_count,
+				COALESCE(SUM(CASE WHEN d.decision_type = 'policy' AND LOWER(d.result) IN ('sanitize', 'redact') THEN 1 ELSE 0 END), 0) AS policy_redaction_count,
+				COALESCE(SUM(CASE WHEN d.decision_type = 'budget' AND LOWER(d.result) = 'deny' THEN 1 ELSE 0 END), 0) AS budget_denied_count,
+				COALESCE(SUM(CASE WHEN d.decision_type IN ('fallback', 'retry') THEN 1 ELSE 0 END), 0) AS fallback_count
 			FROM recent_runs rr
 			JOIN decision_records d ON d.tenant_id = $1 AND d.trace_id = rr.trace_id AND d.created_at >= $2 AND d.created_at < $3
 			GROUP BY rr.agent_name
