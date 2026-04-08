@@ -3,7 +3,7 @@ package policy
 import (
 	"sort"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func compileRules(rules []models.PolicyRule) []compiledRule {

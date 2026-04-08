@@ -1,5 +1,5 @@
 """
-Integration tests for AgentFabric OpenAI instrumentation.
+Integration tests for Govagn OpenAI instrumentation.
 
 All HTTP calls are intercepted by respx at the httpx transport layer.
 No real API key or network access is required.
@@ -73,7 +73,7 @@ _provider.add_span_processor(SimpleSpanProcessor(_exporter))
 
 @pytest.mark.integration
 class TestOpenAIIntegration:
-    """30+ integration tests for AgentFabric OpenAI patch using respx HTTP mocks."""
+    """30+ integration tests for Govagn OpenAI patch using respx HTTP mocks."""
 
     # ------------------------------------------------------------------
     # Fixtures
@@ -89,24 +89,24 @@ class TestOpenAIIntegration:
     def _setup_tracer(self, gateway_exporter):
         """
         Class-scoped fixture: wire up InMemorySpanExporter and apply the
-        agentfabric OpenAI patch exactly once for the entire test class.
+        govagn OpenAI patch exactly once for the entire test class.
         Restores the original create on teardown.
-        Spans are also forwarded to the AgentFabric dashboard in real-time.
+        Spans are also forwarded to the Govagn dashboard in real-time.
         """
         import openai
-        import agentfabric
+        import govagn
 
         # Add gateway exporter to the shared provider (idempotent — processors
         # accumulate but the gateway exporter silently drops dupes on its end).
         _provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
 
-        # Point agentfabric at our in-memory provider / tracer
-        agentfabric._tracer = _provider.get_tracer("agentfabric-test", "1.0.0")
-        agentfabric._initialized = True
+        # Point govagn at our in-memory provider / tracer
+        govagn._tracer = _provider.get_tracer("govagn-test", "1.0.0")
+        govagn._initialized = True
 
         # Save original and patch
         original_create = openai.chat.completions.create
-        agentfabric._patch_openai(openai)
+        govagn._patch_openai(openai)
 
         yield
 
@@ -210,7 +210,7 @@ class TestOpenAIIntegration:
                 "role": "user",
                 "content": (
                     "Please summarise the following text in one sentence:\n"
-                    "AgentFabric is an enterprise observability platform designed "
+                    "Govagn is an enterprise observability platform designed "
                     "to monitor and govern AI agent behaviour across multiple frameworks."
                 ),
             }

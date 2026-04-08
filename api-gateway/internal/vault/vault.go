@@ -1,7 +1,7 @@
 // Package vault manages virtual LLM API keys.
 //
 // Real keys are encrypted with AES-256-GCM using a master key loaded from the
-// AF_VAULT_KEY environment variable (64-char hex, 32 bytes). The nonce is
+// GV_VAULT_KEY environment variable (64-char hex, 32 bytes). The nonce is
 // prepended to the ciphertext and stored as a single BYTEA column so the DB
 // never holds a plaintext credential.
 //
@@ -57,7 +57,7 @@ func New(pool *pgxpool.Pool, masterKeyHex string) (*Vault, error) {
 	}
 	b, err := hex.DecodeString(masterKeyHex)
 	if err != nil {
-		return nil, fmt.Errorf("decode AF_VAULT_KEY: %w", err)
+		return nil, fmt.Errorf("decode GV_VAULT_KEY: %w", err)
 	}
 	v := &Vault{pool: pool}
 	copy(v.masterKey[:], b)
@@ -67,7 +67,7 @@ func New(pool *pgxpool.Pool, masterKeyHex string) (*Vault, error) {
 func ValidateMasterKeyHex(masterKeyHex string) error {
 	b, err := hex.DecodeString(strings.TrimSpace(masterKeyHex))
 	if err != nil || len(b) != 32 {
-		return fmt.Errorf("AF_VAULT_KEY must be a 64-char hex string (32 bytes): got %d bytes", len(b))
+		return fmt.Errorf("GV_VAULT_KEY must be a 64-char hex string (32 bytes): got %d bytes", len(b))
 	}
 	return nil
 }

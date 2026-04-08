@@ -2,7 +2,7 @@
 name = "af-core"
 version = "1.0.0"
 edition = "2021"
-description = "AgentFabric processing core — policy engine, trace DAG builder, storage writer"
+description = "Govagn processing core — policy engine, trace DAG builder, storage writer"
 
 [[bin]]
 name = "af-core"

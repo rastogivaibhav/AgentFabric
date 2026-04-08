@@ -1,0 +1,19 @@
+# Govagn Execution Checklist
+
+- `[x]` **Phase 1: Application Renaming (Govagn)**
+  - `[x]` Write and execute a token-efficient renaming script.
+  - `[x]` Rename occurrences of "AgentFabric", "Agent Fabric", and "agentfabric" in code, docs, and configs.
+  - `[x]` Rename relevant directories and files named `agentfabric`.
+- `[x]` **Phase 2: Pilot Blockers (Core Bug Fixes)**
+  - `[x]` Fix P0 Cost Computation Bug (`postgres.rs` / backend cost logic).
+  - `[x]` Fix P0 SQL Injection Vulnerabilities.
+  - `[x]` Fix P0 Trace Topology N+1 Query.
+  - `[x]` Implement P1 Authentication UI (OIDC/Login Page wrapper).
+- `[x]` **Phase 3: Building a Vibrant Testing Pipeline**
+  - `[x]` Set up Go & Python testing frameworks.
+  - `[x]` Write initial unit tests to break 0% coverage.
+  - `[x]` Expand Integration tests for Budget & Proxy logic.
+  - `[x]` Set up Playwright for UAT Automation.
+- `[x]` **Phase 4: Envoy Network Deployment**
+  - `[x]` Configure `envoy.yaml` for TLS interception.
+  - `[x]` Document K8s/VPC egress deployment strategy.

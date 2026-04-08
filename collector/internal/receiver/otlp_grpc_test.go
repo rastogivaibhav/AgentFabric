@@ -6,8 +6,8 @@ import (
 
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 
-	"github.com/agentfabric/collector/internal/config"
-	"github.com/agentfabric/collector/internal/processor"
+	"github.com/govagn/collector/internal/config"
+	"github.com/govagn/collector/internal/processor"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"go.uber.org/zap"
 )

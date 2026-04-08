@@ -1,4 +1,4 @@
-module github.com/agentfabric/collector
+module github.com/govagn/collector
 
 go 1.22
 

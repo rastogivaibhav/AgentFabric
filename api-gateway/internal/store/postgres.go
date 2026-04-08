@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/budget"
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/budget"
+	"github.com/govagn/api-gateway/internal/models"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"

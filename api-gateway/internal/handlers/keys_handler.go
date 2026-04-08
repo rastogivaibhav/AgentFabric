@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/agentfabric/api-gateway/internal/middleware"
-	"github.com/agentfabric/api-gateway/internal/models"
-	"github.com/agentfabric/api-gateway/internal/proxy"
-	"github.com/agentfabric/api-gateway/internal/store"
-	"github.com/agentfabric/api-gateway/internal/vault"
+	"github.com/govagn/api-gateway/internal/middleware"
+	"github.com/govagn/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/proxy"
+	"github.com/govagn/api-gateway/internal/store"
+	"github.com/govagn/api-gateway/internal/vault"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )

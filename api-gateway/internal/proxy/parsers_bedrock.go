@@ -46,7 +46,7 @@ func (p *bedrockParser) Upstream() string {
 	if strings.TrimSpace(p.endpoint) != "" {
 		return p.endpoint
 	}
-	if endpoint := strings.TrimSpace(os.Getenv("AF_BEDROCK_ENDPOINT")); endpoint != "" {
+	if endpoint := strings.TrimSpace(os.Getenv("GV_BEDROCK_ENDPOINT")); endpoint != "" {
 		return endpoint
 	}
 	return "https://bedrock-runtime.us-east-1.amazonaws.com"

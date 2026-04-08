@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func TestListCatalogReturnsVersionError(t *testing.T) {

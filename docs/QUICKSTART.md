@@ -1,8 +1,8 @@
-# AgentFabric Quickstart
+# Govagn Quickstart
 
 ## Purpose
 
-This guide is the fastest way to get AgentFabric running locally so you can validate the product shape end to end.
+This guide is the fastest way to get Govagn running locally so you can validate the product shape end to end.
 
 Use it when you want to:
 
@@ -19,7 +19,7 @@ For production-oriented installation, use:
 
 ## What You Get Locally
 
-The local stack gives you a self-hosted AgentFabric control plane with:
+The local stack gives you a self-hosted Govagn control plane with:
 
 - gateway APIs
 - collector ingest

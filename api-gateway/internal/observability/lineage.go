@@ -3,7 +3,7 @@ package observability
 import (
 	"strings"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 type lineageMeta struct {

@@ -1,4 +1,4 @@
--- AgentFabric PostgreSQL Schema
+-- Govagn PostgreSQL Schema
 -- Production-grade with Row Level Security, audit trail, and indexes
 
 -- Enable required extensions
@@ -137,8 +137,8 @@ CREATE RULE no_delete_audit AS ON DELETE TO policy_audit_log DO INSTEAD NOTHING;
 -- Separate role with INSERT-only access (immutable audit principle).
 -- NOLOGIN by default — the role exists for GRANT enforcement.
 -- Production setup: run the following after deployment, replacing the placeholder:
---   ALTER ROLE af_audit_writer WITH LOGIN PASSWORD '$AF_AUDIT_WRITER_PASSWORD';
--- Then configure the current audit writer to use AF_AUDIT_DSN for audit writes.
+--   ALTER ROLE af_audit_writer WITH LOGIN PASSWORD '$GV_AUDIT_WRITER_PASSWORD';
+-- Then configure the current audit writer to use GV_AUDIT_DSN for audit writes.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'af_audit_writer') THEN
@@ -239,13 +239,13 @@ CREATE TABLE users (
     UNIQUE (tenant_id, email)
 );
 
--- Seed the default admin user (password: admin — change via AF_ADMIN_PASSWORD)
+-- Seed the default admin user (password: admin — change via GV_ADMIN_PASSWORD)
 INSERT INTO users (tenant_id, username, password_hash, email, display_name, role)
 VALUES (
     '00000000-0000-0000-0000-000000000001',
     'admin',
     crypt('admin', gen_salt('bf', 10)),
-    'admin@agentfabric.local',
+    'admin@govagn.local',
     'Admin',
     'admin'
 );

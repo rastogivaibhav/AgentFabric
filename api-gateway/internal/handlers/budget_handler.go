@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/budget"
+	"github.com/govagn/api-gateway/internal/budget"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )

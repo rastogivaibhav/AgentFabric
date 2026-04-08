@@ -1,6 +1,6 @@
 package evals
 
-import "github.com/agentfabric/api-gateway/internal/models"
+import "github.com/govagn/api-gateway/internal/models"
 
 func summarizePolicyEffectiveness(trace models.Trace) models.PolicyEffectivenessSummary {
 	summary := models.PolicyEffectivenessSummary{

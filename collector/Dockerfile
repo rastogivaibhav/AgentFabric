@@ -7,7 +7,7 @@ COPY . .
 RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-w -s -X main.Version=1.0.0" \
-    -o /agentfabric-collector ./cmd/collector
+    -o /govagn-collector ./cmd/collector
 
 # Static TCP health-check binary — dials :4318 to confirm the HTTP listener is up.
 # Compiled here and copied into the distroless runtime (no shell available there).
@@ -22,7 +22,7 @@ RUN echo 'package main' > /tmp/hc.go && \
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 FROM gcr.io/distroless/static:nonroot
-COPY --from=builder /agentfabric-collector /agentfabric-collector
+COPY --from=builder /govagn-collector /govagn-collector
 COPY --from=builder /healthcheck /healthcheck
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
@@ -34,4 +34,4 @@ EXPOSE 4317 4318 9090
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/healthcheck"]
 
-ENTRYPOINT ["/agentfabric-collector"]
+ENTRYPOINT ["/govagn-collector"]

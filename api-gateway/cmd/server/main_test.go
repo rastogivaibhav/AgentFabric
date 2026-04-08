@@ -80,7 +80,7 @@ func TestServe_TLSDisabled(t *testing.T) {
 	}
 }
 
-// TestServe_TLSMissingCert verifies fail-secure behaviour: when AF_TLS_ENABLED
+// TestServe_TLSMissingCert verifies fail-secure behaviour: when GV_TLS_ENABLED
 // is true but cert/key paths are empty, serve() must return an error
 // immediately and must NOT silently fall back to plain HTTP.
 func TestServe_TLSMissingCert(t *testing.T) {
@@ -94,7 +94,7 @@ func TestServe_TLSMissingCert(t *testing.T) {
 
 	// Error message must name the relevant env vars so the operator knows
 	// exactly what to fix.
-	for _, needle := range []string{"AF_TLS_CERT_FILE", "AF_TLS_KEY_FILE"} {
+	for _, needle := range []string{"GV_TLS_CERT_FILE", "GV_TLS_KEY_FILE"} {
 		if !strings.Contains(err.Error(), needle) {
 			t.Errorf("error should mention %q; got: %v", needle, err)
 		}
@@ -174,8 +174,8 @@ func TestParseSecrets_SkipsEmptySegments(t *testing.T) {
 }
 
 func TestValidateProductionConfig_StrictDisabled(t *testing.T) {
-	t.Setenv("AF_ENV", "")
-	t.Setenv("AF_STRICT_CONFIG", "false")
+	t.Setenv("GV_ENV", "")
+	t.Setenv("GV_STRICT_CONFIG", "false")
 
 	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "", "admin", "")
 	if err != nil {
@@ -184,11 +184,11 @@ func TestValidateProductionConfig_StrictDisabled(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RejectsUnsafeDefaults(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
 	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
 
 	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "", "admin", "")
 	if err == nil {
@@ -197,11 +197,11 @@ func TestValidateProductionConfig_RejectsUnsafeDefaults(t *testing.T) {
 }
 
 func TestValidateProductionConfig_AcceptsSafeValues(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
 	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
 	if err != nil {
@@ -210,11 +210,11 @@ func TestValidateProductionConfig_AcceptsSafeValues(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RequiresDatabaseURL(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
 	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
@@ -223,11 +223,11 @@ func TestValidateProductionConfig_RequiresDatabaseURL(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RequiresRedisURL(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
 	t.Setenv("REDIS_URL", "")
-	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
@@ -236,43 +236,43 @@ func TestValidateProductionConfig_RequiresRedisURL(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RequiresCORSOrigins(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
 	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("AF_CORS_ORIGINS", "")
+	t.Setenv("GV_CORS_ORIGINS", "")
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
-	if err == nil || !strings.Contains(err.Error(), "AF_CORS_ORIGINS") {
-		t.Fatalf("expected AF_CORS_ORIGINS validation error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "GV_CORS_ORIGINS") {
+		t.Fatalf("expected GV_CORS_ORIGINS validation error, got %v", err)
 	}
 }
 
 func TestValidateProductionConfig_RequiresTLSFilesWhenEnabled(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
 	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
-	t.Setenv("AF_TLS_ENABLED", "true")
-	t.Setenv("AF_TLS_CERT_FILE", "")
-	t.Setenv("AF_TLS_KEY_FILE", "")
+	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
+	t.Setenv("GV_TLS_ENABLED", "true")
+	t.Setenv("GV_TLS_CERT_FILE", "")
+	t.Setenv("GV_TLS_KEY_FILE", "")
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
-	if err == nil || !strings.Contains(err.Error(), "AF_TLS_CERT_FILE") {
+	if err == nil || !strings.Contains(err.Error(), "GV_TLS_CERT_FILE") {
 		t.Fatalf("expected TLS env validation error, got %v", err)
 	}
 }
 
 func TestValidateProductionConfig_RejectsKnownDevelopmentSecretSentinel(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/agentfabric?sslmode=require")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
 	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("AF_CORS_ORIGINS", "https://app.agentfabric.io")
+	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
 
 	err := validateProductionConfig(false, []string{"dev-secret-change-in-prod"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
-	if err == nil || !strings.Contains(err.Error(), "AF_JWT_SECRET/AF_JWT_SECRETS") {
+	if err == nil || !strings.Contains(err.Error(), "GV_JWT_SECRET/GV_JWT_SECRETS") {
 		t.Fatalf("expected development sentinel rejection, got %v", err)
 	}
 }

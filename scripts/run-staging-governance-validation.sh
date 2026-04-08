@@ -120,7 +120,7 @@ echo "${budget_usage}" | grep -q '"tokens_used"' || { echo "scenario_budget_limi
 
 if [[ -n "${PROXY_VIRTUAL_KEY}" ]]; then
   step "Live proxy budget check"
-  proxy_status="$(curl -sS -o /tmp/agentfabric-governance-proxy.out -w "%{http_code}" \
+  proxy_status="$(curl -sS -o /tmp/govagn-governance-proxy.out -w "%{http_code}" \
     -H "Authorization: Bearer ${PROXY_VIRTUAL_KEY}" \
     -H "Content-Type: application/json" \
     -d "${PROXY_BODY_JSON}" \

@@ -15,10 +15,10 @@ import (
 
 var strictWSOrigins = strictConfigEnabled()
 
-// allowedWSOrigins is built once at startup from AF_CORS_ORIGINS.
+// allowedWSOrigins is built once at startup from GV_CORS_ORIGINS.
 // Dev mode keeps localhost defaults for operator ergonomics; strict production
 // mode requires explicit origins and rejects empty Origin headers.
-var allowedWSOrigins = buildAllowedWSOrigins(os.Getenv("AF_CORS_ORIGINS"), strictWSOrigins)
+var allowedWSOrigins = buildAllowedWSOrigins(os.Getenv("GV_CORS_ORIGINS"), strictWSOrigins)
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -29,10 +29,10 @@ var upgrader = websocket.Upgrader{
 }
 
 func strictConfigEnabled() bool {
-	if os.Getenv("AF_STRICT_CONFIG") == "true" {
+	if os.Getenv("GV_STRICT_CONFIG") == "true" {
 		return true
 	}
-	return strings.EqualFold(os.Getenv("AF_ENV"), "production")
+	return strings.EqualFold(os.Getenv("GV_ENV"), "production")
 }
 
 func buildAllowedWSOrigins(raw string, strict bool) map[string]bool {

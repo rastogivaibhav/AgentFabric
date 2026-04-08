@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentfabric/collector/internal/auth"
-	"github.com/agentfabric/collector/internal/config"
-	"github.com/agentfabric/collector/internal/exporter"
-	"github.com/agentfabric/collector/internal/processor"
-	"github.com/agentfabric/collector/internal/receiver"
+	"github.com/govagn/collector/internal/auth"
+	"github.com/govagn/collector/internal/config"
+	"github.com/govagn/collector/internal/exporter"
+	"github.com/govagn/collector/internal/processor"
+	"github.com/govagn/collector/internal/receiver"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -127,7 +127,7 @@ func main() {
 	// Start background discovery scan (k8s + process discovery)
 	go spanProcessor.RunDiscovery(ctx)
 
-	logger.Info("AgentFabric Collector started",
+	logger.Info("Govagn Collector started",
 		zap.String("grpc", cfg.GRPC.Addr),
 		zap.String("http", cfg.HTTP.Addr),
 		zap.String("node", cfg.NodeName),
@@ -166,7 +166,7 @@ func collectorReady(w http.ResponseWriter, r *http.Request, cfg *config.Config) 
 			"receiver":           {"status": "ok"},
 			"gateway_export":     {"status": "configured"},
 			"pricing_config":     {"status": "loaded"},
-			"gateway_auth_token": {"status": "configured", "contract": "Authorization: Bearer <AF_GATEWAY_AUTH_TOKEN>"},
+			"gateway_auth_token": {"status": "configured", "contract": "Authorization: Bearer <GV_GATEWAY_AUTH_TOKEN>"},
 		},
 	}
 	checks := response["checks"].(map[string]map[string]any)

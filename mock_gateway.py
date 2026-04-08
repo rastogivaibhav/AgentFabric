@@ -1,5 +1,5 @@
 """
-AgentFabric Mock API Gateway
+Govagn Mock API Gateway
 Accepts OTLP spans from the collector, stores in memory,
 serves all portal API endpoints + WebSocket live stream.
 
@@ -25,11 +25,11 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 # ─── Basic-auth credentials (override via env for staging/prod) ───────────────
-ADMIN_USER     = os.environ.get("AF_ADMIN_USER",     "admin")
-ADMIN_PASSWORD = os.environ.get("AF_ADMIN_PASSWORD", "admin")
-JWT_SECRET     = os.environ.get("AF_JWT_SECRET",     "dev-secret-changeme")
+ADMIN_USER     = os.environ.get("GV_ADMIN_USER",     "admin")
+ADMIN_PASSWORD = os.environ.get("GV_ADMIN_PASSWORD", "admin")
+JWT_SECRET     = os.environ.get("GV_JWT_SECRET",     "dev-secret-changeme")
 
-app = FastAPI(title="AgentFabric Mock Gateway")
+app = FastAPI(title="Govagn Mock Gateway")
 
 # ─── CORS (portal runs on :3000 or :5173) ────────────────────────────────────
 # allow_credentials=True requires explicit origins — wildcard ("*") is rejected
@@ -457,7 +457,7 @@ async def basic_login(request: Request):
     password = (body.get("password") or "").strip()
 
     if username == ADMIN_USER and password == ADMIN_PASSWORD:
-        token = _make_jwt(sub=username, email=f"{username}@agentfabric.local")
+        token = _make_jwt(sub=username, email=f"{username}@govagn.local")
         resp = JSONResponse({"token": token})
         # HttpOnly cookie — JS cannot read it; portal uses GET /auth/me with credentials:'include'
         resp.set_cookie(
@@ -520,19 +520,19 @@ async def auth_logout():
 # ─── Users ────────────────────────────────────────────────────────────────────
 MOCK_USERS = [
     {"user_id": "u-001", "tenant_id": "tenant-default", "username": "admin",
-     "email": "admin@agentfabric.local", "display_name": "Admin",
+     "email": "admin@govagn.local", "display_name": "Admin",
      "role": "admin", "is_active": True, "last_login_at": "2026-03-19T08:00:00Z",
      "created_at": "2026-01-01T00:00:00Z"},
     {"user_id": "u-002", "tenant_id": "tenant-default", "username": "alice",
-     "email": "alice@agentfabric.local", "display_name": "Alice Chen",
+     "email": "alice@govagn.local", "display_name": "Alice Chen",
      "role": "editor", "is_active": True, "last_login_at": "2026-03-18T14:32:00Z",
      "created_at": "2026-01-15T09:00:00Z"},
     {"user_id": "u-003", "tenant_id": "tenant-default", "username": "bob",
-     "email": "bob@agentfabric.local", "display_name": "Bob Smith",
+     "email": "bob@govagn.local", "display_name": "Bob Smith",
      "role": "viewer", "is_active": True, "last_login_at": "2026-03-17T11:10:00Z",
      "created_at": "2026-02-01T00:00:00Z"},
     {"user_id": "u-004", "tenant_id": "tenant-default", "username": "ci-bot",
-     "email": "ci@agentfabric.local", "display_name": "CI Bot",
+     "email": "ci@govagn.local", "display_name": "CI Bot",
      "role": "viewer", "is_active": True, "last_login_at": None,
      "created_at": "2026-03-01T00:00:00Z"},
 ]
@@ -727,7 +727,7 @@ def _seed_spans():
 async def startup():
     _seed_spans()
     print("\n" + "="*55)
-    print("  AgentFabric Mock Gateway  |  :8080")
+    print("  Govagn Mock Gateway  |  :8080")
     print("  Auth login        -> POST /auth/login  (admin/admin)")
     print("  Auth me           -> GET  /auth/me")
     print("  Collector ingest  -> POST /internal/ingest")

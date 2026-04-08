@@ -1,6 +1,6 @@
 package prompts
 
-import "github.com/agentfabric/api-gateway/internal/models"
+import "github.com/govagn/api-gateway/internal/models"
 
 func attachCurrentReleases(versions []models.PromptVersion, releases []models.PromptRelease) {
 	if len(versions) == 0 || len(releases) == 0 {

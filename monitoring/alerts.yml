@@ -1,5 +1,5 @@
 groups:
-  - name: agentfabric.service_health
+  - name: govagn.service_health
     interval: 30s
     rules:
 
@@ -9,40 +9,40 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "AgentFabric service {{ $labels.job }} is down"
+          summary: "Govagn service {{ $labels.job }} is down"
           description: "{{ $labels.job }} ({{ $labels.instance }}) has been unreachable for more than 1 minute."
-          runbook: "https://docs.agentfabric.io/runbooks/service-down"
+          runbook: "https://docs.govagn.io/runbooks/service-down"
 
       - alert: CollectorNotReceivingSpans
-        expr: rate(agentfabric_spans_received_total[5m]) == 0
+        expr: rate(govagn_spans_received_total[5m]) == 0
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: "Collector has not received any spans in 5 minutes"
           description: "No OTLP spans have been received. Check that instrumented agents are running and pointing at the collector."
-          runbook: "https://docs.agentfabric.io/runbooks/no-spans"
+          runbook: "https://docs.govagn.io/runbooks/no-spans"
 
       - alert: HighProcessorQueueDepth
-        expr: agentfabric_processor_queue_depth > 50000
+        expr: govagn_processor_queue_depth > 50000
         for: 2m
         labels:
           severity: warning
         annotations:
           summary: "Span processor queue depth is high ({{ $value }})"
           description: "The collector's internal queue exceeds 50K pending spans. This may indicate downstream congestion to api-gateway."
-          runbook: "https://docs.agentfabric.io/runbooks/queue-depth"
+          runbook: "https://docs.govagn.io/runbooks/queue-depth"
 
-  - name: agentfabric.api_gateway
+  - name: govagn.api_gateway
     interval: 30s
     rules:
 
       - alert: HighErrorRate
         expr: |
           (
-            rate(agentfabric_http_requests_total{status=~"5.."}[5m])
+            rate(govagn_http_requests_total{status=~"5.."}[5m])
             /
-            rate(agentfabric_http_requests_total[5m])
+            rate(govagn_http_requests_total[5m])
           ) > 0.05
         for: 5m
         labels:
@@ -50,13 +50,13 @@ groups:
         annotations:
           summary: "API Gateway error rate is {{ $value | humanizePercentage }}"
           description: "More than 5% of HTTP requests to the api-gateway are returning 5xx errors over the last 5 minutes."
-          runbook: "https://docs.agentfabric.io/runbooks/high-error-rate"
+          runbook: "https://docs.govagn.io/runbooks/high-error-rate"
 
       - alert: HighP95Latency
         expr: |
           histogram_quantile(
             0.95,
-            rate(agentfabric_http_duration_seconds_bucket[5m])
+            rate(govagn_http_duration_seconds_bucket[5m])
           ) > 2.0
         for: 5m
         labels:
@@ -64,24 +64,24 @@ groups:
         annotations:
           summary: "API Gateway P95 latency is {{ $value | humanizeDuration }}"
           description: "P95 request latency has exceeded 2 seconds for 5 minutes. Check database query performance and connection pool."
-          runbook: "https://docs.agentfabric.io/runbooks/high-latency"
+          runbook: "https://docs.govagn.io/runbooks/high-latency"
 
       - alert: HighRateLimitRate
-        expr: rate(agentfabric_http_requests_total{status="429"}[5m]) > 10
+        expr: rate(govagn_http_requests_total{status="429"}[5m]) > 10
         for: 2m
         labels:
           severity: warning
         annotations:
           summary: "High rate-limit rejections: {{ $value }} req/s"
           description: "More than 10 requests/second are being rate-limited (429). A tenant may be exceeding their quota."
-          runbook: "https://docs.agentfabric.io/runbooks/rate-limiting"
+          runbook: "https://docs.govagn.io/runbooks/rate-limiting"
 
-  - name: agentfabric.audit_integrity
+  - name: govagn.audit_integrity
     interval: 1m
     rules:
 
       - alert: AuditChainIntegrityBroken
-        expr: agentfabric_audit_chain_valid == 0
+        expr: govagn_audit_chain_valid == 0
         for: 1m
         labels:
           severity: critical
@@ -91,19 +91,19 @@ groups:
             The gateway-reported audit chain verification is returning an invalid state.
             Investigate recent policy audit writes, database consistency, and any failures
             in the audit verification path before treating the audit trail as trustworthy.
-          runbook: "https://docs.agentfabric.io/runbooks/audit-chain-integrity"
+          runbook: "https://docs.govagn.io/runbooks/audit-chain-integrity"
 
-  - name: agentfabric.cost
+  - name: govagn.cost
     interval: 1m
     rules:
 
       - alert: UnexpectedCostSpike
         expr: |
-          rate(agentfabric_cost_usd_total[1h]) * 3600 > 100
+          rate(govagn_cost_usd_total[1h]) * 3600 > 100
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: "Hourly AI cost projection exceeds $100"
           description: "Current spend rate would result in > $100/hour. Verify no runaway agents are active."
-          runbook: "https://docs.agentfabric.io/runbooks/cost-spike"
+          runbook: "https://docs.govagn.io/runbooks/cost-spike"

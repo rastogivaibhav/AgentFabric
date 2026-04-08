@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to AgentFabric are documented in this file.
+All notable changes to Govagn are documented in this file.
 
 Format: [Semantic Versioning](https://semver.org/) — `[MAJOR.MINOR.PATCH] YYYY-MM-DD`
 
@@ -30,14 +30,14 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
   (stdlib `crypto/subtle`).
 
 - **H2 JWT zero-downtime key rotation** — `api-gateway/cmd/server/main.go`:
-  `AF_JWT_SECRETS` env var accepts a comma-separated list of signing secrets.
+  `GV_JWT_SECRETS` env var accepts a comma-separated list of signing secrets.
   The first entry is the active signing key; all entries are accepted for verification.
   Rotate by prepending a new secret, deploying, then removing the old one — no active
   sessions are invalidated. `parseSecrets()` trims whitespace and skips empty segments.
 
 - **H3 Production Compose fail-fast secrets** — `deploy/docker/docker-compose.prod.yml` (NEW):
   Compose override that enforces all required secrets at startup using `${VAR:?error}` syntax.
-  `AF_AUTH_DISABLED: "false"` and `AF_AUTH_REQUIRE_AUTH: "true"` are hardcoded — they cannot
+  `GV_AUTH_DISABLED: "false"` and `GV_AUTH_REQUIRE_AUTH: "true"` are hardcoded — they cannot
   be accidentally relaxed. Grafana anonymous access disabled. Portal default-creds hint hidden.
 
 - **H4 `.env.example`** — `.env.example` (NEW):
@@ -48,8 +48,8 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
 ### Added
 
 - **H5 TLS wiring on api-gateway** — `api-gateway/cmd/server/main.go`:
-  New `serve()` helper reads `AF_TLS_ENABLED`, `AF_TLS_CERT_FILE`, `AF_TLS_KEY_FILE`.
-  Fail-secure contract: if `AF_TLS_ENABLED=true` and cert/key paths are empty, the server
+  New `serve()` helper reads `GV_TLS_ENABLED`, `GV_TLS_CERT_FILE`, `GV_TLS_KEY_FILE`.
+  Fail-secure contract: if `GV_TLS_ENABLED=true` and cert/key paths are empty, the server
   returns a descriptive error immediately and **never** silently falls back to plain HTTP.
   8 new unit tests in `api-gateway/cmd/server/main_test.go`:
   `TestServe_TLSDisabled` (real HTTP GET), `TestServe_TLSMissingCert` (error names env vars),
@@ -64,8 +64,8 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
   - `api-gateway/go.mod`: added `github.com/golang-migrate/migrate/v4 v4.17.1` as direct dep
     with `lib/pq` postgres driver.
   - `api-gateway/cmd/server/main.go`: `runMigrations()` called at startup before HTTP bind.
-    `AF_MIGRATE_ON_STARTUP=false` skips (for tests / read-only replicas).
-    `AF_MIGRATIONS_PATH` overrides the default `deploy/migrations` path.
+    `GV_MIGRATE_ON_STARTUP=false` skips (for tests / read-only replicas).
+    `GV_MIGRATIONS_PATH` overrides the default `deploy/migrations` path.
   - `Makefile`: `make migrate/up`, `make migrate/down`, `make migrate/status` via `go run`
     (no separate binary install; version pinned in go.mod). `DATABASE_URL`-aware via
     `MIGRATE_DSN` variable.
@@ -89,14 +89,14 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
 
 ### Changed
 
-- **H8 K8s resource limits corrected** — `deploy/k8s/agentfabric.yaml` (full rewrite, 19 documents):
+- **H8 K8s resource limits corrected** — `deploy/k8s/govagn.yaml` (full rewrite, 19 documents):
   - Collector resources corrected: `cpu 100m→200m / 500m→1000m`, `mem 128Mi→256Mi / 512Mi→1Gi`
     (collector is CPU-heavy — span processing, PII scrubbing, batch export).
   - API Gateway resources corrected: `cpu 200m→100m / 1000m→500m`, `mem 256Mi→128Mi / 1Gi→512Mi`
     (gateway is I/O-bound — database + Redis reads).
   - Probe timings tightened: liveness `periodSeconds 30→10`; readiness `initialDelaySeconds`
     reduced; `failureThreshold: 3` explicit on every probe.
-  - `AF_JWT_SECRETS` and `AF_ADMIN_PASSWORD` wired into gateway Deployment env (were absent).
+  - `GV_JWT_SECRETS` and `GV_ADMIN_PASSWORD` wired into gateway Deployment env (were absent).
   - af-core and portal Deployments + Services added (were entirely missing from the manifest).
   - af-core HPA added: min 2, max 8, at 70% CPU.
   - 3 `PodDisruptionBudget` resources added (`policy/v1`, `minAvailable: 1`) for gateway,
@@ -156,7 +156,7 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
 - `tests/e2e/test_e2e_pipeline.py` — 8 new `@pytest.mark.integration` tests covering
   auth login (valid/invalid), auth refresh (valid/missing token), and users CRUD lifecycle
   (list, create→read→update→delete, field validation, 404 on missing). Added
-  `api_gateway_url` session-scoped fixture (reads `AF_GATEWAY_URL` env, defaults to
+  `api_gateway_url` session-scoped fixture (reads `GV_GATEWAY_URL` env, defaults to
   `http://localhost:8080`). Updated module docstring to list tests 16–23.
 
 ---
@@ -168,7 +168,7 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
 - **S4-1 Password Login in Real API Gateway** — `api-gateway/internal/auth/oidc.go`:
   Added `POST /auth/login` handler (`PasswordLogin`) to the real Go api-gateway, replacing
   the mock-only implementation. Accepts `{username, password}` JSON, validates against
-  `AF_ADMIN_USER` / `AF_ADMIN_PASSWORD` env vars (defaults: `admin` / `admin`), issues
+  `GV_ADMIN_USER` / `GV_ADMIN_PASSWORD` env vars (defaults: `admin` / `admin`), issues
   an AF HS256 JWT using the identical token path as OIDC login. Whitespace is trimmed from
   credentials; a generic 401 is returned on mismatch to avoid username enumeration.
   `OIDCConfig` gains `AdminUser` + `AdminPassword` fields populated from env in `main.go`.
@@ -182,7 +182,7 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
 - **S4-3 Grafana Dashboards (Auto-Provisioned)** — `monitoring/grafana/`:
   - `provisioning/datasources/prometheus.yaml` — Prometheus datasource, auto-registered.
   - `provisioning/dashboards/dashboards.yaml` — filesystem dashboard provider.
-  - `dashboards/agentfabric-overview.json` — 15-panel production dashboard covering:
+  - `dashboards/govagn-overview.json` — 15-panel production dashboard covering:
     service health (UP/DOWN), HTTP request rate, error rate %, P50/P95/P99 latency,
     latency by endpoint, spans/min throughput, processor queue depth, spans by framework,
     cost rate (USD/hour), token rate, cost by framework, PII redaction rate, and policy
@@ -190,9 +190,9 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
 
 - **S4-4 Prometheus Alert Rules** — `monitoring/alerts.yml`: Six production-grade alert
   rules across three groups:
-  - `agentfabric.service_health`: ServiceDown, CollectorNotReceivingSpans, HighProcessorQueueDepth
-  - `agentfabric.api_gateway`: HighErrorRate (>5% 5xx), HighP95Latency (>2s), HighRateLimitRate
-  - `agentfabric.cost`: UnexpectedCostSpike (>$100/hour projected)
+  - `govagn.service_health`: ServiceDown, CollectorNotReceivingSpans, HighProcessorQueueDepth
+  - `govagn.api_gateway`: HighErrorRate (>5% 5xx), HighP95Latency (>2s), HighRateLimitRate
+  - `govagn.cost`: UnexpectedCostSpike (>$100/hour projected)
   All alerts include runbook URLs. `monitoring/prometheus.yml` updated to reference the rules
   file and alerting config block.
 
@@ -200,7 +200,7 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
   Generates a self-signed dev CA, collector server cert (with SAN for DNS:collector,
   DNS:localhost, IP:127.0.0.1), and client cert using OpenSSL. Certs land in
   `deploy/certs/` which is gitignored. Comment block in the script explains how to
-  enable `AF_TLS_ENABLED: "true"` in docker-compose once certs are generated.
+  enable `GV_TLS_ENABLED: "true"` in docker-compose once certs are generated.
   The collector code already supports mTLS when this env var is set.
 
 - **S4-6 af-core Readiness Probe** — `af-core/src/server/http.rs`: Upgraded `/healthz`
@@ -270,13 +270,13 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
   are now verified against the provider's RS256 public keys fetched from `jwks_uri`. Keys are
   cached in-memory for 15 minutes with automatic invalidation on unknown `kid` (key rotation).
   A `parseJWKSPublicKey()` helper parses RSA JWK `n`/`e` fields using only stdlib (no new deps).
-  Falls back to unsafe claim-only parsing when `AF_OIDC_ISSUER` is not configured (dev mode).
+  Falls back to unsafe claim-only parsing when `GV_OIDC_ISSUER` is not configured (dev mode).
 
 ### New Features
 - **S2-2 Per-tenant Rate Limiting** — `api-gateway/internal/middleware/ratelimit.go`: sliding-window
   rate limiter backed by Redis INCR + EXPIRE pipeline. Key: `rl:{tenantID}:{windowMinute}`.
   Returns 429 with `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
-  Configured via `AF_RATE_LIMIT_RPM` env var (default 1000 req/min). Fails open on Redis
+  Configured via `GV_RATE_LIMIT_RPM` env var (default 1000 req/min). Fails open on Redis
   unavailability. Principle 2: each tenant has an independent counter.
   Wired in `main.go` after `TenantInjector` on all `/api/v1` routes.
 
@@ -317,7 +317,7 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
 - `api-gateway/internal/store/redis.go`: Added `IncrWithExpiry` method (pipelined INCR + EXPIRE)
   satisfying `middleware.RateLimitStore` interface
 - `af-core/src/policy/mod.rs`: Wired `mod audit_tests`
-- `api-gateway/cmd/server/main.go`: Added `strconv` import, `AF_RATE_LIMIT_RPM` env var,
+- `api-gateway/cmd/server/main.go`: Added `strconv` import, `GV_RATE_LIMIT_RPM` env var,
   rate limiter middleware, `/api/v1/audit` and `/api/v1/audit/verify` routes
 
 ---
@@ -350,8 +350,8 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
   Endpoints: `GET /auth/login`, `GET /auth/callback`, `GET /auth/logout`, `GET /auth/me`.
   State is stored as a signed HMAC JWT in an HttpOnly cookie (stateless — no Redis required).
   AF session tokens are HS256 JWTs with 8-hour expiry, issued on successful callback.
-  Configure via env: `AF_OIDC_ISSUER`, `AF_OIDC_CLIENT_ID`, `AF_OIDC_CLIENT_SECRET`,
-  `AF_OIDC_REDIRECT_URI`, `AF_OIDC_LOGOUT_URL`.
+  Configure via env: `GV_OIDC_ISSUER`, `GV_OIDC_CLIENT_ID`, `GV_OIDC_CLIENT_SECRET`,
+  `GV_OIDC_REDIRECT_URI`, `GV_OIDC_LOGOUT_URL`.
 
 ### CI/CD
 - **P0-5 Test Coverage** — CI pipeline created at `.github/workflows/ci.yml`:
@@ -402,11 +402,11 @@ All items verified: `make test` (113 portal + all Go tests pass), `make build` c
 - Kubernetes manifests + Helm chart
 - Prometheus scrape configs
 
-[Unreleased]: https://github.com/rastogivaibhav/AgentFabric/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.4.0...v1.0.0
-[0.4.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/rastogivaibhav/AgentFabric/compare/v0.0.1...v0.1.0
-[0.0.1]: https://github.com/rastogivaibhav/AgentFabric/releases/tag/v0.0.1
+[Unreleased]: https://github.com/rastogivaibhav/Govagn/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/rastogivaibhav/Govagn/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/rastogivaibhav/Govagn/compare/v0.4.0...v1.0.0
+[0.4.0]: https://github.com/rastogivaibhav/Govagn/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/rastogivaibhav/Govagn/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/rastogivaibhav/Govagn/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/rastogivaibhav/Govagn/compare/v0.0.1...v0.1.0
+[0.0.1]: https://github.com/rastogivaibhav/Govagn/releases/tag/v0.0.1

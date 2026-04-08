@@ -120,7 +120,7 @@ const doc = new Document({
               border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '2563EB', space: 1 } },
               spacing: { after: 200 },
               children: [
-                new TextRun({ text: 'AgentFabric Platform', bold: true, font: 'Arial', size: 18, color: '1E3A5F' }),
+                new TextRun({ text: 'Govagn Platform', bold: true, font: 'Arial', size: 18, color: '1E3A5F' }),
                 new TextRun({ text: '    |    Production Code Report    |    Confidential', font: 'Arial', size: 18, color: '94A3B8' }),
               ],
             }),
@@ -153,7 +153,7 @@ const doc = new Document({
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 200 },
-          children: [new TextRun({ text: 'AgentFabric', bold: true, font: 'Arial', size: 72, color: '0D1B2A' })],
+          children: [new TextRun({ text: 'Govagn', bold: true, font: 'Arial', size: 72, color: '0D1B2A' })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,
@@ -172,7 +172,7 @@ const doc = new Document({
           rows: [
             new TableRow({ children: [
               new TableCell({ borders, width: { size: 4680, type: WidthType.DXA }, margins: { top: 120, bottom: 120, left: 200, right: 120 }, shading: { fill: 'EFF6FF', type: ShadingType.CLEAR }, children: [new Paragraph({ children: [new TextRun({ text: 'Product', bold: true, font: 'Arial', size: 20, color: '1E3A5F' })] })] }),
-              new TableCell({ borders, width: { size: 4680, type: WidthType.DXA }, margins: { top: 120, bottom: 120, left: 200, right: 120 }, children: [new Paragraph({ children: [new TextRun({ text: 'AgentFabric Observability Platform', font: 'Arial', size: 20 })] })] }),
+              new TableCell({ borders, width: { size: 4680, type: WidthType.DXA }, margins: { top: 120, bottom: 120, left: 200, right: 120 }, children: [new Paragraph({ children: [new TextRun({ text: 'Govagn Observability Platform', font: 'Arial', size: 20 })] })] }),
             ]}),
             new TableRow({ children: [
               new TableCell({ borders, width: { size: 4680, type: WidthType.DXA }, margins: { top: 120, bottom: 120, left: 200, right: 120 }, shading: { fill: 'EFF6FF', type: ShadingType.CLEAR }, children: [new Paragraph({ children: [new TextRun({ text: 'Role', bold: true, font: 'Arial', size: 20, color: '1E3A5F' })] })] }),
@@ -198,7 +198,7 @@ const doc = new Document({
         // 1. EXECUTIVE SUMMARY
         // ═══════════════════════════════════════════════════════════════════
         h1('1. Executive Summary'),
-        body('AgentFabric is a production-grade, OpenTelemetry-native observability platform for heterogeneous AI agent systems. Built in response to the absence of a unified tracking layer across CrewAI, LangGraph, Google ADK, OpenAI Agents, and Claude Agents, the platform delivers Wireshark-level visibility into agent telemetry at both system and web layers.'),
+        body('Govagn is a production-grade, OpenTelemetry-native observability platform for heterogeneous AI agent systems. Built in response to the absence of a unified tracking layer across CrewAI, LangGraph, Google ADK, OpenAI Agents, and Claude Agents, the platform delivers Wireshark-level visibility into agent telemetry at both system and web layers.'),
         body('This document is the PM-authored production code delivery report covering all implemented components, architecture decisions, red-team mitigations applied, and go-to-market readiness.'),
         gap(),
 
@@ -231,7 +231,7 @@ const doc = new Document({
         h1('2. Repository Structure'),
         body('The codebase follows a monorepo layout with three independently deployable services and a shared deployment directory:'),
         gap(80),
-        code('agentfabric/'),
+        code('govagn/'),
         code('├── collector/                  # Go — OTLP receiver + processor'),
         code('│   ├── cmd/collector/main.go   # Entry point: gRPC + HTTP servers'),
         code('│   ├── internal/'),
@@ -259,7 +259,7 @@ const doc = new Document({
         code('│   └── Dockerfile             # Nginx SPA'),
         code('├── deploy/'),
         code('│   ├── docker/docker-compose.yml'),
-        code('│   └── k8s/agentfabric.yaml  # DaemonSet + Deployment + RBAC + HPA'),
+        code('│   └── k8s/govagn.yaml  # DaemonSet + Deployment + RBAC + HPA'),
         code('└── scripts/setup-local.sh    # One-command local start'),
         gap(),
         pageBreak(),
@@ -434,15 +434,15 @@ const doc = new Document({
         h1('7. Deployment'),
 
         h2('7.1  Local Development (Docker Compose)'),
-        code('git clone https://github.com/agentfabric/agentfabric'),
-        code('cd agentfabric && bash scripts/setup-local.sh'),
+        code('git clone https://github.com/govagn/govagn'),
+        code('cd govagn && bash scripts/setup-local.sh'),
         body('This starts PostgreSQL, Redis, Collector, API Gateway. Open http://localhost:3000 for the portal.'),
         gap(),
 
         h2('7.2  Production Kubernetes'),
-        code('kubectl apply -f deploy/k8s/agentfabric.yaml'),
+        code('kubectl apply -f deploy/k8s/govagn.yaml'),
         body('The Kubernetes manifest includes:'),
-        bullet('Namespace: agentfabric'),
+        bullet('Namespace: govagn'),
         bullet('Collector DaemonSet — one pod per node, non-root, read-only filesystem, capability drop ALL'),
         bullet('API Gateway Deployment — 3 replicas, pod anti-affinity, HPA (3-10 replicas, 70% CPU)'),
         bullet('RBAC — ServiceAccount with minimal ClusterRole (pods/nodes/deployments read-only)'),
@@ -453,7 +453,7 @@ const doc = new Document({
         h2('7.3  Multi-Cloud / Multi-Cluster Spanning'),
         body('The Collector is intentionally lightweight and stateless. To span across cloud environments or clusters:'),
         bullet('Deploy the Collector DaemonSet to every cluster'),
-        bullet('Point AF_GATEWAY_ENDPOINT to a single central gateway (or per-region gateway with a global DB)'),
+        bullet('Point GV_GATEWAY_ENDPOINT to a single central gateway (or per-region gateway with a global DB)'),
         bullet('The node_name attribute (from K8s spec.nodeName) identifies the source cluster/node in every span'),
         bullet('For air-gapped environments, the Collector can queue locally and batch-forward on reconnect'),
         gap(),
@@ -488,7 +488,7 @@ const doc = new Document({
         gap(),
 
         h2('Sprint 4 — Go-to-Market (Week 4)'),
-        bullet('Helm chart for one-command K8s install (helm install agentfabric)'),
+        bullet('Helm chart for one-command K8s install (helm install govagn)'),
         bullet('Python SDK integration examples for all 5 frameworks'),
         bullet('Pricing page: $49/month/seat or $0.10/M spans ingested'),
         bullet('Stripe billing integration using tenant_id'),
@@ -528,7 +528,7 @@ const doc = new Document({
             ['portal/src/pages/TracesPage.tsx', 'TypeScript', '80'],
             ['portal/src/pages/TraceDetail.tsx', 'TypeScript', '200'],
             ['deploy/docker/docker-compose.yml', 'YAML', '90'],
-            ['deploy/k8s/agentfabric.yaml', 'YAML', '220'],
+            ['deploy/k8s/govagn.yaml', 'YAML', '220'],
             ['collector/Dockerfile', 'Docker', '15'],
             ['api-gateway/Dockerfile', 'Docker', '14'],
             ['portal/Dockerfile + nginx.conf', 'Docker/Nginx', '30'],
@@ -554,7 +554,7 @@ const doc = new Document({
         // 10. SIGN-OFF
         // ═══════════════════════════════════════════════════════════════════
         h1('10. PM Sign-Off'),
-        body('This delivery represents the complete Day 1 production code for the AgentFabric platform. All three critical security vulnerabilities from the red team report have been addressed in the implementation. The platform is deployable today via Docker Compose for development and Kubernetes for production.'),
+        body('This delivery represents the complete Day 1 production code for the Govagn platform. All three critical security vulnerabilities from the red team report have been addressed in the implementation. The platform is deployable today via Docker Compose for development and Kubernetes for production.'),
         gap(),
         body('The architecture delivers the three core product promises:'),
         bullet('Distributable — DaemonSet collector spans any cloud or K8s cluster automatically'),
@@ -589,7 +589,7 @@ const doc = new Document({
         gap(120),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: `Generated: ${new Date().toISOString()}  ·  AgentFabric v1.0.0  ·  CONFIDENTIAL`, font: 'Arial', size: 16, color: 'CBD5E1' })],
+          children: [new TextRun({ text: `Generated: ${new Date().toISOString()}  ·  Govagn v1.0.0  ·  CONFIDENTIAL`, font: 'Arial', size: 16, color: 'CBD5E1' })],
         }),
       ],
     },
@@ -597,6 +597,6 @@ const doc = new Document({
 });
 
 Packer.toBuffer(doc).then(buffer => {
-  fs.writeFileSync('/mnt/user-data/outputs/AgentFabric-Production-Report.docx', buffer);
-  console.log('Report written: AgentFabric-Production-Report.docx');
+  fs.writeFileSync('/mnt/user-data/outputs/Govagn-Production-Report.docx', buffer);
+  console.log('Report written: Govagn-Production-Report.docx');
 });

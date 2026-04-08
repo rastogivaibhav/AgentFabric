@@ -21,10 +21,10 @@ import {
 const FRAMEWORK_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
   langgraph: '#4ECDC4',
-  google_adk: '#4285F4',
-  openai_agents: '#10A37F',
-  claude_agents: '#D97706',
-  unknown: '#475569',
+  google_adk: 'var(--control)',
+  openai_agents: 'var(--spend)',
+  claude_agents: 'var(--prove)',
+  unknown: 'var(--text-tertiary)',
 }
 
 const dimensionLabels: Record<string, string> = {
@@ -62,16 +62,16 @@ function UsageBar({ label, used, limit, pct, color }: {
   color: string
 }) {
   const capped = Math.min(pct, 1)
-  const barColor = pct >= 1 ? '#EF4444' : pct >= 0.8 ? '#F59E0B' : color
+  const barColor = pct >= 1 ? 'var(--protect)' : pct >= 0.8 ? 'var(--prove)' : color
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: 11, color: '#94A3B8' }}>{label}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}</span>
         <span style={{ fontSize: 11, color: barColor, fontWeight: 600 }}>
           {used} / {limit} ({Math.round(pct * 100)}%)
         </span>
       </div>
-      <div style={{ height: 8, background: '#0F1F35', borderRadius: 4 }}>
+      <div style={{ height: 8, background: 'var(--layer-border)', borderRadius: 4 }}>
         <div style={{ width: `${capped * 100}%`, height: '100%', background: barColor, borderRadius: 4, transition: 'width 0.3s' }} />
       </div>
     </div>
@@ -106,18 +106,18 @@ function BudgetPanel({ tenantId }: { tenantId: string }) {
   const loading = budgetLoading || usageLoading
 
   const cardStyle: React.CSSProperties = {
-    background: '#0D1B2A',
-    border: '1px solid #0F1F35',
-    borderTop: '2px solid #3B82F6',
+    background: 'var(--layer-2)',
+    border: '1px solid var(--layer-border)',
+    borderTop: '2px solid var(--control)',
     borderRadius: 10,
     padding: 24,
     marginBottom: 16,
   }
   const inputStyle: React.CSSProperties = {
-    background: '#071525',
-    border: '1px solid #1E3A5F',
+    background: 'var(--layer-1)',
+    border: '1px solid var(--layer-border)',
     borderRadius: 6,
-    color: '#F0F9FF',
+    color: 'var(--text-primary)',
     padding: '6px 10px',
     fontSize: 12,
     width: '100%',
@@ -138,18 +138,18 @@ function BudgetPanel({ tenantId }: { tenantId: string }) {
     <div style={cardStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: 12, color: '#475569', letterSpacing: '0.1em' }}>MONTHLY BUDGET</div>
-          <div style={{ fontSize: 10, color: '#334155', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', letterSpacing: '0.1em' }}>MONTHLY BUDGET</div>
+          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
             {noBudget ? 'No limit set - unlimited usage' : `Resets on day ${budget.reset_day} | ${budget.hard_limit ? 'Hard limit (blocks at 100%)' : 'Soft limit (alerts only)'}`}
           </div>
         </div>
         {!editing && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button style={buttonStyle('#1E3A5F')} onClick={openEdit}>
+            <button style={buttonStyle('var(--layer-border)')} onClick={openEdit}>
               {noBudget ? 'Set Budget' : 'Edit'}
             </button>
             {!noBudget && (
-              <button style={buttonStyle('#7F1D1D')} onClick={() => remove.mutate()}>
+              <button style={buttonStyle('var(--protect)')} onClick={() => remove.mutate()}>
                 Remove
               </button>
             )}
@@ -165,7 +165,7 @@ function BudgetPanel({ tenantId }: { tenantId: string }) {
               used={`${(usage.tokens_used / 1_000).toFixed(1)}K`}
               limit={`${(budget.monthly_tokens / 1_000).toFixed(0)}K`}
               pct={usage.tokens_pct ?? usage.tokens_used / budget.monthly_tokens}
-              color="#3B82F6"
+              color="var(--control)"
             />
           )}
           {budget.monthly_cost_usd > 0 && (
@@ -174,11 +174,11 @@ function BudgetPanel({ tenantId }: { tenantId: string }) {
               used={`$${usage.cost_used_usd.toFixed(4)}`}
               limit={`$${budget.monthly_cost_usd.toFixed(2)}`}
               pct={usage.cost_pct ?? usage.cost_used_usd / budget.monthly_cost_usd}
-              color="#10B981"
+              color="var(--spend)"
             />
           )}
           {budget.alert_threshold > 0 && (
-            <div style={{ fontSize: 10, color: '#334155', marginTop: -8 }}>
+            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: -8 }}>
               Alert threshold: {Math.round(budget.alert_threshold * 100)}% | Period: {usage.period_start ? new Date(usage.period_start).toLocaleDateString() : '-'} to {usage.period_end ? new Date(usage.period_end).toLocaleDateString() : '-'}
             </div>
           )}
@@ -186,41 +186,41 @@ function BudgetPanel({ tenantId }: { tenantId: string }) {
       )}
 
       {!loading && noBudget && !editing && (
-        <div style={{ color: '#334155', fontSize: 12, textAlign: 'center', padding: '12px 0' }}>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: 12, textAlign: 'center', padding: '12px 0' }}>
           No budget set. Click "Set Budget" to define monthly token or cost limits.
         </div>
       )}
 
       {editing && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
-          <label style={{ fontSize: 11, color: '#94A3B8' }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
             Monthly Tokens (0 = unlimited)
             <input style={{ ...inputStyle, marginTop: 4 }} type="number" min={0} value={form.monthly_tokens} onChange={e => setForm(f => ({ ...f, monthly_tokens: Number(e.target.value) }))} />
           </label>
-          <label style={{ fontSize: 11, color: '#94A3B8' }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
             Monthly Cost USD (0 = unlimited)
             <input style={{ ...inputStyle, marginTop: 4 }} type="number" min={0} step={0.01} value={form.monthly_cost_usd} onChange={e => setForm(f => ({ ...f, monthly_cost_usd: Number(e.target.value) }))} />
           </label>
-          <label style={{ fontSize: 11, color: '#94A3B8' }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
             Alert Threshold (0-1)
             <input style={{ ...inputStyle, marginTop: 4 }} type="number" min={0} max={1} step={0.05} value={form.alert_threshold} onChange={e => setForm(f => ({ ...f, alert_threshold: Number(e.target.value) }))} />
           </label>
-          <label style={{ fontSize: 11, color: '#94A3B8' }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
             Reset Day of Month (1-28)
             <input style={{ ...inputStyle, marginTop: 4 }} type="number" min={1} max={28} value={form.reset_day} onChange={e => setForm(f => ({ ...f, reset_day: Number(e.target.value) }))} />
           </label>
-          <label style={{ fontSize: 11, color: '#94A3B8', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <input type="checkbox" checked={form.hard_limit} onChange={e => setForm(f => ({ ...f, hard_limit: e.target.checked }))} />
             Hard Limit (block ingest at 100%)
           </label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <button style={buttonStyle('#1D4ED8')} onClick={save} disabled={upsert.isPending}>
+            <button style={buttonStyle('var(--control)')} onClick={save} disabled={upsert.isPending}>
               {upsert.isPending ? 'Saving...' : 'Save'}
             </button>
-            <button style={buttonStyle('#1E3A5F')} onClick={() => setEditing(false)}>Cancel</button>
+            <button style={buttonStyle('var(--layer-border)')} onClick={() => setEditing(false)}>Cancel</button>
           </div>
           {upsert.isError && (
-            <div style={{ fontSize: 11, color: '#EF4444', gridColumn: '1 / -1' }}>
+            <div style={{ fontSize: 11, color: 'var(--protect)', gridColumn: '1 / -1' }}>
               Save failed. Check console.
             </div>
           )}
@@ -232,12 +232,12 @@ function BudgetPanel({ tenantId }: { tenantId: string }) {
 
 function FilterInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
-    <label style={{ fontSize: 11, color: '#94A3B8' }}>
+    <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
       {label}
       <input
         value={value}
         onChange={e => onChange(e.target.value)}
-        style={{ background: '#071525', border: '1px solid #1E3A5F', borderRadius: 6, color: '#F0F9FF', padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box', marginTop: 4 }}
+        style={{ background: 'var(--layer-1)', border: '1px solid var(--layer-border)', borderRadius: 6, color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box', marginTop: 4 }}
       />
     </label>
   )
@@ -245,30 +245,30 @@ function FilterInput({ label, value, onChange }: { label: string; value: string;
 
 function ContributorTable({ group }: { group: CostContributorGroup }) {
   return (
-    <div style={{ background: '#071525', border: '1px solid #10243B', borderRadius: 8, padding: 16 }}>
-      <div style={{ fontSize: 11, color: '#475569', letterSpacing: '0.08em', marginBottom: 10 }}>
+    <div style={{ background: 'var(--layer-1)', border: '1px solid var(--layer-border)', borderRadius: 8, padding: 16 }}>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', letterSpacing: '0.08em', marginBottom: 10 }}>
         TOP CONTRIBUTORS BY {dimensionLabels[group.dimension]?.toUpperCase() ?? group.dimension.toUpperCase()}
       </div>
       {group.items.length === 0 ? (
-        <div style={{ color: '#334155', fontSize: 11 }}>No positive deltas for this dimension.</div>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>No positive deltas for this dimension.</div>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid #0F1F35' }}>
-              <th style={{ padding: '8px 0', textAlign: 'left', color: '#334155' }}>Value</th>
-              <th style={{ padding: '8px 0', textAlign: 'right', color: '#334155' }}>Current</th>
-              <th style={{ padding: '8px 0', textAlign: 'right', color: '#334155' }}>Previous</th>
-              <th style={{ padding: '8px 0', textAlign: 'right', color: '#334155' }}>Delta</th>
-              <th style={{ padding: '8px 0', textAlign: 'right', color: '#334155' }}>Share</th>
+            <tr style={{ borderBottom: '1px solid var(--layer-border)' }}>
+              <th style={{ padding: '8px 0', textAlign: 'left', color: 'var(--text-tertiary)' }}>Value</th>
+              <th style={{ padding: '8px 0', textAlign: 'right', color: 'var(--text-tertiary)' }}>Current</th>
+              <th style={{ padding: '8px 0', textAlign: 'right', color: 'var(--text-tertiary)' }}>Previous</th>
+              <th style={{ padding: '8px 0', textAlign: 'right', color: 'var(--text-tertiary)' }}>Delta</th>
+              <th style={{ padding: '8px 0', textAlign: 'right', color: 'var(--text-tertiary)' }}>Share</th>
             </tr>
           </thead>
           <tbody>
             {group.items.map(item => (
-              <tr key={`${group.dimension}-${item.key}`} style={{ borderBottom: '1px solid #0A1020' }}>
-                <td style={{ padding: '8px 0', color: '#E2E8F0' }}>{item.key}</td>
-                <td style={{ padding: '8px 0', textAlign: 'right', color: '#94A3B8' }}>{formatMoney(item.current_cost_usd)}</td>
-                <td style={{ padding: '8px 0', textAlign: 'right', color: '#64748B' }}>{formatMoney(item.previous_cost_usd)}</td>
-                <td style={{ padding: '8px 0', textAlign: 'right', color: '#F59E0B' }}>{formatMoney(item.delta_cost_usd)}</td>
+              <tr key={`${group.dimension}-${item.key}`} style={{ borderBottom: '1px solid var(--layer-border)' }}>
+                <td style={{ padding: '8px 0', color: 'var(--text-primary)' }}>{item.key}</td>
+                <td style={{ padding: '8px 0', textAlign: 'right', color: 'var(--text-secondary)' }}>{formatMoney(item.current_cost_usd)}</td>
+                <td style={{ padding: '8px 0', textAlign: 'right', color: 'var(--text-tertiary)' }}>{formatMoney(item.previous_cost_usd)}</td>
+                <td style={{ padding: '8px 0', textAlign: 'right', color: 'var(--prove)' }}>{formatMoney(item.delta_cost_usd)}</td>
                 <td style={{ padding: '8px 0', textAlign: 'right', color: '#60A5FA' }}>{formatPct(item.share_of_delta * 100)}</td>
               </tr>
             ))}
@@ -364,62 +364,62 @@ export default function CostPage() {
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--spend)' }} />
           SPEND
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F0F9FF', margin: 0 }}>Cost Report</h1>
-        <p style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>Token and cost breakdown | Last 24 hours</p>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Cost Report</h1>
+        <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>Token and cost breakdown | Last 24 hours</p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 28 }}>
         {[
-          { label: 'TOTAL COST (24H)', value: isLoading ? '-' : `$${totalCost.toFixed(6)}`, color: '#F59E0B' },
-          { label: 'TOTAL TOKENS', value: isLoading ? '-' : `${(totalTokens / 1_000_000).toFixed(3)}M`, color: '#3B82F6' },
-          { label: 'AVG COST / TRACE', value: isLoading || !overview?.total_traces ? '-' : `$${(totalCost / Number(overview.total_traces)).toFixed(6)}`, color: '#10B981' },
-          { label: 'INPUT TOKENS', value: fwLoading ? '-' : totalInputTokens != null ? `${(totalInputTokens / 1_000).toFixed(1)}K` : 'N/A', color: '#8B5CF6' },
-          { label: 'OUTPUT TOKENS', value: fwLoading ? '-' : totalOutputTokens != null ? `${(totalOutputTokens / 1_000).toFixed(1)}K` : 'N/A', color: '#EC4899' },
+          { label: 'TOTAL COST (24H)', value: isLoading ? '-' : `$${totalCost.toFixed(6)}`, color: 'var(--prove)' },
+          { label: 'TOTAL TOKENS', value: isLoading ? '-' : `${(totalTokens / 1_000_000).toFixed(3)}M`, color: 'var(--control)' },
+          { label: 'AVG COST / TRACE', value: isLoading || !overview?.total_traces ? '-' : `$${(totalCost / Number(overview.total_traces)).toFixed(6)}`, color: 'var(--spend)' },
+          { label: 'INPUT TOKENS', value: fwLoading ? '-' : totalInputTokens != null ? `${(totalInputTokens / 1_000).toFixed(1)}K` : 'N/A', color: 'var(--ship)' },
+          { label: 'OUTPUT TOKENS', value: fwLoading ? '-' : totalOutputTokens != null ? `${(totalOutputTokens / 1_000).toFixed(1)}K` : 'N/A', color: 'var(--ship)' },
         ].map(card => (
-          <div key={card.label} style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderTop: `2px solid ${card.color}`, borderRadius: 10, padding: '20px 24px' }}>
-            <div style={{ fontSize: 11, color: '#475569', letterSpacing: '0.1em', marginBottom: 8 }}>{card.label}</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#F0F9FF' }}>{card.value}</div>
+          <div key={card.label} style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderTop: `2px solid ${card.color}`, borderRadius: 10, padding: '20px 24px' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', letterSpacing: '0.1em', marginBottom: 8 }}>{card.label}</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>{card.value}</div>
           </div>
         ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24 }}>
-          <div style={{ fontSize: 12, color: '#475569', marginBottom: 16, letterSpacing: '0.1em' }}>TRACES BY FRAMEWORK</div>
+        <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 24 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16, letterSpacing: '0.1em' }}>TRACES BY FRAMEWORK</div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={traceChartData} layout="vertical">
-              <XAxis type="number" tick={{ fontSize: 10, fill: '#475569' }} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#94A3B8' }} width={90} />
-              <Tooltip contentStyle={{ background: '#0D1B2A', border: '1px solid #1E3A5F', fontSize: 11, borderRadius: 6 }} />
+              <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} width={90} />
+              <Tooltip contentStyle={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', fontSize: 11, borderRadius: 6 }} />
               <Bar dataKey="traces" radius={[0, 4, 4, 0]}>
                 {traceChartData.map(entry => (
-                  <Cell key={entry.name} fill={FRAMEWORK_COLORS[entry.fw] ?? '#475569'} />
+                  <Cell key={entry.name} fill={FRAMEWORK_COLORS[entry.fw] ?? 'var(--text-tertiary)'} />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24 }}>
-          <div style={{ fontSize: 12, color: '#475569', marginBottom: 16, letterSpacing: '0.1em' }}>FRAMEWORK SHARE - BY TRACE COUNT</div>
+        <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 24 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16, letterSpacing: '0.1em' }}>FRAMEWORK SHARE - BY TRACE COUNT</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {Object.entries(frameworkCounts).map(([fw, count]) => {
               const pct = traceCountTotal > 0 ? Math.round((count / traceCountTotal) * 100) : 0
-              const color = FRAMEWORK_COLORS[fw] ?? '#475569'
+              const color = FRAMEWORK_COLORS[fw] ?? 'var(--text-tertiary)'
               return (
                 <div key={fw}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: '#94A3B8' }}>{fw.replace(/_/g, ' ')}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{fw.replace(/_/g, ' ')}</span>
                     <span style={{ fontSize: 11, color }}>{count.toLocaleString()} | {pct}%</span>
                   </div>
-                  <div style={{ height: 6, background: '#0F1F35', borderRadius: 3 }}>
+                  <div style={{ height: 6, background: 'var(--layer-border)', borderRadius: 3 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
                   </div>
                 </div>
               )
             })}
             {Object.keys(frameworkCounts).length === 0 && (
-              <div style={{ color: '#334155', fontSize: 12, textAlign: 'center', padding: 32 }}>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 12, textAlign: 'center', padding: 32 }}>
                 No data yet - send spans to see cost breakdown.
               </div>
             )}
@@ -430,24 +430,24 @@ export default function CostPage() {
       <BudgetPanel tenantId="default" />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24 }}>
-          <div style={{ fontSize: 12, color: '#475569', marginBottom: 4, letterSpacing: '0.1em' }}>COST BY FRAMEWORK</div>
-          <div style={{ fontSize: 10, color: '#334155', marginBottom: 16 }}>
+        <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 24 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 4, letterSpacing: '0.1em' }}>COST BY FRAMEWORK</div>
+          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 16 }}>
             {!fwHasCost && !costDataLoading ? '(aggregated from recent traces - server cost breakdown not available)' : ''}
           </div>
           {costDataLoading ? (
-            <div style={{ color: '#334155', fontSize: 12, padding: 32, textAlign: 'center' }}>Loading...</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 12, padding: 32, textAlign: 'center' }}>Loading...</div>
           ) : costChartData.length === 0 ? (
-            <div style={{ color: '#334155', fontSize: 12, padding: 32, textAlign: 'center' }}>No cost data available.</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 12, padding: 32, textAlign: 'center' }}>No cost data available.</div>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={costChartData} layout="vertical">
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#475569' }} tickFormatter={value => `$${Number(value).toFixed(4)}`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#94A3B8' }} width={90} />
-                <Tooltip formatter={(value: number) => [`$${value.toFixed(6)}`, 'Cost']} contentStyle={{ background: '#0D1B2A', border: '1px solid #1E3A5F', fontSize: 11, borderRadius: 6 }} />
+                <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} tickFormatter={value => `$${Number(value).toFixed(4)}`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} width={90} />
+                <Tooltip formatter={(value: number) => [`$${value.toFixed(6)}`, 'Cost']} contentStyle={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', fontSize: 11, borderRadius: 6 }} />
                 <Bar dataKey="cost_usd" radius={[0, 4, 4, 0]}>
                   {costChartData.map(entry => (
-                    <Cell key={entry.fw} fill={FRAMEWORK_COLORS[entry.fw] ?? '#475569'} />
+                    <Cell key={entry.fw} fill={FRAMEWORK_COLORS[entry.fw] ?? 'var(--text-tertiary)'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -455,10 +455,10 @@ export default function CostPage() {
           )}
         </div>
 
-        <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24 }}>
-          <div style={{ fontSize: 12, color: '#475569', marginBottom: 16, letterSpacing: '0.1em' }}>FRAMEWORK SHARE - BY COST</div>
+        <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 24 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 16, letterSpacing: '0.1em' }}>FRAMEWORK SHARE - BY COST</div>
           {costDataLoading ? (
-            <div style={{ color: '#334155', fontSize: 12, padding: 32, textAlign: 'center' }}>Loading...</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 12, padding: 32, textAlign: 'center' }}>Loading...</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {Object.entries(fwCostMap)
@@ -466,21 +466,21 @@ export default function CostPage() {
                 .sort(([, left], [, right]) => right - left)
                 .map(([fw, cost]) => {
                   const pct = totalAggregatedCost > 0 ? Math.round((cost / totalAggregatedCost) * 100) : 0
-                  const color = FRAMEWORK_COLORS[fw] ?? '#475569'
+                  const color = FRAMEWORK_COLORS[fw] ?? 'var(--text-tertiary)'
                   return (
                     <div key={fw}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontSize: 11, color: '#94A3B8' }}>{fw.replace(/_/g, ' ')}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{fw.replace(/_/g, ' ')}</span>
                         <span style={{ fontSize: 11, color }}>{formatMoney(cost)} | {pct}%</span>
                       </div>
-                      <div style={{ height: 6, background: '#0F1F35', borderRadius: 3 }}>
+                      <div style={{ height: 6, background: 'var(--layer-border)', borderRadius: 3 }}>
                         <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
                       </div>
                     </div>
                   )
                 })}
               {Object.values(fwCostMap).every(value => value === 0) && (
-                <div style={{ color: '#334155', fontSize: 12, textAlign: 'center', padding: 32 }}>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 12, textAlign: 'center', padding: 32 }}>
                   No cost data yet.
                 </div>
               )}
@@ -489,22 +489,22 @@ export default function CostPage() {
         </div>
       </div>
 
-      <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24, marginTop: 16 }}>
+      <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 24, marginTop: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <div style={{ fontSize: 12, color: '#475569', marginBottom: 6, letterSpacing: '0.1em' }}>COST SPIKE DIAGNOSIS</div>
-            <div style={{ fontSize: 10, color: '#334155' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, letterSpacing: '0.1em' }}>COST SPIKE DIAGNOSIS</div>
+            <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
               Explain why spend changed across tenant, app, environment, provider, model, prompt, and release.
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(120px, 1fr))', gap: 12, flex: 1 }}>
-            <label style={{ fontSize: 11, color: '#94A3B8' }}>
+            <label style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
               Window
               <select
                 aria-label="Window"
                 value={filters.since ?? '24h'}
                 onChange={e => setFilters(current => ({ ...current, since: e.target.value }))}
-                style={{ background: '#071525', border: '1px solid #1E3A5F', borderRadius: 6, color: '#F0F9FF', padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box', marginTop: 4 }}
+                style={{ background: 'var(--layer-1)', border: '1px solid var(--layer-border)', borderRadius: 6, color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box', marginTop: 4 }}
               >
                 <option value="6h">Last 6h</option>
                 <option value="24h">Last 24h</option>
@@ -521,23 +521,23 @@ export default function CostPage() {
         </div>
 
         {spikeLoading ? (
-          <div style={{ color: '#334155', fontSize: 12, padding: 24, textAlign: 'center' }}>Loading spike analysis...</div>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 12, padding: 24, textAlign: 'center' }}>Loading spike analysis...</div>
         ) : spikeError ? (
-          <div style={{ color: '#FCA5A5', fontSize: 12, padding: 24, textAlign: 'center' }}>Spike analysis failed. Check the backend cost analytics endpoint.</div>
+          <div style={{ color: 'var(--protect)', fontSize: 12, padding: 24, textAlign: 'center' }}>Spike analysis failed. Check the backend cost analytics endpoint.</div>
         ) : spikeReport && spikeReport.spikes.length > 0 ? (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, marginBottom: 16 }}>
               {spikeReport.spikes.slice(0, 3).map(spike => (
-                <div key={`${spike.app_name}-${spike.environment}-${spike.model}-${spike.release_tag}`} style={{ background: '#071525', border: '1px solid #10243B', borderRadius: 8, padding: 16 }}>
-                  <div style={{ fontSize: 11, color: '#475569', letterSpacing: '0.08em', marginBottom: 8 }}>TOP SPIKE</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: '#F8FAFC', marginBottom: 6 }}>{formatMoney(spike.delta_cost_usd)}</div>
-                  <div style={{ fontSize: 11, color: '#F59E0B', marginBottom: 10 }}>{spike.model} | {spike.release_tag}</div>
-                  <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 8 }}>{spike.explanation}</div>
+                <div key={`${spike.app_name}-${spike.environment}-${spike.model}-${spike.release_tag}`} style={{ background: 'var(--layer-1)', border: '1px solid var(--layer-border)', borderRadius: 8, padding: 16 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', letterSpacing: '0.08em', marginBottom: 8 }}>TOP SPIKE</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>{formatMoney(spike.delta_cost_usd)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--prove)', marginBottom: 10 }}>{spike.model} | {spike.release_tag}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>{spike.explanation}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11 }}>
-                    <div style={{ color: '#64748B' }}>Current: <span style={{ color: '#E2E8F0' }}>{formatMoney(spike.current_cost_usd)}</span></div>
-                    <div style={{ color: '#64748B' }}>Previous: <span style={{ color: '#E2E8F0' }}>{formatMoney(spike.previous_cost_usd)}</span></div>
-                    <div style={{ color: '#64748B' }}>Traces: <span style={{ color: '#E2E8F0' }}>{spike.current_trace_count}</span></div>
-                    <div style={{ color: '#64748B' }}>Growth: <span style={{ color: '#E2E8F0' }}>{spike.delta_pct.toFixed(1)}%</span></div>
+                    <div style={{ color: 'var(--text-tertiary)' }}>Current: <span style={{ color: 'var(--text-primary)' }}>{formatMoney(spike.current_cost_usd)}</span></div>
+                    <div style={{ color: 'var(--text-tertiary)' }}>Previous: <span style={{ color: 'var(--text-primary)' }}>{formatMoney(spike.previous_cost_usd)}</span></div>
+                    <div style={{ color: 'var(--text-tertiary)' }}>Traces: <span style={{ color: 'var(--text-primary)' }}>{spike.current_trace_count}</span></div>
+                    <div style={{ color: 'var(--text-tertiary)' }}>Growth: <span style={{ color: 'var(--text-primary)' }}>{spike.delta_pct.toFixed(1)}%</span></div>
                   </div>
                 </div>
               ))}
@@ -550,29 +550,29 @@ export default function CostPage() {
             </div>
           </>
         ) : (
-          <div style={{ color: '#334155', fontSize: 12, padding: 24, textAlign: 'center' }}>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 12, padding: 24, textAlign: 'center' }}>
             No cost spike detected for the selected filters.
           </div>
         )}
       </div>
 
-      <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24, marginTop: 16 }}>
-        <div style={{ fontSize: 12, color: '#475569', marginBottom: 6, letterSpacing: '0.1em' }}>GOVERNED COST BREAKDOWN</div>
-        <div style={{ fontSize: 10, color: '#334155', marginBottom: 16 }}>
+      <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 24, marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, letterSpacing: '0.1em' }}>GOVERNED COST BREAKDOWN</div>
+        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 16 }}>
           See who spent what by app, environment, provider, model, prompt, and release, including blocked events.
         </div>
         {reportLoading ? (
-          <div style={{ color: '#334155', fontSize: 12, padding: 24, textAlign: 'center' }}>Loading...</div>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 12, padding: 24, textAlign: 'center' }}>Loading...</div>
         ) : (costReport?.length ?? 0) === 0 ? (
-          <div style={{ color: '#334155', fontSize: 12, padding: 24, textAlign: 'center' }}>No governed cost rows yet.</div>
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 12, padding: 24, textAlign: 'center' }}>No governed cost rows yet.</div>
         ) : (
           <CostBreakdownTable rows={costReport ?? []} />
         )}
       </div>
 
-      <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24, marginTop: 16 }}>
-        <div style={{ fontSize: 12, color: '#475569', marginBottom: 6, letterSpacing: '0.1em' }}>PRICING RULE MATCH</div>
-        <div style={{ fontSize: 10, color: '#334155', marginBottom: 16 }}>
+      <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 24, marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, letterSpacing: '0.1em' }}>PRICING RULE MATCH</div>
+        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 16 }}>
           Preview the exact rule and category breakdown that will be applied to a request.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
@@ -585,10 +585,10 @@ export default function CostPage() {
             ['cache_write_tokens', 'Cache Write'],
             ['reasoning_tokens', 'Reasoning'],
           ].map(([key, label]) => (
-            <label key={key} style={{ fontSize: 11, color: '#94A3B8' }}>
+            <label key={key} style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
               {label}
               <input
-                style={{ background: '#071525', border: '1px solid #1E3A5F', borderRadius: 6, color: '#F0F9FF', padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box', marginTop: 4 }}
+                style={{ background: 'var(--layer-1)', border: '1px solid var(--layer-border)', borderRadius: 6, color: 'var(--text-primary)', padding: '6px 10px', fontSize: 12, width: '100%', boxSizing: 'border-box', marginTop: 4 }}
                 value={String(previewForm[key as keyof typeof previewForm])}
                 onChange={e => setPreviewForm(current => ({
                   ...current,
@@ -600,7 +600,7 @@ export default function CostPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
           <button
-            style={{ background: '#1D4ED8', border: 'none', borderRadius: 6, color: '#fff', padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+            style={{ background: 'var(--control)', border: 'none', borderRadius: 6, color: '#fff', padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
             onClick={() => previewPricing.mutate(previewForm)}
             disabled={previewPricing.isPending}
           >

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agentfabric/api-gateway/internal/models"
-	"github.com/agentfabric/api-gateway/internal/store"
+	"github.com/govagn/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/store"
 )
 
 type Service struct {

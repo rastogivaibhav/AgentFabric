@@ -1,4 +1,4 @@
-# AgentFabric — root Makefile
+# Govagn — root Makefile
 # ──────────────────────────────────────────────────────────────────────────────
 # Usage:
 #   make dev       — build images and start the full dev stack
@@ -11,8 +11,8 @@
 #   make e2e       — full-stack E2E: bring up stack → test → tear down
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: dev prod-up down build test lint certs e2e migrate/up migrate/down migrate/status \
-        test/integration integration/up integration/down bootstrap seed-demo validate-release
+.PHONY: dev prod-up down build test lint certs certs-envoy e2e migrate/up migrate/down migrate/status \
+        test/integration integration/up integration/down bootstrap seed-demo validate-release envoy-up envoy-down
 
 COMPOSE       := docker compose -f docker-compose.yml
 COMPOSE_PROD  := $(COMPOSE) -f deploy/docker/docker-compose.prod.yml
@@ -43,8 +43,8 @@ validate-release:
 	powershell -ExecutionPolicy Bypass -File .\scripts\run_release_candidate_validation.ps1
 
 prod-up:
-	@echo "Starting AgentFabric with production hardening overlay..."
-	@echo "Required env: AF_JWT_SECRET, AF_ADMIN_PASSWORD, AF_CORS_ORIGINS, DATABASE_URL, REDIS_URL, POSTGRES_PASSWORD"
+	@echo "Starting Govagn with production hardening overlay..."
+	@echo "Required env: GV_JWT_SECRET, GV_ADMIN_PASSWORD, GV_CORS_ORIGINS, DATABASE_URL, REDIS_URL, POSTGRES_PASSWORD"
 	$(COMPOSE_PROD) up -d --build
 
 down:
@@ -80,7 +80,7 @@ test-portal:
 #   make test/integration INTEGRATION_DB_URL="postgres://..." INTEGRATION_REDIS_URL="redis://..."
 
 COMPOSE_TEST   := docker compose -f docker-compose.test.yml
-INT_DB_URL     ?= postgres://fabric:fabric_dev_only@localhost:5433/agentfabric?sslmode=disable
+INT_DB_URL     ?= postgres://fabric:fabric_dev_only@localhost:5433/govagn?sslmode=disable
 INT_REDIS_URL  ?= redis://localhost:6380
 
 integration/up:
@@ -123,12 +123,21 @@ lint-portal:
 certs:
 	bash scripts/generate-dev-certs.sh
 
+certs-envoy:
+	bash scripts/generate-envoy-egress-certs.sh
+
+envoy-up:
+	$(COMPOSE) -f deploy/docker/docker-compose.envoy.yml --profile envoy up -d --build
+
+envoy-down:
+	$(COMPOSE) -f deploy/docker/docker-compose.envoy.yml --profile envoy down
+
 # dev-tls: generate certs (if not present) and start the full stack with mTLS enabled.
-# Services read AF_TLS_ENABLED=true and load certs from deploy/certs/ at startup.
+# Services read GV_TLS_ENABLED=true and load certs from deploy/certs/ at startup.
 # Run 'make certs' separately first if you want to inspect the certs before starting.
 dev-tls:
 	@test -f deploy/certs/server.crt || $(MAKE) certs
-	AF_TLS_ENABLED=true $(COMPOSE) up -d --build
+	GV_TLS_ENABLED=true $(COMPOSE) up -d --build
 	@echo ""
 	@echo "  mTLS enabled on collector — OTLP gRPC :4317 / HTTP :4318 now require TLS"
 	@echo "  CA cert for clients: deploy/certs/ca.crt"
@@ -142,12 +151,12 @@ e2e:
 
 # ─── Migrations ───────────────────────────────────────────────────────────────
 # Requires DATABASE_URL to be set, e.g.:
-#   DATABASE_URL="postgres://fabric:fabric@localhost:5432/agentfabric?sslmode=disable" make migrate/up
+#   DATABASE_URL="postgres://fabric:fabric@localhost:5432/govagn?sslmode=disable" make migrate/up
 #
 # go run fetches the migrate CLI from the version pinned in api-gateway/go.mod —
 # no separate binary installation is needed.
 
-MIGRATE_DSN ?= $(or $(DATABASE_URL),postgres://fabric:fabric@localhost:5432/agentfabric?sslmode=disable)
+MIGRATE_DSN ?= $(or $(DATABASE_URL),postgres://fabric:fabric@localhost:5432/govagn?sslmode=disable)
 MIGRATE_CMD  = cd api-gateway && go run github.com/golang-migrate/migrate/v4/cmd/migrate \
                -path ../deploy/migrations \
                -database "$(MIGRATE_DSN)"

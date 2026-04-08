@@ -248,7 +248,7 @@ export default function Layout() {
               <Zap size={16} />
             </div>
             <div>
-              <div style={{ fontSize:14, fontWeight:700, color:'#F0F9FF', letterSpacing:'0.05em' }}>AgentFabric</div>
+              <div style={{ fontSize:14, fontWeight:700, color:'#F0F9FF', letterSpacing:'0.05em' }}>Govagn</div>
               <div style={{ fontSize:9, color:'var(--text-secondary)', letterSpacing:'0.15em' }}>GATEWAY</div>
             </div>
           </div>
@@ -334,7 +334,7 @@ export default function Layout() {
               </button>
             </div>
           ) : (
-            <div style={{ fontSize:10, color:'#475569' }}>v1.0.0 · © AgentFabric</div>
+            <div style={{ fontSize:10, color:'#475569' }}>v1.0.0 · © Govagn</div>
           )}
         </div>
       </aside>

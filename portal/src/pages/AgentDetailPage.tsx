@@ -9,17 +9,21 @@ export default function AgentDetailPage() {
   const { data: runsPage, isLoading: runsLoading } = useAgentRuns(agentId!, 10)
   const { data: topology, isLoading: topologyLoading } = useAgentTopology(agentId!)
 
-  if (agentLoading) return <div style={{ padding: 32, ...subtleText }}>Loading agent...</div>
-  if (!agent) return <div style={{ padding: 32, color: '#EF4444' }}>Agent not found.</div>
+  if (agentLoading) return <div style={{ padding: 32, color: 'var(--text-tertiary)' }}>Loading agent...</div>
+  if (!agent) return <div style={{ padding: 32, color: 'var(--protect)' }}>Agent not found.</div>
 
   const runs = runsPage?.items ?? []
 
   return (
     <div style={{ padding: 32 }}>
       <div style={{ marginBottom: 24 }}>
-        <Link to="/agents" style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748B', textDecoration: 'none', fontSize: 12, marginBottom: 12 }}>
+        <Link to="/agents" style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-tertiary)', textDecoration: 'none', fontSize: 12, marginBottom: 12 }}>
           <ArrowLeft size={14} /> Back to Agents
         </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--observe)', display: 'inline-block' }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--observe)', letterSpacing: '0.1em' }}>OBSERVE</span>
+        </div>
         <h1 style={titleStyle}>{agent.name}</h1>
         <p style={subtleText}>Framework: {agent.framework}</p>
       </div>
@@ -27,7 +31,7 @@ export default function AgentDetailPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
         <StatCard label="Total Runs" value={agent.run_count.toLocaleString()} />
         <StatCard label="Total Cost" value={`$${agent.total_cost_usd.toFixed(2)}`} />
-        <StatCard label="Error Rate" value={`${(agent.error_rate * 100).toFixed(1)}%`} color={agent.error_rate > 0.05 ? '#EF4444' : '#10B981'} />
+        <StatCard label="Error Rate" value={`${(agent.error_rate * 100).toFixed(1)}%`} color={agent.error_rate > 0.05 ? 'var(--protect)' : 'var(--spend)'} />
         <StatCard label="p95 Latency" value={`${agent.p95_latency_ms.toFixed(0)}ms`} />
       </div>
 
@@ -35,7 +39,7 @@ export default function AgentDetailPage() {
         <div style={panelStyle}>
           <div style={{ ...sectionLabel, display: 'flex', justifyContent: 'space-between' }}>
             <span>RECENT RUNS</span>
-            <Link to={`/runs?agent=${encodeURIComponent(agent.name)}`} style={{ color: '#3B82F6', textDecoration: 'none' }}>View All →</Link>
+            <Link to={`/runs?agent=${encodeURIComponent(agent.name)}`} style={{ color: 'var(--control)', textDecoration: 'none', fontSize: 10 }}>View All →</Link>
           </div>
           {runsLoading ? (
             <div style={subtleText}>Loading runs...</div>
@@ -45,18 +49,14 @@ export default function AgentDetailPage() {
             <div style={{ display: 'grid', gap: 8 }}>
               {runs.map(run => (
                 <Link key={run.id} to={`/runs/${run.id}`} style={{ textDecoration: 'none' }}>
-                  <div style={{ border: '1px solid #1E3A5F', borderRadius: 8, padding: '12px 16px', background: '#0A1B33', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ border: '1px solid var(--layer-border)', borderRadius: 8, padding: '12px 16px', background: 'var(--layer-0)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'border-color 0.15s' }}>
                     <div>
-                      <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{run.model}</div>
-                      <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 4 }}>{new Date(run.start_time).toLocaleString()}</div>
+                      <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{run.model}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4 }}>{new Date(run.start_time).toLocaleString()}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: run.status === 'error' ? '#EF4444' : '#10B981', fontSize: 12, fontWeight: 600 }}>
-                        {run.status.toUpperCase()}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#64748B', marginTop: 4 }}>
-                        ${run.total_cost_usd.toFixed(4)} · {run.total_tokens} tokens
-                      </div>
+                      <div style={{ color: run.status === 'error' ? 'var(--protect)' : 'var(--spend)', fontSize: 12, fontWeight: 600 }}>{run.status.toUpperCase()}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4 }}>${run.total_cost_usd.toFixed(4)} · {run.total_tokens} tokens</div>
                     </div>
                   </div>
                 </Link>
@@ -73,14 +73,14 @@ export default function AgentDetailPage() {
             <div style={subtleText}>No topology data.</div>
           ) : (
             <div>
-              <div style={{ fontSize: 12, color: '#E2E8F0', marginBottom: 12 }}>Nodes connected to this agent:</div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                 {topology.nodes.map(node => (
-                   <div key={node.id} style={{ display: 'flex', justifyContent: 'space-between', padding: 8, borderBottom: '1px solid #1E3A5F' }}>
-                     <span style={{ color: '#F0F9FF', fontSize: 12 }}>{node.name}</span>
-                     <span style={{ fontSize: 10, color: '#64748B', background: '#0F1F35', padding: '2px 6px', borderRadius: 4 }}>{node.type}</span>
-                   </div>
-                 ))}
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>Nodes connected to this agent:</div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {topology.nodes.map(node => (
+                  <div key={node.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--layer-border)' }}>
+                    <span style={{ color: 'var(--text-primary)', fontSize: 12 }}>{node.name}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-secondary)', background: 'var(--layer-1)', padding: '2px 8px', borderRadius: 4 }}>{node.type}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -90,16 +90,16 @@ export default function AgentDetailPage() {
   )
 }
 
-function StatCard({ label, value, color = '#E2E8F0' }: { label: string; value: string; color?: string }) {
+function StatCard({ label, value, color = 'var(--text-primary)' }: { label: string; value: string; color?: string }) {
   return (
-    <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 20 }}>
-      <div style={{ fontSize: 11, color: '#64748B', letterSpacing: '0.05em', marginBottom: 8 }}>{label.toUpperCase()}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color }}>{value}</div>
+    <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 20 }}>
+      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '0.08em', marginBottom: 10, fontWeight: 700 }}>{label.toUpperCase()}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color, letterSpacing: '-0.02em' }}>{value}</div>
     </div>
   )
 }
 
-const titleStyle: CSSProperties = { fontSize: 22, fontWeight: 700, color: '#F0F9FF', margin: 0 }
-const subtleText: CSSProperties = { fontSize: 12, color: '#64748B', marginTop: 4 }
-const panelStyle: CSSProperties = { background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24 }
-const sectionLabel: CSSProperties = { fontSize: 10, color: '#334155', letterSpacing: '0.12em', marginBottom: 16 }
+const titleStyle: CSSProperties = { fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }
+const subtleText: CSSProperties = { fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }
+const panelStyle: CSSProperties = { background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 12, padding: 24 }
+const sectionLabel: CSSProperties = { fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '0.12em', marginBottom: 16, fontWeight: 700 }

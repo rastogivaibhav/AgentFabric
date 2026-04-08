@@ -16,11 +16,11 @@ from typing import Optional
 
 # Set up stderr logging (sitecustomize runs before user code, so basicConfig is safe)
 logging.basicConfig(
-    format="[agentfabric] %(levelname)s: %(message)s",
+    format="[govagn] %(levelname)s: %(message)s",
     level=logging.INFO,
     stream=sys.stderr,
 )
-logger = logging.getLogger("agentfabric.auto_instrument")
+logger = logging.getLogger("govagn.auto_instrument")
 
 
 class AutoInstrumentor:
@@ -29,21 +29,21 @@ class AutoInstrumentor:
     Reads environment variables, decides which frameworks to patch, bootstraps tracer.
     """
 
-    ENDPOINT_ENV = "AF_ENDPOINT"  # e.g. http://localhost:4318
-    TENANT_ENV = "AF_TENANT_ID"  # e.g. acme-corp
-    DISABLED_ENV = "AF_AUTO_INSTRUMENT"  # set to "0" to opt out
-    SERVICE_NAME_ENV = "AF_SERVICE_NAME"  # OTel service.name
-    API_KEY_ENV = "AF_API_KEY"  # Optional API key for authentication
-    INSECURE_ENV = "AF_INSECURE"  # set to "1" for insecure (default true for localhost)
-    PROMPT_ID_ENV = "AF_PROMPT_ID"
-    PROMPT_VERSION_ENV = "AF_PROMPT_VERSION"
-    PROMPT_RELEASE_TAG_ENV = "AF_PROMPT_RELEASE_TAG"
-    PROMPT_ENVIRONMENT_ENV = "AF_PROMPT_ENVIRONMENT"
+    ENDPOINT_ENV = "GV_ENDPOINT"  # e.g. http://localhost:4318
+    TENANT_ENV = "GV_TENANT_ID"  # e.g. acme-corp
+    DISABLED_ENV = "GV_AUTO_INSTRUMENT"  # set to "0" to opt out
+    SERVICE_NAME_ENV = "GV_SERVICE_NAME"  # OTel service.name
+    API_KEY_ENV = "GV_API_KEY"  # Optional API key for authentication
+    INSECURE_ENV = "GV_INSECURE"  # set to "1" for insecure (default true for localhost)
+    PROMPT_ID_ENV = "GV_PROMPT_ID"
+    PROMPT_VERSION_ENV = "GV_PROMPT_VERSION"
+    PROMPT_RELEASE_TAG_ENV = "GV_PROMPT_RELEASE_TAG"
+    PROMPT_ENVIRONMENT_ENV = "GV_PROMPT_ENVIRONMENT"
 
     def __init__(self):
         self.endpoint: Optional[str] = None
         self.tenant_id: Optional[str] = None
-        self.service_name: str = "agentfabric-service"
+        self.service_name: str = "govagn-service"
         self.api_key: Optional[str] = None
         self.insecure: bool = True
         self.enabled: bool = True
@@ -57,12 +57,12 @@ class AutoInstrumentor:
         try:
             self.read_config()
             if not self.enabled:
-                logger.debug("AF_AUTO_INSTRUMENT=0 — skipping auto-instrumentation")
+                logger.debug("GV_AUTO_INSTRUMENT=0 — skipping auto-instrumentation")
                 return
             self.setup_tracer()
             self.patch_all_available()
             logger.info(
-                f"AgentFabric auto-instrumentation active "
+                f"Govagn auto-instrumentation active "
                 f"(endpoint={self.endpoint}, tenant={self.tenant_id}, "
                 f"prompt={self.prompt_id or '-'}:{self.prompt_version or '-'})"
             )
@@ -71,7 +71,7 @@ class AutoInstrumentor:
             # Never raise — failure here breaks user's Python process
 
     def read_config(self) -> None:
-        """Read AF_ENDPOINT, AF_TENANT_ID, AF_AUTO_INSTRUMENT from env"""
+        """Read GV_ENDPOINT, GV_TENANT_ID, GV_AUTO_INSTRUMENT from env"""
         self.enabled = os.environ.get(self.DISABLED_ENV, "1").strip() != "0"
         self.endpoint = os.environ.get(
             self.ENDPOINT_ENV, "http://localhost:4318"
@@ -102,28 +102,28 @@ class AutoInstrumentor:
             import os.path
 
             name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
-            return name or "agentfabric-service"
+            return name or "govagn-service"
         except Exception:
-            return "agentfabric-service"
+            return "govagn-service"
 
     def setup_tracer(self) -> None:
         """
         Create OTLPSpanExporter pointing at self.endpoint.
         Create TracerProvider + BatchSpanProcessor.
-        Inject into agentfabric._tracer + agentfabric._initialized = True.
+        Inject into govagn._tracer + govagn._initialized = True.
         """
         try:
-            # Import agentfabric here (not at module level) to avoid circular imports
-            import agentfabric
+            # Import govagn here (not at module level) to avoid circular imports
+            import govagn
 
             # Check if already initialized (idempotent)
-            if agentfabric._initialized:
-                logger.debug("agentfabric already initialized, skipping setup_tracer()")
+            if govagn._initialized:
+                logger.debug("govagn already initialized, skipping setup_tracer()")
                 return
 
             # Call the main instrument() function
             # This will set up the tracer and return it
-            agentfabric.instrument(
+            govagn.instrument(
                 endpoint=self.endpoint,
                 service_name=self.service_name,
                 api_key=self.api_key,
@@ -144,7 +144,7 @@ class AutoInstrumentor:
 
     def patch_all_available(self) -> None:
         """
-        For each framework, try import — if available, call agentfabric patch fn.
+        For each framework, try import — if available, call govagn patch fn.
         Never raises — failures are silently logged to stderr.
         Frameworks: openai, anthropic, langgraph, crewai, google.adk
         """
@@ -168,14 +168,14 @@ class AutoInstrumentor:
     def _try_patch(self, module_name: str, patch_fn_name: str) -> bool:
         """
         importlib.import_module(module_name)
-        getattr(agentfabric, patch_fn_name)(module)
+        getattr(govagn, patch_fn_name)(module)
         return True on success, False on ImportError/AttributeError
         """
         try:
             module = importlib.import_module(module_name)
-            import agentfabric
+            import govagn
 
-            patch_fn = getattr(agentfabric, patch_fn_name)
+            patch_fn = getattr(govagn, patch_fn_name)
             patch_fn(module)
             logger.debug(f"Patched {module_name} via {patch_fn_name}")
             return True
@@ -183,7 +183,7 @@ class AutoInstrumentor:
             logger.debug(f"Module {module_name} not installed, skipping patch")
             return False
         except AttributeError:
-            logger.error(f"Patch function {patch_fn_name} not found in agentfabric")
+            logger.error(f"Patch function {patch_fn_name} not found in govagn")
             return False
         except Exception as e:
             logger.error(f"Failed to patch {module_name}: {e}")

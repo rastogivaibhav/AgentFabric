@@ -147,18 +147,18 @@ describe('AuditPage data states', () => {
     mockUseControlHistory.mockReturnValue(queryResult(undefined, { isLoading: true }) as never)
     mockUseEvidenceBundles.mockReturnValue(queryResult(undefined, { isLoading: true }) as never)
     render(<AuditPage />)
-    expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThanOrEqual(1)
+    expect(document.querySelectorAll('div[style*="var(--layer-3)"]').length).toBeGreaterThanOrEqual(1)
   })
 
   it('shows an error message when one of the enterprise memory queries fails', () => {
     mockUseControlHistory.mockReturnValue(queryResult({ items: [], total: 0, has_more: false }, { isError: true }))
     render(<AuditPage />)
-    expect(screen.getByText(/failed to load one or more enterprise memory views/i)).toBeInTheDocument()
+    expect(screen.getByText(/failed to load one or more audit views/i)).toBeInTheDocument()
   })
 
   it('shows empty states for history and bundles', () => {
     render(<AuditPage />)
-    expect(screen.getByText(/no control history has been recorded/i)).toBeInTheDocument()
+    expect(screen.getByText(/no control history recorded yet/i)).toBeInTheDocument()
     expect(screen.getByText(/no evidence bundles have been generated yet/i)).toBeInTheDocument()
   })
 })

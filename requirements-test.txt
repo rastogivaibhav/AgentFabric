@@ -1,4 +1,4 @@
-# AgentFabric — Python test dependencies
+# Govagn — Python test dependencies
 # Used by: scripts/e2e.sh, tests/e2e/
 # Install: pip install -r requirements-test.txt
 

@@ -146,7 +146,7 @@ cat >"${SCORECARD_PATH}" <<EOF
 EOF
 
 cat >"${OUTPUT_PATH}" <<EOF
-# AgentFabric Local Pilot Validation
+# Govagn Local Pilot Validation
 
 - Pilot: **${PILOT_NAME}**
 - Team: **${TEAM_NAME}**

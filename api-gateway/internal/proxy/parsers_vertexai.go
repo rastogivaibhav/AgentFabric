@@ -96,7 +96,7 @@ func (p *vertexAIParser) Upstream() string {
 	if strings.TrimSpace(p.endpoint) != "" {
 		return p.endpoint
 	}
-	if endpoint := strings.TrimSpace(os.Getenv("AF_VERTEXAI_ENDPOINT")); endpoint != "" {
+	if endpoint := strings.TrimSpace(os.Getenv("GV_VERTEXAI_ENDPOINT")); endpoint != "" {
 		return endpoint
 	}
 	return "https://us-central1-aiplatform.googleapis.com"

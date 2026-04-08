@@ -13,16 +13,16 @@ from urllib import request as urlreq
 import pytest
 
 
-_INTEGRATION = os.environ.get("AF_TEST_MODE", "unit") == "integration"
-_BASE_URL = os.environ.get("AF_API", "http://localhost:8080")
-_ADMIN_USER = os.environ.get("AF_ADMIN_USER", "")
-_ADMIN_PASSWORD = os.environ.get("AF_ADMIN_PASSWORD", "")
-_TRACE_ID = os.environ.get("AF_EVAL_TRACE_ID", "")
+_INTEGRATION = os.environ.get("GV_TEST_MODE", "unit") == "integration"
+_BASE_URL = os.environ.get("GV_API", "http://localhost:8080")
+_ADMIN_USER = os.environ.get("GV_ADMIN_USER", "")
+_ADMIN_PASSWORD = os.environ.get("GV_ADMIN_PASSWORD", "")
+_TRACE_ID = os.environ.get("GV_EVAL_TRACE_ID", "")
 
 
 def _require_integration():
     if not _INTEGRATION:
-        pytest.skip("Set AF_TEST_MODE=integration to run this test")
+        pytest.skip("Set GV_TEST_MODE=integration to run this test")
 
 
 def _json_request(url: str, method: str = "GET", body: dict | None = None, headers: dict | None = None):
@@ -39,7 +39,7 @@ def _json_request(url: str, method: str = "GET", body: dict | None = None, heade
 
 def _login_cookie():
     if not (_ADMIN_USER and _ADMIN_PASSWORD):
-        pytest.skip("Set AF_ADMIN_USER and AF_ADMIN_PASSWORD to run eval integration tests")
+        pytest.skip("Set GV_ADMIN_USER and GV_ADMIN_PASSWORD to run eval integration tests")
     status, _, headers = _json_request(
         f"{_BASE_URL}/auth/login",
         method="POST",
@@ -56,7 +56,7 @@ def _login_cookie():
 def test_score_trace_eval_endpoint():
     _require_integration()
     if not _TRACE_ID:
-        pytest.skip("Set AF_EVAL_TRACE_ID to a real trace for eval scoring")
+        pytest.skip("Set GV_EVAL_TRACE_ID to a real trace for eval scoring")
 
     cookie = _login_cookie()
     status, body, _ = _json_request(

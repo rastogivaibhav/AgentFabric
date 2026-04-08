@@ -13,20 +13,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/budget"
-	"github.com/agentfabric/api-gateway/internal/evals"
-	"github.com/agentfabric/api-gateway/internal/memory"
-	"github.com/agentfabric/api-gateway/internal/middleware"
-	"github.com/agentfabric/api-gateway/internal/models"
-	"github.com/agentfabric/api-gateway/internal/observability"
-	"github.com/agentfabric/api-gateway/internal/policy"
-	"github.com/agentfabric/api-gateway/internal/pricing"
-	"github.com/agentfabric/api-gateway/internal/prompts"
-	"github.com/agentfabric/api-gateway/internal/proxy"
-	"github.com/agentfabric/api-gateway/internal/recommendations"
-	"github.com/agentfabric/api-gateway/internal/rollouts"
-	"github.com/agentfabric/api-gateway/internal/store"
-	"github.com/agentfabric/api-gateway/internal/ws"
+	"github.com/govagn/api-gateway/internal/budget"
+	"github.com/govagn/api-gateway/internal/evals"
+	"github.com/govagn/api-gateway/internal/memory"
+	"github.com/govagn/api-gateway/internal/middleware"
+	"github.com/govagn/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/observability"
+	"github.com/govagn/api-gateway/internal/policy"
+	"github.com/govagn/api-gateway/internal/pricing"
+	"github.com/govagn/api-gateway/internal/prompts"
+	"github.com/govagn/api-gateway/internal/proxy"
+	"github.com/govagn/api-gateway/internal/recommendations"
+	"github.com/govagn/api-gateway/internal/rollouts"
+	"github.com/govagn/api-gateway/internal/store"
+	"github.com/govagn/api-gateway/internal/ws"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
@@ -1770,19 +1770,26 @@ func (h *Handler) repriceSpan(sp *models.Span) {
 	}
 
 	provider := strings.TrimSpace(sp.Attributes["gen_ai.system"])
-	match, detailed := proxy.ComputeDetailedCostForTenant(provider, model, sp.TenantID, sp.ReceivedAt, pricing.Usage{
-		InputTokens:      sp.InputTokens,
-		OutputTokens:     sp.OutputTokens,
-		CacheReadTokens:  sp.CacheReadTokens,
-		CacheWriteTokens: sp.CacheWriteTokens,
-		ReasoningTokens:  sp.ReasoningTokens,
-	})
-	sp.CostUSD = detailed.TotalCostUSD
-	sp.InputCostUSD = detailed.InputCostUSD
-	sp.OutputCostUSD = detailed.OutputCostUSD
-	sp.CacheReadCostUSD = detailed.CacheReadCostUSD
-	sp.CacheWriteCostUSD = detailed.CacheWriteCostUSD
-	sp.ReasoningCostUSD = detailed.ReasoningCostUSD
+	
+	var match proxy.PricingMatch
+	
+	// FIX P0: Only reprice if the collector has not already computed the costs
+	if sp.CostUSD == 0 && sp.InputCostUSD == 0 && sp.OutputCostUSD == 0 && (sp.InputTokens > 0 || sp.OutputTokens > 0) {
+		var detailed pricing.Result
+		match, detailed = proxy.ComputeDetailedCostForTenant(provider, model, sp.TenantID, sp.ReceivedAt, pricing.Usage{
+			InputTokens:      sp.InputTokens,
+			OutputTokens:     sp.OutputTokens,
+			CacheReadTokens:  sp.CacheReadTokens,
+			CacheWriteTokens: sp.CacheWriteTokens,
+			ReasoningTokens:  sp.ReasoningTokens,
+		})
+		sp.CostUSD = detailed.TotalCostUSD
+		sp.InputCostUSD = detailed.InputCostUSD
+		sp.OutputCostUSD = detailed.OutputCostUSD
+		sp.CacheReadCostUSD = detailed.CacheReadCostUSD
+		sp.CacheWriteCostUSD = detailed.CacheWriteCostUSD
+		sp.ReasoningCostUSD = detailed.ReasoningCostUSD
+	}
 
 	if sp.Attributes == nil {
 		sp.Attributes = map[string]string{}
@@ -1793,12 +1800,12 @@ func (h *Handler) repriceSpan(sp *models.Span) {
 	if provider != "" {
 		sp.Attributes["gen_ai.system"] = strings.ToLower(provider)
 	}
-	sp.Attributes["af.cost.input_usd"] = strconv.FormatFloat(detailed.InputCostUSD, 'f', 8, 64)
-	sp.Attributes["af.cost.output_usd"] = strconv.FormatFloat(detailed.OutputCostUSD, 'f', 8, 64)
-	sp.Attributes["af.cost.cache_read_usd"] = strconv.FormatFloat(detailed.CacheReadCostUSD, 'f', 8, 64)
-	sp.Attributes["af.cost.cache_write_usd"] = strconv.FormatFloat(detailed.CacheWriteCostUSD, 'f', 8, 64)
-	sp.Attributes["af.cost.reasoning_usd"] = strconv.FormatFloat(detailed.ReasoningCostUSD, 'f', 8, 64)
-	sp.Attributes["af.cost.total_usd"] = strconv.FormatFloat(detailed.TotalCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.input_usd"] = strconv.FormatFloat(sp.InputCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.output_usd"] = strconv.FormatFloat(sp.OutputCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.cache_read_usd"] = strconv.FormatFloat(sp.CacheReadCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.cache_write_usd"] = strconv.FormatFloat(sp.CacheWriteCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.reasoning_usd"] = strconv.FormatFloat(sp.ReasoningCostUSD, 'f', 8, 64)
+	sp.Attributes["af.cost.total_usd"] = strconv.FormatFloat(sp.CostUSD, 'f', 8, 64)
 	if sp.CacheReadTokens > 0 {
 		sp.Attributes["gen_ai.usage.cache_read_tokens"] = strconv.FormatInt(sp.CacheReadTokens, 10)
 	}

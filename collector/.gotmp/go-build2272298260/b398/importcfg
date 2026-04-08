@@ -1,9 +1,9 @@
 # import config
 packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\68\68ebcedb076b13fe2277c33e90f8b1a5c487236e93e6d2478b550c2f2f8d5f12-d
 packagefile encoding/json=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\b8\b8842da09d068d1da5161ca2d099a0660c691da1534b41f53463799b74b5d33e-d
-packagefile github.com/agentfabric/collector/internal/auth=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build2272298260\b268\_pkg_.a
-packagefile github.com/agentfabric/collector/internal/config=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5b\5b55816bc486550f4ad96c47053ebf12953a4bf0e59f0cbccba53211b04e0841-d
-packagefile github.com/agentfabric/collector/internal/processor=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\1d\1da6102455e509afff908397a84b12224523c233cc474c5ed01a725f6cfd49c8-d
+packagefile github.com/govagn/collector/internal/auth=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build2272298260\b268\_pkg_.a
+packagefile github.com/govagn/collector/internal/config=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5b\5b55816bc486550f4ad96c47053ebf12953a4bf0e59f0cbccba53211b04e0841-d
+packagefile github.com/govagn/collector/internal/processor=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\1d\1da6102455e509afff908397a84b12224523c233cc474c5ed01a725f6cfd49c8-d
 packagefile github.com/prometheus/client_golang/prometheus=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\48\48a60b81e25be36a66572baaa3128ad26d9805f62f3b15bfef050b9ec612b4dd-d
 packagefile github.com/prometheus/client_golang/prometheus/promauto=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\d4\d46795a0959bfffe80862f9bffb4bfecfe749c906bb24996d8f1d8c227f7de70-d
 packagefile go.opentelemetry.io/proto/otlp/collector/trace/v1=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\51\515707a13d0810c7983e07ee9560ee1f74842353b130547faaf99d7e2c18a115-d

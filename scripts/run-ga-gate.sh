@@ -82,7 +82,7 @@ render_summary() {
   local decision="$1"
   local timestamp
   timestamp="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-  SUMMARY+=("# AgentFabric GA Gate")
+  SUMMARY+=("# Govagn GA Gate")
   SUMMARY+=("")
   SUMMARY+=("- Decision: **${decision}**")
   SUMMARY+=("- Mode: \`${MODE}\`")
@@ -119,6 +119,7 @@ if [[ "${MODE}" == "ci" ]]; then
     ["collector tests"]="${GA_COLLECTOR_RESULT:-}"
     ["api-gateway tests"]="${GA_GATEWAY_RESULT:-}"
     ["portal tests/build"]="${GA_PORTAL_RESULT:-}"
+    ["portal playwright"]="${GA_PORTAL_E2E_RESULT:-}"
     ["agent-sdk tests"]="${GA_SDK_RESULT:-}"
     ["helm smoke"]="${GA_HELM_RESULT:-}"
     ["packaging smoke"]="${GA_PACKAGING_RESULT:-}"
@@ -166,7 +167,7 @@ else
   else
     add_check "Helm lint" "false" "failed"
   fi
-  if helm template agentfabric "${REPO_ROOT}/deploy/helm" --set collector.image.tag=ga --set api.image.tag=ga --set portal.image.tag=ga >/dev/null 2>&1; then
+  if helm template govagn "${REPO_ROOT}/deploy/helm" --set collector.image.tag=ga --set api.image.tag=ga --set portal.image.tag=ga >/dev/null 2>&1; then
     add_check "Helm template" "true" "passed"
   else
     add_check "Helm template" "false" "failed"

@@ -163,8 +163,8 @@ describe('URL construction logic', () => {
   })
 
   it('WebSocket URL replaces https with wss', () => {
-    const httpsBase = 'https://api.agentfabric.io'
+    const httpsBase = 'https://api.govagn.io'
     const wssBase = httpsBase.replace(/^http/, 'ws')
-    expect(wssBase).toBe('wss://api.agentfabric.io')
+    expect(wssBase).toBe('wss://api.govagn.io')
   })
 })

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This runbook defines the backup and restore approach for the current AgentFabric production shape.
+This runbook defines the backup and restore approach for the current Govagn production shape.
 
 Use it to answer:
 
@@ -68,7 +68,7 @@ Do not store these in plaintext runbooks or casual shared folders.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\backup_postgres.ps1 `
-  -DatabaseUrl "postgres://user:pass@host:5432/agentfabric?sslmode=require" `
+  -DatabaseUrl "postgres://user:pass@host:5432/govagn?sslmode=require" `
   -OutputDir .\backups `
   -Format custom `
   -RetentionDays 7
@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\backup_postgres.ps1 `
 ### Linux or macOS
 
 ```bash
-DATABASE_URL="postgres://user:pass@host:5432/agentfabric?sslmode=require" \
+DATABASE_URL="postgres://user:pass@host:5432/govagn?sslmode=require" \
 OUTPUT_DIR=./backups \
 BACKUP_FORMAT=custom \
 RETENTION_DAYS=7 \
@@ -107,13 +107,13 @@ Recommended practice:
 ### Custom-format dump
 
 ```bash
-pg_restore --clean --if-exists --no-owner --dbname "$DATABASE_URL" /path/to/agentfabric-<stamp>.dump
+pg_restore --clean --if-exists --no-owner --dbname "$DATABASE_URL" /path/to/govagn-<stamp>.dump
 ```
 
 ### Plain SQL dump
 
 ```bash
-psql "$DATABASE_URL" -f /path/to/agentfabric-<stamp>.sql
+psql "$DATABASE_URL" -f /path/to/govagn-<stamp>.sql
 ```
 
 ## Restore Expectations

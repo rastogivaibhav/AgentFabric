@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the current reference deployment shape for AgentFabric.
+This document defines the current reference deployment shape for Govagn.
 
 Use it to answer:
 
@@ -20,6 +20,10 @@ The reference deployment for the current product is:
 - `portal`
 - external PostgreSQL
 - external Redis
+
+Optional network-perimeter mode adds:
+
+- `envoy-egress` for managed outbound interception to LLM providers
 
 The current reference path does not require:
 
@@ -45,21 +49,22 @@ Use:
 
 Required production inputs:
 
-- `AF_JWT_SECRET`
-- `AF_ADMIN_PASSWORD`
-- `AF_VAULT_KEY`
-- `AF_GATEWAY_AUTH_TOKEN` shared between collector and gateway for `/internal/ingest`
+- `GV_JWT_SECRET`
+- `GV_ADMIN_PASSWORD`
+- `GV_VAULT_KEY`
+- `GV_GATEWAY_AUTH_TOKEN` shared between collector and gateway for `/internal/ingest`
 - `DATABASE_URL`
 - `REDIS_URL`
-- `AF_CORS_ORIGINS`
-- `AF_ENV=production` or `AF_STRICT_CONFIG=true` on both gateway and collector
-- `AF_AUTH_REQUIRE_AUTH=true` on the collector
+- `GV_CORS_ORIGINS`
+- `GV_ENV=production` or `GV_STRICT_CONFIG=true` on both gateway and collector
+- `GV_AUTH_REQUIRE_AUTH=true` on the collector
 
 ### Kubernetes / Helm
 Use:
 
-- [../deploy/k8s/agentfabric.yaml](../deploy/k8s/agentfabric.yaml)
+- [../deploy/k8s/govagn.yaml](../deploy/k8s/govagn.yaml)
 - [../deploy/helm](../deploy/helm)
+- [ENVOY_EGRESS_DEPLOYMENT.md](ENVOY_EGRESS_DEPLOYMENT.md) for egress-gateway mode
 
 For current release scope, treat PostgreSQL and Redis as required backing services and keep provider claims aligned with [RELEASE_BOUNDARIES.md](RELEASE_BOUNDARIES.md).
 
@@ -71,6 +76,9 @@ flowchart LR
     C["Collector"] --> B
     D["Applications"] --> C
     D --> B
+    D --> G["Envoy Egress (Optional)"]
+    G --> H["LLM Providers"]
+    G --> C
     B --> E["PostgreSQL"]
     B --> F["Redis"]
 ```
@@ -89,10 +97,10 @@ Production deployments should include:
 
 Recommended production auth flags:
 
-- `AF_SSO_REQUIRED=true` once OIDC is live
-- `AF_PASSWORD_LOGIN_DISABLED=true` after SSO cutover
+- `GV_SSO_REQUIRED=true` once OIDC is live
+- `GV_PASSWORD_LOGIN_DISABLED=true` after SSO cutover
 - when any OIDC fields are set in strict production mode, set issuer, client ID, client secret, and redirect URI together
-- when using Helm, set `auth.oidc.issuer`, `auth.oidc.clientId`, `auth.oidc.redirectUri`, optional `auth.oidc.logoutUrl`, and store `AF_OIDC_CLIENT_SECRET` in the shared Secret under `auth.oidc.clientSecretKey`
+- when using Helm, set `auth.oidc.issuer`, `auth.oidc.clientId`, `auth.oidc.redirectUri`, optional `auth.oidc.logoutUrl`, and store `GV_OIDC_CLIENT_SECRET` in the shared Secret under `auth.oidc.clientSecretKey`
 - `/api/v1/stream/live` is a single-process WebSocket fan-out today; do not treat multi-replica `api-gateway` deployments as a supported HA topology for complete live stream delivery
 
 ## Coverage Boundaries

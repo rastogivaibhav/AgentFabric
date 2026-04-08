@@ -1,8 +1,8 @@
 """
-Shared pytest configuration for AgentFabric integration tests.
+Shared pytest configuration for Govagn integration tests.
 
 Provides GatewaySpanExporter — a second span processor that forwards every
-finished span to the running AgentFabric gateway (http://localhost:8080) so
+finished span to the running Govagn gateway (http://localhost:8080) so
 traces appear in the dashboard in real-time as tests execute.
 
 If the gateway is not reachable the exporter silently swallows the error so
@@ -17,11 +17,11 @@ import urllib.request
 import pytest
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
-GATEWAY_URL = os.environ.get("AF_GATEWAY_URL", "http://localhost:8080")
+GATEWAY_URL = os.environ.get("GV_GATEWAY_URL", "http://localhost:8080")
 
 
 class GatewaySpanExporter(SpanExporter):
-    """Forwards finished spans to the AgentFabric /internal/ingest endpoint."""
+    """Forwards finished spans to the Govagn /internal/ingest endpoint."""
 
     def export(self, spans):
         payload = []

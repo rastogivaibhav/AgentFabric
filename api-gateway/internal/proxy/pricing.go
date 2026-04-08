@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/models"
-	priced "github.com/agentfabric/api-gateway/internal/pricing"
+	"github.com/govagn/api-gateway/internal/models"
+	priced "github.com/govagn/api-gateway/internal/pricing"
 )
 
 type modelPricing struct {
@@ -183,14 +183,14 @@ func parsePricingRules(raw string) ([]pricingRule, error) {
 }
 
 func pricingConfigSource() (string, error) {
-	if path := strings.TrimSpace(os.Getenv("AF_MODEL_PRICING_FILE")); path != "" {
+	if path := strings.TrimSpace(os.Getenv("GV_MODEL_PRICING_FILE")); path != "" {
 		body, err := os.ReadFile(path)
 		if err != nil {
 			return "", fmt.Errorf("read pricing config file: %w", err)
 		}
 		return string(body), nil
 	}
-	return os.Getenv("AF_MODEL_PRICING_JSON"), nil
+	return os.Getenv("GV_MODEL_PRICING_JSON"), nil
 }
 
 func currentPricingRules() []pricingRule {

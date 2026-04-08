@@ -3,7 +3,7 @@ package evals
 import (
 	"testing"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func TestSummarizePolicyEffectiveness(t *testing.T) {

@@ -1,4 +1,4 @@
--- AgentFabric — Reverse migration 001
+-- Govagn — Reverse migration 001
 -- Drops all objects created by 001_initial_schema.up.sql in strict reverse
 -- dependency order so foreign-key constraints are never violated.
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func BuildTrace(traceID string, spans []models.Span, policyEvents []models.PolicyEvent) models.Trace {

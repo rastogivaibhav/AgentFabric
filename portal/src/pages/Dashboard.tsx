@@ -15,10 +15,10 @@ import {
 const FRAMEWORK_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
   langgraph: '#4ECDC4',
-  google_adk: '#4285F4',
-  openai_agents: '#10A37F',
-  claude_agents: '#D97706',
-  unknown: '#475569',
+  google_adk: 'var(--control)',
+  openai_agents: 'var(--spend)',
+  claude_agents: 'var(--prove)',
+  unknown: 'var(--text-tertiary)',
 }
 
 // Micro-Component for semantic stack card

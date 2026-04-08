@@ -66,7 +66,7 @@ jobs:
       - name: Report installed versions
         run: |
           python -c "import langgraph; print('langgraph', langgraph.__version__)"
-          python -c "import agentfabric; print('agentfabric', agentfabric.__version__)"
+          python -c "import govagn; print('govagn', govagn.__version__)"
           python --version
 
       - name: Run LangGraph integration tests

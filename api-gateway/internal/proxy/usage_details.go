@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	priced "github.com/agentfabric/api-gateway/internal/pricing"
+	priced "github.com/govagn/api-gateway/internal/pricing"
 )
 
 func ParseDetailedUsage(provider string, body []byte) (priced.Usage, error) {

@@ -19,7 +19,7 @@ import "net/http"
 //     same-origin requests, origin only on cross-origin HTTPS, nothing on
 //     cross-origin HTTP downgrades.
 //   - Permissions-Policy: opts out of all sensor / media APIs that the
-//     AgentFabric portal does not use.
+//     Govagn portal does not use.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()

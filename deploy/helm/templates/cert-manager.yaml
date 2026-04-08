@@ -8,10 +8,10 @@ Prerequisites:
 Enable via values:
   certManager:
     enabled: true
-    email: ops@agentfabric.io
+    email: ops@govagn.io
     issuer:
       create: true           # set false to use a pre-existing issuer
-      name: agentfabric-letsencrypt
+      name: govagn-letsencrypt
       kind: ClusterIssuer    # ClusterIssuer | Issuer
       server: https://acme-v02.api.letsencrypt.org/directory  # staging: https://acme-staging-v02.api.letsencrypt.org/directory
 
@@ -56,14 +56,14 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: agentfabric-api-tls
+  name: govagn-api-tls
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: api-gateway
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 spec:
-  secretName: agentfabric-api-tls
+  secretName: govagn-api-tls
   issuerRef:
     name: {{ .Values.certManager.issuer.name }}
     kind: {{ .Values.certManager.issuer.kind }}
@@ -84,14 +84,14 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: agentfabric-portal-tls
+  name: govagn-portal-tls
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: portal
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 spec:
-  secretName: agentfabric-portal-tls
+  secretName: govagn-portal-tls
   issuerRef:
     name: {{ .Values.certManager.issuer.name }}
     kind: {{ .Values.certManager.issuer.kind }}

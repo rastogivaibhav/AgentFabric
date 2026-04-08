@@ -59,7 +59,8 @@ describe('EvalsPage', () => {
     render(<MemoryRouter><EvalsPage /></MemoryRouter>)
     expect(screen.getByText('trace-1')).toBeInTheDocument()
     expect(screen.getByText('88.2')).toBeInTheDocument()
-    expect(screen.getByText(/Policy coverage: 100%/i)).toBeInTheDocument()
+    expect(screen.getByText(/Policy coverage:/i)).toBeInTheDocument()
+    expect(screen.getByText('100%')).toBeInTheDocument()
   })
 
   it('submits a score request', () => {

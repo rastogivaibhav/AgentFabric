@@ -2,13 +2,13 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: agentfabric-api
+  name: govagn-api
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 6 }}
+      {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress
@@ -18,9 +18,9 @@ spec:
         - podSelector: {}
         {{- end }}
         - podSelector:
-            {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 12 }}
+            {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 12 }}
         - podSelector:
-            {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 12 }}
+            {{- include "govagn.selectorLabels" (dict "component" "collector") | nindent 12 }}
         {{- range .Values.networkPolicy.allowIngressCIDRs }}
         - ipBlock:
             cidr: {{ . | quote }}
@@ -41,13 +41,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: agentfabric-collector
+  name: govagn-collector
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 6 }}
+      {{- include "govagn.selectorLabels" (dict "component" "collector") | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress
@@ -68,7 +68,7 @@ spec:
   egress:
     - to:
         - podSelector:
-            {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 12 }}
+            {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 12 }}
       ports:
         - protocol: TCP
           port: 8080
@@ -83,13 +83,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: agentfabric-portal
+  name: govagn-portal
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 6 }}
+      {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress
@@ -108,7 +108,7 @@ spec:
   egress:
     - to:
         - podSelector:
-            {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 12 }}
+            {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 12 }}
       ports:
         - protocol: TCP
           port: 8080

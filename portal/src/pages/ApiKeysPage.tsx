@@ -3,53 +3,22 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Key, Plus, Trash2, Copy, Check, RefreshCw } from 'lucide-react'
 import { apiFetch, apiMutate, SUPPORTED_KEY_PROVIDERS } from '../hooks/api'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 interface VirtualKey {
-  virtual_key: string
-  display_name: string
-  provider: string
-  key_id: string
-  team_id?: string
-  last_used_at?: string
-  revoked: boolean
-  created_at: string
+  virtual_key: string; display_name: string; provider: string
+  key_id: string; team_id?: string; last_used_at?: string; revoked: boolean; created_at: string
 }
+interface RegisterKeyForm { provider: string; real_key: string; display_name: string; team_id: string }
 
-interface RegisterKeyForm {
-  provider: string
-  real_key: string
-  display_name: string
-  team_id: string
-}
+const fetchKeys = (): Promise<{ items: VirtualKey[]; count: number }> => apiFetch('/keys')
+const registerKey = (form: RegisterKeyForm) => apiMutate<{ virtual_key: string; provider: string }>('/keys', 'POST', form)
+const revokeKey = (virtualKey: string) => apiMutate<void>(`/keys/${virtualKey}`, 'DELETE')
 
-// ─── API helpers ──────────────────────────────────────────────────────────────
-
-const fetchKeys = (): Promise<{ items: VirtualKey[]; count: number }> =>
-  apiFetch('/keys')
-
-const registerKey = (form: RegisterKeyForm) =>
-  apiMutate<{ virtual_key: string; provider: string }>('/keys', 'POST', form)
-
-const revokeKey = (virtualKey: string) =>
-  apiMutate<void>(`/keys/${virtualKey}`, 'DELETE')
-
-// ─── Component ────────────────────────────────────────────────────────────────
-
-const PROVIDER_LABELS: Record<string, string> = Object.fromEntries(
-  SUPPORTED_KEY_PROVIDERS.map((provider) => [provider.value, provider.label]),
-)
-
+const PROVIDER_LABELS: Record<string, string> = Object.fromEntries(SUPPORTED_KEY_PROVIDERS.map(p => [p.value, p.label]))
 const PROVIDER_COLORS: Record<string, string> = {
-  openai: '#10a37f',
-  anthropic: '#c96a3a',
-  google: '#4285f4',
-  vertexai: '#0f9d58',
-  bedrock: '#f59e0b',
+  openai: 'var(--spend)', anthropic: 'var(--prove)', google: 'var(--control)',
+  vertexai: 'var(--ship)', bedrock: '#FF6B35',
 }
-
-const providerHintFor = (provider: string) =>
-  SUPPORTED_KEY_PROVIDERS.find((option) => option.value === provider) ?? SUPPORTED_KEY_PROVIDERS[0]
+const providerHintFor = (provider: string) => SUPPORTED_KEY_PROVIDERS.find(o => o.value === provider) ?? SUPPORTED_KEY_PROVIDERS[0]
 
 export default function ApiKeysPage() {
   const qc = useQueryClient()
@@ -57,44 +26,23 @@ export default function ApiKeysPage() {
   const [newVirtualKey, setNewVirtualKey] = useState<string | null>(null)
   const [newVirtualKeyProvider, setNewVirtualKeyProvider] = useState('openai')
   const [copied, setCopied] = useState(false)
-  const [form, setForm] = useState<RegisterKeyForm>({
-    provider: 'openai',
-    real_key: '',
-    display_name: '',
-    team_id: '',
-  })
+  const [form, setForm] = useState<RegisterKeyForm>({ provider: 'openai', real_key: '', display_name: '', team_id: '' })
   const [revoking, setRevoking] = useState<string | null>(null)
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['virtual-keys'],
-    queryFn: fetchKeys,
-    refetchInterval: 30_000,
-  })
+  const { data, isLoading, error } = useQuery({ queryKey: ['virtual-keys'], queryFn: fetchKeys, refetchInterval: 30_000 })
 
   const registerMut = useMutation({
     mutationFn: registerKey,
-    onSuccess: (res) => {
-      setNewVirtualKey(res.virtual_key)
-      setNewVirtualKeyProvider(res.provider)
-      setShowForm(false)
-      setForm({ provider: 'openai', real_key: '', display_name: '', team_id: '' })
-      qc.invalidateQueries({ queryKey: ['virtual-keys'] })
-    },
+    onSuccess: (res) => { setNewVirtualKey(res.virtual_key); setNewVirtualKeyProvider(res.provider); setShowForm(false); setForm({ provider: 'openai', real_key: '', display_name: '', team_id: '' }); qc.invalidateQueries({ queryKey: ['virtual-keys'] }) },
   })
 
   const revokeMut = useMutation({
     mutationFn: revokeKey,
-    onSuccess: () => {
-      setRevoking(null)
-      qc.invalidateQueries({ queryKey: ['virtual-keys'] })
-    },
+    onSuccess: () => { setRevoking(null); qc.invalidateQueries({ queryKey: ['virtual-keys'] }) },
   })
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
   }
 
   const keys = data?.items ?? []
@@ -102,266 +50,154 @@ export default function ApiKeysPage() {
   const newKeyProviderHint = providerHintFor(newVirtualKeyProvider)
 
   return (
-    <div style={{ padding: '24px', maxWidth: 900 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+    <div style={{ padding: '40px 48px', maxWidth: 1100, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Key size={20} /> Virtual Keys
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--protect)', display: 'inline-block' }} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--protect)', letterSpacing: '0.1em' }}>PROTECT</span>
+          </div>
+          <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10, fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+            <Key size={22} style={{ color: 'var(--control)' }} /> Virtual Keys
           </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#888' }}>
-            Register real LLM API keys and get virtual keys (<code style={{ fontSize: 12 }}>af-vk-*</code>) to use in your agents.
-            Real keys are encrypted and never returned after registration.
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-tertiary)' }}>
+            Register real LLM API keys and get virtual keys (<code style={{ fontFamily: 'monospace', background: 'var(--layer-3)', padding: '1px 5px', borderRadius: 3 }}>af-vk-*</code>) to route through the gateway.
           </p>
         </div>
-        <button
-          onClick={() => { setShowForm(true); setNewVirtualKey(null) }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '8px 16px', background: '#6366f1', color: '#fff',
-            border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500,
-          }}
-        >
+        <button id="add-key-btn" onClick={() => { setShowForm(true); setNewVirtualKey(null) }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: 'var(--control)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
           <Plus size={14} /> Add Key
         </button>
       </div>
 
-      {/* New virtual key reveal — shown once after registration */}
+      {/* New key reveal */}
       {newVirtualKey && (
-        <div style={{
-          background: '#0f2a1a', border: '1px solid #166534', borderRadius: 8,
-          padding: '16px 20px', marginBottom: 24,
-        }}>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#4ade80', fontWeight: 500 }}>
+        <div style={{ background: 'rgba(48,209,88,0.07)', border: '1px solid rgba(48,209,88,0.25)', borderRadius: 10, padding: '16px 20px', marginBottom: 24 }}>
+          <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--spend)', fontWeight: 600 }}>
             ✓ Key registered. Copy your virtual key now — it will not be shown again.
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <code style={{
-              flex: 1, background: '#1a3a2a', padding: '8px 12px', borderRadius: 4,
-              fontSize: 13, color: '#86efac', letterSpacing: '0.02em',
-            }}>
+            <code style={{ flex: 1, background: 'rgba(48,209,88,0.06)', padding: '8px 12px', borderRadius: 6, fontSize: 13, color: 'var(--spend)', fontFamily: 'monospace', letterSpacing: '0.02em' }}>
               {newVirtualKey}
             </code>
-            <button
-              onClick={() => copyToClipboard(newVirtualKey)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                padding: '6px 12px', background: copied ? '#166534' : '#374151',
-                color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12,
-              }}
-            >
-              {copied ? <Check size={12} /> : <Copy size={12} />}
-              {copied ? 'Copied' : 'Copy'}
+            <button id="copy-key-btn" onClick={() => copyToClipboard(newVirtualKey)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '8px 14px', background: copied ? 'rgba(48,209,88,0.2)' : 'var(--layer-3)', color: 'var(--text-primary)', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
+              {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
-          <p style={{ margin: '10px 0 0', fontSize: 12, color: '#6b7280' }}>
-            Use it against <code style={{ fontSize: 11 }}>http://localhost:8080{newKeyProviderHint.route_hint}</code> with{' '}
-            <code style={{ fontSize: 11 }}>{newVirtualKey}</code> as your API key.
+          <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--text-tertiary)' }}>
+            Use it at <code style={{ fontFamily: 'monospace' }}>http://localhost:8080{newKeyProviderHint.route_hint}</code> with <code style={{ fontFamily: 'monospace' }}>{newVirtualKey}</code> as your API key.
           </p>
         </div>
       )}
 
       {/* Registration form */}
       {showForm && (
-        <div style={{
-          background: '#111827', border: '1px solid #374151', borderRadius: 8,
-          padding: '20px', marginBottom: 24,
-        }}>
-          <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600 }}>Register new key</h3>
-          <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 12, padding: 24, marginBottom: 24 }}>
+          <h3 style={{ margin: '0 0 18px', fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Register new key</h3>
+          <div style={{ display: 'grid', gap: 14 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <label style={{ fontSize: 12, color: '#9ca3af' }}>
+              <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 Provider
-                <select
-                  value={form.provider}
-                  onChange={e => setForm(f => ({ ...f, provider: e.target.value }))}
-                  style={{
-                    display: 'block', width: '100%', marginTop: 4,
-                    background: '#1f2937', border: '1px solid #374151', borderRadius: 4,
-                    color: '#f9fafb', padding: '7px 10px', fontSize: 13,
-                  }}
-                >
-                  {SUPPORTED_KEY_PROVIDERS.map((provider) => (
-                    <option key={provider.value} value={provider.value}>
-                      {provider.label}
-                    </option>
-                  ))}
+                <select id="key-provider" value={form.provider} onChange={e => setForm(f => ({ ...f, provider: e.target.value }))} style={inputStyle}>
+                  {SUPPORTED_KEY_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
               </label>
-              <label style={{ fontSize: 12, color: '#9ca3af' }}>
+              <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 Display name
-                <input
-                  value={form.display_name}
-                  onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))}
-                  placeholder="e.g. Prod OpenAI"
-                  style={{
-                    display: 'block', width: '100%', marginTop: 4, boxSizing: 'border-box',
-                    background: '#1f2937', border: '1px solid #374151', borderRadius: 4,
-                    color: '#f9fafb', padding: '7px 10px', fontSize: 13,
-                  }}
-                />
+                <input id="key-display" value={form.display_name} onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))} placeholder="e.g. Prod OpenAI" style={inputStyle} />
               </label>
             </div>
-            <label style={{ fontSize: 12, color: '#9ca3af' }}>
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 6 }}>
               Real API key
-              <input
-                type="password"
-                value={form.real_key}
-                onChange={e => setForm(f => ({ ...f, real_key: e.target.value }))}
-                placeholder={selectedProviderHint.key_placeholder}
-                style={{
-                  display: 'block', width: '100%', marginTop: 4, boxSizing: 'border-box',
-                  background: '#1f2937', border: '1px solid #374151', borderRadius: 4,
-                  color: '#f9fafb', padding: '7px 10px', fontSize: 13, fontFamily: 'monospace',
-                }}
-              />
+              <input id="key-value" type="password" value={form.real_key} onChange={e => setForm(f => ({ ...f, real_key: e.target.value }))} placeholder={selectedProviderHint.key_placeholder} style={{ ...inputStyle, fontFamily: 'monospace' }} />
             </label>
-            {registerMut.isError && (
-              <p style={{ margin: 0, fontSize: 12, color: '#f87171' }}>
-                Registration failed. Check the key and try again.
-              </p>
-            )}
+            {registerMut.isError && <p style={{ margin: 0, fontSize: 12, color: 'var(--protect)' }}>Registration failed. Check the key and try again.</p>}
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <button
-              onClick={() => registerMut.mutate(form)}
-              disabled={registerMut.isPending || !form.real_key || !form.display_name}
-              style={{
-                padding: '8px 20px', background: '#6366f1', color: '#fff',
-                border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13,
-                opacity: registerMut.isPending ? 0.6 : 1,
-              }}
-            >
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <button id="key-register-btn" onClick={() => registerMut.mutate(form)} disabled={registerMut.isPending || !form.real_key || !form.display_name}
+              style={{ padding: '9px 20px', background: 'var(--control)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: registerMut.isPending ? 0.6 : 1 }}>
               {registerMut.isPending ? 'Registering…' : 'Register'}
             </button>
-            <button
-              onClick={() => setShowForm(false)}
-              style={{
-                padding: '8px 16px', background: '#374151', color: '#d1d5db',
-                border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13,
-              }}
-            >
-              Cancel
-            </button>
+            <button onClick={() => setShowForm(false)} style={{ padding: '9px 16px', background: 'var(--layer-3)', color: 'var(--text-secondary)', border: '1px solid var(--layer-border)', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
           </div>
         </div>
       )}
 
       {/* Keys table */}
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
-          <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />
+        <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-tertiary)' }}>
+          <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite', color: 'var(--text-tertiary)' }} />
         </div>
       ) : error ? (
-        <div style={{ color: '#f87171', padding: 20 }}>Failed to load keys.</div>
+        <div style={{ color: 'var(--protect)', padding: 24 }}>Failed to load keys.</div>
       ) : keys.length === 0 ? (
-        <div style={{
-          textAlign: 'center', padding: '48px 24px',
-          border: '1px dashed #374151', borderRadius: 8, color: '#6b7280',
-        }}>
-          <Key size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
-          <p style={{ margin: 0, fontSize: 14 }}>No virtual keys yet.</p>
-          <p style={{ margin: '4px 0 0', fontSize: 12 }}>Add a key to start proxying LLM requests through AgentFabric.</p>
+        <div style={{ textAlign: 'center', padding: '56px 24px', border: '1px dashed var(--layer-border)', borderRadius: 12, color: 'var(--text-tertiary)' }}>
+          <Key size={36} style={{ opacity: 0.3, marginBottom: 14, display: 'block', margin: '0 auto 14px' }} />
+          <p style={{ margin: 0, fontSize: 15, color: 'var(--text-secondary)', fontWeight: 600 }}>No virtual keys yet</p>
+          <p style={{ margin: '6px 0 0', fontSize: 13 }}>Add a key to start proxying LLM requests through the gateway.</p>
         </div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid #374151' }}>
-              {['Provider', 'Display Name', 'Virtual Key', 'Real Key Prefix', 'Last Used', 'Status'].map(h => (
-                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', color: '#6b7280', fontWeight: 500, fontSize: 12 }}>{h}</th>
-              ))}
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {keys.map(k => (
-              <tr key={k.virtual_key} style={{ borderBottom: '1px solid #1f2937' }}>
-                <td style={{ padding: '10px 12px' }}>
-                  <span style={{
-                    padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600,
-                    background: PROVIDER_COLORS[k.provider] + '22',
-                    color: PROVIDER_COLORS[k.provider] ?? '#9ca3af',
-                  }}>
-                    {PROVIDER_LABELS[k.provider] ?? k.provider}
-                  </span>
-                </td>
-                <td style={{ padding: '10px 12px', color: '#f3f4f6' }}>{k.display_name}</td>
-                <td style={{ padding: '10px 12px' }}>
-                  <code style={{ fontSize: 12, color: '#a5b4fc' }}>
-                    {k.virtual_key.slice(0, 14)}…
-                  </code>
-                </td>
-                <td style={{ padding: '10px 12px' }}>
-                  <code style={{ fontSize: 12, color: '#9ca3af' }}>{k.key_id}…</code>
-                </td>
-                <td style={{ padding: '10px 12px', color: '#6b7280', fontSize: 12 }}>
-                  {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '—'}
-                </td>
-                <td style={{ padding: '10px 12px' }}>
-                  <span style={{
-                    padding: '2px 8px', borderRadius: 12, fontSize: 11,
-                    background: k.revoked ? '#451a1a' : '#14532d',
-                    color: k.revoked ? '#f87171' : '#4ade80',
-                  }}>
-                    {k.revoked ? 'Revoked' : 'Active'}
-                  </span>
-                </td>
-                <td style={{ padding: '10px 12px' }}>
-                  {!k.revoked && (
-                    revoking === k.virtual_key ? (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button
-                          onClick={() => revokeMut.mutate(k.virtual_key)}
-                          style={{
-                            padding: '4px 10px', background: '#dc2626', color: '#fff',
-                            border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11,
-                          }}
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          onClick={() => setRevoking(null)}
-                          style={{
-                            padding: '4px 10px', background: '#374151', color: '#d1d5db',
-                            border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11,
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setRevoking(k.virtual_key)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 4,
-                          padding: '4px 10px', background: 'transparent',
-                          border: '1px solid #374151', borderRadius: 4,
-                          color: '#9ca3af', cursor: 'pointer', fontSize: 11,
-                        }}
-                      >
-                        <Trash2 size={11} /> Revoke
-                      </button>
-                    )
-                  )}
-                </td>
+        <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 12, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--layer-1)' }}>
+                {['Provider', 'Display Name', 'Virtual Key', 'Key Prefix', 'Last Used', 'Status', ''].map(h => (
+                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--layer-border)' }}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* Usage hint */}
-      {keys.length > 0 && (
-        <div style={{
-          marginTop: 24, padding: '12px 16px',
-          background: '#0f172a', border: '1px solid #1e3a5f', borderRadius: 6,
-          fontSize: 12, color: '#93c5fd',
-        }}>
-          <strong>How to use:</strong> Set{' '}
-          <code>http://localhost:8080/proxy/&lt;provider&gt;/...</code> as your upstream base and use your{' '}
-          <code>af-vk-*</code> key in place of the provider API key. Supported providers: {SUPPORTED_KEY_PROVIDERS.map((provider) => provider.label).join(', ')}.
+            </thead>
+            <tbody>
+              {keys.map(k => (
+                <tr key={k.virtual_key} style={{ borderBottom: '1px solid var(--layer-border)' }}>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: `color-mix(in srgb, ${PROVIDER_COLORS[k.provider] ?? 'var(--text-tertiary)'} 12%, transparent)`, color: PROVIDER_COLORS[k.provider] ?? 'var(--text-tertiary)' }}>
+                      {PROVIDER_LABELS[k.provider] ?? k.provider}
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 14px', color: 'var(--text-primary)', fontWeight: 600 }}>{k.display_name}</td>
+                  <td style={{ padding: '10px 14px' }}><code style={{ fontSize: 11, color: 'var(--control)', fontFamily: 'monospace' }}>{k.virtual_key.slice(0, 14)}…</code></td>
+                  <td style={{ padding: '10px 14px' }}><code style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>{k.key_id}…</code></td>
+                  <td style={{ padding: '10px 14px', color: 'var(--text-tertiary)', fontSize: 11 }}>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '—'}</td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: k.revoked ? 'rgba(255,69,58,0.12)' : 'rgba(48,209,88,0.12)', color: k.revoked ? 'var(--protect)' : 'var(--spend)' }}>
+                      {k.revoked ? 'Revoked' : 'Active'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>
+                    {!k.revoked && (
+                      revoking === k.virtual_key ? (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button id={`revoke-confirm-${k.virtual_key}`} onClick={() => revokeMut.mutate(k.virtual_key)}
+                            style={{ padding: '5px 10px', background: 'rgba(255,69,58,0.15)', color: 'var(--protect)', border: '1px solid rgba(255,69,58,0.25)', borderRadius: 6, cursor: 'pointer', fontSize: 11 }}>Confirm</button>
+                          <button onClick={() => setRevoking(null)}
+                            style={{ padding: '5px 10px', background: 'var(--layer-3)', color: 'var(--text-secondary)', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 11 }}>Cancel</button>
+                        </div>
+                      ) : (
+                        <button id={`revoke-${k.virtual_key}`} onClick={() => setRevoking(k.virtual_key)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: 'transparent', border: '1px solid var(--layer-border)', borderRadius: 6, color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11 }}>
+                          <Trash2 size={11} /> Revoke
+                        </button>
+                      )
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
+
+      {keys.length > 0 && (
+        <div style={{ marginTop: 20, padding: '12px 16px', background: 'rgba(10,132,255,0.06)', border: '1px solid rgba(10,132,255,0.2)', borderRadius: 10, fontSize: 12, color: 'var(--control)', lineHeight: 1.7 }}>
+          <strong>How to use:</strong> Set <code>http://localhost:8080/proxy/&lt;provider&gt;/...</code> as your upstream base and use your{' '}
+          <code>af-vk-*</code> key. Supported: {SUPPORTED_KEY_PROVIDERS.map(p => p.label).join(', ')}.
+        </div>
+      )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }
+
+const inputStyle: React.CSSProperties = { display: 'block', width: '100%', boxSizing: 'border-box', background: 'var(--layer-1)', border: '1px solid var(--layer-border)', borderRadius: 8, color: 'var(--text-primary)', padding: '9px 12px', fontSize: 13, outline: 'none' }

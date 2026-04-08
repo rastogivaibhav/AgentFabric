@@ -1,6 +1,6 @@
 // Package proxy implements the LLM reverse proxy for Layer 2 virtual keys.
 //
-// Developers point their SDK at AgentFabric:
+// Developers point their SDK at Govagn:
 //
 //	OPENAI_BASE_URL=http://localhost:8080/proxy/openai/v1
 //	OPENAI_API_KEY=af-vk-<token>
@@ -24,12 +24,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/budget"
-	"github.com/agentfabric/api-gateway/internal/models"
-	"github.com/agentfabric/api-gateway/internal/policy"
-	priced "github.com/agentfabric/api-gateway/internal/pricing"
-	"github.com/agentfabric/api-gateway/internal/rollouts"
-	"github.com/agentfabric/api-gateway/internal/vault"
+	"github.com/govagn/api-gateway/internal/budget"
+	"github.com/govagn/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/policy"
+	priced "github.com/govagn/api-gateway/internal/pricing"
+	"github.com/govagn/api-gateway/internal/rollouts"
+	"github.com/govagn/api-gateway/internal/vault"
 	"go.uber.org/zap"
 )
 
@@ -346,7 +346,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			cacheKey = cacheStore.Key(tenantID, provider, activeModel, candidatePath, r.URL.RawQuery, candidateBody)
 			if cached, ok := cacheStore.Get(cacheKey); ok {
 				copyProxyHeaders(w.Header(), cached.Header)
-				w.Header().Set("X-AgentFabric-Cache", "HIT")
+				w.Header().Set("X-Govagn-Cache", "HIT")
 				w.WriteHeader(cached.StatusCode)
 				w.Write(cached.Body) //nolint:errcheck
 				extraAttrs["af.cache.hit"] = "true"
@@ -547,7 +547,7 @@ func (p *LLMProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !streamed {
 		copyProxyHeaders(w.Header(), finalHeaders)
 		w.Header().Del("Content-Length")
-		w.Header().Set("X-AgentFabric-Cache", "MISS")
+		w.Header().Set("X-Govagn-Cache", "MISS")
 		w.WriteHeader(finalStatusCode)
 		w.Write(finalBody) //nolint:errcheck
 	}

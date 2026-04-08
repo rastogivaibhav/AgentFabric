@@ -1,14 +1,14 @@
-# AgentFabric — Execution North Star
+﻿# Govagn â€” Execution North Star
 **The single source of truth for all development decisions**
 
 Last updated: 2025-03-13
-Status: ACTIVE — All PRs must reference this document
+Status: ACTIVE â€” All PRs must reference this document
 
 ---
 
 ## **I. ONE-LINE MISSION**
 
-> **AgentFabric is the mandatory governance layer for multi-agent enterprises: we make cost, compliance, and quality observable and enforceable at the server-side semantic layer (not OTEL-layer).**
+> **Govagn is the mandatory governance layer for multi-agent enterprises: we make cost, compliance, and quality observable and enforceable at the server-side semantic layer (not OTEL-layer).**
 
 ---
 
@@ -30,8 +30,8 @@ These are immutable. If a feature violates one, it fails review.
 
 ### **Principle 3: Async Governance, Hot Observability**
 - **The rule**:
-  - **Hot path** (collector → api-gateway → PostgreSQL): <100ms, serves live UI
-  - **Governance path** (Kafka → af-core → audit log): eventual consistency, policy enforcement
+  - **Hot path** (collector â†’ api-gateway â†’ PostgreSQL): <100ms, serves live UI
+  - **Governance path** (Kafka â†’ af-core â†’ audit log): eventual consistency, policy enforcement
 - **Why**: Users need live traces immediately. Policy decisions can be slightly delayed.
 - **Example**: Span appears in portal dashboard within 500ms. Policy violation email arrives within 5 minutes.
 - **Consequence**: Moving policy enforcement to the hot path (e.g., synchronous collector-side decision) is an anti-pattern; use Kafka queues instead.
@@ -69,23 +69,23 @@ These are immutable. If a feature violates one, it fails review.
 | Phase | Gate 0 | Gate 1 | Gate 2 |
 |---|---|---|---|
 | **Production-Ready** (Q2-Q3 2025) | Pass code review | 60% test coverage | CISO sign-off |
-| **Governance Platform** (Q4 2025–Q1 2026) | Pass code review | 70% test coverage | 3+ customers using feature |
-| **Intelligence Layer** (Q2+ 2026) | Pass code review | 75% test coverage | Data accuracy within ±15% |
+| **Governance Platform** (Q4 2025â€“Q1 2026) | Pass code review | 70% test coverage | 3+ customers using feature |
+| **Intelligence Layer** (Q2+ 2026) | Pass code review | 75% test coverage | Data accuracy within Â±15% |
 
 ### **Code Review Checklist (Every PR)**
 
 Before approving any PR, confirm all of these:
 
-- [ ] **Principle 1**: Does it trust client attributes? (🔴 fail if yes, unless explicitly server-recomputed)
-- [ ] **Principle 2**: Does every new query include tenant filtering? (🔴 fail if no)
-- [ ] **Principle 3**: Is policy logic in the hot path (collector)? (🔴 flag if yes; move to Kafka → af-core)
-- [ ] **Principle 4**: Do policy decisions get logged to audit trail? (🔴 fail if no)
-- [ ] **Principle 5**: Does it assume client-provided framework is correct? (🔴 fail if yes)
-- [ ] **Principle 6**: Does it modify historical cost data? (🔴 fail if yes; immutability is sacred)
-- [ ] **Principle 7**: Does it skip PII scrubbing for "safe" fields? (🔴 fail if yes)
-- [ ] **Tests**: Is there a unit test + integration test? (🔴 fail if <60% coverage)
-- [ ] **Docs**: Does the PR update the affected service's README? (🔴 fail if no)
-- [ ] **Backwards compat**: Will this break existing deployments? (🔴 fail if yes, unless in CHANGELOG under breaking)
+- [ ] **Principle 1**: Does it trust client attributes? (ðŸ”´ fail if yes, unless explicitly server-recomputed)
+- [ ] **Principle 2**: Does every new query include tenant filtering? (ðŸ”´ fail if no)
+- [ ] **Principle 3**: Is policy logic in the hot path (collector)? (ðŸ”´ flag if yes; move to Kafka â†’ af-core)
+- [ ] **Principle 4**: Do policy decisions get logged to audit trail? (ðŸ”´ fail if no)
+- [ ] **Principle 5**: Does it assume client-provided framework is correct? (ðŸ”´ fail if yes)
+- [ ] **Principle 6**: Does it modify historical cost data? (ðŸ”´ fail if yes; immutability is sacred)
+- [ ] **Principle 7**: Does it skip PII scrubbing for "safe" fields? (ðŸ”´ fail if yes)
+- [ ] **Tests**: Is there a unit test + integration test? (ðŸ”´ fail if <60% coverage)
+- [ ] **Docs**: Does the PR update the affected service's README? (ðŸ”´ fail if no)
+- [ ] **Backwards compat**: Will this break existing deployments? (ðŸ”´ fail if yes, unless in CHANGELOG under breaking)
 
 ---
 
@@ -104,9 +104,9 @@ A deviation is only allowed if **all three** of these are true:
 // we use in-memory Mutex for audit chain instead of PostgreSQL-backed.
 // Risk: Chain diverges if multiple instances run concurrently.
 // Mitigation: Deployment docs forbid >1 af-core replica; Prometheus alert fires if 2+ detected.
-// Removal: https://github.com/rastogivaibhav/AgentFabric/issues/XXX (target: Q1 2026)
+// Removal: https://github.com/rastogivaibhav/Govagn/issues/XXX (target: Q1 2026)
 type AuditWriter struct {
-    chain Mutex<String>  // ← This is a deviation
+    chain Mutex<String>  // â† This is a deviation
 }
 ```
 
@@ -116,7 +116,7 @@ type AuditWriter struct {
 // Skip PII scrubbing for "internal_id" field (it's just a UUID, not PII)
 // Risk: Maybe it's a UUID, maybe someone adds a customer name; inconsistent
 // Mitigation: None (relying on developer good intentions)
-// ← REJECTED: No compensating control, no timeline, violates Principle 7
+// â† REJECTED: No compensating control, no timeline, violates Principle 7
 ```
 
 ---
@@ -145,7 +145,7 @@ type AuditWriter struct {
 
 ### **Anti-Pattern 5: "Silent Data Loss"**
 - **Definition**: Spans/decisions are dropped with no logging or alerting
-- **Example**: Kafka message fails to parse → silent continue → message lost forever
+- **Example**: Kafka message fails to parse â†’ silent continue â†’ message lost forever
 - **Fix**: Dead-letter queue + Prometheus counter + alert
 
 ### **Anti-Pattern 6: "Unowned Complexity"**
@@ -179,35 +179,35 @@ Each quarter, measure these metrics:
 Use this tree before starting any feature or refactor:
 
 ```
-┌─ Does it involve storing or processing agent data?
-│  ├─ YES → Does it compute or verify attributes server-side?
-│  │  ├─ YES → Does it filter by tenant?
-│  │  │  ├─ YES → Does it log to audit trail if applicable?
-│  │  │  │  ├─ YES → ✅ APPROVED (proceed)
-│  │  │  │  └─ NO  → ❌ REJECTED (add audit logging)
-│  │  │  └─ NO  → ❌ REJECTED (add tenant filtering)
-│  │  └─ NO  → ❌ REJECTED (add server-side recomputation)
-│  └─ NO  → Continue below
-│
-├─ Does it process OTLP spans?
-│  ├─ YES → Is it in the hot path (collector)?
-│  │  ├─ YES → Is it <50ms latency?
-│  │  │  ├─ YES → ✅ APPROVED
-│  │  │  └─ NO  → ❌ Move to Kafka → af-core
-│  │  └─ NO  → Is it in af-core?
-│  │     ├─ YES → ✅ APPROVED
-│  │     └─ NO  → ❌ Move to af-core
-│  └─ NO  → Continue below
-│
-├─ Does it modify historical data?
-│  ├─ YES → ❌ REJECTED (immutability is sacred)
-│  └─ NO  → ✅ APPROVED
-│
-└─ Does it involve credentials, tokens, or PII?
-   ├─ YES → Is it scrubbed before logging?
-   │  ├─ YES → ✅ APPROVED
-   │  └─ NO  → ❌ REJECTED (add scrubbing)
-   └─ NO  → ✅ APPROVED
+â”Œâ”€ Does it involve storing or processing agent data?
+â”‚  â”œâ”€ YES â†’ Does it compute or verify attributes server-side?
+â”‚  â”‚  â”œâ”€ YES â†’ Does it filter by tenant?
+â”‚  â”‚  â”‚  â”œâ”€ YES â†’ Does it log to audit trail if applicable?
+â”‚  â”‚  â”‚  â”‚  â”œâ”€ YES â†’ âœ… APPROVED (proceed)
+â”‚  â”‚  â”‚  â”‚  â””â”€ NO  â†’ âŒ REJECTED (add audit logging)
+â”‚  â”‚  â”‚  â””â”€ NO  â†’ âŒ REJECTED (add tenant filtering)
+â”‚  â”‚  â””â”€ NO  â†’ âŒ REJECTED (add server-side recomputation)
+â”‚  â””â”€ NO  â†’ Continue below
+â”‚
+â”œâ”€ Does it process OTLP spans?
+â”‚  â”œâ”€ YES â†’ Is it in the hot path (collector)?
+â”‚  â”‚  â”œâ”€ YES â†’ Is it <50ms latency?
+â”‚  â”‚  â”‚  â”œâ”€ YES â†’ âœ… APPROVED
+â”‚  â”‚  â”‚  â””â”€ NO  â†’ âŒ Move to Kafka â†’ af-core
+â”‚  â”‚  â””â”€ NO  â†’ Is it in af-core?
+â”‚  â”‚     â”œâ”€ YES â†’ âœ… APPROVED
+â”‚  â”‚     â””â”€ NO  â†’ âŒ Move to af-core
+â”‚  â””â”€ NO  â†’ Continue below
+â”‚
+â”œâ”€ Does it modify historical data?
+â”‚  â”œâ”€ YES â†’ âŒ REJECTED (immutability is sacred)
+â”‚  â””â”€ NO  â†’ âœ… APPROVED
+â”‚
+â””â”€ Does it involve credentials, tokens, or PII?
+   â”œâ”€ YES â†’ Is it scrubbed before logging?
+   â”‚  â”œâ”€ YES â†’ âœ… APPROVED
+   â”‚  â””â”€ NO  â†’ âŒ REJECTED (add scrubbing)
+   â””â”€ NO  â†’ âœ… APPROVED
 ```
 
 ---
@@ -215,25 +215,25 @@ Use this tree before starting any feature or refactor:
 ## **VIII. ROADMAP ALIGNMENT**
 
 ### **Phase 1: Production-Ready (Q2-Q3 2025)**
-- ✅ Architecture: Unchanged
-- ✅ Core: Collector + API Gateway + af-core + Portal
-- ✅ Principles: All 7 must be met
-- ⚠️ Auth: OIDC login (new, but non-breaking)
-- ⚠️ Testing: 60%+ coverage required
-- ✅ Governance: All 5 built-in policies, no deviations
+- âœ… Architecture: Unchanged
+- âœ… Core: Collector + API Gateway + af-core + Portal
+- âœ… Principles: All 7 must be met
+- âš ï¸ Auth: OIDC login (new, but non-breaking)
+- âš ï¸ Testing: 60%+ coverage required
+- âœ… Governance: All 5 built-in policies, no deviations
 
-### **Phase 2: Governance Platform (Q4 2025–Q1 2026)**
-- ✅ Architecture: Unchanged
-- ⚠️ Audit chain: Distributed (Principle 4 scaling fix)
-- ⚠️ Custom policies: WASM runtime (extensible, not core)
-- ✅ Principles: All 7 still apply to new code
-- ✅ Testing: 70%+ coverage required
+### **Phase 2: Governance Platform (Q4 2025â€“Q1 2026)**
+- âœ… Architecture: Unchanged
+- âš ï¸ Audit chain: Distributed (Principle 4 scaling fix)
+- âš ï¸ Custom policies: WASM runtime (extensible, not core)
+- âœ… Principles: All 7 still apply to new code
+- âœ… Testing: 70%+ coverage required
 
 ### **Phase 3: Intelligence Layer (Q2+ 2026)**
-- ✅ Architecture: Unchanged
-- ✅ Principles: All 7 still apply
-- ⚠️ New: ClickHouse analytics backing (observability, not governance)
-- ✅ Testing: 75%+ coverage required
+- âœ… Architecture: Unchanged
+- âœ… Principles: All 7 still apply
+- âš ï¸ New: ClickHouse analytics backing (observability, not governance)
+- âœ… Testing: 75%+ coverage required
 
 **No architectural changes planned through 2026. If a feature requires architectural change, it goes to Principles Review Board (Product + Tech Lead + CISO customer).**
 
@@ -242,23 +242,23 @@ Use this tree before starting any feature or refactor:
 ## **IX. WHAT SUCCESS LOOKS LIKE**
 
 By end of Phase 1 (Q3 2025):
-- ✅ First enterprise customer running AgentFabric in production
-- ✅ CISO can: detect PII, enforce policies, verify audit chain
-- ✅ Developer can: instrument their agent in <3 minutes
-- ✅ Ops can: track costs per service, get alerted on overage
-- ✅ Zero architectural deviations outstanding (all mitigated or fixed)
+- âœ… First enterprise customer running Govagn in production
+- âœ… CISO can: detect PII, enforce policies, verify audit chain
+- âœ… Developer can: instrument their agent in <3 minutes
+- âœ… Ops can: track costs per service, get alerted on overage
+- âœ… Zero architectural deviations outstanding (all mitigated or fixed)
 
 By end of Phase 2 (Q1 2026):
-- ✅ 3+ enterprise customers
-- ✅ Distributed audit chain live
-- ✅ 5+ custom policies deployed by customers
-- ✅ Cost optimization recommendations working at >85% accuracy
+- âœ… 3+ enterprise customers
+- âœ… Distributed audit chain live
+- âœ… 5+ custom policies deployed by customers
+- âœ… Cost optimization recommendations working at >85% accuracy
 
 By end of Phase 3 (Q2 2026):
-- ✅ $1M ARR
-- ✅ Autonomous cost optimization (agents switch to cheaper models automatically within bounds)
-- ✅ Regulatory attestation (pre-built SOX/GDPR reports)
-- ✅ 50+ customers
+- âœ… $1M ARR
+- âœ… Autonomous cost optimization (agents switch to cheaper models automatically within bounds)
+- âœ… Regulatory attestation (pre-built SOX/GDPR reports)
+- âœ… 50+ customers
 
 ---
 
@@ -278,7 +278,7 @@ If any of these are true, escalate to PRB (Product Manager + Principal Tech Lead
 
 ## **XI. REFERENCE DOCUMENTS**
 
-- **Product Review**: `AGENTFABRIC_REVIEW.md` (comprehensive analysis)
+- **Product Review**: `GOVAGN_REVIEW.md` (comprehensive analysis)
 - **Architecture Diagram**: (TODO: add to wiki)
 - **Security Whitepaper**: (TODO: create for CISO customers)
 - **API Contract**: `api-gateway/internal/models/models.go` (source of truth for portal types)
@@ -298,3 +298,4 @@ This North Star was ratified by:
 ---
 
 **All development after 2025-03-13 must reference this document.**
+

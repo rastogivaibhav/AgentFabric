@@ -1,7 +1,7 @@
 """
 Install hooks for setuptools post-install.
 
-Copies agentfabric/sitecustomize.py into site-packages/sitecustomize.py,
+Copies govagn/sitecustomize.py into site-packages/sitecustomize.py,
 merging with existing content if present.
 """
 
@@ -16,12 +16,12 @@ from pathlib import Path
 class SitecustomizeInstaller:
     """
     Called by pyproject.toml [tool.hatch.build.hooks] or setup.py post_install.
-    Copies agentfabric/sitecustomize.py into sys.prefix/lib/.../site-packages/sitecustomize.py.
-    Handles merging if a sitecustomize.py already exists (appends agentfabric block).
+    Copies govagn/sitecustomize.py into sys.prefix/lib/.../site-packages/sitecustomize.py.
+    Handles merging if a sitecustomize.py already exists (appends govagn block).
     """
 
-    GUARD_START = "# agentfabric-auto-instrument-start"
-    GUARD_END = "# agentfabric-auto-instrument-end"
+    GUARD_START = "# govagn-auto-instrument-start"
+    GUARD_END = "# govagn-auto-instrument-end"
 
     def __init__(self):
         self.site_packages_dir = self._find_site_packages()
@@ -47,7 +47,7 @@ class SitecustomizeInstaller:
     def install(self) -> None:
         """Install sitecustomize.py into site-packages, merging if needed."""
         sitecustomize_path = self.site_packages_dir / "sitecustomize.py"
-        agentfabric_boot = self._read_boot_code()
+        govagn_boot = self._read_boot_code()
 
         # Read existing sitecustomize if it exists
         existing_content = ""
@@ -55,25 +55,25 @@ class SitecustomizeInstaller:
             try:
                 existing_content = sitecustomize_path.read_text(encoding="utf-8")
             except Exception as e:
-                print(f"[agentfabric] Warning: could not read existing sitecustomize.py: {e}")
+                print(f"[govagn] Warning: could not read existing sitecustomize.py: {e}")
                 return
 
-        # Check if agentfabric block is already installed (idempotent)
+        # Check if govagn block is already installed (idempotent)
         if self.GUARD_START in existing_content:
             # Already installed, nothing to do
             return
 
-        # Append agentfabric boot code
-        new_content = existing_content.rstrip() + "\n" + agentfabric_boot + "\n"
+        # Append govagn boot code
+        new_content = existing_content.rstrip() + "\n" + govagn_boot + "\n"
 
         try:
             sitecustomize_path.write_text(new_content, encoding="utf-8")
-            print(f"[agentfabric] Installed sitecustomize.py to {sitecustomize_path}")
+            print(f"[govagn] Installed sitecustomize.py to {sitecustomize_path}")
         except Exception as e:
-            print(f"[agentfabric] Error writing sitecustomize.py: {e}")
+            print(f"[govagn] Error writing sitecustomize.py: {e}")
 
     def uninstall(self) -> None:
-        """Remove agentfabric block from sitecustomize.py"""
+        """Remove govagn block from sitecustomize.py"""
         sitecustomize_path = self.site_packages_dir / "sitecustomize.py"
 
         if not sitecustomize_path.exists():
@@ -82,10 +82,10 @@ class SitecustomizeInstaller:
         try:
             content = sitecustomize_path.read_text(encoding="utf-8")
         except Exception as e:
-            print(f"[agentfabric] Warning: could not read sitecustomize.py: {e}")
+            print(f"[govagn] Warning: could not read sitecustomize.py: {e}")
             return
 
-        # Remove agentfabric block
+        # Remove govagn block
         lines = content.split("\n")
         in_guard = False
         new_lines = []
@@ -105,20 +105,20 @@ class SitecustomizeInstaller:
             # File is now empty, delete it
             try:
                 sitecustomize_path.unlink()
-                print(f"[agentfabric] Removed empty sitecustomize.py")
+                print(f"[govagn] Removed empty sitecustomize.py")
             except Exception as e:
-                print(f"[agentfabric] Warning: could not delete sitecustomize.py: {e}")
+                print(f"[govagn] Warning: could not delete sitecustomize.py: {e}")
         else:
             try:
                 sitecustomize_path.write_text(new_content, encoding="utf-8")
-                print(f"[agentfabric] Removed agentfabric block from sitecustomize.py")
+                print(f"[govagn] Removed govagn block from sitecustomize.py")
             except Exception as e:
-                print(f"[agentfabric] Error writing sitecustomize.py: {e}")
+                print(f"[govagn] Error writing sitecustomize.py: {e}")
 
     def _read_boot_code(self) -> str:
-        """Read the boot code from agentfabric/sitecustomize.py"""
+        """Read the boot code from govagn/sitecustomize.py"""
         this_dir = Path(__file__).parent
-        sitecustomize_src = this_dir / "agentfabric" / "sitecustomize.py"
+        sitecustomize_src = this_dir / "govagn" / "sitecustomize.py"
 
         if sitecustomize_src.exists():
             try:
@@ -132,7 +132,7 @@ class SitecustomizeInstaller:
         return f"""{self.GUARD_START}
 def _boot():
     try:
-        from agentfabric.auto_instrument import AutoInstrumentor
+        from govagn.auto_instrument import AutoInstrumentor
         AutoInstrumentor().run()
     except Exception:
         pass

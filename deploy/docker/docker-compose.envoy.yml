@@ -1,0 +1,18 @@
+services:
+  envoy-egress:
+    build:
+      context: ./deploy/envoy
+      dockerfile: Dockerfile
+    profiles: ["envoy"]
+    container_name: govagn-envoy-egress
+    ports:
+      - "15001:15001"
+      - "9901:9901"
+    volumes:
+      - ./deploy/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./deploy/certs:/etc/envoy/certs:ro
+    networks: [af-net]
+    depends_on:
+      collector:
+        condition: service_healthy
+    restart: unless-stopped

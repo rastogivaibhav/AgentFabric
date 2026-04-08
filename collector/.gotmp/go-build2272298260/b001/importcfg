@@ -4,4 +4,4 @@ packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocac
 packagefile testing=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\cd\cd99464d6f6f58b8c0ac194c460e084745f2548472a36f3eb75521cdda42e571-d
 packagefile testing/internal/testdeps=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5b\5b1ca33e8598a4d8576a4816542bc65dcb9a375c36641d060bba114ceaf50ecb-d
 packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\fc\fcdee23b2b20cee365034a3e8db74e4055dd2ab54b13ceac35c0ab48aed7fbd4-d
-packagefile github.com/agentfabric/collector/cmd/collector=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build2272298260\b127\_pkg_.a
+packagefile github.com/govagn/collector/cmd/collector=C:\Users\vrast\Documents\Agentic Code\files\collector\.gotmp\go-build2272298260\b127\_pkg_.a

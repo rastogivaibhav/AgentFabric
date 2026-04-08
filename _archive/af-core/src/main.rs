@@ -1,4 +1,4 @@
-// AgentFabric Core — Production Processing Engine
+// Govagn Core — Production Processing Engine
 // Rust 1.78 | Tokio async | gRPC ingestion | Policy engine | Hash-chain audit
 
 mod config;
@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
         .with(fmt::layer().json())
         .init();
 
-    info!(version = "1.0.0", "AgentFabric Core starting");
+    info!(version = "1.0.0", "Govagn Core starting");
 
     let cfg = config::Config::from_env()?;
 

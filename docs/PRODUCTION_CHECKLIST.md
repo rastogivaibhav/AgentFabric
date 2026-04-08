@@ -1,4 +1,4 @@
-# AgentFabric Production Checklist
+# Govagn Production Checklist
 
 **Audience:** release managers, platform owners, security reviewers  
 **Applies to:** the current central deployment model of `api-gateway + collector + portal + PostgreSQL + Redis`
@@ -21,30 +21,35 @@ Use this checklist before every production deployment and before declaring the p
 
 ## 2. Production Configuration
 
-- [ ] `AF_AUTH_DISABLED` is absent or `false`
-- [ ] `AF_JWT_SECRET` is not a development sentinel
-- [ ] `AF_ADMIN_PASSWORD` is not `admin`
-- [ ] `AF_VAULT_KEY` is set to a 64-character hex value
+- [ ] `GV_AUTH_DISABLED` is absent or `false`
+- [ ] `GV_JWT_SECRET` is not a development sentinel
+- [ ] `GV_ADMIN_PASSWORD` is not `admin`
+- [ ] `GV_VAULT_KEY` is set to a 64-character hex value
 - [ ] `DATABASE_URL` points to the production PostgreSQL instance
 - [ ] `REDIS_URL` points to the production Redis instance
-- [ ] `AF_CORS_ORIGINS` is restricted to the deployed portal origin or origins
-- [ ] If `AF_TLS_ENABLED=true`, both `AF_TLS_CERT_FILE` and `AF_TLS_KEY_FILE` are present
-- [ ] If `AF_SSO_REQUIRED=true`, OIDC settings are complete:
-  - `AF_OIDC_ISSUER`
-  - `AF_OIDC_CLIENT_ID`
-  - `AF_OIDC_CLIENT_SECRET`
-  - `AF_OIDC_REDIRECT_URI`
-  - optional `AF_OIDC_LOGOUT_URL` reviewed for provider logout behavior
-- [ ] If using Helm with `AF_SSO_REQUIRED=true`, the Secret named by `secrets.name` contains the key from `auth.oidc.clientSecretKey` (default `oidc-client-secret`)
-- [ ] If SSO cutover is complete, `AF_PASSWORD_LOGIN_DISABLED=true`
+- [ ] `GV_CORS_ORIGINS` is restricted to the deployed portal origin or origins
+- [ ] If `GV_TLS_ENABLED=true`, both `GV_TLS_CERT_FILE` and `GV_TLS_KEY_FILE` are present
+- [ ] If `GV_SSO_REQUIRED=true`, OIDC settings are complete:
+  - `GV_OIDC_ISSUER`
+  - `GV_OIDC_CLIENT_ID`
+  - `GV_OIDC_CLIENT_SECRET`
+  - `GV_OIDC_REDIRECT_URI`
+  - optional `GV_OIDC_LOGOUT_URL` reviewed for provider logout behavior
+- [ ] If using Helm with `GV_SSO_REQUIRED=true`, the Secret named by `secrets.name` contains the key from `auth.oidc.clientSecretKey` (default `oidc-client-secret`)
+- [ ] If SSO cutover is complete, `GV_PASSWORD_LOGIN_DISABLED=true`
 - [ ] If operators depend on `/api/v1/stream/live`, the deployment uses a single `api-gateway` replica; multi-replica gateway deployments are not a supported complete-delivery topology for live stream today
+- [ ] If Envoy egress interception is enabled:
+  - Envoy listener health is green
+  - workload trust stores include the Govagn CA root
+  - DNS steering for managed domains points to Envoy egress
+  - Envoy -> collector OTLP gRPC path is reachable
 - [ ] Collector production config is complete:
-  - `AF_ENV=production` or `AF_STRICT_CONFIG=true`
-  - `AF_GATEWAY_ENDPOINT`
-  - `AF_GATEWAY_AUTH_TOKEN` is present on both collector and gateway with the same value
-  - `AF_AUTH_REQUIRE_AUTH=true`
-  - `AF_JWT_SECRET`
-  - `AF_GATEWAY_ENDPOINT` is not left at the built-in `http://localhost:8080` default
+  - `GV_ENV=production` or `GV_STRICT_CONFIG=true`
+  - `GV_GATEWAY_ENDPOINT`
+  - `GV_GATEWAY_AUTH_TOKEN` is present on both collector and gateway with the same value
+  - `GV_AUTH_REQUIRE_AUTH=true`
+  - `GV_JWT_SECRET`
+  - `GV_GATEWAY_ENDPOINT` is not left at the built-in `http://localhost:8080` default
 
 ## 3. Readiness and Startup
 
@@ -62,6 +67,7 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] API gateway CI runs `go test ./...`
 - [ ] Portal tests pass in CI
 - [ ] Portal production build passes in CI
+- [ ] Portal Playwright smoke tests pass in CI
 - [ ] Swagger and OpenAPI smoke checks pass in CI
 - [ ] Packaging validation passes in CI for:
   - local Docker Compose render

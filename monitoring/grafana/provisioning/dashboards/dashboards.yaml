@@ -1,7 +1,7 @@
 apiVersion: 1
 
 providers:
-  - name: AgentFabric
+  - name: Govagn
     type: file
     disableDeletion: true
     updateIntervalSeconds: 30

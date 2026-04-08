@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func (s *Service) CompareRelease(ctx context.Context, tenantID string, req models.RegressionCompareRequest) (models.RegressionReport, error) {

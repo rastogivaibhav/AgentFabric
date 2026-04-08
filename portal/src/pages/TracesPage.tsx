@@ -12,10 +12,10 @@ import TraceFilters, { TraceFilterState } from '../components/trace/TraceFilters
 const FW_COLORS: Record<string, string> = {
   crewai: '#FF6B35',
   langgraph: '#4ECDC4',
-  google_adk: '#4285F4',
-  openai_agents: '#10A37F',
-  claude_agents: '#D97706',
-  unknown: '#475569',
+  google_adk: 'var(--control)',
+  openai_agents: 'var(--spend)',
+  claude_agents: 'var(--prove)',
+  unknown: 'var(--text-tertiary)',
 }
 
 const PAGE_SIZE = 50
@@ -99,8 +99,8 @@ export default function TracesPage() {
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--observe)' }} />
             OBSERVE
           </div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#F0F9FF', margin: 0 }}>Traces</h1>
-          <div style={{ marginTop: 6, fontSize: 11, color: '#64748B' }}>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Traces</h1>
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
             Search, save filtered views, and compare runtime traces side by side.
           </div>
         </div>
@@ -111,7 +111,7 @@ export default function TracesPage() {
           <button
             disabled={selectedTraceIds.length !== 2}
             onClick={() => nav(`/traces/compare?left=${selectedTraceIds[0]}&right=${selectedTraceIds[1]}`)}
-            style={{ ...actionButton('#F59E0B'), opacity: selectedTraceIds.length === 2 ? 1 : 0.45, cursor: selectedTraceIds.length === 2 ? 'pointer' : 'not-allowed' }}
+            style={{ ...actionButton('var(--prove)'), opacity: selectedTraceIds.length === 2 ? 1 : 0.45, cursor: selectedTraceIds.length === 2 ? 'pointer' : 'not-allowed' }}
           >
             Compare selected
           </button>
@@ -132,11 +132,11 @@ export default function TracesPage() {
       {savedViews.length > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {savedViews.map(view => (
-            <div key={view.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 999, padding: '4px 10px' }}>
+            <div key={view.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 999, padding: '4px 10px' }}>
               <button onClick={() => onApplySavedView(view)} style={{ background: 'transparent', border: 'none', color: '#93C5FD', cursor: 'pointer', fontSize: 10 }}>
                 {view.name}
               </button>
-              <button onClick={() => deleteSavedView.mutate(view.id)} style={{ background: 'transparent', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 10 }}>
+              <button onClick={() => deleteSavedView.mutate(view.id)} style={{ background: 'transparent', border: 'none', color: 'var(--protect)', cursor: 'pointer', fontSize: 10 }}>
                 x
               </button>
             </div>
@@ -144,21 +144,21 @@ export default function TracesPage() {
         </div>
       )}
 
-      <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid #0F1F35' }}>
+            <tr style={{ borderBottom: '1px solid var(--layer-border)' }}>
               {['Compare', 'Trace ID', 'Framework', 'Root Span', 'Started', 'Duration', 'Spans', 'Tokens', 'Cost', 'Status'].map(h => (
-                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, color: '#334155', letterSpacing: '0.1em', fontWeight: 700 }}>{h}</th>
+                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '0.1em', fontWeight: 700 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={10} style={{ padding: 32, textAlign: 'center', color: '#475569' }}>Loading...</td></tr>
+              <tr><td colSpan={10} style={{ padding: 32, textAlign: 'center', color: 'var(--text-tertiary)' }}>Loading...</td></tr>
             )}
             {!isLoading && items.length === 0 && (
-              <tr><td colSpan={10} style={{ padding: 32, textAlign: 'center', color: '#334155', fontSize: 12 }}>No traces matched the current filters.</td></tr>
+              <tr><td colSpan={10} style={{ padding: 32, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>No traces matched the current filters.</td></tr>
             )}
             {items.map((trace, index) => {
               const selected = selectedTraceIds.includes(trace.id)
@@ -167,26 +167,26 @@ export default function TracesPage() {
                   key={trace.id}
                   onClick={() => nav(`/traces/${trace.id}`)}
                   style={{
-                    borderBottom: '1px solid #0A1020',
+                    borderBottom: '1px solid var(--layer-border)',
                     cursor: 'pointer',
-                    background: selected ? '#1E3A5F25' : index % 2 === 0 ? 'transparent' : '#060A1430',
+                    background: selected ? 'var(--layer-border)25' : index % 2 === 0 ? 'transparent' : 'var(--layer-1)30',
                   }}
                 >
                   <td style={{ padding: '9px 14px' }} onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={selected} onChange={() => toggleSelected(trace.id)} />
                   </td>
-                  <td style={{ padding: '9px 14px', color: '#3B82F6', fontFamily: 'monospace', fontSize: 11 }}>{trace.id.substring(0, 16)}...</td>
+                  <td style={{ padding: '9px 14px', color: 'var(--control)', fontFamily: 'monospace', fontSize: 11 }}>{trace.id.substring(0, 16)}...</td>
                   <td style={{ padding: '9px 14px' }}>
-                    <span style={{ padding: '2px 7px', borderRadius: 3, fontSize: 10, background: (FW_COLORS[trace.framework] ?? '#475569') + '20', color: FW_COLORS[trace.framework] ?? '#475569' }}>
+                    <span style={{ padding: '2px 7px', borderRadius: 3, fontSize: 10, background: (FW_COLORS[trace.framework] ?? 'var(--text-tertiary)') + '20', color: FW_COLORS[trace.framework] ?? 'var(--text-tertiary)' }}>
                       {trace.framework}
                     </span>
                   </td>
-                  <td style={{ padding: '9px 14px', color: '#94A3B8', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trace.root_span_name}</td>
-                  <td style={{ padding: '9px 14px', color: '#64748B', fontSize: 11 }}>{new Date(trace.start_time).toLocaleString()}</td>
-                  <td style={{ padding: '9px 14px', color: '#94A3B8' }}>{(trace.duration_ns / 1_000_000).toFixed(0)}ms</td>
-                  <td style={{ padding: '9px 14px', color: '#94A3B8' }}>{trace.span_count}</td>
-                  <td style={{ padding: '9px 14px', color: '#94A3B8' }}>{trace.total_tokens.toLocaleString()}</td>
-                  <td style={{ padding: '9px 14px', color: '#F59E0B' }}>${trace.total_cost_usd.toFixed(6)}</td>
+                  <td style={{ padding: '9px 14px', color: 'var(--text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trace.root_span_name}</td>
+                  <td style={{ padding: '9px 14px', color: 'var(--text-tertiary)', fontSize: 11 }}>{new Date(trace.start_time).toLocaleString()}</td>
+                  <td style={{ padding: '9px 14px', color: 'var(--text-secondary)' }}>{(trace.duration_ns / 1_000_000).toFixed(0)}ms</td>
+                  <td style={{ padding: '9px 14px', color: 'var(--text-secondary)' }}>{trace.span_count}</td>
+                  <td style={{ padding: '9px 14px', color: 'var(--text-secondary)' }}>{trace.total_tokens.toLocaleString()}</td>
+                  <td style={{ padding: '9px 14px', color: 'var(--prove)' }}>${trace.total_cost_usd.toFixed(6)}</td>
                   <td style={{ padding: '9px 14px' }}>
                     <span style={{ padding: '2px 7px', borderRadius: 3, fontSize: 10, background: statusColor(trace.status) + '20', color: statusColor(trace.status) }}>
                       {trace.status}
@@ -199,8 +199,8 @@ export default function TracesPage() {
         </table>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 12, borderTop: '1px solid #0F1F35' }}>
-        <div style={{ fontSize: 11, color: '#475569' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--layer-border)' }}>
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
           {items.length > 0 ? `Showing ${items.length} traces${total > 0 ? ` of ${total.toLocaleString()}` : ''}` : null}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -227,7 +227,7 @@ export default function TracesPage() {
 function actionButton(color: string): React.CSSProperties {
   return {
     padding: '6px 14px',
-    background: '#0D1B2A',
+    background: 'var(--layer-2)',
     border: `1px solid ${color}`,
     borderRadius: 6,
     color,
@@ -238,7 +238,7 @@ function actionButton(color: string): React.CSSProperties {
 }
 
 function statusColor(status: string) {
-  if (status === 'error') return '#EF4444'
-  if (status === 'partial') return '#F59E0B'
-  return '#10B981'
+  if (status === 'error') return 'var(--protect)'
+  if (status === 'partial') return 'var(--prove)'
+  return 'var(--spend)'
 }

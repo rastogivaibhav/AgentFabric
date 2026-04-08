@@ -1,10 +1,10 @@
-packagefile github.com/agentfabric/api-gateway/internal/auth.test=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4079194705\b356\_pkg_.a
+packagefile github.com/govagn/api-gateway/internal/auth.test=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4079194705\b356\_pkg_.a
 packagefile os=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\c4\c4718498c7c82cfde48400e1efa605af88a895d7291ef2307cb8c73f82b8d211-d
 packagefile reflect=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\36\36c1c096ab4ec1d9e96c41c64c811c6a93f5ed970e36c6e6a2ae9570d283a53d-d
 packagefile testing=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\cd\cd99464d6f6f58b8c0ac194c460e084745f2548472a36f3eb75521cdda42e571-d
 packagefile testing/internal/testdeps=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\5b\5b1ca33e8598a4d8576a4816542bc65dcb9a375c36641d060bba114ceaf50ecb-d
 packagefile runtime=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\fc\fcdee23b2b20cee365034a3e8db74e4055dd2ab54b13ceac35c0ab48aed7fbd4-d
-packagefile github.com/agentfabric/api-gateway/internal/auth=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4079194705\b355\_pkg_.a
+packagefile github.com/govagn/api-gateway/internal/auth=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gotmp\go-build4079194705\b355\_pkg_.a
 packagefile errors=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\7c\7c7e94fb5ae6a2180a1c74981abdd6eca0488f65cd71f1296acf9abf89b3835c-d
 packagefile internal/bytealg=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\2a\2a6699c57d076cbcda1a8420875658f7e730eb68b1135261fb20241195d7c3a6-d
 packagefile internal/filepathlite=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\ab\abdbfb665aa01dc5dca86b284711b470a1a35ec7b39397ceb93e53a4f35a5132-d
@@ -75,7 +75,7 @@ packagefile net/http/httptest=C:\Users\vrast\Documents\Agentic Code\files\api-ga
 packagefile crypto/rand=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\ab\ab1fb3b00f433d780b11de71adedb1b193a317d2f90952b5116e550f5bb7a22f-d
 packagefile crypto/rsa=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\b7\b7caf14ca17c3dce525d33d2ac8465ec31760f49e37baac5d7bee8b76fce4b5f-d
 packagefile crypto/subtle=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\ba\ba224329ed48f51ea8abd6026a2b34ff37840fd789d38ac23307231d66cd1879-d
-packagefile github.com/agentfabric/api-gateway/internal/models=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\3f\3ff039b48784f8a78ab9635a75cefd79307189a21889570c6e2762fb2a5f36bc-d
+packagefile github.com/govagn/api-gateway/internal/models=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\3f\3ff039b48784f8a78ab9635a75cefd79307189a21889570c6e2762fb2a5f36bc-d
 packagefile golang.org/x/crypto/bcrypt=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\d8\d8b62028dfaa92243acd3fe4550b03596b829cd5c6b6a5a6f8cbc2fe19f7f34d-d
 packagefile math/big=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\6e\6e8b8bbd48f84cee38d972c3b1c0e752665a8e6194ab71c5d320d22ddbe48ddc-d
 packagefile net=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\3f\3fbe3d61bcaf90b5af0009418dc64e7b6e798a71a994ff160a6841f8e8dcd9e2-d
@@ -222,4 +222,4 @@ packagefile vendor/golang.org/x/crypto/internal/poly1305=C:\Users\vrast\Document
 packagefile vendor/golang.org/x/sys/cpu=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\ce\ce5068a5028ccf2248287b4cd695c9ec1740dc7cd73ed5e923d27655863d7c23-d
 packagefile vendor/golang.org/x/text/transform=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\fc\fc62178765a8f8e0c7b206303c675c5dc5f58099f8c4b26090558010671e0814-d
 packagefile crypto/internal/fips140deps/time=C:\Users\vrast\Documents\Agentic Code\files\api-gateway\.gocache\33\3362819e6e3e0ffd1ecc2b349942559e0c6034e48864092c11ec6a59877af24a-d
-modinfo "0w\xaf\f\x92t\b\x02A\xe1\xc1\a\xe6\xd6\x18\xe6path\tgithub.com/agentfabric/api-gateway/internal/auth.test\nmod\tgithub.com/agentfabric/api-gateway\t(devel)\t\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\tDefaultGODEBUG=asynctimerchan=1,containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,gotestjsonbuildtext=1,gotypesalias=0,httpcookiemaxnum=0,httpservecontentkeepheaders=1,multipathtcp=0,randseednop=0,rsa1024min=0,tls3des=1,tlsmlkem=0,tlssecpmlkem=0,tlssha1=1,updatemaxprocs=0,urlmaxqueryparams=0,urlstrictcolons=0,winreadlinkvolume=0,winsymlink=0,x509keypairleaf=0,x509negativeserial=1,x509rsacrt=0,x509sha256skid=0,x509usepolicies=0\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=amd64\nbuild\tGOOS=windows\nbuild\tGOAMD64=v1\n\xf92C1\x86\x18 r\x00\x82B\x10A\x16\xd8\xf2"
+modinfo "0w\xaf\f\x92t\b\x02A\xe1\xc1\a\xe6\xd6\x18\xe6path\tgithub.com/govagn/api-gateway/internal/auth.test\nmod\tgithub.com/govagn/api-gateway\t(devel)\t\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\tDefaultGODEBUG=asynctimerchan=1,containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,gotestjsonbuildtext=1,gotypesalias=0,httpcookiemaxnum=0,httpservecontentkeepheaders=1,multipathtcp=0,randseednop=0,rsa1024min=0,tls3des=1,tlsmlkem=0,tlssecpmlkem=0,tlssha1=1,updatemaxprocs=0,urlmaxqueryparams=0,urlstrictcolons=0,winreadlinkvolume=0,winsymlink=0,x509keypairleaf=0,x509negativeserial=1,x509rsacrt=0,x509sha256skid=0,x509usepolicies=0\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=amd64\nbuild\tGOOS=windows\nbuild\tGOAMD64=v1\n\xf92C1\x86\x18 r\x00\x82B\x10A\x16\xd8\xf2"

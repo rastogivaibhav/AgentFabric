@@ -1,4 +1,4 @@
-# AgentFabric — Detailed Fix Plan: v1.1.1 + v1.2.0
+# Govagn — Detailed Fix Plan: v1.1.1 + v1.2.0
 **Prepared**: 2026-03-16
 **Covers**: Every blocker and hardening item from the v1.1.0 technical review
 **Format**: Each fix has exact file, exact line(s) affected, root cause, and the precise change required
@@ -451,7 +451,7 @@ Before tagging v1.1.1:
 [ ] make lint passes (zero warnings)
 [ ] make migrate/status shows version 1 on a fresh db
 [ ] Manual smoke test: create user → login as that user → see bearer in cookie (HttpOnly) → no localStorage token
-[ ] PRODUCTION_CHECKLIST.md §1.2 checkbox verified: AF_AUTH_DISABLED absent or false
+[ ] PRODUCTION_CHECKLIST.md §1.2 checkbox verified: GV_AUTH_DISABLED absent or false
 ```
 
 ---
@@ -573,13 +573,13 @@ Note: hash-chaining of admin audit entries requires reading the last entry hash 
 
 ---
 
-## Fix 1.2.0-A3 — Wire AF_CORS_ORIGINS Environment Variable
+## Fix 1.2.0-A3 — Wire GV_CORS_ORIGINS Environment Variable
 
 **Priority**: P2 — hardcoded origins are a security risk and ops burden
 
 ### Root Cause
 
-`main.go` lines 101–107 hardcode CORS origins. `AF_CORS_ORIGINS` is referenced in the README but never read.
+`main.go` lines 101–107 hardcode CORS origins. `GV_CORS_ORIGINS` is referenced in the README but never read.
 
 ### File to Change
 
@@ -588,7 +588,7 @@ Note: hash-chaining of admin audit entries requires reading the last entry hash 
 ```go
 // Parse CORS origins from env (comma-separated)
 corsOrigins := strings.Split(
-    envOr("AF_CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"),
+    envOr("GV_CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"),
     ",",
 )
 for i := range corsOrigins {
@@ -830,10 +830,10 @@ Until `/users/:id/edit` route + component exists, disable the Edit button:
 Line 155:
 ```typescript
 // Before
-<div style={s.footer}>v1.0.0 · © AgentFabric</div>
+<div style={s.footer}>v1.0.0 · © Govagn</div>
 
 // After
-<div style={s.footer}>{import.meta.env.VITE_APP_VERSION ?? 'v1.2.0'} · © AgentFabric</div>
+<div style={s.footer}>{import.meta.env.VITE_APP_VERSION ?? 'v1.2.0'} · © Govagn</div>
 ```
 
 Add to `portal/vite.config.ts`:
@@ -851,7 +851,7 @@ define: {
 WS-A (Backend):
 [ ] 1.2.0-A1: Cursor pagination on traces, runs, agents — no regression on existing tests
 [ ] 1.2.0-A2: Admin action audit trail — user CRUD writes to policy_audit_log
-[ ] 1.2.0-A3: AF_CORS_ORIGINS wired — hardcoded origins removed
+[ ] 1.2.0-A3: GV_CORS_ORIGINS wired — hardcoded origins removed
 [ ] 1.2.0-A4: context.Context in exchangeCode — no more fire-and-forget HTTP calls
 [ ] 1.2.0-A5: OIDC discovery document cached (1 hour TTL)
 
@@ -895,4 +895,4 @@ Cross-cutting:
 
 ---
 
-*Fix plan prepared 2026-03-16 — AgentFabric v1.1.1 + v1.2.0*
+*Fix plan prepared 2026-03-16 — Govagn v1.1.1 + v1.2.0*

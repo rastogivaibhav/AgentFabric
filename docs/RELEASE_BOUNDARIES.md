@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines how AgentFabric should be positioned, described, and released at the current stage of product maturity.
+This document defines how Govagn should be positioned, described, and released at the current stage of product maturity.
 
 Use it to keep:
 
@@ -12,7 +12,7 @@ Use it to keep:
 
 ## Current Product Position
 
-AgentFabric should currently be positioned as:
+Govagn should currently be positioned as:
 
 **self-hosted AI runtime governance, observability, and control plane**
 

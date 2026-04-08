@@ -1,6 +1,6 @@
-# AgentFabric Local Demo Guide
+# Govagn Local Demo Guide
 
-Get AgentFabric running in 5 minutes and trace your first AI agent.
+Get Govagn running in 5 minutes and trace your first AI agent.
 
 ## Prerequisites
 
@@ -24,11 +24,11 @@ docker compose ps
 Expected output:
 ```
 NAME                    STATUS
-agentfabric-postgres    Up (healthy)
-agentfabric-redis       Up (healthy)
-agentfabric-collector   Up (healthy)
-agentfabric-api-gateway Up (healthy)
-agentfabric-portal      Up (healthy)
+govagn-postgres    Up (healthy)
+govagn-redis       Up (healthy)
+govagn-collector   Up (healthy)
+govagn-api-gateway Up (healthy)
+govagn-portal      Up (healthy)
 ```
 
 If any service shows "unhealthy", wait 10 seconds and check again:
@@ -105,7 +105,7 @@ Expected response:
 
 ```bash
 cd C:\Users\vrast\Documents\Agentic Code\files
-pip install agentfabric crewai crewai-tools
+pip install govagn crewai crewai-tools
 ```
 
 ### 2. Create a demo script
@@ -114,7 +114,7 @@ Create `demo_crew.py`:
 
 ```python
 import os
-from agentfabric import instrument
+from govagn import instrument
 from crewai import Agent, Task, Crew
 from crewai_tools import tool
 
@@ -262,7 +262,7 @@ Shows:
 Create `demo_crew_advanced.py`:
 
 ```python
-from agentfabric import instrument
+from govagn import instrument
 from crewai import Agent, Task, Crew
 from crewai_tools import tool
 
@@ -401,7 +401,7 @@ curl http://localhost:8080/healthz
 If not:
 ```bash
 # Check logs
-docker logs agentfabric-api-gateway
+docker logs govagn-api-gateway
 
 # Restart
 docker compose restart api-gateway
@@ -417,12 +417,12 @@ curl http://localhost:4318/v1/traces -v
 
 2. Check API Gateway logs:
 ```bash
-docker logs agentfabric-api-gateway | grep -i error
+docker logs govagn-api-gateway | grep -i error
 ```
 
 3. Check database:
 ```bash
-docker exec agentfabric-postgres psql -U postgres -d agentfabric -c "SELECT COUNT(*) FROM spans;"
+docker exec govagn-postgres psql -U postgres -d govagn -c "SELECT COUNT(*) FROM spans;"
 ```
 
 ### High memory usage
@@ -507,6 +507,6 @@ curl -X POST http://localhost:4318/v1/traces \
 
 ---
 
-**That's it! You now have a working demo of AgentFabric.**
+**That's it! You now have a working demo of Govagn.**
 
 Questions? Check the README or run `docker compose logs -f api-gateway` for real-time debugging.

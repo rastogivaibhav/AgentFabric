@@ -1,4 +1,4 @@
-# AgentFabric — Execution Plan
+# Govagn — Execution Plan
 
 ## Purpose of This Document
 
@@ -10,7 +10,7 @@ This document is a self-contained implementation brief for a new Claude Code ses
 
 ## Problem Being Solved
 
-AgentFabric's SDK requires developers to opt in by calling `agentfabric.instrument()`. Any developer who skips those two lines is invisible: their LLM calls bypass all tracking, budget enforcement, and governance. A single rogue engineer or contractor can exhaust an enterprise API quota silently.
+Govagn's SDK requires developers to opt in by calling `govagn.instrument()`. Any developer who skips those two lines is invisible: their LLM calls bypass all tracking, budget enforcement, and governance. A single rogue engineer or contractor can exhaust an enterprise API quota silently.
 
 This plan implements three layers of defence, from easiest to deploy to most comprehensive.
 
@@ -20,7 +20,7 @@ This plan implements three layers of defence, from easiest to deploy to most com
 
 | Layer | Priority | Effort | What it catches |
 |-------|----------|--------|-----------------|
-| 1a — sitecustomize.py auto-instrumentation | P0 | 1 day | Any Python process on a machine with agentfabric installed |
+| 1a — sitecustomize.py auto-instrumentation | P0 | 1 day | Any Python process on a machine with govagn installed |
 | 1b — Budget hard-limit enforcement | P0 | 1 day | Over-budget ingest requests blocked at api-gateway |
 | 2 — API Key Proxy (virtual keys) | P1 | 1 week | Any SDK that can point at a base URL |
 | 3 — Network transparent proxy | P2 | 2 weeks | Everything, including curl, CLI tools, non-Python runtimes |
@@ -31,13 +31,13 @@ This plan implements three layers of defence, from easiest to deploy to most com
 
 ### What it does
 
-Python automatically imports `sitecustomize.py` from site-packages at the start of every Python process — before user code runs. Installing agentfabric's patching there means every Python process is instrumented with zero developer action.
+Python automatically imports `sitecustomize.py` from site-packages at the start of every Python process — before user code runs. Installing govagn's patching there means every Python process is instrumented with zero developer action.
 
 ### Files to create / modify
 
 ```
-agent-sdk/agentfabric/auto_instrument.py     NEW
-agent-sdk/agentfabric/sitecustomize.py       NEW
+agent-sdk/govagn/auto_instrument.py     NEW
+agent-sdk/govagn/sitecustomize.py       NEW
 agent-sdk/install_hooks.py                   NEW
 agent-sdk/tests/test_auto_instrument.py      NEW
 agent-sdk/pyproject.toml                     MODIFY — add post-install hook
@@ -45,7 +45,7 @@ agent-sdk/pyproject.toml                     MODIFY — add post-install hook
 
 ### High-level class structure
 
-#### `agent-sdk/agentfabric/auto_instrument.py`
+#### `agent-sdk/govagn/auto_instrument.py`
 
 ```python
 class AutoInstrumentor:
@@ -53,9 +53,9 @@ class AutoInstrumentor:
     Called once at Python startup from sitecustomize.py.
     Reads environment, decides which frameworks to patch, bootstraps tracer.
     """
-    ENDPOINT_ENV  = "AF_ENDPOINT"        # e.g. http://localhost:4318
-    TENANT_ENV    = "AF_TENANT_ID"       # e.g. acme-corp
-    DISABLED_ENV  = "AF_AUTO_INSTRUMENT" # set to "0" to opt out
+    ENDPOINT_ENV  = "GV_ENDPOINT"        # e.g. http://localhost:4318
+    TENANT_ENV    = "GV_TENANT_ID"       # e.g. acme-corp
+    DISABLED_ENV  = "GV_AUTO_INSTRUMENT" # set to "0" to opt out
 
     def __init__(self):
         self.endpoint  : str | None
@@ -70,18 +70,18 @@ class AutoInstrumentor:
         # 4. patch_all_available()
 
     def read_config(self) -> None:
-        """Read AF_ENDPOINT, AF_TENANT_ID, AF_AUTO_INSTRUMENT from env"""
+        """Read GV_ENDPOINT, GV_TENANT_ID, GV_AUTO_INSTRUMENT from env"""
 
     def setup_tracer(self) -> None:
         """
         Create OTLPSpanExporter pointing at self.endpoint.
         Create TracerProvider + BatchSpanProcessor.
-        Inject into agentfabric._tracer + agentfabric._initialized = True.
+        Inject into govagn._tracer + govagn._initialized = True.
         """
 
     def patch_all_available(self) -> None:
         """
-        For each framework, try import — if available, call agentfabric patch fn.
+        For each framework, try import — if available, call govagn patch fn.
         Never raises — failures are silently logged to stderr.
         Frameworks: openai, anthropic, langgraph, crewai, google.adk
         """
@@ -89,12 +89,12 @@ class AutoInstrumentor:
     def _try_patch(self, module_name: str, patch_fn_name: str) -> bool:
         """
         importlib.import_module(module_name)
-        getattr(agentfabric, patch_fn_name)(module)
+        getattr(govagn, patch_fn_name)(module)
         return True on success, False on ImportError/AttributeError
         """
 ```
 
-#### `agent-sdk/agentfabric/sitecustomize.py`
+#### `agent-sdk/govagn/sitecustomize.py`
 
 ```python
 # Auto-installed into site-packages by pip post-install hook.
@@ -102,7 +102,7 @@ class AutoInstrumentor:
 
 def _boot():
     try:
-        from agentfabric.auto_instrument import AutoInstrumentor
+        from govagn.auto_instrument import AutoInstrumentor
         AutoInstrumentor().run()
     except Exception:
         pass  # never break user's process
@@ -116,10 +116,10 @@ _boot()
 class SitecustomizeInstaller:
     """
     Called by pyproject.toml [tool.hatch.build.hooks] or setup.py post_install.
-    Copies agentfabric/sitecustomize.py into sys.prefix/lib/.../site-packages/sitecustomize.py.
-    Handles merging if a sitecustomize.py already exists (appends agentfabric block).
+    Copies govagn/sitecustomize.py into sys.prefix/lib/.../site-packages/sitecustomize.py.
+    Handles merging if a sitecustomize.py already exists (appends govagn block).
     """
-    GUARD = "# agentfabric-auto-instrument"
+    GUARD = "# govagn-auto-instrument"
 
     def install(self) -> None:
         # find_site_packages_dir()
@@ -129,14 +129,14 @@ class SitecustomizeInstaller:
         # write back
 
     def uninstall(self) -> None:
-        # remove agentfabric block from sitecustomize.py
+        # remove govagn block from sitecustomize.py
         # if file is now empty: delete it
 ```
 
 ### Pseudo-code flow
 
 ```
-pip install agentfabric
+pip install govagn
     → post_install hook runs SitecustomizeInstaller.install()
     → site-packages/sitecustomize.py now contains _boot()
 
@@ -144,13 +144,13 @@ python any_script.py
     → CPython loads site-packages/sitecustomize.py
     → _boot() runs
     → AutoInstrumentor().run()
-        → reads AF_ENDPOINT from env (default: http://localhost:4318)
-        → reads AF_TENANT_ID from env
-        → if AF_AUTO_INSTRUMENT=0: return early
-        → creates OTLPSpanExporter(endpoint=AF_ENDPOINT)
+        → reads GV_ENDPOINT from env (default: http://localhost:4318)
+        → reads GV_TENANT_ID from env
+        → if GV_AUTO_INSTRUMENT=0: return early
+        → creates OTLPSpanExporter(endpoint=GV_ENDPOINT)
         → creates TracerProvider(BatchSpanProcessor(exporter))
-        → agentfabric._tracer = provider.get_tracer("agentfabric", "1.0.0")
-        → agentfabric._initialized = True
+        → govagn._tracer = provider.get_tracer("govagn", "1.0.0")
+        → govagn._initialized = True
         → _try_patch("openai",     "_patch_openai")
         → _try_patch("anthropic",  "_patch_anthropic")
         → _try_patch("langgraph",  "_patch_langgraph")
@@ -162,26 +162,26 @@ python any_script.py
 ### Environment variables
 
 ```
-AF_ENDPOINT          OTLP HTTP endpoint           default: http://localhost:4318
-AF_TENANT_ID         Tenant identifier            default: "default"
-AF_AUTO_INSTRUMENT   Set to "0" to disable        default: enabled
-AF_SERVICE_NAME      OTel service.name attribute  default: auto-detected from sys.argv[0]
+GV_ENDPOINT          OTLP HTTP endpoint           default: http://localhost:4318
+GV_TENANT_ID         Tenant identifier            default: "default"
+GV_AUTO_INSTRUMENT   Set to "0" to disable        default: enabled
+GV_SERVICE_NAME      OTel service.name attribute  default: auto-detected from sys.argv[0]
 ```
 
 ### Tests to write (`agent-sdk/tests/test_auto_instrument.py`)
 
-1. `test_disabled_when_env_var_zero` — AF_AUTO_INSTRUMENT=0 → no patches applied
+1. `test_disabled_when_env_var_zero` — GV_AUTO_INSTRUMENT=0 → no patches applied
 2. `test_patches_openai_when_installed` — openai present → patched
 3. `test_skips_missing_frameworks` — missing package → no crash, continues
-4. `test_reads_endpoint_from_env` — AF_ENDPOINT overrides default
+4. `test_reads_endpoint_from_env` — GV_ENDPOINT overrides default
 5. `test_idempotent_install` — calling install() twice does not duplicate sitecustomize block
 6. `test_merges_with_existing_sitecustomize` — existing sitecustomize.py content preserved
 
 ### Definition of done
 
-- [ ] `pip install agentfabric` installs sitecustomize.py into site-packages
-- [ ] `python test.py` (with openai imported, zero agentfabric lines) → span appears in portal
-- [ ] `AF_AUTO_INSTRUMENT=0 python test.py` → no spans (opt-out works)
+- [ ] `pip install govagn` installs sitecustomize.py into site-packages
+- [ ] `python test.py` (with openai imported, zero govagn lines) → span appears in portal
+- [ ] `GV_AUTO_INSTRUMENT=0 python test.py` → no spans (opt-out works)
 - [ ] Existing sitecustomize.py is preserved (merge, not overwrite)
 - [ ] All `test_auto_instrument.py` tests pass
 
@@ -362,7 +362,7 @@ GET    /api/v1/budgets/:tenant_id/usage    — current period usage breakdown
 
 ### What it does
 
-Customers register their real LLM API keys with AgentFabric. AgentFabric issues virtual keys (`af-vk-*`). Developers point their SDKs at AgentFabric's collector and use virtual keys. The collector authenticates the virtual key, checks budget, records the span, then forwards the request to the real LLM API with the real key — transparently. Real keys never leave the vault.
+Customers register their real LLM API keys with Govagn. Govagn issues virtual keys (`af-vk-*`). Developers point their SDKs at Govagn's collector and use virtual keys. The collector authenticates the virtual key, checks budget, records the span, then forwards the request to the real LLM API with the real key — transparently. Real keys never leave the vault.
 
 ### Files to create / modify
 
@@ -412,7 +412,7 @@ CREATE INDEX ON virtual_keys(tenant_id);
 ```go
 type Vault struct {
     db        *pgxpool.Pool
-    masterKey []byte   // 32-byte AES key, loaded from env AF_VAULT_KEY
+    masterKey []byte   // 32-byte AES key, loaded from env GV_VAULT_KEY
 }
 
 // Store encrypts realKey and inserts into DB. Returns generated virtual key.
@@ -490,7 +490,7 @@ Admin registers real key:
   → real key encrypted, never returned again
 
 Dev configures their env:
-  OPENAI_BASE_URL=https://agentfabric.company.com/proxy/openai/v1
+  OPENAI_BASE_URL=https://govagn.company.com/proxy/openai/v1
   OPENAI_API_KEY=af-vk-abc123...
 
 Dev makes API call (standard openai SDK, zero code change):
@@ -602,7 +602,7 @@ Solution:  Envoy is designed for this — sub-1ms overhead
 ### Definition of done
 
 - [ ] `curl https://api.openai.com/v1/chat/completions` → intercepted → span in portal
-- [ ] Python script with NO agentfabric import → span in portal
+- [ ] Python script with NO govagn import → span in portal
 - [ ] Claude Code CLI → span in portal
 - [ ] CA cert trusted by OS, no TLS errors
 
@@ -656,8 +656,8 @@ Day 19-20: Layer 3 — Integration testing, Windows support (WinDivert)
 
 ```
 agent-sdk/
-  agentfabric/auto_instrument.py         NEW
-  agentfabric/sitecustomize.py           NEW
+  govagn/auto_instrument.py         NEW
+  govagn/sitecustomize.py           NEW
   install_hooks.py                       NEW
   tests/test_auto_instrument.py          NEW
   pyproject.toml                         MODIFY (add post-install hook)
@@ -701,21 +701,21 @@ docker-compose.yml                      MODIFY (add envoy service — Layer 3)
 
 ```
 # Layer 1 — auto-instrumentation
-AF_ENDPOINT           = http://localhost:4318   # where spans go
-AF_TENANT_ID          = default                 # tenant identifier
-AF_AUTO_INSTRUMENT    = 1                       # set 0 to disable
-AF_SERVICE_NAME       = (auto from argv[0])     # OTel service.name
+GV_ENDPOINT           = http://localhost:4318   # where spans go
+GV_TENANT_ID          = default                 # tenant identifier
+GV_AUTO_INSTRUMENT    = 1                       # set 0 to disable
+GV_SERVICE_NAME       = (auto from argv[0])     # OTel service.name
 
 # Layer 1 — budget
-AF_BUDGET_ENABLED     = true                    # global on/off
+GV_BUDGET_ENABLED     = true                    # global on/off
 
 # Layer 2 — vault
-AF_VAULT_KEY          = <32-byte hex>           # AES master key for key encryption
-AF_PROXY_ENABLED      = true
+GV_VAULT_KEY          = <32-byte hex>           # AES master key for key encryption
+GV_PROXY_ENABLED      = true
 
 # Layer 3 — network proxy
-AF_NET_PROXY_ENABLED  = false                   # opt-in (requires iptables/CA install)
-AF_CA_CERT_PATH       = ./deploy/certs/ca.crt
+GV_NET_PROXY_ENABLED  = false                   # opt-in (requires iptables/CA install)
+GV_CA_CERT_PATH       = ./deploy/certs/ca.crt
 ```
 
 ---
@@ -725,7 +725,7 @@ AF_CA_CERT_PATH       = ./deploy/certs/ca.crt
 Paste this as the first message in the new session:
 
 ```
-Project: AgentFabric — enterprise AI observability platform
+Project: Govagn — enterprise AI observability platform
 Repo: C:\Users\vrast\Documents\Agentic Code\files\
 Context files:
   - memory/MEMORY.md          (project state, architecture, what's been built)

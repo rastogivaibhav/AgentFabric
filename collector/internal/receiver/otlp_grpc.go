@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/agentfabric/collector/internal/config"
-	"github.com/agentfabric/collector/internal/processor"
+	"github.com/govagn/collector/internal/config"
+	"github.com/govagn/collector/internal/processor"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
@@ -18,17 +18,17 @@ import (
 
 var (
 	receivedSpans = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "agentfabric_received_spans_total",
+		Name: "govagn_received_spans_total",
 		Help: "Total spans received by the collector",
 	}, []string{"framework"})
 
 	receiveErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "agentfabric_receive_errors_total",
+		Name: "govagn_receive_errors_total",
 		Help: "Errors during span receipt",
 	}, []string{"type"})
 
 	receiveLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "agentfabric_receive_latency_seconds",
+		Name:    "govagn_receive_latency_seconds",
 		Help:    "Latency of span receipt processing",
 		Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 	}, []string{"source"})

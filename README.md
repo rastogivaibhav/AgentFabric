@@ -1,4 +1,4 @@
-# AgentFabric
+# Govagn
 
 **Enterprise AI runtime governance, observability, and control plane for controlled LLM and agent rollouts.**
 
@@ -9,9 +9,9 @@ Self-hosted. Policy-driven. Cost-aware. Controlled-production candidate.
 ![Architecture](https://img.shields.io/badge/architecture-control%20plane-6f42c1)
 ![License](https://img.shields.io/badge/license-proprietary-lightgrey)
 
-## What Is AgentFabric?
+## What Is Govagn?
 
-AgentFabric is a self-hosted platform for teams that need to **observe, govern, and control AI runtime traffic** across applications, services, and autonomous agents.
+Govagn is a self-hosted platform for teams that need to **observe, govern, and control AI runtime traffic** across applications, services, and autonomous agents.
 
 It brings together three enterprise capability areas in one platform:
 
@@ -19,9 +19,9 @@ It brings together three enterprise capability areas in one platform:
 - **Governance** for policy enforcement, guardrails, DLP-style controls, auditability, and release checks
 - **Runtime control** for model mediation, provider management, pricing, budgets, prompt lifecycle, and evaluation workflows
 
-Think of AgentFabric as a **control plane for enterprise AI operations**.
+Think of Govagn as a **control plane for enterprise AI operations**.
 
-## Why AgentFabric?
+## Why Govagn?
 
 As AI workloads move from experimentation to production, enterprise teams run into the same problems:
 
@@ -32,7 +32,7 @@ As AI workloads move from experimentation to production, enterprise teams run in
 - security, platform, and architecture teams lack one operational surface
 - governance becomes reactive instead of enforced
 
-AgentFabric addresses that by placing AI runtime behavior behind a governed operational layer.
+Govagn addresses that by placing AI runtime behavior behind a governed operational layer.
 
 ## What The Platform Can Do
 
@@ -116,7 +116,7 @@ For the full architecture view, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Best-Fit Use Cases
 
-AgentFabric is best suited for:
+Govagn is best suited for:
 
 - enterprise AI platform teams
 - architecture teams standardizing AI runtime controls
@@ -184,7 +184,7 @@ scripts/          probes, pilot validation, release, and GA gate scripts
 
 ## Supported Product Shape
 
-AgentFabric is strongest as:
+Govagn is strongest as:
 
 **AI runtime governance + observability + control plane**
 
@@ -231,7 +231,7 @@ Shell equivalents are available in the same [scripts/](scripts) directory for ma
 
 ## Maturity
 
-AgentFabric is a serious platform foundation intended for:
+Govagn is a serious platform foundation intended for:
 
 - internal platform evaluation
 - controlled pilots

@@ -20,9 +20,9 @@
   "annotations": {
     "list": [
       {
-        "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+        "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
         "enable": true,
-        "expr": "changes(agentfabric_policy_decisions_total{result=\"deny\"}[1m]) > 0",
+        "expr": "changes(govagn_policy_decisions_total{result=\"deny\"}[1m]) > 0",
         "hide": false,
         "iconColor": "red",
         "name": "Policy Block",
@@ -31,13 +31,13 @@
       }
     ]
   },
-  "description": "AgentFabric — audit integrity, PII redaction, policy enforcement, and compliance",
+  "description": "Govagn — audit integrity, PII redaction, policy enforcement, and compliance",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
   "links": [
-    { "title": "Platform Overview", "url": "/d/agentfabric-overview", "type": "dashboards" }
+    { "title": "Platform Overview", "url": "/d/govagn-overview", "type": "dashboards" }
   ],
   "panels": [
     {
@@ -48,7 +48,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -63,13 +63,13 @@
       "id": 1,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "agentfabric_audit_chain_valid", "legendFormat": "Chain" }
+        { "datasource": { "uid": "govagn-prometheus" }, "expr": "govagn_audit_chain_valid", "legendFormat": "Chain" }
       ],
       "title": "Audit Chain Integrity",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -82,14 +82,14 @@
       "id": 2,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "rate(agentfabric_policy_decisions_total[5m]) * 60", "legendFormat": "decisions/min" }
+        { "datasource": { "uid": "govagn-prometheus" }, "expr": "rate(govagn_policy_decisions_total[5m]) * 60", "legendFormat": "decisions/min" }
       ],
       "title": "Policy Decisions (per minute)",
       "description": "Inline proxy and gateway enforcement decisions over the last 5 minutes.",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -102,13 +102,13 @@
       "id": 3,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["sum"] } },
       "targets": [
-        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "increase(agentfabric_audit_entries_total[24h])", "legendFormat": "Entries" }
+        { "datasource": { "uid": "govagn-prometheus" }, "expr": "increase(govagn_audit_entries_total[24h])", "legendFormat": "Entries" }
       ],
       "title": "Audit Entries Written (24h)",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -121,7 +121,7 @@
       "id": 4,
       "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "rate(agentfabric_audit_entries_total[5m]) * 60", "legendFormat": "entries/min" }
+        { "datasource": { "uid": "govagn-prometheus" }, "expr": "rate(govagn_audit_entries_total[5m]) * 60", "legendFormat": "entries/min" }
       ],
       "title": "Audit Entry Write Rate",
       "type": "timeseries"
@@ -134,7 +134,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -147,13 +147,13 @@
       "id": 5,
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "rate(agentfabric_pii_redactions_total[5m]) * 60", "legendFormat": "PII/min" }
+        { "datasource": { "uid": "govagn-prometheus" }, "expr": "rate(govagn_pii_redactions_total[5m]) * 60", "legendFormat": "PII/min" }
       ],
       "title": "PII Redactions (per minute)",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -166,13 +166,13 @@
       "id": 6,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["sum"] } },
       "targets": [
-        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "increase(agentfabric_pii_redactions_total[24h])", "legendFormat": "24h total" }
+        { "datasource": { "uid": "govagn-prometheus" }, "expr": "increase(govagn_pii_redactions_total[24h])", "legendFormat": "24h total" }
       ],
       "title": "Total PII Redactions (24h)",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -186,8 +186,8 @@
       "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_pii_redactions_total[5m])) by (pii_type) * 60",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_pii_redactions_total[5m])) by (pii_type) * 60",
           "legendFormat": "{{ pii_type }}"
         }
       ],
@@ -195,7 +195,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -209,8 +209,8 @@
       "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_pii_redactions_total[5m])) by (framework) * 60",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_pii_redactions_total[5m])) by (framework) * 60",
           "legendFormat": "{{ framework }}"
         }
       ],
@@ -225,7 +225,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -238,13 +238,13 @@
       "id": 9,
       "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
-        { "datasource": { "uid": "agentfabric-prometheus" }, "expr": "rate(agentfabric_policy_decisions_total{result=\"deny\"}[5m]) * 60", "legendFormat": "Blocks/min" }
+        { "datasource": { "uid": "govagn-prometheus" }, "expr": "rate(govagn_policy_decisions_total{result=\"deny\"}[5m]) * 60", "legendFormat": "Blocks/min" }
       ],
       "title": "Policy Blocks (per minute)",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -260,8 +260,8 @@
       "options": { "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "100 * sum(rate(agentfabric_policy_decisions_total{result=\"allow\"}[5m])) / sum(rate(agentfabric_policy_decisions_total[5m]))",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "100 * sum(rate(govagn_policy_decisions_total{result=\"allow\"}[5m])) / sum(rate(govagn_policy_decisions_total[5m]))",
           "legendFormat": "Allow rate"
         }
       ],
@@ -269,7 +269,7 @@
       "type": "gauge"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -283,8 +283,8 @@
       "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_policy_decisions_total[5m])) by (result) * 60",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_policy_decisions_total[5m])) by (result) * 60",
           "legendFormat": "{{ result }}"
         }
       ],
@@ -292,7 +292,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -306,8 +306,8 @@
       "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_policy_decisions_total{result=\"deny\"}[5m])) by (policy_name) * 60",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_policy_decisions_total{result=\"deny\"}[5m])) by (policy_name) * 60",
           "legendFormat": "{{ policy_name }}"
         }
       ],
@@ -317,12 +317,12 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["agentfabric", "audit", "compliance", "policy", "pii"],
+  "tags": ["govagn", "audit", "compliance", "policy", "pii"],
   "templating": { "list": [] },
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "AgentFabric — Audit & Policy",
-  "uid": "agentfabric-audit",
+  "title": "Govagn — Audit & Policy",
+  "uid": "govagn-audit",
   "version": 1
 }

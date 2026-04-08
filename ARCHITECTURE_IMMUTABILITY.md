@@ -1,11 +1,11 @@
-# AgentFabric — Architecture Immutability Map
+# Govagn — Architecture Immutability Map
 **What can change, what can't, and what requires a major version bump**
 
 ---
 
 ## **SACRED ARCHITECTURE (Cannot Change)**
 
-These are the load-bearing walls of AgentFabric. Changing them requires v2.0 and major customer communication.
+These are the load-bearing walls of Govagn. Changing them requires v2.0 and major customer communication.
 
 ### **1. The Five-Service Pipeline**
 
@@ -100,7 +100,7 @@ interface LiveEvent { type: 'span'|'run_start'|'run_end'|'error'|'policy'; ts: n
 
 ### **4. The Deployment Model**
 
-Immutable facts about how AgentFabric deploys:
+Immutable facts about how Govagn deploys:
 
 - ✅ Single Kubernetes cluster (or Docker Compose locally)
 - ✅ All services in same VPC (no cross-region yet)
@@ -249,10 +249,10 @@ These checks run in CI/CD. A PR that violates them is automatically rejected.
 Every service exports these metrics. If they diverge (versions mismatch), alert fires:
 
 ```
-agentfabric_service_version{service="collector",version="1.2.3"}
-agentfabric_service_version{service="api-gateway",version="1.2.3"}
-agentfabric_service_version{service="af-core",version="1.2.3"}
-agentfabric_service_version{service="portal",version="1.2.3"}
+govagn_service_version{service="collector",version="1.2.3"}
+govagn_service_version{service="api-gateway",version="1.2.3"}
+govagn_service_version{service="af-core",version="1.2.3"}
+govagn_service_version{service="portal",version="1.2.3"}
 ```
 
 **Alert rule**: If any two services have different MINOR versions, page on-call.
@@ -371,7 +371,7 @@ Every quarter, confirm:
 
 ---
 
-**This map is the source of truth for what can and cannot change in AgentFabric v1.x.**
+**This map is the source of truth for what can and cannot change in Govagn v1.x.**
 
 **Last updated**: 2025-03-13
 **Next review**: 2025-06-13

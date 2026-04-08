@@ -1,4 +1,4 @@
-# AgentFabric — 18-Month Execution Roadmap
+# Govagn — 18-Month Execution Roadmap
 **Concrete milestones, owners, and success metrics**
 
 ---
@@ -14,7 +14,7 @@
 | **WP-2: OIDC Login** | Frontend Lead | 3w | 🔴 Not started | OAuth2 flow works, CISO can log in, tokens rotate |
 | **WP-3: Audit Dashboard** | Frontend + Backend Lead | 2w | 🔴 Not started | Policy violations visible, filterable by type/date |
 | **WP-4: mTLS Config** | Backend Lead | 1w | 🔴 Not started | Collector can enforce mTLS in production |
-| **WP-5: Helm Charts** | DevOps Lead | 2w | 🔴 Not started | `helm install agentfabric -f values.yaml` works end-to-end |
+| **WP-5: Helm Charts** | DevOps Lead | 2w | 🔴 Not started | `helm install govagn -f values.yaml` works end-to-end |
 | **WP-6: Perf Tuning** | Platform Lead | 3w | 🔴 Not started | p99 latency <100ms @ 10K spans/sec |
 | **WP-7: Slack Alerting** | Backend Lead | 2w | 🔴 Not started | Policy violations → Slack webhook with trace link |
 
@@ -279,7 +279,7 @@ A phase is complete when:
 
 ## **THE NORTH STAR (One Sentence)**
 
-> **By Q3 2026, AgentFabric is the mandatory governance layer for enterprises running agent fleets, with 10+ customers, $1M ARR, and automated regulatory compliance proof.**
+> **By Q3 2026, Govagn is the mandatory governance layer for enterprises running agent fleets, with 10+ customers, $1M ARR, and automated regulatory compliance proof.**
 
 ---
 

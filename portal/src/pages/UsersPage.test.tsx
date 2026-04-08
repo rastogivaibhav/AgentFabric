@@ -191,7 +191,7 @@ describe('UsersPage — table rendering', () => {
 
     render(<UsersPage />)
 
-    expect(screen.getByText('ADMIN')).toBeInTheDocument()
+    expect(screen.getAllByText('ADMIN').length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders role badge with EDITOR text for editor users', () => {

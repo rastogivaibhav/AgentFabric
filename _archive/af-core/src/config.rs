@@ -55,7 +55,7 @@ impl Config {
     }
 }
 
-fn default_database_url()    -> String { "postgres://fabric:fabric@localhost:5432/agentfabric".into() }
+fn default_database_url()    -> String { "postgres://fabric:fabric@localhost:5432/govagn".into() }
 fn default_clickhouse_url()  -> String { "http://localhost:8123".into() }
 fn default_redis_url()       -> String { "redis://localhost:6379/0".into() }
 fn default_grpc_addr()       -> String { "0.0.0.0:50051".into() }

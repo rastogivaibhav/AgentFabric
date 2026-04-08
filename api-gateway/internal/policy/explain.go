@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func explainDecision(rule models.PolicyRule, explanation DecisionExplanation) string {

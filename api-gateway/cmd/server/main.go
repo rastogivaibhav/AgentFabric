@@ -11,17 +11,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/auth"
-	"github.com/agentfabric/api-gateway/internal/budget"
-	"github.com/agentfabric/api-gateway/internal/handlers"
-	"github.com/agentfabric/api-gateway/internal/middleware"
-	"github.com/agentfabric/api-gateway/internal/netproxy"
-	"github.com/agentfabric/api-gateway/internal/policy"
-	"github.com/agentfabric/api-gateway/internal/proxy"
-	"github.com/agentfabric/api-gateway/internal/rollouts"
-	"github.com/agentfabric/api-gateway/internal/store"
-	"github.com/agentfabric/api-gateway/internal/vault"
-	"github.com/agentfabric/api-gateway/internal/ws"
+	"github.com/govagn/api-gateway/internal/auth"
+	"github.com/govagn/api-gateway/internal/budget"
+	"github.com/govagn/api-gateway/internal/handlers"
+	"github.com/govagn/api-gateway/internal/middleware"
+	"github.com/govagn/api-gateway/internal/netproxy"
+	"github.com/govagn/api-gateway/internal/policy"
+	"github.com/govagn/api-gateway/internal/proxy"
+	"github.com/govagn/api-gateway/internal/rollouts"
+	"github.com/govagn/api-gateway/internal/store"
+	"github.com/govagn/api-gateway/internal/vault"
+	"github.com/govagn/api-gateway/internal/ws"
 	"github.com/go-chi/chi/v5"
 	chimid "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -36,31 +36,31 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	pgDSN := envOr("DATABASE_URL", "postgres://fabric:fabric@localhost:5432/agentfabric?sslmode=disable")
+	pgDSN := envOr("DATABASE_URL", "postgres://fabric:fabric@localhost:5432/govagn?sslmode=disable")
 	redisAddr := envOr("REDIS_URL", "redis://localhost:6379")
-	jwtSecret := envOr("AF_JWT_SECRET", "dev-secret-change-in-production")
+	jwtSecret := envOr("GV_JWT_SECRET", "dev-secret-change-in-production")
 	listenAddr := envOr("LISTEN_ADDR", ":8080")
-	authDisabled := os.Getenv("AF_AUTH_DISABLED") == "true"
-	collectorAuthToken := strings.TrimSpace(os.Getenv("AF_GATEWAY_AUTH_TOKEN"))
-	rateLimitRPM := int64(parseIntEnv("AF_RATE_LIMIT_RPM", 1000))
-	openapiSpecPath := envOr("AF_OPENAPI_SPEC_PATH", "docs/openapi.yaml")
+	authDisabled := os.Getenv("GV_AUTH_DISABLED") == "true"
+	collectorAuthToken := strings.TrimSpace(os.Getenv("GV_GATEWAY_AUTH_TOKEN"))
+	rateLimitRPM := int64(parseIntEnv("GV_RATE_LIMIT_RPM", 1000))
+	openapiSpecPath := envOr("GV_OPENAPI_SPEC_PATH", "docs/openapi.yaml")
 	strictMode := strictConfigEnabled()
 
-	// TLS configuration — fail-secure: if AF_TLS_ENABLED=true the server will
+	// TLS configuration — fail-secure: if GV_TLS_ENABLED=true the server will
 	// refuse to start as plain HTTP when cert/key paths are absent.
-	tlsEnabled := os.Getenv("AF_TLS_ENABLED") == "true"
-	tlsCertFile := os.Getenv("AF_TLS_CERT_FILE")
-	tlsKeyFile := os.Getenv("AF_TLS_KEY_FILE")
+	tlsEnabled := os.Getenv("GV_TLS_ENABLED") == "true"
+	tlsCertFile := os.Getenv("GV_TLS_CERT_FILE")
+	tlsKeyFile := os.Getenv("GV_TLS_KEY_FILE")
 
-	// AF_JWT_SECRETS: comma-separated list for zero-downtime key rotation.
+	// GV_JWT_SECRETS: comma-separated list for zero-downtime key rotation.
 	// First entry = active signing key. All entries accepted for verification.
-	// Falls back to AF_JWT_SECRET when not set.
-	jwtSecrets := parseSecrets(envOr("AF_JWT_SECRETS", jwtSecret))
+	// Falls back to GV_JWT_SECRET when not set.
+	jwtSecrets := parseSecrets(envOr("GV_JWT_SECRETS", jwtSecret))
 
 	if err := validateCollectorAuthConfig(authDisabled, collectorAuthToken); err != nil {
 		logger.Fatal("invalid collector ingest auth configuration", zap.Error(err))
 	}
-	if err := validateProductionConfig(authDisabled, jwtSecrets, collectorAuthToken, envOr("AF_ADMIN_PASSWORD", "admin"), os.Getenv("AF_VAULT_KEY")); err != nil {
+	if err := validateProductionConfig(authDisabled, jwtSecrets, collectorAuthToken, envOr("GV_ADMIN_PASSWORD", "admin"), os.Getenv("GV_VAULT_KEY")); err != nil {
 		logger.Fatal("unsafe production configuration", zap.Error(err))
 	}
 	if warning := liveStreamTopologyWarning(strictMode); warning != "" {
@@ -68,10 +68,10 @@ func main() {
 	}
 
 	if authDisabled {
-		logger.Warn("AF_AUTH_DISABLED=true — JWT authentication is OFF (dev mode only)")
+		logger.Warn("GV_AUTH_DISABLED=true — JWT authentication is OFF (dev mode only)")
 	}
 	// Pricing precedence:
-	// 1. Bootstrap from AF_MODEL_PRICING_FILE / AF_MODEL_PRICING_JSON when present.
+	// 1. Bootstrap from GV_MODEL_PRICING_FILE / GV_MODEL_PRICING_JSON when present.
 	// 2. Otherwise use built-in defaults.
 	// 3. After migrations and store init, DB pricing rules override bootstrap pricing
 	//    when the pricing_rules table contains rows.
@@ -80,10 +80,10 @@ func main() {
 	}
 
 	// ─── Database migrations ──────────────────────────────────────────────────
-	// AF_MIGRATE_ON_STARTUP defaults to true.  Set to "false" to skip (tests,
+	// GV_MIGRATE_ON_STARTUP defaults to true.  Set to "false" to skip (tests,
 	// read-only replicas, or environments where migrations are applied out-of-band).
-	if os.Getenv("AF_MIGRATE_ON_STARTUP") != "false" {
-		runMigrations(pgDSN, envOr("AF_MIGRATIONS_PATH", "deploy/migrations"), logger)
+	if os.Getenv("GV_MIGRATE_ON_STARTUP") != "false" {
+		runMigrations(pgDSN, envOr("GV_MIGRATIONS_PATH", "deploy/migrations"), logger)
 	}
 
 	// Storage
@@ -116,17 +116,17 @@ func main() {
 	// verify credentials against the users table (bcrypt) with an env-var
 	// admin as a break-glass fallback.
 	oidcCfg := auth.OIDCConfig{
-		Issuer:               envOr("AF_OIDC_ISSUER", ""),
-		ClientID:             envOr("AF_OIDC_CLIENT_ID", ""),
-		ClientSecret:         envOr("AF_OIDC_CLIENT_SECRET", ""),
-		RedirectURI:          envOr("AF_OIDC_REDIRECT_URI", defaultOIDCRedirectURI(strictMode)),
+		Issuer:               envOr("GV_OIDC_ISSUER", ""),
+		ClientID:             envOr("GV_OIDC_CLIENT_ID", ""),
+		ClientSecret:         envOr("GV_OIDC_CLIENT_SECRET", ""),
+		RedirectURI:          envOr("GV_OIDC_REDIRECT_URI", defaultOIDCRedirectURI(strictMode)),
 		JWTSecret:            jwtSecrets[0],
 		JWTSecrets:           jwtSecrets,
-		LogoutURL:            envOr("AF_OIDC_LOGOUT_URL", ""),
-		RequireSSO:           strings.EqualFold(envOr("AF_SSO_REQUIRED", "false"), "true"),
-		DisablePasswordLogin: strings.EqualFold(envOr("AF_PASSWORD_LOGIN_DISABLED", "false"), "true"),
-		AdminUser:            envOr("AF_ADMIN_USER", "admin"),
-		AdminPassword:        envOr("AF_ADMIN_PASSWORD", "admin"),
+		LogoutURL:            envOr("GV_OIDC_LOGOUT_URL", ""),
+		RequireSSO:           strings.EqualFold(envOr("GV_SSO_REQUIRED", "false"), "true"),
+		DisablePasswordLogin: strings.EqualFold(envOr("GV_PASSWORD_LOGIN_DISABLED", "false"), "true"),
+		AdminUser:            envOr("GV_ADMIN_USER", "admin"),
+		AdminPassword:        envOr("GV_ADMIN_PASSWORD", "admin"),
 	}
 	if err := auth.ValidateConfig(oidcCfg, strictMode); err != nil {
 		logger.Fatal("invalid enterprise auth configuration", zap.Error(err))
@@ -134,7 +134,7 @@ func main() {
 	oidcHandler := auth.NewOIDCHandler(oidcCfg, pgStore, logger)
 
 	// Budget enforcement
-	budgetEnabled := os.Getenv("AF_BUDGET_ENABLED") != "false"
+	budgetEnabled := os.Getenv("GV_BUDGET_ENABLED") != "false"
 	var budgetEnforcer *budget.BudgetEnforcer
 	if budgetEnabled {
 		alerter := budget.NewWebhookAlerter(logger)
@@ -143,13 +143,13 @@ func main() {
 	}
 
 	// ─── Vault (Layer 2: virtual key proxy) ──────────────────────────────────
-	// AF_VAULT_KEY must be a 64-char hex string (32 bytes).
+	// GV_VAULT_KEY must be a 64-char hex string (32 bytes).
 	// In dev a predictable key is used with a loud warning; production must set this.
-	vaultKeyHex := envOr("AF_VAULT_KEY", "")
+	vaultKeyHex := envOr("GV_VAULT_KEY", "")
 	var llmVault *vault.Vault
 	if vaultKeyHex == "" {
 		vaultKeyHex = "0000000000000000000000000000000000000000000000000000000000000000"
-		logger.Warn("AF_VAULT_KEY not set — using insecure dev key. Set AF_VAULT_KEY in production.")
+		logger.Warn("GV_VAULT_KEY not set — using insecure dev key. Set GV_VAULT_KEY in production.")
 	}
 	llmVault, err = vault.New(pgStore.Pool(), vaultKeyHex)
 	if err != nil {
@@ -161,7 +161,7 @@ func main() {
 	llmProxy := proxy.New(llmVault, budgetEnforcer, pgStore, policyEngine, rolloutService, hub, logger)
 
 	// ─── NetProxy (Layer 3: transparent HTTPS MITM proxy) ────────────────────
-	// Listens on AF_NETPROXY_ADDR (:8443) and handles HTTP CONNECT tunnelling.
+	// Listens on GV_NETPROXY_ADDR (:8443) and handles HTTP CONNECT tunnelling.
 	// Intercepts HTTPS to known LLM API domains; all other hosts pass through.
 	// Clients must set HTTP_PROXY=http://localhost:8443 and install the CA cert.
 	netProxyCA, err := netproxy.NewCA()
@@ -176,11 +176,11 @@ func main() {
 	r := chi.NewRouter()
 
 	// ─── Global middleware ───────────────────────────────────────────────────
-	// AF_CORS_ORIGINS: comma-separated list of allowed CORS origins.
+	// GV_CORS_ORIGINS: comma-separated list of allowed CORS origins.
 	// Defaults to the standard local dev ports + the production wildcard domain.
 	allowedOrigins := parseOrigins(envOr(
-		"AF_CORS_ORIGINS",
-		"http://localhost:3000,http://localhost:5173,https://*.agentfabric.io",
+		"GV_CORS_ORIGINS",
+		"http://localhost:3000,http://localhost:5173,https://*.govagn.io",
 	))
 
 	r.Use(chimid.RequestID)
@@ -212,14 +212,14 @@ func main() {
 	// Install with: scripts/install-ca-cert.sh or manually into OS trust store.
 	r.Get("/api/v1/netproxy/ca.crt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-pem-file")
-		w.Header().Set("Content-Disposition", `attachment; filename="agentfabric-ca.crt"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="govagn-ca.crt"`)
 		w.Write(netProxyCA.CertPEM()) //nolint:errcheck
 	})
 
 	// ─── Auth endpoints ───────────────────────────────────────────────────────
 	// Password login (default, no OIDC required): POST /auth/login {username, password}
 	r.Post("/auth/login", oidcHandler.PasswordLogin)
-	// OIDC SSO (P0-4, opt-in via AF_OIDC_ISSUER): GET /auth/login redirects to provider
+	// OIDC SSO (P0-4, opt-in via GV_OIDC_ISSUER): GET /auth/login redirects to provider
 	r.Get("/auth/login", oidcHandler.Login)
 	r.Get("/auth/callback", oidcHandler.Callback)
 	r.Get("/auth/logout", oidcHandler.Logout)
@@ -243,7 +243,9 @@ func main() {
 
 	// ─── Public API v1 ───────────────────────────────────────────────────────
 	r.Route("/api/v1", func(r chi.Router) {
-		if !authDisabled {
+		if authDisabled {
+			r.Use(middleware.DevAuthInjector)
+		} else {
 			// Multi-secret JWTAuth: accepts tokens signed by any key in the rotation list.
 			r.Use(middleware.JWTAuth(jwtSecrets...))
 		}
@@ -408,7 +410,7 @@ func main() {
 	}()
 
 	// ─── Layer 3: Net proxy server on :8443 ──────────────────────────────────
-	netProxyAddr := envOr("AF_NETPROXY_ADDR", ":8443")
+	netProxyAddr := envOr("GV_NETPROXY_ADDR", ":8443")
 	netProxySrv := &http.Server{
 		Addr:    netProxyAddr,
 		Handler: np,
@@ -446,7 +448,7 @@ func serve(srv *http.Server, tlsEnabled bool, certFile, keyFile string, logger *
 	if tlsEnabled {
 		if certFile == "" || keyFile == "" {
 			return fmt.Errorf(
-				"AF_TLS_ENABLED=true but AF_TLS_CERT_FILE or AF_TLS_KEY_FILE is not set — " +
+				"GV_TLS_ENABLED=true but GV_TLS_CERT_FILE or GV_TLS_KEY_FILE is not set — " +
 					"refusing to fall back to plain HTTP (fail-secure); set both env vars or disable TLS",
 			)
 		}
@@ -542,7 +544,7 @@ func validateCollectorAuthConfig(authDisabled bool, collectorAuthToken string) e
 		return nil
 	}
 	if strings.TrimSpace(collectorAuthToken) == "" {
-		return fmt.Errorf("AF_GATEWAY_AUTH_TOKEN must be set when AF_AUTH_DISABLED=false because /internal/ingest expects Authorization: Bearer <AF_GATEWAY_AUTH_TOKEN>")
+		return fmt.Errorf("GV_GATEWAY_AUTH_TOKEN must be set when GV_AUTH_DISABLED=false because /internal/ingest expects Authorization: Bearer <GV_GATEWAY_AUTH_TOKEN>")
 	}
 	return nil
 }
@@ -552,7 +554,7 @@ func validateProductionConfig(authDisabled bool, jwtSecrets []string, collectorA
 		return nil
 	}
 	if authDisabled {
-		return fmt.Errorf("AF_AUTH_DISABLED=true is not allowed when AF_ENV=production or AF_STRICT_CONFIG=true")
+		return fmt.Errorf("GV_AUTH_DISABLED=true is not allowed when GV_ENV=production or GV_STRICT_CONFIG=true")
 	}
 	if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
 		return fmt.Errorf("DATABASE_URL must be set explicitly in production; refusing the built-in local default")
@@ -560,25 +562,25 @@ func validateProductionConfig(authDisabled bool, jwtSecrets []string, collectorA
 	if strings.TrimSpace(os.Getenv("REDIS_URL")) == "" {
 		return fmt.Errorf("REDIS_URL must be set explicitly in production; refusing the built-in local default")
 	}
-	if strings.TrimSpace(os.Getenv("AF_CORS_ORIGINS")) == "" {
-		return fmt.Errorf("AF_CORS_ORIGINS must be set explicitly in production")
+	if strings.TrimSpace(os.Getenv("GV_CORS_ORIGINS")) == "" {
+		return fmt.Errorf("GV_CORS_ORIGINS must be set explicitly in production")
 	}
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("AF_TLS_ENABLED")), "true") {
-		if strings.TrimSpace(os.Getenv("AF_TLS_CERT_FILE")) == "" || strings.TrimSpace(os.Getenv("AF_TLS_KEY_FILE")) == "" {
-			return fmt.Errorf("AF_TLS_ENABLED=true requires AF_TLS_CERT_FILE and AF_TLS_KEY_FILE in production")
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GV_TLS_ENABLED")), "true") {
+		if strings.TrimSpace(os.Getenv("GV_TLS_CERT_FILE")) == "" || strings.TrimSpace(os.Getenv("GV_TLS_KEY_FILE")) == "" {
+			return fmt.Errorf("GV_TLS_ENABLED=true requires GV_TLS_CERT_FILE and GV_TLS_KEY_FILE in production")
 		}
 	}
 	if len(jwtSecrets) == 0 || strings.TrimSpace(jwtSecrets[0]) == "" || containsDevelopmentJWTSecret(jwtSecrets) {
-		return fmt.Errorf("AF_JWT_SECRET/AF_JWT_SECRETS must be set to a non-default value")
+		return fmt.Errorf("GV_JWT_SECRET/GV_JWT_SECRETS must be set to a non-default value")
 	}
 	if strings.TrimSpace(collectorAuthToken) == "" {
-		return fmt.Errorf("AF_GATEWAY_AUTH_TOKEN must be set to a non-empty shared bearer token")
+		return fmt.Errorf("GV_GATEWAY_AUTH_TOKEN must be set to a non-empty shared bearer token")
 	}
 	if adminPassword == "admin" || strings.TrimSpace(adminPassword) == "" {
-		return fmt.Errorf("AF_ADMIN_PASSWORD must be set to a non-default value")
+		return fmt.Errorf("GV_ADMIN_PASSWORD must be set to a non-default value")
 	}
 	if strings.TrimSpace(vaultKey) == "" || vaultKey == strings.Repeat("0", 64) {
-		return fmt.Errorf("AF_VAULT_KEY must be set to a non-default value")
+		return fmt.Errorf("GV_VAULT_KEY must be set to a non-default value")
 	}
 	if err := vault.ValidateMasterKeyHex(vaultKey); err != nil {
 		return err
@@ -604,10 +606,10 @@ func liveStreamTopologyWarning(strict bool) string {
 }
 
 func strictConfigEnabled() bool {
-	if os.Getenv("AF_STRICT_CONFIG") == "true" {
+	if os.Getenv("GV_STRICT_CONFIG") == "true" {
 		return true
 	}
-	return strings.EqualFold(os.Getenv("AF_ENV"), "production")
+	return strings.EqualFold(os.Getenv("GV_ENV"), "production")
 }
 
 func serveOpenAPISpec(specPath string) http.HandlerFunc {
@@ -624,7 +626,7 @@ func serveSwaggerUI(specURL string) http.HandlerFunc {
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>AgentFabric API Docs</title>
+    <title>Govagn API Docs</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
     <style>

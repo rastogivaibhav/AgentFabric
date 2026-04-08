@@ -6,7 +6,7 @@
 // excluded from `go test ./...`. Invoke explicitly:
 //
 //	go test -tags=integration ./tests/integration/... \
-//	    -db-url="postgres://fabric:fabric_dev_only@localhost:5433/agentfabric?sslmode=disable" \
+//	    -db-url="postgres://fabric:fabric_dev_only@localhost:5433/govagn?sslmode=disable" \
 //	    -redis-url="redis://localhost:6380"
 //
 // Or via Make (spins up Docker deps automatically):
@@ -42,17 +42,17 @@ import (
 	chimid "github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 
-	"github.com/agentfabric/api-gateway/internal/auth"
-	"github.com/agentfabric/api-gateway/internal/handlers"
-	"github.com/agentfabric/api-gateway/internal/middleware"
-	"github.com/agentfabric/api-gateway/internal/store"
-	"github.com/agentfabric/api-gateway/internal/ws"
+	"github.com/govagn/api-gateway/internal/auth"
+	"github.com/govagn/api-gateway/internal/handlers"
+	"github.com/govagn/api-gateway/internal/middleware"
+	"github.com/govagn/api-gateway/internal/store"
+	"github.com/govagn/api-gateway/internal/ws"
 )
 
 // ─── Flags ────────────────────────────────────────────────────────────────────
 
 var (
-	dbURL    = flag.String("db-url", envOrDefault("INTEGRATION_DB_URL", "postgres://fabric:fabric_dev_only@localhost:5433/agentfabric?sslmode=disable"), "PostgreSQL DSN for integration tests")
+	dbURL    = flag.String("db-url", envOrDefault("INTEGRATION_DB_URL", "postgres://fabric:fabric_dev_only@localhost:5433/govagn?sslmode=disable"), "PostgreSQL DSN for integration tests")
 	redisURL = flag.String("redis-url", envOrDefault("INTEGRATION_REDIS_URL", "redis://localhost:6380"), "Redis URL for integration tests")
 )
 

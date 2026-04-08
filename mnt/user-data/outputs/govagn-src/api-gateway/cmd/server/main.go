@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/handlers"
-	"github.com/agentfabric/api-gateway/internal/middleware"
-	"github.com/agentfabric/api-gateway/internal/store"
-	"github.com/agentfabric/api-gateway/internal/ws"
+	"github.com/govagn/api-gateway/internal/handlers"
+	"github.com/govagn/api-gateway/internal/middleware"
+	"github.com/govagn/api-gateway/internal/store"
+	"github.com/govagn/api-gateway/internal/ws"
 	"github.com/go-chi/chi/v5"
 	chimid "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -23,9 +23,9 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	pgDSN := envOr("DATABASE_URL", "postgres://fabric:fabric@localhost:5432/agentfabric?sslmode=disable")
+	pgDSN := envOr("DATABASE_URL", "postgres://fabric:fabric@localhost:5432/govagn?sslmode=disable")
 	redisAddr := envOr("REDIS_URL", "redis://localhost:6379")
-	jwtSecret := envOr("AF_JWT_SECRET", "dev-secret-change-in-production")
+	jwtSecret := envOr("GV_JWT_SECRET", "dev-secret-change-in-production")
 	listenAddr := envOr("LISTEN_ADDR", ":8080")
 
 	// Storage
@@ -55,7 +55,7 @@ func main() {
 	r.Use(chimid.Recoverer)
 	r.Use(chimid.Timeout(30 * time.Second))
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "https://*.agentfabric.io"},
+		AllowedOrigins:   []string{"http://localhost:3000", "https://*.govagn.io"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 		AllowCredentials: true,

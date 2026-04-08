@@ -15,12 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/budget"
-	"github.com/agentfabric/api-gateway/internal/models"
-	"github.com/agentfabric/api-gateway/internal/policy"
-	priced "github.com/agentfabric/api-gateway/internal/pricing"
-	"github.com/agentfabric/api-gateway/internal/proxy"
-	"github.com/agentfabric/api-gateway/internal/vault"
+	"github.com/govagn/api-gateway/internal/budget"
+	"github.com/govagn/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/policy"
+	priced "github.com/govagn/api-gateway/internal/pricing"
+	"github.com/govagn/api-gateway/internal/proxy"
+	"github.com/govagn/api-gateway/internal/vault"
 	"go.uber.org/zap"
 )
 
@@ -126,7 +126,7 @@ func (p *NetProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// Respond 200 before anything else — the client starts TLS as soon as it
 	// sees this, so we must not write another byte over conn before the MITM
 	// branch completes its own TLS handshake.
-	fmt.Fprintf(conn, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: AgentFabric\r\n\r\n") //nolint:errcheck
+	fmt.Fprintf(conn, "HTTP/1.1 200 Connection Established\r\nProxy-Agent: Govagn\r\n\r\n") //nolint:errcheck
 
 	if isLLM {
 		p.mitmConnect(conn, host, hostname, provider)

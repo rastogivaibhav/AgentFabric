@@ -11,7 +11,7 @@ import (
 
 
 
-	_test "github.com/agentfabric/collector/internal/processor"
+	_test "github.com/govagn/collector/internal/processor"
 
 
 )
@@ -106,8 +106,8 @@ var examples = []testing.InternalExample{
 
 func init() {
 
-	testdeps.ModulePath = "github.com/agentfabric/collector"
-	testdeps.ImportPath = "github.com/agentfabric/collector/internal/processor"
+	testdeps.ModulePath = "github.com/govagn/collector"
+	testdeps.ImportPath = "github.com/govagn/collector/internal/processor"
 }
 
 func main() {

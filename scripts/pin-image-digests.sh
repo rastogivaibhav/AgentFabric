@@ -12,7 +12,7 @@
 set -euo pipefail
 
 TAG="${1:-1.0.0}"
-REGISTRY="ghcr.io/agentfabric"
+REGISTRY="ghcr.io/govagn"
 VALUES="deploy/helm/values.yaml"
 
 IMAGES=(

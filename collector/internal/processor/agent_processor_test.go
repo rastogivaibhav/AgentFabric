@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentfabric/collector/internal/config"
+	"github.com/govagn/collector/internal/config"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )

@@ -6,14 +6,14 @@ COPY . .
 RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-w -s" \
-    -o /agentfabric-gateway ./cmd/server
+    -o /govagn-gateway ./cmd/server
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates wget netcat-openbsd
 RUN adduser -D -u 10001 appuser
-COPY --from=builder /agentfabric-gateway /agentfabric-gateway
+COPY --from=builder /govagn-gateway /govagn-gateway
 
 USER appuser
 EXPOSE 8080
 
-ENTRYPOINT ["/agentfabric-gateway"]
+ENTRYPOINT ["/govagn-gateway"]

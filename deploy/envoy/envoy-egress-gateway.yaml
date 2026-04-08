@@ -1,0 +1,83 @@
+# Prerequisite:
+#   Create ConfigMap `govagn-envoy-egress-config` in namespace `govagn-system`
+#   from deploy/envoy/envoy.yaml before applying this Deployment.
+#   Example:
+#   kubectl -n govagn-system create configmap govagn-envoy-egress-config --from-file=envoy.yaml=deploy/envoy/envoy.yaml --dry-run=client -o yaml | kubectl apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: govagn-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: govagn-envoy-egress
+  namespace: govagn-system
+  labels:
+    app.kubernetes.io/name: govagn-envoy-egress
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: govagn-envoy-egress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: govagn-envoy-egress
+    spec:
+      containers:
+        - name: envoy
+          image: envoyproxy/envoy:v1.32-latest
+          args:
+            - -c
+            - /etc/envoy/envoy.yaml
+            - --log-level
+            - info
+          ports:
+            - containerPort: 15001
+              name: egress-tls
+            - containerPort: 9901
+              name: admin
+          volumeMounts:
+            - name: envoy-config
+              mountPath: /etc/envoy/envoy.yaml
+              subPath: envoy.yaml
+              readOnly: true
+            - name: envoy-certs
+              mountPath: /etc/envoy/certs
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9901
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 9901
+            initialDelaySeconds: 10
+            periodSeconds: 15
+      volumes:
+        - name: envoy-config
+          configMap:
+            name: govagn-envoy-egress-config
+        - name: envoy-certs
+          secret:
+            secretName: govagn-envoy-egress-certs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: govagn-envoy-egress
+  namespace: govagn-system
+spec:
+  selector:
+    app.kubernetes.io/name: govagn-envoy-egress
+  ports:
+    - name: egress-tls
+      port: 443
+      targetPort: 15001
+    - name: admin
+      port: 9901
+      targetPort: 9901

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/agentfabric/collector/internal/auth"
-	"github.com/agentfabric/collector/internal/processor"
+	"github.com/govagn/collector/internal/auth"
+	"github.com/govagn/collector/internal/processor"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 

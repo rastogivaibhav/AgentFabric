@@ -1,8 +1,8 @@
-# AgentFabric — Deep-Dive Test Report
+﻿# Govagn â€” Deep-Dive Test Report
 **Version**: v1.1.0
 **Date**: 2026-03-16
 **Method**: Full source analysis + live test suite execution across all services
-**Verdict**: **NOT PRODUCTION-READY** — 1 build failure, 3 blockers, 14 additional defects
+**Verdict**: **NOT PRODUCTION-READY** â€” 1 build failure, 3 blockers, 14 additional defects
 
 ---
 
@@ -28,12 +28,12 @@ Treat the detailed findings below as historical baseline findings unless they ar
 
 ## 1. Test Suite Execution Results
 
-### 1.1 Go — api-gateway (`go test ./... -count=1 -v`)
+### 1.1 Go â€” api-gateway (`go test ./... -count=1 -v`)
 
 | Package | Tests | Result | Notes |
 |---------|-------|--------|-------|
-| `cmd/server` | 8 | **PASS** | TLS fail-secure (3), parseSecrets (5) — all green |
-| `internal/auth` | 46 | **BUILD FAIL** | Compile error — `parseIDToken` undefined |
+| `cmd/server` | 8 | **PASS** | TLS fail-secure (3), parseSecrets (5) â€” all green |
+| `internal/auth` | 46 | **BUILD FAIL** | Compile error â€” `parseIDToken` undefined |
 | `internal/handlers` | 16 | **PASS** | buildTrace (7), buildTopologyGraph (6), helpers (3) |
 | `internal/middleware` | 37 | **PASS** | JWTAuth (7), TenantInjector (3), CollectorAuth (6), RateLimit (11), RequireRole (7), ABAC (4), multi-secret (3) |
 | `internal/models` | 0 | skipped | No test file |
@@ -42,7 +42,7 @@ Treat the detailed findings below as historical baseline findings unless they ar
 
 **Overall Go: 61 PASS / 0 FAIL / 1 package BUILD FAILED**
 
-#### Build Failure Detail — `internal/auth` Package
+#### Build Failure Detail â€” `internal/auth` Package
 
 ```
 internal/auth/oidc_test.go:126:17: undefined: parseIDToken
@@ -52,7 +52,7 @@ internal/auth/oidc_test.go:169:12: undefined: parseIDToken
 internal/auth/oidc_test.go:176:12: undefined: parseIDToken
 ```
 
-**Root cause**: `oidc_test.go` calls `parseIDToken()` but the implementation function was renamed to `parseIDTokenUnsafe()` (the "Unsafe" suffix was added to signal it skips signature verification). The test file was never updated to match. This means **46 auth package tests have never compiled or run** — including all 11 `TestPasswordLogin_*` tests and all 6 `TestRefresh_*` tests.
+**Root cause**: `oidc_test.go` calls `parseIDToken()` but the implementation function was renamed to `parseIDTokenUnsafe()` (the "Unsafe" suffix was added to signal it skips signature verification). The test file was never updated to match. This means **46 auth package tests have never compiled or run** â€” including all 11 `TestPasswordLogin_*` tests and all 6 `TestRefresh_*` tests.
 
 **Affected tests** (never executed):
 ```
@@ -73,11 +73,11 @@ TestPasswordLogin_* (11 tests)
 TestRefresh_* (8 tests)
 ```
 
-**Fix required** (1-line): In `oidc_test.go`, rename all calls from `parseIDToken(` to `parseIDTokenUnsafe(`. This is a test file change only — no production code change.
+**Fix required** (1-line): In `oidc_test.go`, rename all calls from `parseIDToken(` to `parseIDTokenUnsafe(`. This is a test file change only â€” no production code change.
 
 ---
 
-### 1.2 Portal — Vitest (`npm run test -- --run`)
+### 1.2 Portal â€” Vitest (`npm run test -- --run`)
 
 | Test File | Tests | Result |
 |-----------|-------|--------|
@@ -98,18 +98,18 @@ Portal test suite is clean. All 113 tests pass in 3.94 seconds.
 ### 1.3 Summary Table
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  TEST SUITE SUMMARY — AgentFabric v1.1.0                            │
-├────────────────────┬──────────┬──────────┬──────────────────────────┤
-│  Suite             │  Total   │  Pass    │  Status                  │
-├────────────────────┼──────────┼──────────┼──────────────────────────┤
-│  Go: cmd/server    │       8  │       8  │  GREEN                   │
-│  Go: internal/auth │      46  │       0  │  BUILD FAIL (rename bug) │
-│  Go: internal/     │      53  │      53  │  GREEN                   │
-│  Portal: Vitest    │     113  │     113  │  GREEN                   │
-├────────────────────┼──────────┼──────────┼──────────────────────────┤
-│  TOTAL             │     220  │     174  │  46 NOT COMPILED         │
-└────────────────────┴──────────┴──────────┴──────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  TEST SUITE SUMMARY â€” Govagn v1.1.0                            â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚  Suite             â”‚  Total   â”‚  Pass    â”‚  Status                  â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚  Go: cmd/server    â”‚       8  â”‚       8  â”‚  GREEN                   â”‚
+â”‚  Go: internal/auth â”‚      46  â”‚       0  â”‚  BUILD FAIL (rename bug) â”‚
+â”‚  Go: internal/     â”‚      53  â”‚      53  â”‚  GREEN                   â”‚
+â”‚  Portal: Vitest    â”‚     113  â”‚     113  â”‚  GREEN                   â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚  TOTAL             â”‚     220  â”‚     174  â”‚  46 NOT COMPILED         â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
@@ -120,59 +120,59 @@ Portal test suite is clean. All 113 tests pass in 3.94 seconds.
 
 | Package | Risk Level | What's Untested |
 |---------|-----------|----------------|
-| `internal/store` | **CRITICAL** | All database queries — BulkInsertSpans, ListTraces, ListRuns, CreateUser, GetUserByUsername (doesn't exist), VerifyAuditChain, hashPassword |
+| `internal/store` | **CRITICAL** | All database queries â€” BulkInsertSpans, ListTraces, ListRuns, CreateUser, GetUserByUsername (doesn't exist), VerifyAuditChain, hashPassword |
 | `internal/ws` | Medium | WebSocket hub broadcast, client connect/disconnect, message fan-out |
-| `internal/models` | Low | Pure data structs — low value to test directly |
+| `internal/models` | Low | Pure data structs â€” low value to test directly |
 | `collector/` (all) | **HIGH** | OTLP receiver, framework detection, PII scrubbing, rate limiting, exporter |
 
 ### 2.2 Critical Uncovered Paths in Existing Packages
 
 | Path | Why It Matters |
 |------|---------------|
-| `oidc.go:PasswordLogin` — DB user path | **Does not exist yet** (B-2 fix not done) |
-| `store.go:BulkInsertSpans` | Core data write — untested against any DB |
-| `store.go:VerifyAuditChain` | Hash recomputation — divergence from af-core is silent |
-| `store.go:hashPassword` | bcrypt fallback to SHA-256 on error — should be tested |
-| `handlers.go:Ingest` — oversized body | **No MaxBytesReader** — DoS vector, untested |
-| `handlers.go:Health` | Always returns 200 — dependency failures are invisible |
-| `middleware.go:RequireRole` — case sensitivity | Test passes, but `EqualFold` means "Admin" == "admin" — may be unexpected behaviour in the portal where hasRole uses exact match |
+| `oidc.go:PasswordLogin` â€” DB user path | **Does not exist yet** (B-2 fix not done) |
+| `store.go:BulkInsertSpans` | Core data write â€” untested against any DB |
+| `store.go:VerifyAuditChain` | Hash recomputation â€” divergence from af-core is silent |
+| `store.go:hashPassword` | bcrypt fallback to SHA-256 on error â€” should be tested |
+| `handlers.go:Ingest` â€” oversized body | **No MaxBytesReader** â€” DoS vector, untested |
+| `handlers.go:Health` | Always returns 200 â€” dependency failures are invisible |
+| `middleware.go:RequireRole` â€” case sensitivity | Test passes, but `EqualFold` means "Admin" == "admin" â€” may be unexpected behaviour in the portal where hasRole uses exact match |
 
 ---
 
 ## 3. Code-Level Defects Found During Deep Inspection
 
-### 3.1 CONFIRMED BUG — `parseIDToken` Rename Not Propagated
+### 3.1 CONFIRMED BUG â€” `parseIDToken` Rename Not Propagated
 
 **Severity**: High (test failure + reveals rename was made without search-and-replace)
 **File**: `api-gateway/internal/auth/oidc_test.go` lines 126, 143, 162, 169, 176
 
-The function `parseIDTokenUnsafe` exists in `oidc.go`. The test file references the old name `parseIDToken`. This means the 5 token-parsing tests — and by extension ALL 46 auth tests — have never run. Production auth behaviour has **zero test coverage**.
+The function `parseIDTokenUnsafe` exists in `oidc.go`. The test file references the old name `parseIDToken`. This means the 5 token-parsing tests â€” and by extension ALL 46 auth tests â€” have never run. Production auth behaviour has **zero test coverage**.
 
 ---
 
-### 3.2 CONFIRMED BUG — RBAC Case-Sensitivity Mismatch Between Layers
+### 3.2 CONFIRMED BUG â€” RBAC Case-Sensitivity Mismatch Between Layers
 
 **Severity**: Medium
 **Files**: `middleware/middleware.go` (Go server) vs `portal/src/hooks/auth.ts` (TypeScript)
 
 The Go `RequireRole` uses `strings.EqualFold` (case-insensitive):
 ```go
-if strings.EqualFold(claims.Role, allowed) { // "Admin" == "admin" → PASS
+if strings.EqualFold(claims.Role, allowed) { // "Admin" == "admin" â†’ PASS
 ```
 
 The TypeScript `hasRole` uses `Array.includes` (exact match):
 ```typescript
-return allowedRoles.includes(user.role) // "Admin" != "admin" → FAIL
+return allowedRoles.includes(user.role) // "Admin" != "admin" â†’ FAIL
 ```
 
 **Consequence**: A JWT containing `"role": "Admin"` (mixed-case, e.g. from some OIDC providers) would pass the Go API check but the portal would hide admin elements from that user. The user appears to be a non-admin in the UI but an admin to the API. This is an inconsistency that could confuse operators and mask privilege issues.
 
 ---
 
-### 3.3 CONFIRMED BUG — `oidc_test.go` `NewOIDCHandler` Signature Now Incorrect
+### 3.3 CONFIRMED BUG â€” `oidc_test.go` `NewOIDCHandler` Signature Now Incorrect
 
 **Severity**: Medium (will block B-2 fix landing)
-**File**: `api-gateway/internal/auth/oidc_test.go` lines 23–32
+**File**: `api-gateway/internal/auth/oidc_test.go` lines 23â€“32
 
 All `testHandler()` and `passwordLoginHandler()` helpers call:
 ```go
@@ -183,10 +183,10 @@ After Fix B-2 (`NewOIDCHandler` gains a `UserLookup` parameter), every existing 
 
 ---
 
-### 3.4 CONFIRMED DEFECT — `store.go` Comment Contradicts Reality
+### 3.4 CONFIRMED DEFECT â€” `store.go` Comment Contradicts Reality
 
 **Severity**: Low
-**File**: `api-gateway/internal/store/postgres.go` lines 44–47
+**File**: `api-gateway/internal/store/postgres.go` lines 44â€“47
 
 ```go
 // Schema is initialized by deploy/sql/init.sql in docker-compose.yml
@@ -195,16 +195,16 @@ After Fix B-2 (`NewOIDCHandler` gains a `UserLookup` parameter), every existing 
 
 This comment is false in two ways:
 1. Migrations ARE now done by golang-migrate (`runMigrations()` in main.go)
-2. `deploy/sql/init.sql` is separate from `deploy/migrations/001_initial_schema.up.sql` — running both would attempt to create tables twice
+2. `deploy/sql/init.sql` is separate from `deploy/migrations/001_initial_schema.up.sql` â€” running both would attempt to create tables twice
 
 The comment must be updated: "Schema is managed by deploy/migrations/ via golang-migrate. See main.go:runMigrations()."
 
 ---
 
-### 3.5 CONFIRMED DEFECT — `ingestRequest` Accepts Unauthenticated Tenant Override
+### 3.5 CONFIRMED DEFECT â€” `ingestRequest` Accepts Unauthenticated Tenant Override
 
 **Severity**: Medium
-**File**: `api-gateway/internal/handlers/handlers.go` lines 76–81
+**File**: `api-gateway/internal/handlers/handlers.go` lines 76â€“81
 
 ```go
 tenantID := r.Header.Get("X-AF-Tenant")
@@ -219,10 +219,10 @@ The `X-AF-Tenant` header is read from the ingest request **with no validation**.
 
 ---
 
-### 3.6 CONFIRMED DEFECT — Rate Limit Fail-Open Is Undocumented in Production Checklist
+### 3.6 CONFIRMED DEFECT â€” Rate Limit Fail-Open Is Undocumented in Production Checklist
 
 **Severity**: Low
-**File**: `api-gateway/internal/middleware/ratelimit.go` line 56–59
+**File**: `api-gateway/internal/middleware/ratelimit.go` line 56â€“59
 
 ```go
 if err != nil {
@@ -236,17 +236,17 @@ This is a deliberate design choice (fail-open = no outage during Redis downtime)
 
 ---
 
-### 3.7 CONFIRMED DEFECT — `GetTraceSpans` Silently Skips Scan Errors
+### 3.7 CONFIRMED DEFECT â€” `GetTraceSpans` Silently Skips Scan Errors
 
 **Severity**: Medium
-**File**: `api-gateway/internal/store/postgres.go` lines 298–304
+**File**: `api-gateway/internal/store/postgres.go` lines 298â€“304
 
 ```go
 for rows.Next() {
     var sp models.Span
     ...
     if err := rows.Scan(...); err != nil {
-        continue  // ← silently drops the row
+        continue  // â† silently drops the row
     }
 ```
 
@@ -254,7 +254,7 @@ If a row fails to scan (type mismatch, null in non-nullable column), it is silen
 
 ---
 
-### 3.8 CONFIRMED DEFECT — `srv.Shutdown()` Error Silently Discarded
+### 3.8 CONFIRMED DEFECT â€” `srv.Shutdown()` Error Silently Discarded
 
 **Severity**: Low
 **File**: `api-gateway/cmd/server/main.go` line 225
@@ -272,16 +272,16 @@ if err := srv.Shutdown(ctx); err != nil {
 
 ---
 
-### 3.9 CONFIRMED DEFECT — `VerifyAuditChain` Skips Entries With Empty Hash
+### 3.9 CONFIRMED DEFECT â€” `VerifyAuditChain` Skips Entries With Empty Hash
 
 **Severity**: Medium
-**File**: `api-gateway/internal/store/postgres.go` lines 782–793
+**File**: `api-gateway/internal/store/postgres.go` lines 782â€“793
 
 ```go
 if r.entryHash != "" && expected != r.entryHash {
     // chain broken
 }
-prevHash = r.entryHash  // ← if entryHash is "", prevHash becomes ""
+prevHash = r.entryHash  // â† if entryHash is "", prevHash becomes ""
 ```
 
 If any entry has an empty `entry_hash` (e.g., an audit entry written by a buggy version of af-core), the chain verification silently accepts it AND resets `prevHash` to `""`. The next entry would be hashed against an empty string. A run of entries with empty hashes would pass verification entirely.
@@ -295,28 +295,28 @@ if r.entryHash == "" {
 
 ---
 
-## 4. Architecture Deep-Dive — Flow Tracing
+## 4. Architecture Deep-Dive â€” Flow Tracing
 
 ### 4.1 Happy-Path Span Ingestion (End-to-End Trace)
 
 ```
-Agent SDK → OTLP HTTP POST /v1/traces → Collector (:4318)
-  collector/internal/receiver → parse OTLP protobuf
-  → collector/internal/processor → framework detection, PII scrub, cost computation
-  → collector/internal/exporter → POST /internal/ingest to api-gateway:8080
-      → Header: X-AF-Source: collector
-      → Header: Authorization: Bearer <AF_GATEWAY_AUTH_TOKEN>
-      → Body: {"spans":[...]}
+Agent SDK â†’ OTLP HTTP POST /v1/traces â†’ Collector (:4318)
+  collector/internal/receiver â†’ parse OTLP protobuf
+  â†’ collector/internal/processor â†’ framework detection, PII scrub, cost computation
+  â†’ collector/internal/exporter â†’ POST /internal/ingest to api-gateway:8080
+      â†’ Header: X-AF-Source: collector
+      â†’ Header: Authorization: Bearer <GV_GATEWAY_AUTH_TOKEN>
+      â†’ Body: {"spans":[...]}
 
 api-gateway: POST /internal/ingest
-  → CollectorAuth middleware
-      → Check X-AF-Source == "collector"     [H-4: this check adds nothing]
-      → Constant-time compare against AF_GATEWAY_AUTH_TOKEN
-  → Handler.Ingest()
-      → No MaxBytesReader                    [D: DoS vector]
-      → Read X-AF-Tenant header (unauthenticated) [3.5: tenant injection risk]
-      → BulkInsertSpans() → pgx.CopyFrom to spans table  [3.7: scan errors swallowed]
-      → WebSocket broadcast to connected clients
+  â†’ CollectorAuth middleware
+      â†’ Check X-AF-Source == "collector"     [H-4: this check adds nothing]
+      â†’ Constant-time compare against GV_GATEWAY_AUTH_TOKEN
+  â†’ Handler.Ingest()
+      â†’ No MaxBytesReader                    [D: DoS vector]
+      â†’ Read X-AF-Tenant header (unauthenticated) [3.5: tenant injection risk]
+      â†’ BulkInsertSpans() â†’ pgx.CopyFrom to spans table  [3.7: scan errors swallowed]
+      â†’ WebSocket broadcast to connected clients
 
 RESULT: Span appears in portal within ~100ms of agent SDK call
 RISK: No body size limit, no tenant validation, scan errors drop silently
@@ -328,55 +328,55 @@ RISK: No body size limit, no tenant validation, scan errors drop silently
 Portal: POST /auth/login {"username":"admin","password":"admin"}
 
 api-gateway: OIDCHandler.PasswordLogin()
-  → Parse JSON body
-  → subtle.ConstantTimeCompare against AF_ADMIN_USER/AF_ADMIN_PASSWORD
-  → IF match: issue JWT, return {"token":"eyJ..."}
-  → Portal: localStorage.setItem('af_token', token)   [B-3: XSS vulnerability]
+  â†’ Parse JSON body
+  â†’ subtle.ConstantTimeCompare against GV_ADMIN_USER/GV_ADMIN_PASSWORD
+  â†’ IF match: issue JWT, return {"token":"eyJ..."}
+  â†’ Portal: localStorage.setItem('af_token', token)   [B-3: XSS vulnerability]
 
 CRITICAL GAP: users table is never consulted
-  → User created via POST /api/v1/users cannot log in
-  → bcrypt-hashed passwords are stored but never compared
-  → The entire user management feature has no authentication path
+  â†’ User created via POST /api/v1/users cannot log in
+  â†’ bcrypt-hashed passwords are stored but never compared
+  â†’ The entire user management feature has no authentication path
 ```
 
 ### 4.3 RBAC Enforcement Flow
 
 ```
 Portal: DELETE /api/v1/users/uuid-123
-  → Authorization: Bearer eyJ...
+  â†’ Authorization: Bearer eyJ...
 
 api-gateway:
-  → JWTAuth middleware → verify JWT, extract claims → context["claims"]
-  → TenantInjector → set context["tenant_id"]
-  → RateLimit → check Redis counter
-  → RequireRole("admin") middleware
-      → Extract claims from context["claims"]    [H-1: string key, collision risk]
-      → EqualFold(claims.Role, "admin")          [3.2: case mismatch with portal]
-      → 200 → Handler.DeleteUser()
-         → DELETE FROM users WHERE user_id=$1 AND tenant_id=$2
-         → No audit trail written               [M-12: compliance gap]
+  â†’ JWTAuth middleware â†’ verify JWT, extract claims â†’ context["claims"]
+  â†’ TenantInjector â†’ set context["tenant_id"]
+  â†’ RateLimit â†’ check Redis counter
+  â†’ RequireRole("admin") middleware
+      â†’ Extract claims from context["claims"]    [H-1: string key, collision risk]
+      â†’ EqualFold(claims.Role, "admin")          [3.2: case mismatch with portal]
+      â†’ 200 â†’ Handler.DeleteUser()
+         â†’ DELETE FROM users WHERE user_id=$1 AND tenant_id=$2
+         â†’ No audit trail written               [M-12: compliance gap]
 
 Portal (parallel):
-  → hasRole(user, ['admin']) — exact match, NOT EqualFold
-  → Hides Delete button for non-admins
+  â†’ hasRole(user, ['admin']) â€” exact match, NOT EqualFold
+  â†’ Hides Delete button for non-admins
 ```
 
 ### 4.4 JWT Rotation Flow
 
 ```
 Current state (correctly implemented):
-  AF_JWT_SECRETS="new-key,old-key"
-  → parseSecrets() → ["new-key", "old-key"]
-  → JWTAuth(secrets...) tries each in order
-  → First match wins → valid
-  → New tokens signed with secrets[0] (new-key)
-  → Old tokens accepted via secrets[1] (old-key) during rotation window
+  GV_JWT_SECRETS="new-key,old-key"
+  â†’ parseSecrets() â†’ ["new-key", "old-key"]
+  â†’ JWTAuth(secrets...) tries each in order
+  â†’ First match wins â†’ valid
+  â†’ New tokens signed with secrets[0] (new-key)
+  â†’ Old tokens accepted via secrets[1] (old-key) during rotation window
 
-Session max age: 8 hours (AF_SESSION_MAX_AGE)
-  → After 8h, all old-key tokens have expired
-  → Remove old-key from AF_JWT_SECRETS
+Session max age: 8 hours (GV_SESSION_MAX_AGE)
+  â†’ After 8h, all old-key tokens have expired
+  â†’ Remove old-key from GV_JWT_SECRETS
 
-CORRECTLY IMPLEMENTED — no issues found in this path
+CORRECTLY IMPLEMENTED â€” no issues found in this path
 ```
 
 ---
@@ -398,11 +398,11 @@ CORRECTLY IMPLEMENTED — no issues found in this path
 | Multi-tenancy isolation | `WHERE tenant_id = $1` on all queries | **PASS (manual)** |
 | Audit log tamper prevention | PostgreSQL RULE DO INSTEAD NOTHING | **PASS** |
 | Session cookie security | HttpOnly: **false** (OIDC) / localStorage (password) | **FAIL** |
-| DB user auth path | Password compared against users table | **FAIL — not implemented** |
-| Request body size limit | MaxBytesReader on ingest | **FAIL — missing** |
-| Security response headers | CSP, X-Frame-Options, etc. | **FAIL — missing** |
-| Tenant injection attack | X-AF-Tenant validated against JWT claims | **FAIL — unvalidated header** |
-| Admin action audit trail | User CRUD written to policy_audit_log | **FAIL — missing** |
+| DB user auth path | Password compared against users table | **FAIL â€” not implemented** |
+| Request body size limit | MaxBytesReader on ingest | **FAIL â€” missing** |
+| Security response headers | CSP, X-Frame-Options, etc. | **FAIL â€” missing** |
+| Tenant injection attack | X-AF-Tenant validated against JWT claims | **FAIL â€” unvalidated header** |
+| Admin action audit trail | User CRUD written to policy_audit_log | **FAIL â€” missing** |
 
 **Security score: 10/16 controls passing**
 
@@ -412,12 +412,12 @@ CORRECTLY IMPLEMENTED — no issues found in this path
 
 | Path | Current Behaviour | Risk |
 |------|------------------|------|
-| `GET /api/v1/traces?limit=50&offset=50000` | Full table scan over 50k rows | HIGH — P99 spike at scale |
-| `GET /api/v1/audit/verify` | Load 100k rows into memory | HIGH — OOM on busy tenant |
-| `POST /internal/ingest` with 1 GB body | Read fully into memory | HIGH — DoS vector |
-| OIDC login | 2 x HTTP calls to `/.well-known/openid-configuration` | MEDIUM — 100–200ms latency |
-| Redis unavailable | Rate limiter silent fail-open | MEDIUM — unlimited requests |
-| 5000 spans per trace (hardcoded) | `GetTraceSpans` LIMIT 5000 | LOW — edge case |
+| `GET /api/v1/traces?limit=50&offset=50000` | Full table scan over 50k rows | HIGH â€” P99 spike at scale |
+| `GET /api/v1/audit/verify` | Load 100k rows into memory | HIGH â€” OOM on busy tenant |
+| `POST /internal/ingest` with 1 GB body | Read fully into memory | HIGH â€” DoS vector |
+| OIDC login | 2 x HTTP calls to `/.well-known/openid-configuration` | MEDIUM â€” 100â€“200ms latency |
+| Redis unavailable | Rate limiter silent fail-open | MEDIUM â€” unlimited requests |
+| 5000 spans per trace (hardcoded) | `GetTraceSpans` LIMIT 5000 | LOW â€” edge case |
 
 ---
 
@@ -425,16 +425,16 @@ CORRECTLY IMPLEMENTED — no issues found in this path
 
 ```
 RISK                    TEST COVERAGE     GAP SIZE
-────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Auth (oidc.go)         BUILD FAILS        ALL 46 tests never ran
 Store (postgres.go)    ZERO               Every DB query untested
 Collector              ZERO               PII scrub, framework detection untested
 Ingest DoS             ZERO               No MaxBytesReader test
-Password→DB login      N/A (not built)    The feature doesn't exist yet
+Passwordâ†’DB login      N/A (not built)    The feature doesn't exist yet
 Healthz deps           ZERO               Health always passes
 Security headers        ZERO               Not implemented
 Tenant injection        ZERO               No test for X-AF-Tenant bypass
-────────────────────────────────────────────────────────
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 Portal auth hooks      37 tests            GOOD
 Middleware (Go)        37 tests            GOOD
 Handlers (Go)          16 tests            PARTIAL (no HTTP-level tests)
@@ -449,21 +449,21 @@ Server TLS             8 tests             GOOD
 
 | Area | Confidence |
 |------|-----------|
-| TLS fail-secure logic | HIGH — 3 tests, well-named, cover edge cases |
-| JWT multi-secret rotation (middleware) | HIGH — 3 rotation tests, explicit |
-| RBAC/ABAC middleware | HIGH — 12 tests covering all code paths |
-| Rate limiting (Redis, isolation, fail-open) | HIGH — 11 tests |
-| Portal RBAC/ABAC hooks | HIGH — 37 tests, thorough edge cases |
-| PKCE + state cookie | HIGH — once build failure is fixed, 7 dedicated tests exist |
-| Password login (env-var path) | HIGH — once build failure is fixed, 11 tests |
-| Token refresh | HIGH — once build failure is fixed, 8 tests |
+| TLS fail-secure logic | HIGH â€” 3 tests, well-named, cover edge cases |
+| JWT multi-secret rotation (middleware) | HIGH â€” 3 rotation tests, explicit |
+| RBAC/ABAC middleware | HIGH â€” 12 tests covering all code paths |
+| Rate limiting (Redis, isolation, fail-open) | HIGH â€” 11 tests |
+| Portal RBAC/ABAC hooks | HIGH â€” 37 tests, thorough edge cases |
+| PKCE + state cookie | HIGH â€” once build failure is fixed, 7 dedicated tests exist |
+| Password login (env-var path) | HIGH â€” once build failure is fixed, 11 tests |
+| Token refresh | HIGH â€” once build failure is fixed, 8 tests |
 
 ### What Is Broken or Untested
 
 | Area | Severity | Confidence |
 |------|----------|-----------|
-| `internal/auth` package | BUILD FAILURE | Zero confidence — nothing compiles |
-| Password login → users table | NOT BUILT | N/A |
+| `internal/auth` package | BUILD FAILURE | Zero confidence â€” nothing compiles |
+| Password login â†’ users table | NOT BUILT | N/A |
 | All store queries | ZERO TESTS | Unknown |
 | Ingest DoS protection | NOT BUILT | N/A |
 | Security response headers | NOT BUILT | N/A |
@@ -474,30 +474,30 @@ Server TLS             8 tests             GOOD
 ### Readiness Verdict
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  AGENTFABRIC v1.1.0 — PRODUCTION READINESS VERDICT                 │
-│                                                                     │
-│  OVERALL:  NOT READY                                                │
-│                                                                     │
-│  Tests:    174/220 compiled and passing                             │
-│            46 tests in auth package have NEVER run (build failure) │
-│                                                                     │
-│  Blockers: 3 open (schema, DB login, HttpOnly cookie)               │
-│  Build failures: 1 (parseIDToken rename not propagated)            │
-│  Additional defects: 9 confirmed                                    │
-│                                                                     │
-│  Target: v1.1.1 with all items in FIX_PLAN resolved                │
-│  Estimated effort: 5 engineering-days                               │
-└─────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  GOVAGN v1.1.0 â€” PRODUCTION READINESS VERDICT                 â”‚
+â”‚                                                                     â”‚
+â”‚  OVERALL:  NOT READY                                                â”‚
+â”‚                                                                     â”‚
+â”‚  Tests:    174/220 compiled and passing                             â”‚
+â”‚            46 tests in auth package have NEVER run (build failure) â”‚
+â”‚                                                                     â”‚
+â”‚  Blockers: 3 open (schema, DB login, HttpOnly cookie)               â”‚
+â”‚  Build failures: 1 (parseIDToken rename not propagated)            â”‚
+â”‚  Additional defects: 9 confirmed                                    â”‚
+â”‚                                                                     â”‚
+â”‚  Target: v1.1.1 with all items in FIX_PLAN resolved                â”‚
+â”‚  Estimated effort: 5 engineering-days                               â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
 
-## 9. Immediate Action Items (Ordered by Effort × Impact)
+## 9. Immediate Action Items (Ordered by Effort Ã— Impact)
 
 | # | Action | Effort | Impact | Owner |
 |---|--------|--------|--------|-------|
-| 1 | Fix `parseIDToken` → `parseIDTokenUnsafe` in `oidc_test.go` | 5 min | Unblocks 46 tests | Any |
+| 1 | Fix `parseIDToken` â†’ `parseIDTokenUnsafe` in `oidc_test.go` | 5 min | Unblocks 46 tests | Any |
 | 2 | `MaxBytesReader` on ingest (Fix D) | 30 min | Closes DoS vector | Backend |
 | 3 | Fix `srv.Shutdown()` error check | 5 min | Ops visibility | Any |
 | 4 | Fix stale `const schema` comment | 5 min | Prevents confusion | Any |
@@ -510,6 +510,7 @@ Server TLS             8 tests             GOOD
 
 ---
 
-*Deep-dive test report prepared 2026-03-16 — AgentFabric v1.1.0*
+*Deep-dive test report prepared 2026-03-16 â€” Govagn v1.1.0*
 *Full fix plan: docs/FIX_PLAN_v1.1.1_v1.2.0.md*
 *Architecture review: docs/TECHNICAL_REVIEW_v1.1.0.md*
+

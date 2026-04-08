@@ -21,7 +21,7 @@ $extension = switch ($Format) {
   "tar" { "tar" }
   default { "dump" }
 }
-$target = Join-Path $OutputDir ("agentfabric-" + $timestamp + "." + $extension)
+$target = Join-Path $OutputDir ("govagn-" + $timestamp + "." + $extension)
 
 & pg_dump $DatabaseUrl --format=$Format --file=$target
 if ($LASTEXITCODE -ne 0) {

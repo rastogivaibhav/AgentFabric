@@ -41,19 +41,19 @@ Require-Command docker
 
 if (-not (Test-Path $envFile)) {
   @"
-AF_ENV=development
-AF_AUTH_DISABLED=true
-AF_JWT_SECRET=dev-secret-change-in-production
-AF_ADMIN_PASSWORD=admin
-AF_VAULT_KEY=0000000000000000000000000000000000000000000000000000000000000000
-AF_CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+GV_ENV=development
+GV_AUTH_DISABLED=true
+GV_JWT_SECRET=dev-secret-change-in-production
+GV_ADMIN_PASSWORD=admin
+GV_VAULT_KEY=0000000000000000000000000000000000000000000000000000000000000000
+GV_CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 "@ | Set-Content -Path $envFile
   Write-Host "Created $envFile"
 }
 
 Push-Location $repoRoot
 try {
-  Write-Host "Starting AgentFabric local stack..."
+  Write-Host "Starting Govagn local stack..."
   docker compose -f docker-compose.yml --env-file $envFile up -d --build
 
   Wait-Http -Name "gateway" -Url "http://localhost:8080/healthz"
@@ -64,7 +64,7 @@ try {
   }
 
   Write-Host ""
-  Write-Host "AgentFabric local stack is ready."
+  Write-Host "Govagn local stack is ready."
   Write-Host "Gateway:      http://localhost:8080"
   Write-Host "Portal:       http://localhost:3000"
   Write-Host "Collector:    http://localhost:4318"

@@ -1,4 +1,4 @@
-# AgentFabric — Production Compose Override
+# Govagn — Production Compose Override
 # ──────────────────────────────────────────────────────────────────────────────
 # This file is a Docker Compose OVERRIDE.  Apply it on top of the base
 # docker-compose.yml to harden a deployment for production traffic.
@@ -13,22 +13,22 @@
 #   make prod-up
 #
 # Required environment variables (fail-fast if missing):
-#   AF_JWT_SECRET          — minimum 32-byte random secret
-#   AF_ADMIN_PASSWORD      — strong admin password
-#   AF_VAULT_KEY           — 64-char hex key for provider-key encryption
-#   AF_CORS_ORIGINS        — your portal domain (e.g. https://app.agentfabric.io)
-#   AF_GATEWAY_AUTH_TOKEN  — shared collector -> gateway ingest bearer token (same value on both services)
+#   GV_JWT_SECRET          — minimum 32-byte random secret
+#   GV_ADMIN_PASSWORD      — strong admin password
+#   GV_VAULT_KEY           — 64-char hex key for provider-key encryption
+#   GV_CORS_ORIGINS        — your portal domain (e.g. https://app.govagn.io)
+#   GV_GATEWAY_AUTH_TOKEN  — shared collector -> gateway ingest bearer token (same value on both services)
 #   DATABASE_URL           — production PostgreSQL DSN with sslmode=require
 #   REDIS_URL              — production Redis URL
 #   POSTGRES_PASSWORD      — PostgreSQL superuser password (for the DB container)
 #
 # Optional but recommended:
-#   AF_JWT_SECRETS         — comma-separated list for zero-downtime key rotation
-#   AF_OIDC_ISSUER         — enable enterprise SSO
-#   AF_TLS_ENABLED=true    — terminate TLS at the service layer (vs. load balancer)
+#   GV_JWT_SECRETS         — comma-separated list for zero-downtime key rotation
+#   GV_OIDC_ISSUER         — enable enterprise SSO
+#   GV_TLS_ENABLED=true    — terminate TLS at the service layer (vs. load balancer)
 #
 # Generate all required secrets:
-#   openssl rand -base64 32   # for AF_JWT_SECRET and AF_ADMIN_PASSWORD
+#   openssl rand -base64 32   # for GV_JWT_SECRET and GV_ADMIN_PASSWORD
 #   openssl rand -base64 24   # for POSTGRES_PASSWORD
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -48,46 +48,46 @@ services:
   # ─── Collector: enforce auth, disable debug, enable TLS ────────────────────
   collector:
     environment:
-      AF_ENV: "production"
-      AF_STRICT_CONFIG: "true"
-      AF_AUTH_REQUIRE_AUTH: "true"          # Require JWT on all OTLP ingestion
-      AF_JWT_SECRET: ${AF_JWT_SECRET:?AF_JWT_SECRET must be set for production}
-      AF_DEBUG: "false"
-      AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
-      AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
-      AF_GATEWAY_AUTH_TOKEN: ${AF_GATEWAY_AUTH_TOKEN:?AF_GATEWAY_AUTH_TOKEN must be set for production}
-      # If AF_TLS_ENABLED=true, mount cert/key files and set AF_TLS_CERT_FILE + AF_TLS_KEY_FILE too.
+      GV_ENV: "production"
+      GV_STRICT_CONFIG: "true"
+      GV_AUTH_REQUIRE_AUTH: "true"          # Require JWT on all OTLP ingestion
+      GV_JWT_SECRET: ${GV_JWT_SECRET:?GV_JWT_SECRET must be set for production}
+      GV_DEBUG: "false"
+      GV_TLS_ENABLED: "${GV_TLS_ENABLED:-false}"
+      GV_GATEWAY_ENDPOINT: "http://api-gateway:8080"
+      GV_GATEWAY_AUTH_TOKEN: ${GV_GATEWAY_AUTH_TOKEN:?GV_GATEWAY_AUTH_TOKEN must be set for production}
+      # If GV_TLS_ENABLED=true, mount cert/key files and set GV_TLS_CERT_FILE + GV_TLS_KEY_FILE too.
       # Tighten rate limits for production load profile
-      AF_RATE_LIMIT_SPANS_PER_SECOND: "${AF_RATE_LIMIT_SPANS_PER_SECOND:-10000}"
-      AF_PROCESSOR_WORKERS: "${AF_PROCESSOR_WORKERS:-8}"
+      GV_RATE_LIMIT_SPANS_PER_SECOND: "${GV_RATE_LIMIT_SPANS_PER_SECOND:-10000}"
+      GV_PROCESSOR_WORKERS: "${GV_PROCESSOR_WORKERS:-8}"
     restart: always
 
   # ─── API Gateway: enforce auth, lock CORS, require strong secrets ───────────
   api-gateway:
     environment:
-      AF_AUTH_DISABLED: "false"             # JWT auth is MANDATORY in production
-      AF_STRICT_CONFIG: "true"
-      AF_JWT_SECRET: ${AF_JWT_SECRET:?AF_JWT_SECRET must be set for production}
-      AF_JWT_SECRETS: "${AF_JWT_SECRETS:-}"
-      AF_GATEWAY_AUTH_TOKEN: ${AF_GATEWAY_AUTH_TOKEN:?AF_GATEWAY_AUTH_TOKEN must be set for production}
-      AF_ADMIN_PASSWORD: ${AF_ADMIN_PASSWORD:?AF_ADMIN_PASSWORD must be set for production}
-      AF_VAULT_KEY: ${AF_VAULT_KEY:?AF_VAULT_KEY must be set for production}
-      AF_ADMIN_USER: "${AF_ADMIN_USER:-admin}"
+      GV_AUTH_DISABLED: "false"             # JWT auth is MANDATORY in production
+      GV_STRICT_CONFIG: "true"
+      GV_JWT_SECRET: ${GV_JWT_SECRET:?GV_JWT_SECRET must be set for production}
+      GV_JWT_SECRETS: "${GV_JWT_SECRETS:-}"
+      GV_GATEWAY_AUTH_TOKEN: ${GV_GATEWAY_AUTH_TOKEN:?GV_GATEWAY_AUTH_TOKEN must be set for production}
+      GV_ADMIN_PASSWORD: ${GV_ADMIN_PASSWORD:?GV_ADMIN_PASSWORD must be set for production}
+      GV_VAULT_KEY: ${GV_VAULT_KEY:?GV_VAULT_KEY must be set for production}
+      GV_ADMIN_USER: "${GV_ADMIN_USER:-admin}"
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set for production}
       REDIS_URL: ${REDIS_URL:?REDIS_URL must be set for production}
-      AF_CORS_ORIGINS: ${AF_CORS_ORIGINS:?AF_CORS_ORIGINS must be set for production}
-      AF_TLS_ENABLED: "${AF_TLS_ENABLED:-false}"
-      # If AF_TLS_ENABLED=true, mount cert/key files and set AF_TLS_CERT_FILE + AF_TLS_KEY_FILE too.
-      AF_LOG_LEVEL: "info"                  # Do not run debug logging in production
+      GV_CORS_ORIGINS: ${GV_CORS_ORIGINS:?GV_CORS_ORIGINS must be set for production}
+      GV_TLS_ENABLED: "${GV_TLS_ENABLED:-false}"
+      # If GV_TLS_ENABLED=true, mount cert/key files and set GV_TLS_CERT_FILE + GV_TLS_KEY_FILE too.
+      GV_LOG_LEVEL: "info"                  # Do not run debug logging in production
       # OIDC SSO — optional, uncomment to enable enterprise login.
-      # If AF_SSO_REQUIRED=true, set issuer, client ID, client secret, and redirect URI together.
-      # AF_OIDC_ISSUER:        "${AF_OIDC_ISSUER:-}"
-      # AF_OIDC_CLIENT_ID:     "${AF_OIDC_CLIENT_ID:-}"
-      # AF_OIDC_CLIENT_SECRET: "${AF_OIDC_CLIENT_SECRET:-}"
-      # AF_OIDC_REDIRECT_URI:  "${AF_OIDC_REDIRECT_URI:-}"
-      # AF_OIDC_LOGOUT_URL:    "${AF_OIDC_LOGOUT_URL:-}"  # optional provider logout redirect
-      AF_PASSWORD_LOGIN_DISABLED: "${AF_PASSWORD_LOGIN_DISABLED:-false}"
-      AF_SSO_REQUIRED: "${AF_SSO_REQUIRED:-false}"
+      # If GV_SSO_REQUIRED=true, set issuer, client ID, client secret, and redirect URI together.
+      # GV_OIDC_ISSUER:        "${GV_OIDC_ISSUER:-}"
+      # GV_OIDC_CLIENT_ID:     "${GV_OIDC_CLIENT_ID:-}"
+      # GV_OIDC_CLIENT_SECRET: "${GV_OIDC_CLIENT_SECRET:-}"
+      # GV_OIDC_REDIRECT_URI:  "${GV_OIDC_REDIRECT_URI:-}"
+      # GV_OIDC_LOGOUT_URL:    "${GV_OIDC_LOGOUT_URL:-}"  # optional provider logout redirect
+      GV_PASSWORD_LOGIN_DISABLED: "${GV_PASSWORD_LOGIN_DISABLED:-false}"
+      GV_SSO_REQUIRED: "${GV_SSO_REQUIRED:-false}"
     restart: always
   # ─── Portal: production build pointing at the live API ─────────────────────
   portal:
@@ -120,4 +120,4 @@ services:
       - ./backups:/backups
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      pg_dump "$DATABASE_URL" --format="${BACKUP_FORMAT}" --file="/backups/agentfabric-$$(date -u +%Y%m%dT%H%M%SZ).dump"
+      pg_dump "$DATABASE_URL" --format="${BACKUP_FORMAT}" --file="/backups/govagn-$$(date -u +%Y%m%dT%H%M%SZ).dump"

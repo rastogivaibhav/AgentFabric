@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install-ca-cert.sh — Install the AgentFabric NetProxy CA certificate
+# install-ca-cert.sh — Install the Govagn NetProxy CA certificate
 # into the OS trust store so transparent HTTPS interception is trusted by
 # curl, Python, Node.js, Go, and any other tool using system root certs.
 #
@@ -22,7 +22,7 @@ set -euo pipefail
 
 GATEWAY_URL="${1:-http://localhost:8080}"
 CERT_URL="${GATEWAY_URL}/api/v1/netproxy/ca.crt"
-CERT_FILE="/tmp/agentfabric-netproxy-ca.crt"
+CERT_FILE="/tmp/govagn-netproxy-ca.crt"
 
 echo "[af-netproxy] Fetching CA cert from ${CERT_URL} ..."
 if ! curl -fsSL -o "${CERT_FILE}" "${CERT_URL}"; then
@@ -39,12 +39,12 @@ case "${OS}" in
     if command -v update-ca-certificates &>/dev/null; then
       # Debian / Ubuntu / Alpine (ca-certificates package)
       echo "[af-netproxy] Installing into /usr/local/share/ca-certificates/ (Debian/Ubuntu)..."
-      sudo cp "${CERT_FILE}" /usr/local/share/ca-certificates/agentfabric-netproxy.crt
+      sudo cp "${CERT_FILE}" /usr/local/share/ca-certificates/govagn-netproxy.crt
       sudo update-ca-certificates
     elif command -v update-ca-trust &>/dev/null; then
       # RHEL / CentOS / Fedora
       echo "[af-netproxy] Installing into /etc/pki/ca-trust/source/anchors/ (RHEL/CentOS)..."
-      sudo cp "${CERT_FILE}" /etc/pki/ca-trust/source/anchors/agentfabric-netproxy.crt
+      sudo cp "${CERT_FILE}" /etc/pki/ca-trust/source/anchors/govagn-netproxy.crt
       sudo update-ca-trust extract
     else
       echo "[af-netproxy] ERROR: cannot detect Linux CA trust store tooling."
@@ -73,7 +73,7 @@ esac
 echo ""
 echo "[af-netproxy] ✓ CA cert installed successfully."
 echo ""
-echo "[af-netproxy] Set these environment variables to route LLM traffic through AgentFabric:"
+echo "[af-netproxy] Set these environment variables to route LLM traffic through Govagn:"
 echo ""
 echo "  export HTTP_PROXY=http://localhost:8443"
 echo "  export HTTPS_PROXY=http://localhost:8443"
@@ -81,4 +81,4 @@ echo "  export http_proxy=http://localhost:8443"
 echo "  export https_proxy=http://localhost:8443"
 echo ""
 echo "[af-netproxy] Any process with these vars set will have its LLM API calls"
-echo "[af-netproxy] observed in the AgentFabric portal (http://localhost:3000)."
+echo "[af-netproxy] observed in the Govagn portal (http://localhost:3000)."

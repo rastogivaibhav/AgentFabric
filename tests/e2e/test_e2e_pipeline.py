@@ -1,17 +1,17 @@
 """
-E2E pipeline tests for the current AgentFabric runtime.
+E2E pipeline tests for the current Govagn runtime.
 
 These tests exercise the supported central flow:
     instrumented app or SDK -> collector -> api-gateway -> portal-facing APIs
 
 In CI, downstream services are mocked via pytest fixtures.
-In staging, set AF_TEST_MODE=integration to hit a real stack.
+In staging, set GV_TEST_MODE=integration to hit a real stack.
 
 Run (CI/unit mode):
     pytest tests/e2e/test_e2e_pipeline.py -v
 
 Run (staging integration mode):
-    AF_TEST_MODE=integration pytest tests/e2e/ -v -m integration
+    GV_TEST_MODE=integration pytest tests/e2e/ -v -m integration
 
 Coverage areas include OTLP ingestion, framework detection, PII scrubbing,
 cost attribution, multi-tenant isolation, live stream delivery, auth, user
@@ -47,12 +47,12 @@ except ImportError:
 
 # ─── Environment / integration-mode detection ─────────────────────────────────
 
-_AF_TEST_MODE = os.environ.get("AF_TEST_MODE", "unit")
+_AF_TEST_MODE = os.environ.get("GV_TEST_MODE", "unit")
 _INTEGRATION = _AF_TEST_MODE == "integration"
 
-_COLLECTOR_HTTP = os.environ.get("AF_HTTP_ENDPOINT", "http://localhost:4318")
-_COLLECTOR_GRPC = os.environ.get("AF_ENDPOINT", "http://localhost:4317")
-_API_BASE = os.environ.get("AF_API", "http://localhost:8080")
+_COLLECTOR_HTTP = os.environ.get("GV_HTTP_ENDPOINT", "http://localhost:4318")
+_COLLECTOR_GRPC = os.environ.get("GV_ENDPOINT", "http://localhost:4317")
+_API_BASE = os.environ.get("GV_API", "http://localhost:8080")
 
 
 def _post_json(url: str, body: dict, headers: dict = None) -> tuple:
@@ -120,7 +120,7 @@ def test_otlp_grpc_span_ingestion(mock_collector):
         host = "127.0.0.1"
         port = int(mock_collector.url.split(":")[-1])
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock = socket.socket(socket.GV_INET, socket.SOCK_STREAM)
     sock.settimeout(2)
     result = sock.connect_ex((host, port))
     sock.close()
@@ -138,10 +138,10 @@ def test_framework_detection_crewai():
     Send a span with CrewAI attributes; verify the collector / downstream API
     records framework=crewai.
 
-    Requires AF_TEST_MODE=integration and a running stack.
+    Requires GV_TEST_MODE=integration and a running stack.
     """
     if not _INTEGRATION:
-        pytest.skip("Set AF_TEST_MODE=integration to run this test")
+        pytest.skip("Set GV_TEST_MODE=integration to run this test")
 
     span = sample_otlp_span(framework="crewai")
     status, _ = _post_json(
@@ -165,7 +165,7 @@ def test_framework_detection_crewai():
 def test_framework_detection_langgraph():
     """Send a LangGraph span; verify framework=langgraph surfaces in the API."""
     if not _INTEGRATION:
-        pytest.skip("Set AF_TEST_MODE=integration to run this test")
+        pytest.skip("Set GV_TEST_MODE=integration to run this test")
 
     span = sample_otlp_span(framework="langgraph")
     status, _ = _post_json(
@@ -186,7 +186,7 @@ def test_framework_detection_langgraph():
 def test_framework_detection_openai_agents():
     """Send an OpenAI Agents span; verify framework=openai_agents in the API."""
     if not _INTEGRATION:
-        pytest.skip("Set AF_TEST_MODE=integration to run this test")
+        pytest.skip("Set GV_TEST_MODE=integration to run this test")
 
     span = sample_otlp_span(framework="openai_agents", model="gpt-4o-mini")
     status, _ = _post_json(
@@ -207,7 +207,7 @@ def test_framework_detection_openai_agents():
 def test_framework_detection_anthropic():
     """Send an Anthropic/Claude span; verify framework=anthropic in the API."""
     if not _INTEGRATION:
-        pytest.skip("Set AF_TEST_MODE=integration to run this test")
+        pytest.skip("Set GV_TEST_MODE=integration to run this test")
 
     span = sample_otlp_span(framework="anthropic", model="claude-3-haiku-20240307")
     status, _ = _post_json(
@@ -228,7 +228,7 @@ def test_framework_detection_anthropic():
 def test_framework_detection_google_adk():
     """Send a Google ADK span; verify framework=google_adk in the API."""
     if not _INTEGRATION:
-        pytest.skip("Set AF_TEST_MODE=integration to run this test")
+        pytest.skip("Set GV_TEST_MODE=integration to run this test")
 
     span = sample_otlp_span(framework="google_adk", model="gemini-1.5-pro")
     status, _ = _post_json(
@@ -654,7 +654,7 @@ def test_websocket_live_stream_receives_span(mock_collector):
       (a) the HTTP transport layer is healthy (200 on span POST), and
       (b) a WebSocket upgrade attempt returns the expected response (not 500).
 
-    In integration mode (AF_TEST_MODE=integration) this test hits the real
+    In integration mode (GV_TEST_MODE=integration) this test hits the real
     api-gateway WebSocket endpoint and verifies the span appears within 5 s.
     """
     if _INTEGRATION:
@@ -743,10 +743,10 @@ def test_websocket_live_stream_receives_span(mock_collector):
 def api_gateway_url() -> str:
     """Base URL for the real api-gateway used by integration tests.
 
-    Reads AF_GATEWAY_URL from environment (default: http://localhost:8080).
+    Reads GV_GATEWAY_URL from environment (default: http://localhost:8080).
     Tests decorated with @pytest.mark.integration require a live api-gateway.
     """
-    return os.environ.get("AF_GATEWAY_URL", "http://localhost:8080")
+    return os.environ.get("GV_GATEWAY_URL", "http://localhost:8080")
 
 
 # ─── Auth: login + refresh (v1.0.0 GA) ───────────────────────────────────────
@@ -877,7 +877,7 @@ def test_users_crud_lifecycle(api_gateway_url, tenant_a_headers):
     # ── CREATE ──────────────────────────────────────────────────────────────
     create_payload = _json.dumps({
         "username": "e2e-test-user",
-        "email": "e2e@agentfabric.local",
+        "email": "e2e@govagn.local",
         "display_name": "E2E Test User",
         "role": "viewer",
         "password": "TestPass123!",
@@ -896,7 +896,7 @@ def test_users_crud_lifecycle(api_gateway_url, tenant_a_headers):
         pytest.fail(f"POST /api/v1/users returned {e.code}: {e.read()}")
 
     assert user["username"] == "e2e-test-user"
-    assert user["email"] == "e2e@agentfabric.local"
+    assert user["email"] == "e2e@govagn.local"
     assert user["role"] == "viewer"
     assert "user_id" in user
     user_id = user["user_id"]

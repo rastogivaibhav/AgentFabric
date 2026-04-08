@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentfabric/collector/internal/config"
+	"github.com/govagn/collector/internal/config"
 )
 
 func TestNewHTTPServer_HardenedTimeouts(t *testing.T) {

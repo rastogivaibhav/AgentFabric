@@ -14,41 +14,41 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: agentfabric-collector-config
+  name: govagn-collector-config
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "collector") | nindent 4 }}
 data:
-  AF_ENV: {{ .Values.global.environment | quote }}
-  AF_GRPC_ADDR: "0.0.0.0:4317"
-  AF_HTTP_ADDR: "0.0.0.0:4318"
-  AF_GATEWAY_ENDPOINT: "http://agentfabric-api:8080"
-  AF_AUTH_REQUIRE_AUTH: "true"
-  AF_DEBUG: "false"
-  AF_PROCESSOR_WORKERS: {{ .Values.collector.env.AF_PROCESSOR_WORKERS | default "4" | quote }}
-  AF_RATE_LIMIT_SPANS_PER_SECOND: {{ .Values.collector.env.AF_RATE_LIMIT_SPANS_PER_SECOND | default "10000" | quote }}
+  GV_ENV: {{ .Values.global.environment | quote }}
+  GV_GRPC_ADDR: "0.0.0.0:4317"
+  GV_HTTP_ADDR: "0.0.0.0:4318"
+  GV_GATEWAY_ENDPOINT: "http://govagn-api:8080"
+  GV_AUTH_REQUIRE_AUTH: "true"
+  GV_DEBUG: "false"
+  GV_PROCESSOR_WORKERS: {{ .Values.collector.env.GV_PROCESSOR_WORKERS | default "4" | quote }}
+  GV_RATE_LIMIT_SPANS_PER_SECOND: {{ .Values.collector.env.GV_RATE_LIMIT_SPANS_PER_SECOND | default "10000" | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agentfabric-collector
+  name: govagn-collector
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "collector") | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 6 }}
+      {{- include "govagn.selectorLabels" (dict "component" "collector") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "agentfabric.labels" . | nindent 8 }}
-        {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 8 }}
+        {{- include "govagn.labels" . | nindent 8 }}
+        {{- include "govagn.selectorLabels" (dict "component" "collector") | nindent 8 }}
     spec:
       containers:
         - name: collector
-          image: {{ include "agentfabric.image" .Values.collector.image }}
+          image: {{ include "govagn.image" .Values.collector.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           ports:
             - name: otlp-grpc
@@ -57,14 +57,14 @@ spec:
               containerPort: 4318
           envFrom:
             - configMapRef:
-                name: agentfabric-collector-config
+                name: govagn-collector-config
           env:
-            - name: AF_JWT_SECRET
+            - name: GV_JWT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: jwt-secret
-            - name: AF_GATEWAY_AUTH_TOKEN
+            - name: GV_GATEWAY_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
@@ -87,13 +87,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentfabric-collector
+  name: govagn-collector
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "collector") | nindent 4 }}
 spec:
   selector:
-    {{- include "agentfabric.selectorLabels" (dict "component" "collector") | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "collector") | nindent 4 }}
   ports:
     - name: otlp-grpc
       port: 4317
@@ -108,32 +108,32 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agentfabric-api
+  name: govagn-api
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 4 }}
 spec:
   replicas: {{ .Values.api.replicas }}
   selector:
     matchLabels:
-      {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 6 }}
+      {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "agentfabric.labels" . | nindent 8 }}
-        {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 8 }}
+        {{- include "govagn.labels" . | nindent 8 }}
+        {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 8 }}
     spec:
       containers:
         - name: api-gateway
-          image: {{ include "agentfabric.image" .Values.api.image }}
+          image: {{ include "govagn.image" .Values.api.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           ports:
             - name: http
               containerPort: 8080
           env:
-            - name: AF_ENV
+            - name: GV_ENV
               value: {{ .Values.global.environment | quote }}
-            - name: AF_STRICT_CONFIG
+            - name: GV_STRICT_CONFIG
               value: "true"
             - name: LISTEN_ADDR
               value: ":8080"
@@ -147,58 +147,58 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: redis-url
-            - name: AF_JWT_SECRET
+            - name: GV_JWT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: jwt-secret
-            - name: AF_GATEWAY_AUTH_TOKEN
+            - name: GV_GATEWAY_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: gateway-auth-token
-            - name: AF_JWT_SECRETS
+            - name: GV_JWT_SECRETS
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: jwt-secrets
-            - name: AF_SSO_REQUIRED
+            - name: GV_SSO_REQUIRED
               value: {{ ternary "true" "false" $ssoRequired | quote }}
-            - name: AF_PASSWORD_LOGIN_DISABLED
+            - name: GV_PASSWORD_LOGIN_DISABLED
               value: {{ ternary "true" "false" $passwordLoginDisabled | quote }}
-            - name: AF_ADMIN_PASSWORD
+            - name: GV_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: admin-password
-            - name: AF_VAULT_KEY
+            - name: GV_VAULT_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: vault-key
-            - name: AF_CORS_ORIGINS
+            - name: GV_CORS_ORIGINS
               value: {{ join "," .Values.api.cors.allowedOrigins | quote }}
             {{- if or $ssoRequired $oidcIssuer }}
-            - name: AF_OIDC_ISSUER
+            - name: GV_OIDC_ISSUER
               value: {{ required "auth.ssoRequired=true requires auth.oidc.issuer" $oidcIssuer | quote }}
             {{- end }}
             {{- if or $ssoRequired $oidcClientID }}
-            - name: AF_OIDC_CLIENT_ID
+            - name: GV_OIDC_CLIENT_ID
               value: {{ required "auth.ssoRequired=true requires auth.oidc.clientId" $oidcClientID | quote }}
             {{- end }}
             {{- if or $ssoRequired $oidcClientSecretKey }}
-            - name: AF_OIDC_CLIENT_SECRET
+            - name: GV_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
-                  key: {{ required "auth.ssoRequired=true requires auth.oidc.clientSecretKey to point at the Kubernetes Secret key containing AF_OIDC_CLIENT_SECRET" $oidcClientSecretKey }}
+                  key: {{ required "auth.ssoRequired=true requires auth.oidc.clientSecretKey to point at the Kubernetes Secret key containing GV_OIDC_CLIENT_SECRET" $oidcClientSecretKey }}
             {{- end }}
             {{- if or $ssoRequired $oidcRedirectURI }}
-            - name: AF_OIDC_REDIRECT_URI
+            - name: GV_OIDC_REDIRECT_URI
               value: {{ required "auth.ssoRequired=true requires auth.oidc.redirectUri" $oidcRedirectURI | quote }}
             {{- end }}
             {{- if $oidcLogoutURL }}
-            - name: AF_OIDC_LOGOUT_URL
+            - name: GV_OIDC_LOGOUT_URL
               value: {{ $oidcLogoutURL | quote }}
             {{- end }}
           readinessProbe:
@@ -219,13 +219,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentfabric-api
+  name: govagn-api
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 4 }}
 spec:
   selector:
-    {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.api.service.port }}
@@ -235,25 +235,25 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: agentfabric-api
+  name: govagn-api
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 4 }}
 spec:
   minAvailable: {{ .Values.api.podDisruptionBudget.minAvailable }}
   selector:
     matchLabels:
-      {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 6 }}
+      {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 6 }}
 {{- end }}
 {{- if .Values.api.ingress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: agentfabric-api
+  name: govagn-api
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "api") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "api") | nindent 4 }}
   annotations:
     {{- toYaml .Values.api.ingress.annotations | nindent 4 }}
 spec:
@@ -268,7 +268,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: agentfabric-api
+                name: govagn-api
                 port:
                   number: {{ $.Values.api.service.port }}
           {{- end }}
@@ -283,24 +283,24 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agentfabric-portal
+  name: govagn-portal
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 4 }}
 spec:
   replicas: {{ .Values.portal.replicas }}
   selector:
     matchLabels:
-      {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 6 }}
+      {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "agentfabric.labels" . | nindent 8 }}
-        {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 8 }}
+        {{- include "govagn.labels" . | nindent 8 }}
+        {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 8 }}
     spec:
       containers:
         - name: portal
-          image: {{ include "agentfabric.image" .Values.portal.image }}
+          image: {{ include "govagn.image" .Values.portal.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           ports:
             - name: http
@@ -323,13 +323,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentfabric-portal
+  name: govagn-portal
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 4 }}
 spec:
   selector:
-    {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 4 }}
   ports:
     - name: http
       port: 80
@@ -339,25 +339,25 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: agentfabric-portal
+  name: govagn-portal
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 4 }}
 spec:
   minAvailable: {{ .Values.portal.podDisruptionBudget.minAvailable }}
   selector:
     matchLabels:
-      {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 6 }}
+      {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 6 }}
 {{- end }}
 {{- if .Values.portal.ingress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: agentfabric-portal
+  name: govagn-portal
   labels:
-    {{- include "agentfabric.labels" . | nindent 4 }}
-    {{- include "agentfabric.selectorLabels" (dict "component" "portal") | nindent 4 }}
+    {{- include "govagn.labels" . | nindent 4 }}
+    {{- include "govagn.selectorLabels" (dict "component" "portal") | nindent 4 }}
   annotations:
     {{- toYaml .Values.portal.ingress.annotations | nindent 4 }}
 spec:
@@ -371,7 +371,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: agentfabric-portal
+                name: govagn-portal
                 port:
                   number: 80
     {{- end }}

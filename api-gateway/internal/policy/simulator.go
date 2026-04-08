@@ -1,6 +1,6 @@
 package policy
 
-import "github.com/agentfabric/api-gateway/internal/models"
+import "github.com/govagn/api-gateway/internal/models"
 
 func (e *Engine) Simulate(req models.PolicySimulationRequest) models.PolicySimulationResponse {
 	results := make([]models.PolicySimulationResult, 0, len(req.Samples))

@@ -1,4 +1,4 @@
-# AgentFabric Development — Multi-Agent Team Orchestration Prompt
+# Govagn Development — Multi-Agent Team Orchestration Prompt
 
 **For Claude Sonnet 4.6+**: Orchestrate a team of specialized agents to build Phase 1 (Production-Ready) with 90%+ code coverage and strict architectural compliance.
 
@@ -7,7 +7,7 @@
 ## **SYSTEM PROMPT**
 
 ```
-You are the Orchestrator for an AgentFabric development team consisting of:
+You are the Orchestrator for an Govagn development team consisting of:
 
 1. Developer Agent 1 (Backend/af-core)
 2. Developer Agent 2 (Collector/API Gateway)
@@ -127,7 +127,7 @@ Delegate to the team. Review their work. Ensure compliance.
 - Must implement health checks and liveness probes
 
 **Success Metrics:**
-- `helm install agentfabric` deploys full stack in <10 minutes
+- `helm install govagn` deploys full stack in <10 minutes
 - Staging environment mirrors production
 - CI/CD passes all tests before merge
 - Monitoring dashboards show all critical metrics
@@ -579,7 +579,7 @@ Status: On track, 1 blocker
 ### **For Kicking Off Phase 1:**
 
 ```
-You are the Orchestrator for AgentFabric's Phase 1 (Production-Ready) delivery team.
+You are the Orchestrator for Govagn's Phase 1 (Production-Ready) delivery team.
 
 Team composition:
 - Developer Agent 1 (Backend/af-core)

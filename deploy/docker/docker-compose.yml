@@ -1,6 +1,6 @@
 version: '3.9'
 
-# AgentFabric — Minimal production stack (no Kafka/ClickHouse/monitoring)
+# Govagn — Minimal production stack (no Kafka/ClickHouse/monitoring)
 # Run from the repo root: docker compose -f deploy/docker/docker-compose.yml up -d
 
 services:
@@ -9,7 +9,7 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: agentfabric
+      POSTGRES_DB: govagn
       POSTGRES_USER: fabric
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
@@ -18,7 +18,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fabric -d agentfabric"]
+      test: ["CMD-SHELL", "pg_isready -U fabric -d govagn"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,20 +37,21 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── AgentFabric Collector ────────────────────────────────────────────────────
+  # ─── Govagn Collector ────────────────────────────────────────────────────
   collector:
     build:
       context: ../../collector
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      AF_GRPC_ADDR: ":4317"
-      AF_HTTP_ADDR: ":4318"
-      AF_GATEWAY_ENDPOINT: "http://api-gateway:8080"
-      AF_JWT_SECRET: ${AF_JWT_SECRET:-dev-secret-change-in-prod}
-      AF_AUTH_REQUIRE_AUTH: "false"  # disable for local dev
-      AF_PROCESSOR_WORKERS: "4"
-      AF_NODE_NAME: "local-collector"
+      GV_GRPC_ADDR: ":4317"
+      GV_HTTP_ADDR: ":4318"
+      GV_GATEWAY_ENDPOINT: "http://api-gateway:8080"
+      GV_JWT_SECRET: ${GV_JWT_SECRET:-dev-secret-change-in-prod}
+      GV_AUTH_REQUIRE_AUTH: "false"  # disable for local dev
+      GV_GATEWAY_AUTH_TOKEN: ${GV_GATEWAY_AUTH_TOKEN:-dev-token-for-local-use}
+      GV_PROCESSOR_WORKERS: "4"
+      GV_NODE_NAME: "local-collector"
     ports:
       - "4317:4317"   # gRPC OTLP
       - "4318:4318"   # HTTP OTLP
@@ -71,9 +72,9 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgres://fabric:${POSTGRES_PASSWORD:-changeme}@postgres:5432/agentfabric?sslmode=disable"
+      DATABASE_URL: "postgres://fabric:${POSTGRES_PASSWORD:-changeme}@postgres:5432/govagn?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
-      AF_JWT_SECRET: ${AF_JWT_SECRET:-dev-secret-change-in-prod}
+      GV_JWT_SECRET: ${GV_JWT_SECRET:-dev-secret-change-in-prod}
       LISTEN_ADDR: ":8080"
     ports:
       - "8080:8080"
@@ -107,4 +108,4 @@ volumes:
 
 networks:
   default:
-    name: agentfabric
+    name: govagn

@@ -12,10 +12,10 @@ except ImportError:
     pass
 
 
-_INTEGRATION = os.environ.get("AF_TEST_MODE", "unit") == "integration"
-_BASE_URL = os.environ.get("AF_API", "http://localhost:8080")
-_ADMIN_USER = os.environ.get("AF_ADMIN_USER", "")
-_ADMIN_PASSWORD = os.environ.get("AF_ADMIN_PASSWORD", "")
+_INTEGRATION = os.environ.get("GV_TEST_MODE", "unit") == "integration"
+_BASE_URL = os.environ.get("GV_API", "http://localhost:8080")
+_ADMIN_USER = os.environ.get("GV_ADMIN_USER", "")
+_ADMIN_PASSWORD = os.environ.get("GV_ADMIN_PASSWORD", "")
 
 
 def _json_request(url: str, method: str = "GET", body: dict | None = None, headers: dict | None = None):
@@ -37,7 +37,7 @@ def _json_request(url: str, method: str = "GET", body: dict | None = None, heade
 
 def _require_integration():
     if not _INTEGRATION:
-        pytest.skip("Set AF_TEST_MODE=integration to run this test")
+        pytest.skip("Set GV_TEST_MODE=integration to run this test")
 
 
 def _admin_cookie() -> str:
@@ -120,7 +120,7 @@ def _get_json(url: str, headers: dict | None = None):
 def test_policy_preview_scenarios_allow_deny_redact_warn():
     _require_integration()
     if not (_ADMIN_USER and _ADMIN_PASSWORD):
-        pytest.skip("Set AF_ADMIN_USER and AF_ADMIN_PASSWORD to run admin integration tests")
+        pytest.skip("Set GV_ADMIN_USER and GV_ADMIN_PASSWORD to run admin integration tests")
 
     cookie = _admin_cookie()
     timestamp = int(time.time())

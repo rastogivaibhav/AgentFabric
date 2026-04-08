@@ -47,7 +47,7 @@ Score each area as `green`, `yellow`, or `red`.
 - Total LLM calls observed:
 - Total blocked or redacted events:
 - Total cost observed:
-- Number of incidents/debugging sessions where AgentFabric was used:
+- Number of incidents/debugging sessions where Govagn was used:
 - Average time to find root cause before pilot:
 - Average time to find root cause during pilot:
 

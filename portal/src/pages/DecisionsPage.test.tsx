@@ -60,7 +60,7 @@ describe('DecisionsPage', () => {
 
     renderPage()
 
-    expect(screen.getByText('Decision Explorer')).toBeInTheDocument()
+    expect(screen.getByText('Decision Log')).toBeInTheDocument()
     expect(screen.getByText('Policy blocked gpt-4o because provider/model policy matched.')).toBeInTheDocument()
   })
 
@@ -68,8 +68,9 @@ describe('DecisionsPage', () => {
     mockUseDecisions.mockReturnValue({ data: { items: [], total: 0, has_more: false }, isLoading: false, isError: false } as any)
     renderPage()
 
-    fireEvent.change(screen.getByDisplayValue('all types'), { target: { value: 'fallback' } })
-    fireEvent.change(screen.getByDisplayValue('all results'), { target: { value: 'retry' } })
+    const [typeFilter, resultFilter] = screen.getAllByRole('combobox')
+    fireEvent.change(typeFilter, { target: { value: 'fallback' } })
+    fireEvent.change(resultFilter, { target: { value: 'retry' } })
 
     expect(mockUseDecisions).toHaveBeenLastCalledWith(expect.objectContaining({
       type: 'fallback',

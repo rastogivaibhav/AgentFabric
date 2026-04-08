@@ -11,7 +11,7 @@ import (
 
 
 
-	_test "github.com/agentfabric/api-gateway/internal/auth"
+	_test "github.com/govagn/api-gateway/internal/auth"
 
 
 )
@@ -52,7 +52,7 @@ var tests = []testing.InternalTest{
 
 	{"TestIssueAFToken_ExpiresWithinSessionMaxAge", _test.TestIssueAFToken_ExpiresWithinSessionMaxAge},
 
-	{"TestIssueAFToken_IssuerIsAgentFabric", _test.TestIssueAFToken_IssuerIsAgentFabric},
+	{"TestIssueAFToken_IssuerIsGovagn", _test.TestIssueAFToken_IssuerIsGovagn},
 
 	{"TestIssueAFToken_AudienceIsPortal", _test.TestIssueAFToken_AudienceIsPortal},
 
@@ -142,8 +142,8 @@ var examples = []testing.InternalExample{
 
 func init() {
 
-	testdeps.ModulePath = "github.com/agentfabric/api-gateway"
-	testdeps.ImportPath = "github.com/agentfabric/api-gateway/internal/auth"
+	testdeps.ModulePath = "github.com/govagn/api-gateway"
+	testdeps.ImportPath = "github.com/govagn/api-gateway/internal/auth"
 }
 
 func main() {

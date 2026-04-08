@@ -1,12 +1,12 @@
-# AgentFabric Development — North Star Documents
+﻿# Govagn Development â€” North Star Documents
 
-This directory contains the **source of truth** for all AgentFabric development decisions. Read these first.
+This directory contains the **source of truth** for all Govagn development decisions. Read these first.
 
 ---
 
-## **📋 Documents (Read in Order)**
+## **ðŸ“‹ Documents (Read in Order)**
 
-### **1. AGENTFABRIC_REVIEW.md** (80 pages)
+### **1. GOVAGN_REVIEW.md** (80 pages)
 **What**: Comprehensive product & technical review from Microsoft Principal Tech Lead + Product Manager perspective
 
 **Contains**:
@@ -79,7 +79,7 @@ This directory contains the **source of truth** for all AgentFabric development 
 
 **Contains**:
 - Phase 1 (Q2-Q3 2025): Production-Ready
-- Phase 2 (Q4 2025–Q1 2026): Governance Platform
+- Phase 2 (Q4 2025â€“Q1 2026): Governance Platform
 - Phase 3 (Q2+ 2026): Intelligence Layer
 - Ownership matrix
 - Quarterly milestones
@@ -94,66 +94,66 @@ This directory contains the **source of truth** for all AgentFabric development 
 
 ---
 
-## **🚀 Quick Start: Which Document Do I Need?**
+## **ðŸš€ Quick Start: Which Document Do I Need?**
 
 | Situation | Read This | In 5 mins |
 |---|---|---|
-| **"I'm new to the project"** | AGENTFABRIC_REVIEW.md | ❌ (read full) |
-| **"I'm about to commit code"** | DEVELOPER_QUICK_REFERENCE.md | ✅ |
-| **"I'm reviewing a PR"** | NORTH_STAR.md (checklist section) | ✅ |
-| **"I want to change the architecture"** | ARCHITECTURE_IMMUTABILITY.md | ✅ (skim) |
-| **"I want to add a new service"** | NORTH_STAR.md + ARCHITECTURE_IMMUTABILITY.md | ❌ (escalate to PRB) |
-| **"What's our 18-month plan?"** | EXECUTION_ROADMAP.md | ✅ |
-| **"What's the market opportunity?"** | AGENTFABRIC_REVIEW.md (section 1-2) | ⏱️ (15 min) |
-| **"I'm a CISO evaluating this"** | AGENTFABRIC_REVIEW.md (section 5) | ⏱️ (20 min) |
+| **"I'm new to the project"** | GOVAGN_REVIEW.md | âŒ (read full) |
+| **"I'm about to commit code"** | DEVELOPER_QUICK_REFERENCE.md | âœ… |
+| **"I'm reviewing a PR"** | NORTH_STAR.md (checklist section) | âœ… |
+| **"I want to change the architecture"** | ARCHITECTURE_IMMUTABILITY.md | âœ… (skim) |
+| **"I want to add a new service"** | NORTH_STAR.md + ARCHITECTURE_IMMUTABILITY.md | âŒ (escalate to PRB) |
+| **"What's our 18-month plan?"** | EXECUTION_ROADMAP.md | âœ… |
+| **"What's the market opportunity?"** | GOVAGN_REVIEW.md (section 1-2) | â±ï¸ (15 min) |
+| **"I'm a CISO evaluating this"** | GOVAGN_REVIEW.md (section 5) | â±ï¸ (20 min) |
 
 ---
 
-## **🎯 The One-Liner**
+## **ðŸŽ¯ The One-Liner**
 
-> **AgentFabric is the mandatory governance layer for multi-agent enterprises: server-side semantic intelligence about cost, compliance, and quality.**
+> **Govagn is the mandatory governance layer for multi-agent enterprises: server-side semantic intelligence about cost, compliance, and quality.**
 
 ---
 
-## **✅ The Seven Principles (Know These Cold)**
+## **âœ… The Seven Principles (Know These Cold)**
 
-1. **Server-side semantic truth** — Never trust client claims; always recompute
-2. **Multi-tenant isolation** — Every query has `WHERE tenant_id = $1`
-3. **Async governance, hot observability** — Policy enforcement can be delayed; spans must appear in <100ms
-4. **Immutable audit trail** — SHA-256 hash chain proves decisions were logged
-5. **Server-computed framework** — Client can claim "CrewAI" but collector verifies
-6. **Cost immutability** — Cost is computed once at ingestion and never changes
-7. **Defense-in-depth PII scrubbing** — Multiple layers catch PII; no "safe" fields
+1. **Server-side semantic truth** â€” Never trust client claims; always recompute
+2. **Multi-tenant isolation** â€” Every query has `WHERE tenant_id = $1`
+3. **Async governance, hot observability** â€” Policy enforcement can be delayed; spans must appear in <100ms
+4. **Immutable audit trail** â€” SHA-256 hash chain proves decisions were logged
+5. **Server-computed framework** â€” Client can claim "CrewAI" but collector verifies
+6. **Cost immutability** â€” Cost is computed once at ingestion and never changes
+7. **Defense-in-depth PII scrubbing** â€” Multiple layers catch PII; no "safe" fields
 
 **Violating any principle = code review rejection.**
 
 ---
 
-## **🚨 The Decision Tree (30 Seconds)**
+## **ðŸš¨ The Decision Tree (30 Seconds)**
 
 Before starting a feature:
 
 1. Does it store/process agent data?
-   - ✅ Recompute server-side → Has tenant filter? → Logs to audit trail?
-   - ❌ Trust client claim → **REJECTED**
+   - âœ… Recompute server-side â†’ Has tenant filter? â†’ Logs to audit trail?
+   - âŒ Trust client claim â†’ **REJECTED**
 
 2. Does it process OTLP spans?
-   - ✅ In collector? → <50ms? → **APPROVED**
-   - ✅ In af-core? → **APPROVED**
-   - ❌ Elsewhere → **Move it**
+   - âœ… In collector? â†’ <50ms? â†’ **APPROVED**
+   - âœ… In af-core? â†’ **APPROVED**
+   - âŒ Elsewhere â†’ **Move it**
 
 3. Does it modify historical data?
-   - ❌ **REJECTED** (immutability is sacred)
+   - âŒ **REJECTED** (immutability is sacred)
 
 4. Does it touch PII?
-   - ✅ Scrubbed → **APPROVED**
-   - ❌ Not scrubbed → **REJECTED**
+   - âœ… Scrubbed â†’ **APPROVED**
+   - âŒ Not scrubbed â†’ **REJECTED**
 
 **Full tree**: See DEVELOPER_QUICK_REFERENCE.md
 
 ---
 
-## **📊 Current Status (as of 2025-03-13)**
+## **ðŸ“Š Current Status (as of 2025-03-13)**
 
 | Metric | Status | Target |
 |---|---|---|
@@ -165,7 +165,7 @@ Before starting a feature:
 
 ---
 
-## **📅 Milestones**
+## **ðŸ“… Milestones**
 
 | Date | Milestone | Target |
 |---|---|---|
@@ -176,28 +176,28 @@ Before starting a feature:
 
 ---
 
-## **🔒 Sacred (Cannot Change Without v2.0)**
+## **ðŸ”’ Sacred (Cannot Change Without v2.0)**
 
-- ✅ Five-service architecture (Collector, af-core, API Gateway, Portal, SDK)
-- ✅ OTLP ingestion (gRPC :4317, HTTP :4318)
-- ✅ PostgreSQL as SSOT
-- ✅ Kafka for async governance
-- ✅ API Gateway data contracts (types returned to Portal)
-- ✅ All 7 Principles
-
----
-
-## **🔧 Flexible (Can Change Within a Version)**
-
-- ✅ Service internals (refactor, optimize, change algorithms)
-- ✅ Config/tuning (worker pools, batch sizes, timeouts)
-- ✅ Monitoring/logging (add metrics, change alerting)
-- ✅ UI/UX (redesign Portal, add pages)
-- ✅ New frameworks (add Google ADK, AutoGen instrumentation)
+- âœ… Five-service architecture (Collector, af-core, API Gateway, Portal, SDK)
+- âœ… OTLP ingestion (gRPC :4317, HTTP :4318)
+- âœ… PostgreSQL as SSOT
+- âœ… Kafka for async governance
+- âœ… API Gateway data contracts (types returned to Portal)
+- âœ… All 7 Principles
 
 ---
 
-## **⚠️ The Red Lines**
+## **ðŸ”§ Flexible (Can Change Within a Version)**
+
+- âœ… Service internals (refactor, optimize, change algorithms)
+- âœ… Config/tuning (worker pools, batch sizes, timeouts)
+- âœ… Monitoring/logging (add metrics, change alerting)
+- âœ… UI/UX (redesign Portal, add pages)
+- âœ… New frameworks (add Google ADK, AutoGen instrumentation)
+
+---
+
+## **âš ï¸ The Red Lines**
 
 These will fail code review immediately:
 
@@ -205,14 +205,14 @@ These will fail code review immediately:
 |---|---|---|
 | **Trust client attribute** | `framework := span.Attributes["framework"]` | `framework := detectFramework(span)` |
 | **Query without tenant** | `SELECT * FROM spans WHERE ...` | Add `AND tenant_id = $1` |
-| **Policy in hot path** | Enforce policy in collector | Move to Kafka → af-core |
+| **Policy in hot path** | Enforce policy in collector | Move to Kafka â†’ af-core |
 | **Skip PII scrubbing** | `if key == "internal_id" continue` | Scrub everything |
-| **Modify historical cost** | `UPDATE spans SET cost_usd = ...` | ❌ **REJECTED** |
+| **Modify historical cost** | `UPDATE spans SET cost_usd = ...` | âŒ **REJECTED** |
 | **Hardcode business logic** | `let input_cost = cost_usd * 0.6` | Move to config or DB |
 
 ---
 
-## **🎓 Before Your First PR**
+## **ðŸŽ“ Before Your First PR**
 
 1. **Read** DEVELOPER_QUICK_REFERENCE.md (5 min)
 2. **Review** the code review checklist (2 min)
@@ -225,7 +225,7 @@ These will fail code review immediately:
 
 ---
 
-## **❓ FAQs**
+## **â“ FAQs**
 
 ### **Q: Can I change [architecture decision]?**
 **A**: Check ARCHITECTURE_IMMUTABILITY.md. If it's in "Sacred," escalate to PRB (Principal Tech Lead + Product Manager + CISO advisor). Otherwise, go ahead.
@@ -247,7 +247,7 @@ These will fail code review immediately:
 
 ---
 
-## **📞 Escalation**
+## **ðŸ“ž Escalation**
 
 If you're unsure whether something is allowed:
 
@@ -263,7 +263,7 @@ If you're unsure whether something is allowed:
 
 ---
 
-## **📝 Feedback & Updates**
+## **ðŸ“ Feedback & Updates**
 
 These documents are quarterly reviewed. If you find something unclear or out of date:
 
@@ -276,7 +276,7 @@ These documents are quarterly reviewed. If you find something unclear or out of 
 
 ---
 
-## **🔗 Related Files**
+## **ðŸ”— Related Files**
 
 - **Codebase entry**: `README.md` (product overview)
 - **API contract**: `api-gateway/internal/models/models.go` (TypeScript-compatible types)
@@ -285,15 +285,15 @@ These documents are quarterly reviewed. If you find something unclear or out of 
 
 ---
 
-## **📌 Pinned Reference**
+## **ðŸ“Œ Pinned Reference**
 
 **Keep this accessible:**
 
 ```
-NORTH_STAR.md          → The immutable source of truth
-DEVELOPER_QUICK_REFERENCE.md → Your desk reference (print it)
-ARCHITECTURE_IMMUTABILITY.md → When you want to change something
-EXECUTION_ROADMAP.md         → When you're planning work
+NORTH_STAR.md          â†’ The immutable source of truth
+DEVELOPER_QUICK_REFERENCE.md â†’ Your desk reference (print it)
+ARCHITECTURE_IMMUTABILITY.md â†’ When you want to change something
+EXECUTION_ROADMAP.md         â†’ When you're planning work
 ```
 
 ---
@@ -307,3 +307,4 @@ EXECUTION_ROADMAP.md         → When you're planning work
 **Last Updated**: 2025-03-13
 **Next Review**: 2025-06-13 (quarterly)
 **Owner**: Principal Tech Lead
+

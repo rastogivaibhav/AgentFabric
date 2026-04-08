@@ -29,7 +29,7 @@
       "name": "collector",
       "description": "Go OTLP collector — gRPC :4317, HTTP :4318, Prometheus metrics :9090 — requires api-gateway",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "set AF_GRPC_ADDR=0.0.0.0:4317 && set AF_HTTP_ADDR=0.0.0.0:4318 && set AF_AUTH_REQUIRE_AUTH=false && set AF_JWT_SECRET=dev-secret && set AF_GATEWAY_ENDPOINT=http://localhost:8080 && set AF_DEBUG=true && set AF_PII_ENABLED=true && collector-dev.exe"],
+      "runtimeArgs": ["/c", "set GV_GRPC_ADDR=0.0.0.0:4317 && set GV_HTTP_ADDR=0.0.0.0:4318 && set GV_AUTH_REQUIRE_AUTH=false && set GV_JWT_SECRET=dev-secret && set GV_GATEWAY_ENDPOINT=http://localhost:8080 && set GV_DEBUG=true && set GV_PII_ENABLED=true && collector-dev.exe"],
       "cwd": "collector",
       "port": 4318
     },

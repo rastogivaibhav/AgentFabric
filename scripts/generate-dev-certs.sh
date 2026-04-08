@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AgentFabric — generate self-signed mTLS certificates for local development.
+# Govagn — generate self-signed mTLS certificates for local development.
 #
 # Usage:
 #   ./scripts/generate-dev-certs.sh
@@ -13,9 +13,9 @@
 #   deploy/certs/client.key    Client private key
 #
 # To enable mTLS in dev, set in docker-compose.yml:
-#   AF_TLS_ENABLED: "true"
-#   AF_TLS_CERT_FILE: /certs/collector.crt
-#   AF_TLS_KEY_FILE:  /certs/collector.key
+#   GV_TLS_ENABLED: "true"
+#   GV_TLS_CERT_FILE: /certs/collector.crt
+#   GV_TLS_KEY_FILE:  /certs/collector.key
 # And mount: ./deploy/certs:/certs:ro
 #
 # NEVER commit the generated *.key or *.crt files — they are in .gitignore.
@@ -28,10 +28,10 @@ cd "$CERT_DIR"
 
 DAYS=3650   # 10 years — dev only
 C="US"
-O="AgentFabric Dev"
-CN_CA="AgentFabric Dev CA"
-CN_COLLECTOR="collector.agentfabric.local"
-CN_CLIENT="client.agentfabric.local"
+O="Govagn Dev"
+CN_CA="Govagn Dev CA"
+CN_COLLECTOR="collector.govagn.local"
+CN_CLIENT="client.govagn.local"
 
 echo "→ Generating development CA..."
 openssl genrsa -out ca.key 4096
@@ -45,7 +45,7 @@ openssl req -new -key collector.key -out collector.csr \
 
 cat > collector-ext.cnf <<EOF
 [SAN]
-subjectAltName=DNS:collector,DNS:collector.agentfabric.local,DNS:localhost,IP:127.0.0.1
+subjectAltName=DNS:collector,DNS:collector.govagn.local,DNS:localhost,IP:127.0.0.1
 EOF
 
 openssl x509 -req -days "$DAYS" \
@@ -87,10 +87,10 @@ echo "To test mTLS locally:"
 echo "  make dev-tls"
 echo ""
 echo "Or manually:"
-echo "  AF_TLS_ENABLED=true docker compose up -d --build"
+echo "  GV_TLS_ENABLED=true docker compose up -d --build"
 echo ""
 echo "SDK mTLS example:"
-echo "  from agentfabric import instrument"
+echo "  from govagn import instrument"
 echo "  instrument("
 echo "      endpoint='https://localhost:4317',"
 echo "      insecure=False,"

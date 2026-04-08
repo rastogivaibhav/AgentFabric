@@ -3,9 +3,9 @@ package handlers
 import (
 	"testing"
 
-	"github.com/agentfabric/api-gateway/internal/models"
-	"github.com/agentfabric/api-gateway/internal/policy"
-	"github.com/agentfabric/api-gateway/internal/store"
+	"github.com/govagn/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/policy"
+	"github.com/govagn/api-gateway/internal/store"
 )
 
 func TestAuditEntriesToPolicyEvents_CorrelatesSpanMetadata(t *testing.T) {

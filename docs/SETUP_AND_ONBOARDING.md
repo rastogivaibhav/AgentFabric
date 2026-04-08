@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide helps platform teams, administrators, and application teams get AgentFabric running and onboard their first workloads.
+This guide helps platform teams, administrators, and application teams get Govagn running and onboard their first workloads.
 
 It covers:
 

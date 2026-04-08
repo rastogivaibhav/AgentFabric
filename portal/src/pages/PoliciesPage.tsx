@@ -302,21 +302,21 @@ export default function PoliciesPage() {
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
-                <tr style={{ textAlign: 'left', color: '#64748B', borderBottom: '1px solid #0F1F35' }}>
+                <tr style={{ textAlign: 'left', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--layer-border)' }}>
                   {['Name', 'Type', 'Match', 'Action', 'Controls'].map(h => <th key={h} style={thStyle}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {rules.map(rule => (
-                  <tr key={rule.id} style={{ borderBottom: '1px solid #0B1627', opacity: rule.enabled === false ? 0.6 : 1 }}>
+                  <tr key={rule.id} style={{ borderBottom: '1px solid var(--layer-border)', opacity: rule.enabled === false ? 0.6 : 1 }}>
                     <td style={tdStyle}>
                       <div>{rule.name}</div>
-                      <div style={{ fontSize: 10, color: '#64748B' }}>priority {rule.priority ?? 100}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>priority {rule.priority ?? 100}</div>
                     </td>
                     <td style={tdStyle}>{rule.rule_type}</td>
                     <td style={tdStyle}>
                       <div>{rule.provider || '*'}/{rule.model_pattern || '*'}</div>
-                      <div style={{ fontSize: 10, color: '#64748B' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
                         env {rule.environment || '*'} | mode {rule.decision_mode || 'fast'}
                         {rule.version ? ` | v${rule.version}` : ''}
                         {rule.rollout_percent ? ` | rollout ${rule.rollout_percent}%` : ''}
@@ -429,12 +429,12 @@ export default function PoliciesPage() {
         <div style={sectionLabel}>RECENT CONTROL-PLANE AUDIT</div>
         <div style={{ display: 'grid', gap: 10 }}>
           {(audit?.items ?? []).slice(0, 12).map(entry => (
-            <div key={entry.id} style={{ border: '1px solid #0F1F35', borderRadius: 8, padding: 12, background: '#071525' }}>
+            <div key={entry.id} style={{ border: '1px solid var(--layer-border)', borderRadius: 8, padding: 12, background: 'var(--layer-1)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{entry.category.toUpperCase()} | {entry.action.toUpperCase()}</div>
-                <div style={{ color: '#475569', fontSize: 10 }}>{new Date(entry.created_at).toLocaleString()}</div>
+                <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{entry.category.toUpperCase()} | {entry.action.toUpperCase()}</div>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>{new Date(entry.created_at).toLocaleString()}</div>
               </div>
-              <div style={{ color: '#64748B', fontSize: 11, marginTop: 4 }}>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11, marginTop: 4 }}>
                 {(entry.actor || 'system')} | {entry.target_type} {entry.target_id || 'n/a'} | {entry.outcome}
               </div>
             </div>
@@ -507,7 +507,7 @@ export default function PoliciesPage() {
               </button>
             </div>
             {previewRollout.data?.assignment?.rule_id && (
-              <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #10243D', background: '#081221', color: '#94A3B8', fontSize: 11 }}>
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #10243D', background: '#081221', color: 'var(--text-secondary)', fontSize: 11 }}>
                 Preview selected {previewRollout.data.assignment.variant} for rule {previewRollout.data.assignment.rule_name} at bucket {previewRollout.data.assignment.bucket}.
               </div>
             )}
@@ -517,15 +517,15 @@ export default function PoliciesPage() {
             {policyRollouts.length === 0 ? (
               <div style={subtleText}>No rollout rules configured for policy canaries yet.</div>
             ) : policyRollouts.map(rule => (
-              <div key={rule.id} style={{ border: '1px solid #0F1F35', borderRadius: 8, background: '#071525', padding: 12 }}>
+              <div key={rule.id} style={{ border: '1px solid var(--layer-border)', borderRadius: 8, background: 'var(--layer-1)', padding: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                  <div style={{ color: '#E2E8F0', fontSize: 12, fontWeight: 600 }}>{rule.name}</div>
-                  <div style={{ color: rule.status === 'paused' ? '#FCA5A5' : '#10B981', fontSize: 11 }}>{rule.status}</div>
+                  <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{rule.name}</div>
+                  <div style={{ color: rule.status === 'paused' ? 'var(--protect)' : 'var(--spend)', fontSize: 11 }}>{rule.status}</div>
                 </div>
-                <div style={{ color: '#94A3B8', fontSize: 11, marginTop: 4 }}>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 11, marginTop: 4 }}>
                   policy #{rule.policy_rule_id} | {rule.percentage}% | env {rule.environment || '*'}
                 </div>
-                <div style={{ color: '#64748B', fontSize: 10, marginTop: 4 }}>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 10, marginTop: 4 }}>
                   {rule.recent_requests ?? 0} requests | {(Number(rule.recent_error_rate ?? 0) * 100).toFixed(1)}% error rate
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -555,48 +555,54 @@ export default function PoliciesPage() {
 }
 
 const panelStyle: CSSProperties = {
-  background: '#0D1B2A',
-  border: '1px solid #0F1F35',
-  borderRadius: 10,
+  background: 'var(--layer-2)',
+  border: '1px solid var(--layer-border)',
+  borderRadius: 12,
   padding: 24,
 }
 
 const titleStyle: CSSProperties = {
-  fontSize: 22,
+  fontSize: 28,
   fontWeight: 700,
-  color: '#F0F9FF',
+  color: 'var(--text-primary)',
+  letterSpacing: '-0.02em',
   margin: 0,
 }
 
 const subtleText: CSSProperties = {
   fontSize: 12,
-  color: '#475569',
-  marginTop: 8,
+  color: 'var(--text-tertiary)',
+  marginTop: 6,
+  lineHeight: 1.5,
 }
 
 const sectionLabel: CSSProperties = {
-  fontSize: 12,
-  color: '#475569',
-  letterSpacing: '0.1em',
+  fontSize: 10,
+  color: 'var(--text-tertiary)',
+  letterSpacing: '0.12em',
   marginBottom: 16,
+  fontWeight: 700,
 }
 
 const labelStyle: CSSProperties = {
   fontSize: 11,
-  color: '#94A3B8',
+  color: 'var(--text-secondary)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
 }
 
 const inputStyle: CSSProperties = {
   display: 'block',
   width: '100%',
-  marginTop: 4,
   boxSizing: 'border-box',
-  background: '#071525',
-  border: '1px solid #1E3A5F',
-  borderRadius: 6,
-  color: '#F0F9FF',
-  padding: '8px 10px',
-  fontSize: 12,
+  background: 'var(--layer-1)',
+  border: '1px solid var(--layer-border)',
+  borderRadius: 8,
+  color: 'var(--text-primary)',
+  padding: '9px 12px',
+  fontSize: 13,
+  outline: 'none',
 }
 
 const textareaStyle: CSSProperties = {
@@ -605,55 +611,60 @@ const textareaStyle: CSSProperties = {
 } as CSSProperties
 
 const primaryBtn: CSSProperties = {
-  background: '#1D4ED8',
+  background: 'var(--protect)',
   border: 'none',
-  borderRadius: 6,
+  borderRadius: 8,
   color: '#fff',
-  padding: '8px 16px',
-  fontSize: 12,
+  padding: '10px 18px',
+  fontSize: 13,
   cursor: 'pointer',
-  fontWeight: 600,
+  fontWeight: 700,
 }
 
 const secondaryBtn: CSSProperties = {
-  background: '#1E3A5F',
-  border: 'none',
-  borderRadius: 6,
-  color: '#fff',
-  padding: '8px 16px',
-  fontSize: 12,
+  background: 'var(--layer-3)',
+  border: '1px solid var(--layer-border)',
+  borderRadius: 8,
+  color: 'var(--text-secondary)',
+  padding: '9px 16px',
+  fontSize: 13,
   cursor: 'pointer',
 }
 
 const secondaryBtnSmall: CSSProperties = {
   ...secondaryBtn,
-  padding: '6px 10px',
+  padding: '5px 12px',
   fontSize: 11,
 }
 
 const dangerBtnSmall: CSSProperties = {
-  background: '#7F1D1D',
-  border: 'none',
+  background: 'rgba(255,69,58,0.15)',
+  border: '1px solid rgba(255,69,58,0.3)',
   borderRadius: 6,
-  color: '#fff',
-  padding: '6px 10px',
+  color: 'var(--protect)',
+  padding: '5px 12px',
   fontSize: 11,
   cursor: 'pointer',
 }
 
 const thStyle: CSSProperties = {
-  padding: '10px 8px',
-  fontWeight: 600,
+  padding: '10px 14px',
+  fontWeight: 700,
+  fontSize: 9,
+  letterSpacing: '0.08em',
+  color: 'var(--text-tertiary)',
+  borderBottom: '1px solid var(--layer-border)',
 }
 
 const tdStyle: CSSProperties = {
-  padding: '12px 8px',
-  color: '#E2E8F0',
+  padding: '12px 14px',
+  color: 'var(--text-primary)',
   verticalAlign: 'top',
+  fontSize: 12,
 }
 
 const errorStyle: CSSProperties = {
-  fontSize: 11,
-  color: '#EF4444',
+  fontSize: 12,
+  color: 'var(--protect)',
   marginTop: 10,
 }

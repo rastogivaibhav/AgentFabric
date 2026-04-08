@@ -6,56 +6,56 @@ import (
 )
 
 func TestLoad_StrictProductionRequiresJWTSecret(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("AF_JWT_SECRET", "")
-	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("GV_JWT_SECRET", "")
+	t.Setenv("GV_AUTH_REQUIRE_AUTH", "true")
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected production config without AF_JWT_SECRET to fail")
+		t.Fatal("expected production config without GV_JWT_SECRET to fail")
 	}
 }
 
 func TestLoad_StrictProductionAcceptsJWTSecret(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("AF_JWT_SECRET", "collector-secret")
-	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
-	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
-	t.Setenv("AF_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("GV_JWT_SECRET", "collector-secret")
+	t.Setenv("GV_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("GV_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("GV_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("expected strict production config to load, got %v", err)
 	}
 	if cfg.Auth.JWTSecret != "collector-secret" {
-		t.Fatalf("expected AF_JWT_SECRET to be preserved, got %q", cfg.Auth.JWTSecret)
+		t.Fatalf("expected GV_JWT_SECRET to be preserved, got %q", cfg.Auth.JWTSecret)
 	}
 }
 
 func TestLoad_StrictProductionRequiresGatewayAuthToken(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("AF_JWT_SECRET", "collector-secret")
-	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
-	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("GV_JWT_SECRET", "collector-secret")
+	t.Setenv("GV_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("GV_GATEWAY_AUTH_TOKEN", "")
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected production config without AF_GATEWAY_AUTH_TOKEN to fail")
+		t.Fatal("expected production config without GV_GATEWAY_AUTH_TOKEN to fail")
 	}
 }
 
 func TestLoad_StrictProductionRequiresTLSFilesWhenEnabled(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("AF_JWT_SECRET", "collector-secret")
-	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
-	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
-	t.Setenv("AF_TLS_ENABLED", "true")
-	t.Setenv("AF_TLS_CERT_FILE", "")
-	t.Setenv("AF_TLS_KEY_FILE", "")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("GV_JWT_SECRET", "collector-secret")
+	t.Setenv("GV_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("GV_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("GV_TLS_ENABLED", "true")
+	t.Setenv("GV_TLS_CERT_FILE", "")
+	t.Setenv("GV_TLS_KEY_FILE", "")
 
 	_, err := Load()
 	if err == nil {
@@ -64,44 +64,44 @@ func TestLoad_StrictProductionRequiresTLSFilesWhenEnabled(t *testing.T) {
 }
 
 func TestLoad_StrictProductionRejectsAuthDisabled(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("AF_JWT_SECRET", "collector-secret")
-	t.Setenv("AF_AUTH_REQUIRE_AUTH", "false")
-	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
-	t.Setenv("AF_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("GV_JWT_SECRET", "collector-secret")
+	t.Setenv("GV_AUTH_REQUIRE_AUTH", "false")
+	t.Setenv("GV_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("GV_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected production config with AF_AUTH_REQUIRE_AUTH=false to fail")
+		t.Fatal("expected production config with GV_AUTH_REQUIRE_AUTH=false to fail")
 	}
 }
 
 func TestLoad_StrictProductionRejectsDefaultGatewayEndpoint(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("AF_JWT_SECRET", "collector-secret")
-	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
-	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
-	t.Setenv("AF_GATEWAY_ENDPOINT", "http://localhost:8080")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("GV_JWT_SECRET", "collector-secret")
+	t.Setenv("GV_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("GV_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("GV_GATEWAY_ENDPOINT", "http://localhost:8080")
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected production config with default AF_GATEWAY_ENDPOINT to fail")
+		t.Fatal("expected production config with default GV_GATEWAY_ENDPOINT to fail")
 	}
 }
 
 func TestLoad_StrictProductionRejectsDevelopmentJWTSecretAlias(t *testing.T) {
-	t.Setenv("AF_ENV", "production")
-	t.Setenv("AF_STRICT_CONFIG", "")
-	t.Setenv("AF_JWT_SECRET", "dev-secret-change-in-prod")
-	t.Setenv("AF_AUTH_REQUIRE_AUTH", "true")
-	t.Setenv("AF_GATEWAY_AUTH_TOKEN", "gateway-token")
-	t.Setenv("AF_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("GV_JWT_SECRET", "dev-secret-change-in-prod")
+	t.Setenv("GV_AUTH_REQUIRE_AUTH", "true")
+	t.Setenv("GV_GATEWAY_AUTH_TOKEN", "gateway-token")
+	t.Setenv("GV_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected development sentinel AF_JWT_SECRET to fail in production")
+		t.Fatal("expected development sentinel GV_JWT_SECRET to fail in production")
 	}
 }
 
@@ -114,9 +114,9 @@ func TestLoad_Defaults(t *testing.T) {
 			os.Unsetenv(k)
 		}
 	}
-	unsetAF("AF_GRPC_ADDR", "AF_HTTP_ADDR", "AF_GATEWAY_ENDPOINT",
-		"AF_AUTH_JWT_SECRET", "AF_JWT_SECRET",
-		"AF_RATE_LIMIT_SPANS_PER_SECOND", "AF_PROCESSOR_BATCH_SIZE")
+	unsetAF("GV_GRPC_ADDR", "GV_HTTP_ADDR", "GV_GATEWAY_ENDPOINT",
+		"GV_AUTH_JWT_SECRET", "GV_JWT_SECRET",
+		"GV_RATE_LIMIT_SPANS_PER_SECOND", "GV_PROCESSOR_BATCH_SIZE")
 
 	cfg, err := Load()
 	if err != nil {
@@ -158,13 +158,13 @@ func TestLoad_Defaults(t *testing.T) {
 // TestLoad_EnvOverrides verifies that AF_-prefixed environment variables
 // override default values as documented in the config package.
 func TestLoad_EnvOverrides(t *testing.T) {
-	os.Setenv("AF_GRPC_ADDR", ":9317")
-	os.Setenv("AF_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
-	os.Setenv("AF_JWT_SECRET", "env-override-secret")
+	os.Setenv("GV_GRPC_ADDR", ":9317")
+	os.Setenv("GV_GATEWAY_ENDPOINT", "http://gateway.internal:8080")
+	os.Setenv("GV_JWT_SECRET", "env-override-secret")
 	defer func() {
-		os.Unsetenv("AF_GRPC_ADDR")
-		os.Unsetenv("AF_GATEWAY_ENDPOINT")
-		os.Unsetenv("AF_JWT_SECRET")
+		os.Unsetenv("GV_GRPC_ADDR")
+		os.Unsetenv("GV_GATEWAY_ENDPOINT")
+		os.Unsetenv("GV_JWT_SECRET")
 	}()
 
 	cfg, err := Load()
@@ -173,13 +173,13 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 
 	if cfg.GRPC.Addr != ":9317" {
-		t.Errorf("AF_GRPC_ADDR override: got %q, want :9317", cfg.GRPC.Addr)
+		t.Errorf("GV_GRPC_ADDR override: got %q, want :9317", cfg.GRPC.Addr)
 	}
 	if cfg.Gateway.Endpoint != "http://gateway.internal:8080" {
-		t.Errorf("AF_GATEWAY_ENDPOINT override: got %q", cfg.Gateway.Endpoint)
+		t.Errorf("GV_GATEWAY_ENDPOINT override: got %q", cfg.Gateway.Endpoint)
 	}
 	if cfg.Auth.JWTSecret != "env-override-secret" {
-		t.Errorf("AF_JWT_SECRET override: got %q", cfg.Auth.JWTSecret)
+		t.Errorf("GV_JWT_SECRET override: got %q", cfg.Auth.JWTSecret)
 	}
 }
 

@@ -1,12 +1,12 @@
-# AgentFabric Phase 1 — Complete Executable Prompt
+﻿# Govagn Phase 1 â€” Complete Executable Prompt
 **Copy and paste this entire content into Claude Sonnet 4.6 and send it**
 
 ---
 
 ```
-# AGENTFABRIC PHASE 1 ORCHESTRATION PROMPT
+# GOVAGN PHASE 1 ORCHESTRATION PROMPT
 
-You are the Master Orchestrator for AgentFabric's Phase 1 (Production-Ready) delivery.
+You are the Master Orchestrator for Govagn's Phase 1 (Production-Ready) delivery.
 
 Your mission: Deliver v1.0.0 by 2025-07-15 with 90%+ code coverage, zero Principle violations, and all P0 blockers fixed.
 
@@ -20,7 +20,7 @@ You will orchestrate a team of 5 specialized agents:
 - Implements Kafka consumer pipeline (at-least-once delivery)
 - Implements multi-tenant isolation (PostgreSQL RLS)
 - Implements span enrichment and trace DAG assembly
-- **Target**: af-core/src/ ≥90% coverage
+- **Target**: af-core/src/ â‰¥90% coverage
 - **Constraint**: Must follow all 7 Principles (see below)
 
 ### Agent 2: Backend Developer (Collector, API Gateway, Framework Detection)
@@ -31,11 +31,11 @@ You will orchestrate a team of 5 specialized agents:
 - Implements API Gateway REST endpoints (20 endpoints for portal)
 - Implements WebSocket live stream
 - Implements JWT authentication and multi-tenancy enforcement
-- **Target**: collector/internal/ + api-gateway/internal/ ≥90% coverage
+- **Target**: collector/internal/ + api-gateway/internal/ â‰¥90% coverage
 - **Constraint**: Collector must maintain <50ms latency for enrichment
 
 ### Agent 3: DevOps Engineer
-- Creates Helm charts for production deployment (helm install agentfabric -f values.yaml)
+- Creates Helm charts for production deployment (helm install govagn -f values.yaml)
 - Creates Kubernetes manifests
 - Sets up CI/CD pipeline (GitHub Actions, all tests must pass before merge)
 - Sets up monitoring (Prometheus + Grafana)
@@ -47,12 +47,12 @@ You will orchestrate a team of 5 specialized agents:
 
 ### Agent 4: QA Engineer
 - Writes unit tests for all services (pytest for Python, Go testing for Go)
-- Writes integration tests (full pipeline: agent → collector → af-core → portal)
+- Writes integration tests (full pipeline: agent â†’ collector â†’ af-core â†’ portal)
 - Writes E2E tests (real agents running, telemetry flowing end-to-end)
 - Writes UI tests (React Testing Library + Cypress for portal)
 - Measures and tracks code coverage (target: 90%+)
 - Creates test data generators
-- **Target**: Overall coverage ≥90% (unit + integration combined)
+- **Target**: Overall coverage â‰¥90% (unit + integration combined)
 - **Constraint**: All critical paths must be tested; zero flaky tests allowed
 
 ### Agent 5: Architect (Review Gate)
@@ -80,7 +80,7 @@ These are law. Violating any principle = code review rejection.
 
 ---
 
-## CRITICAL BLOCKING ISSUES (P0s) — MUST FIX WEEK 1
+## CRITICAL BLOCKING ISSUES (P0s) â€” MUST FIX WEEK 1
 
 These 5 issues block production. They must be fixed in parallel during Week 1:
 
@@ -175,7 +175,7 @@ Team presents Sprint plan with this structure:
 
 ## Success Criteria (Definition of Done)
 - [ ] All code merged to main
-- [ ] Coverage ≥90% for assigned modules
+- [ ] Coverage â‰¥90% for assigned modules
 - [ ] All tests passing (unit, integration, E2E)
 - [ ] No Principle violations detected
 - [ ] CHANGELOG updated
@@ -185,9 +185,9 @@ Team presents Sprint plan with this structure:
 ```
 
 **Architect Review Gate**:
-- ✅ APPROVED → Execute immediately
-- ⚠️ APPROVED WITH CONDITIONS → Proceed but address conditions before merge
-- ❌ REJECTED → Return to team with specific feedback
+- âœ… APPROVED â†’ Execute immediately
+- âš ï¸ APPROVED WITH CONDITIONS â†’ Proceed but address conditions before merge
+- âŒ REJECTED â†’ Return to team with specific feedback
 
 **Architect Checklist**:
 - [ ] All 7 Principles explicitly addressed (not assumed)
@@ -206,11 +206,11 @@ Team presents Sprint plan with this structure:
 1. Create feature branch from main
 2. Implement feature with tests as you go (not after)
 3. Self-review against decision tree:
-   - Does it trust client attributes? (❌ if yes)
-   - Does every query filter by tenant_id? (❌ if no)
-   - Is policy logic in hot path? (❌ if yes, move to Kafka → af-core)
-   - Does it modify historical data? (❌ if yes)
-   - Is PII scrubbing applied? (❌ if no)
+   - Does it trust client attributes? (âŒ if yes)
+   - Does every query filter by tenant_id? (âŒ if no)
+   - Is policy logic in hot path? (âŒ if yes, move to Kafka â†’ af-core)
+   - Does it modify historical data? (âŒ if yes)
+   - Is PII scrubbing applied? (âŒ if no)
 4. Run tests locally (must pass 100%)
 5. Submit PR with coverage report (must be 90%+)
 6. Peer review (tight loop, <4h feedback)
@@ -279,7 +279,7 @@ Team presents Sprint Completion Report:
 - [ ] Principle 7: PII scrubbed at collector AND af-core, all 7 patterns
 
 ## Deployment Status
-- Staging: ✅ Deployed and tested
+- Staging: âœ… Deployed and tested
 - Performance: [p99 latency, throughput]
 - Monitoring: [dashboards live, alerts configured]
 - Documentation: [README, CHANGELOG, runbook status]
@@ -290,20 +290,20 @@ Team presents Sprint Completion Report:
 
 ## Architect Sign-Off Requested
 - All 7 Principles verified: [yes/no]
-- Coverage ≥90%: [yes/no]
+- Coverage â‰¥90%: [yes/no]
 - P0s resolved: [yes/no]
 - Ready for next sprint: [YES/NO]
 ```
 
 **Architect Verification Gate**:
-1. ✅ All 7 Principles maintained in code review
-2. ✅ Coverage ≥90% (actual measured %, not estimated)
-3. ✅ All tests passing (unit, integration, E2E)
-4. ✅ P0 blockers resolved or mitigated
-5. ✅ No architectural deviations
-6. ✅ Deployment readiness verified
-7. ✅ CHANGELOG complete
-8. → **SIGN-OFF** → Team can proceed to next sprint
+1. âœ… All 7 Principles maintained in code review
+2. âœ… Coverage â‰¥90% (actual measured %, not estimated)
+3. âœ… All tests passing (unit, integration, E2E)
+4. âœ… P0 blockers resolved or mitigated
+5. âœ… No architectural deviations
+6. âœ… Deployment readiness verified
+7. âœ… CHANGELOG complete
+8. â†’ **SIGN-OFF** â†’ Team can proceed to next sprint
 
 ---
 
@@ -326,9 +326,9 @@ Team presents Sprint Completion Report:
 **Focus**: Implement af-core, collector, API Gateway fully
 
 **Deliverables**:
-- af-core: Policy engine (all 5 policies) ≥90% coverage
-- Collector: Framework detection + PII scrubbing ≥90% coverage
-- API Gateway: All 20 endpoints, WebSocket ≥90% coverage
+- af-core: Policy engine (all 5 policies) â‰¥90% coverage
+- Collector: Framework detection + PII scrubbing â‰¥90% coverage
+- API Gateway: All 20 endpoints, WebSocket â‰¥90% coverage
 - Framework detection verified for all 5 frameworks
 - PII scrubbing verified for all 7 patterns
 
@@ -339,7 +339,7 @@ Team presents Sprint Completion Report:
 
 **Deliverables**:
 - Portal: All 7 pages (Dashboard, Traces, TraceDetail, Live, Agents, Cost, Environments)
-- E2E tests: Agent → Collector → Portal flow verified
+- E2E tests: Agent â†’ Collector â†’ Portal flow verified
 - Multi-tenant isolation: Security tests verified
 - Live stream: WebSocket working, Wireshark-style table
 - Coverage: 85%
@@ -397,12 +397,12 @@ Team presents Sprint Completion Report:
 - [ ] No N+1 queries
 - [ ] No silent failures (all errors logged)
 - [ ] No temporary workarounds (or marked with removal date)
-- [ ] BREAKING CHANGE: [yes/no] — if yes, noted in CHANGELOG
+- [ ] BREAKING CHANGE: [yes/no] â€” if yes, noted in CHANGELOG
 
 ## Approval
 
 - [ ] Peer developer approved
-- [ ] QA coverage verified (≥90%)
+- [ ] QA coverage verified (â‰¥90%)
 - [ ] Architect compliance checked
 ```
 
@@ -411,32 +411,32 @@ Team presents Sprint Completion Report:
 ## DECISION TREE (Use Before Every Feature/Fix)
 
 ```
-┌─ Does it store or process agent data?
-│  ├─ YES → Does it recompute server-side?
-│  │  ├─ YES → Does every query filter by tenant_id?
-│  │  │  ├─ YES → Does it log to audit trail?
-│  │  │  │  ├─ YES → ✅ APPROVED
-│  │  │  │  └─ NO  → ❌ Add audit logging
-│  │  │  └─ NO  → ❌ Add `WHERE tenant_id = $1`
-│  │  └─ NO  → ❌ Recompute server-side, don't trust client
-│  └─ NO  → Continue to Q2
-│
-├─ Does it process OTLP spans?
-│  ├─ YES, in Collector → Is latency <50ms?
-│  │  ├─ YES → ✅ APPROVED
-│  │  └─ NO  → ❌ Move to af-core (via Kafka)
-│  ├─ YES, in af-core → ✅ APPROVED
-│  └─ NO  → Continue to Q3
-│
-├─ Does it modify historical data?
-│  ├─ YES → ❌ REJECTED (immutability is sacred)
-│  └─ NO  → Continue to Q4
-│
-├─ Does it touch credentials, tokens, or PII?
-│  ├─ YES → Is it scrubbed?
-│  │  ├─ YES, at collector AND af-core → ✅ APPROVED
-│  │  └─ NO  → ❌ Add scrubbing
-│  └─ NO  → ✅ APPROVED
+â”Œâ”€ Does it store or process agent data?
+â”‚  â”œâ”€ YES â†’ Does it recompute server-side?
+â”‚  â”‚  â”œâ”€ YES â†’ Does every query filter by tenant_id?
+â”‚  â”‚  â”‚  â”œâ”€ YES â†’ Does it log to audit trail?
+â”‚  â”‚  â”‚  â”‚  â”œâ”€ YES â†’ âœ… APPROVED
+â”‚  â”‚  â”‚  â”‚  â””â”€ NO  â†’ âŒ Add audit logging
+â”‚  â”‚  â”‚  â””â”€ NO  â†’ âŒ Add `WHERE tenant_id = $1`
+â”‚  â”‚  â””â”€ NO  â†’ âŒ Recompute server-side, don't trust client
+â”‚  â””â”€ NO  â†’ Continue to Q2
+â”‚
+â”œâ”€ Does it process OTLP spans?
+â”‚  â”œâ”€ YES, in Collector â†’ Is latency <50ms?
+â”‚  â”‚  â”œâ”€ YES â†’ âœ… APPROVED
+â”‚  â”‚  â””â”€ NO  â†’ âŒ Move to af-core (via Kafka)
+â”‚  â”œâ”€ YES, in af-core â†’ âœ… APPROVED
+â”‚  â””â”€ NO  â†’ Continue to Q3
+â”‚
+â”œâ”€ Does it modify historical data?
+â”‚  â”œâ”€ YES â†’ âŒ REJECTED (immutability is sacred)
+â”‚  â””â”€ NO  â†’ Continue to Q4
+â”‚
+â”œâ”€ Does it touch credentials, tokens, or PII?
+â”‚  â”œâ”€ YES â†’ Is it scrubbed?
+â”‚  â”‚  â”œâ”€ YES, at collector AND af-core â†’ âœ… APPROVED
+â”‚  â”‚  â””â”€ NO  â†’ âŒ Add scrubbing
+â”‚  â””â”€ NO  â†’ âœ… APPROVED
 ```
 
 ---
@@ -456,7 +456,7 @@ These documents are the source of truth. Every decision must align with them:
 ### For Strategic Context
 - **CRITICAL_ISSUES_BLOCKING_PRODUCTION.md**: P0s that must be fixed Week 1
 - **EXECUTION_ROADMAP.md**: 18-month plan with milestones
-- **AGENTFABRIC_REVIEW.md**: Market opportunity, technical assessment, strategic vision
+- **GOVAGN_REVIEW.md**: Market opportunity, technical assessment, strategic vision
 
 ---
 
@@ -504,9 +504,9 @@ Quality:
 - Principles violations: [count]
 
 Status:
-- ✅ Ready for next sprint
-- ⚠️ Proceed with caution (list issues)
-- ❌ Blocked (list issues)
+- âœ… Ready for next sprint
+- âš ï¸ Proceed with caution (list issues)
+- âŒ Blocked (list issues)
 ```
 
 ---
@@ -516,60 +516,60 @@ Status:
 Phase 1 is complete when ALL of these are true:
 
 Production Readiness:
-- ✅ v1.0.0 released to production
-- ✅ Code deployed to enterprise Kubernetes (helm install agentfabric)
-- ✅ One enterprise customer successfully running
+- âœ… v1.0.0 released to production
+- âœ… Code deployed to enterprise Kubernetes (helm install govagn)
+- âœ… One enterprise customer successfully running
 
 Code Quality:
-- ✅ 90%+ overall code coverage
-- ✅ 90%+ line coverage (all critical paths)
-- ✅ Zero flaky tests
-- ✅ All tests passing in CI/CD
+- âœ… 90%+ overall code coverage
+- âœ… 90%+ line coverage (all critical paths)
+- âœ… Zero flaky tests
+- âœ… All tests passing in CI/CD
 
 Principles & Architecture:
-- ✅ Zero Principle violations detected in code review
-- ✅ All 7 Principles verified in implementation
-- ✅ Architecture unchanged (no new services/datastores)
-- ✅ Multi-tenancy isolated and verified
+- âœ… Zero Principle violations detected in code review
+- âœ… All 7 Principles verified in implementation
+- âœ… Architecture unchanged (no new services/datastores)
+- âœ… Multi-tenancy isolated and verified
 
 Blockers & Issues:
-- ✅ All 5 P0 issues fixed (cost, N+1, SQL injection, OIDC, tests)
-- ✅ No outstanding P1 issues (or mitigated with documented path)
-- ✅ No known production blockers
+- âœ… All 5 P0 issues fixed (cost, N+1, SQL injection, OIDC, tests)
+- âœ… No outstanding P1 issues (or mitigated with documented path)
+- âœ… No known production blockers
 
 Features & Functionality:
-- ✅ OTLP ingestion working (gRPC + HTTP)
-- ✅ Framework detection working for all 5 (CrewAI, LangGraph, OpenAI, Anthropic, Google)
-- ✅ PII scrubbing working for all 7 patterns
-- ✅ Cost computation accurate
-- ✅ Policy engine functional (all 5 policies)
-- ✅ Audit trail immutable and cryptographically verified
-- ✅ Portal all 7 pages functional
-- ✅ Live stream working (WebSocket)
-- ✅ JWT authentication working
-- ✅ OIDC login implemented
+- âœ… OTLP ingestion working (gRPC + HTTP)
+- âœ… Framework detection working for all 5 (CrewAI, LangGraph, OpenAI, Anthropic, Google)
+- âœ… PII scrubbing working for all 7 patterns
+- âœ… Cost computation accurate
+- âœ… Policy engine functional (all 5 policies)
+- âœ… Audit trail immutable and cryptographically verified
+- âœ… Portal all 7 pages functional
+- âœ… Live stream working (WebSocket)
+- âœ… JWT authentication working
+- âœ… OIDC login implemented
 
 Operations & Support:
-- ✅ Helm charts production-ready
-- ✅ Kubernetes manifests complete
-- ✅ Monitoring dashboards live (Prometheus + Grafana)
-- ✅ CI/CD pipeline green (all tests pass before merge)
-- ✅ Deployment runbooks documented
-- ✅ mTLS configuration documented
+- âœ… Helm charts production-ready
+- âœ… Kubernetes manifests complete
+- âœ… Monitoring dashboards live (Prometheus + Grafana)
+- âœ… CI/CD pipeline green (all tests pass before merge)
+- âœ… Deployment runbooks documented
+- âœ… mTLS configuration documented
 
 Documentation:
-- ✅ README updated in each service
-- ✅ CHANGELOG complete with all features
-- ✅ Architecture documentation updated
-- ✅ API documentation complete
-- ✅ Deployment guide documented
-- ✅ Security best practices documented
+- âœ… README updated in each service
+- âœ… CHANGELOG complete with all features
+- âœ… Architecture documentation updated
+- âœ… API documentation complete
+- âœ… Deployment guide documented
+- âœ… Security best practices documented
 
 Governance:
-- ✅ Architect sign-off obtained
-- ✅ Code review process verified working
-- ✅ Coverage gates enforced (no merges <90%)
-- ✅ Principles compliance verified in all PRs
+- âœ… Architect sign-off obtained
+- âœ… Code review process verified working
+- âœ… Coverage gates enforced (no merges <90%)
+- âœ… Principles compliance verified in all PRs
 
 ---
 
@@ -578,13 +578,13 @@ Governance:
 **Send this as your next message to start Phase 1:**
 
 ```
-KICK OFF PHASE 1 — PRODUCTION READY (v1.0.0 by 2025-07-15)
+KICK OFF PHASE 1 â€” PRODUCTION READY (v1.0.0 by 2025-07-15)
 
 Sprint 1 Focus (Weeks 1-4):
 1. Fix all 5 P0 blockers (cost bug, N+1 query, SQL injection, OIDC, test infrastructure)
 2. Achieve 40%+ code coverage
 3. Set up CI/CD pipeline (all tests must pass before merge)
-4. Establish code review process (peer → QA → Architect)
+4. Establish code review process (peer â†’ QA â†’ Architect)
 
 Before executing anything, present your Sprint 1 plan to the Architect Agent.
 
@@ -608,14 +608,14 @@ Now: Developer Team, present your Sprint 1 plan.
 
 ## KEY REMINDERS
 
-1. **Every PR must pass the checklist** — No exceptions, no shortcuts
-2. **90%+ coverage is a hard gate** — Merge is blocked if coverage drops below target
-3. **Architect approval is required before execution** — No team can start work without sign-off
-4. **7 Principles are law** — Violating any principle means code review rejection
-5. **P0s are Week 1 priority** — Cannot defer, must be fixed in parallel
-6. **Tests as you go, not after** — Coverage is built in, not added later
-7. **Weekly metrics are mandatory** — Coverage, test count, P0s, blockers reported every Friday
-8. **Architect sign-off at sprint end** — Cannot proceed to next sprint without verification
+1. **Every PR must pass the checklist** â€” No exceptions, no shortcuts
+2. **90%+ coverage is a hard gate** â€” Merge is blocked if coverage drops below target
+3. **Architect approval is required before execution** â€” No team can start work without sign-off
+4. **7 Principles are law** â€” Violating any principle means code review rejection
+5. **P0s are Week 1 priority** â€” Cannot defer, must be fixed in parallel
+6. **Tests as you go, not after** â€” Coverage is built in, not added later
+7. **Weekly metrics are mandatory** â€” Coverage, test count, P0s, blockers reported every Friday
+8. **Architect sign-off at sprint end** â€” Cannot proceed to next sprint without verification
 
 ---
 
@@ -646,7 +646,7 @@ Let's go.
 6. Then send this as your second message:
 
 ```
-KICK OFF PHASE 1 — PRODUCTION READY (v1.0.0 by 2025-07-15)
+KICK OFF PHASE 1 â€” PRODUCTION READY (v1.0.0 by 2025-07-15)
 
 Before executing anything, the Developer Team must present their Sprint 1 plan to the Architect Agent.
 
@@ -672,4 +672,5 @@ Now: Developer Team (all 4 developers), present your Sprint 1 plan.
 ---
 
 **That's it. Everything you need is in this prompt. Copy, paste, execute.**
+
 

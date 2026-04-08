@@ -1,5 +1,5 @@
 """
-AgentFabric End-to-End Telemetry Test
+Govagn End-to-End Telemetry Test
 Simulates 5 agent frameworks sending spans to the collector via OTLP/HTTP.
 
 Run with:  python test_agents.py
@@ -27,12 +27,12 @@ def make_jwt(secret: str = "dev-secret", tenant: str = "test-tenant") -> str:
     return f"{header}.{payload}.{sig}"
 
 JWT_TOKEN       = make_jwt()
-COLLECTOR_HTTP  = os.environ.get("AF_HTTP_ENDPOINT", "http://localhost:4318")
-COLLECTOR_GRPC  = os.environ.get("AF_ENDPOINT",      "http://localhost:4317")
-API_BASE        = os.environ.get("AF_API",            "http://localhost:8080")
+COLLECTOR_HTTP  = os.environ.get("GV_HTTP_ENDPOINT", "http://localhost:4318")
+COLLECTOR_GRPC  = os.environ.get("GV_ENDPOINT",      "http://localhost:4317")
+API_BASE        = os.environ.get("GV_API",            "http://localhost:8080")
 
 print(f"\n{'='*62}")
-print(f"  AgentFabric  |  End-to-End Telemetry Test")
+print(f"  Govagn  |  End-to-End Telemetry Test")
 print(f"  Collector    →  {COLLECTOR_HTTP}  (HTTP/OTLP)")
 print(f"  API Gateway  →  {API_BASE}")
 print(f"{'='*62}\n")
@@ -46,7 +46,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExport
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 # Import our SDK helpers
-from agentfabric import agent_span, trace_tool_call, Attrs
+from govagn import agent_span, trace_tool_call, Attrs
 
 # Build a TracerProvider that exports to BOTH the collector AND console
 resource = Resource.create({
@@ -75,8 +75,8 @@ provider.add_span_processor(
 trace.set_tracer_provider(provider)
 
 # Monkey-patch the SDK's global tracer so agent_span() uses our provider
-import agentfabric as af_sdk
-af_sdk._tracer    = trace.get_tracer("agentfabric", "1.0.0")
+import govagn as af_sdk
+af_sdk._tracer    = trace.get_tracer("govagn", "1.0.0")
 af_sdk._initialized = True
 
 tracer = af_sdk._tracer
@@ -255,7 +255,7 @@ def test_anthropic_pii():
         span.set_attribute("af.cost.estimated_usd", 0.048)
 
     print(f"  ✓ Anthropic span emitted with PII payload")
-    print(f"    Check collector metrics: agentfabric_pii_scrubbed_total should be > 0")
+    print(f"    Check collector metrics: govagn_pii_scrubbed_total should be > 0")
     return run_id
 
 
@@ -359,9 +359,9 @@ if __name__ == "__main__":
                     except: pass
             return None
 
-        received = get_metric("agentfabric_receive_latency_seconds_count{source=\"http\"}")
-        pii      = get_metric("agentfabric_pii_scrubbed_total")
-        queue    = get_metric("agentfabric_queue_depth")
+        received = get_metric("govagn_receive_latency_seconds_count{source=\"http\"}")
+        pii      = get_metric("govagn_pii_scrubbed_total")
+        queue    = get_metric("govagn_queue_depth")
 
         print(f"  HTTP spans received : {int(received) if received else 'N/A'}")
         print(f"  PII values scrubbed : {int(pii) if pii is not None else 'N/A'}")
@@ -370,7 +370,7 @@ if __name__ == "__main__":
         # Check for processed spans with framework labels
         fw_counts = {}
         for line in metrics_text.splitlines():
-            if 'agentfabric_processed_spans_total' in line and not line.startswith('#'):
+            if 'govagn_processed_spans_total' in line and not line.startswith('#'):
                 import re
                 fw_m = re.search(r'framework="([^"]+)"', line)
                 cnt  = float(line.split()[-1])

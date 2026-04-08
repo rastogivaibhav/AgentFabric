@@ -2,17 +2,17 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: agentfabric
+  name: govagn
   labels:
-    app.kubernetes.io/name: agentfabric
+    app.kubernetes.io/name: govagn
 
 ---
 # ─── ConfigMap ────────────────────────────────────────────────────────────────
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: agentfabric-config
-  namespace: agentfabric
+  name: govagn-config
+  namespace: govagn
 data:
   collector.yaml: |
     debug: false
@@ -46,8 +46,8 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: agentfabric-secrets
-  namespace: agentfabric
+  name: govagn-secrets
+  namespace: govagn
 type: Opaque
 stringData:
   jwt-secret:       "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
@@ -55,8 +55,8 @@ stringData:
   admin-password:   "REPLACE_WITH_STRONG_ADMIN_PASSWORD"
   gateway-auth-token: "REPLACE_WITH_SHARED_INGEST_BEARER_TOKEN"
   vault-key:        "REPLACE_WITH_64_CHAR_HEX_KEY"
-  oidc-client-secret: ""  # set when AF_SSO_REQUIRED=true
-  database-url:     "postgres://fabric:REPLACE_PASSWORD@postgres-svc:5432/agentfabric?sslmode=require"
+  oidc-client-secret: ""  # set when GV_SSO_REQUIRED=true
+  database-url:     "postgres://fabric:REPLACE_PASSWORD@postgres-svc:5432/govagn?sslmode=require"
   redis-url:        "redis://:REPLACE_PASSWORD@redis-svc:6379"
 
 ---
@@ -65,14 +65,14 @@ stringData:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: agentfabric-collector
-  namespace: agentfabric
+  name: govagn-collector
+  namespace: govagn
   labels:
-    app: agentfabric-collector
+    app: govagn-collector
 spec:
   selector:
     matchLabels:
-      app: agentfabric-collector
+      app: govagn-collector
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -80,16 +80,16 @@ spec:
   template:
     metadata:
       labels:
-        app: agentfabric-collector
+        app: govagn-collector
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
     spec:
-      serviceAccountName: agentfabric-collector
+      serviceAccountName: govagn-collector
       terminationGracePeriodSeconds: 30
       containers:
         - name: collector
-          image: ghcr.io/agentfabric/collector:1.0.0
+          image: ghcr.io/govagn/collector:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 4317  # gRPC OTLP
@@ -99,29 +99,29 @@ spec:
             - containerPort: 9090  # Prometheus
               protocol: TCP
           env:
-            - name: AF_ENV
+            - name: GV_ENV
               value: "production"
-            - name: AF_STRICT_CONFIG
+            - name: GV_STRICT_CONFIG
               value: "true"
-            - name: AF_NODE_NAME
+            - name: GV_NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: AF_JWT_SECRET
+            - name: GV_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: jwt-secret
-            - name: AF_GATEWAY_AUTH_TOKEN
+            - name: GV_GATEWAY_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: gateway-auth-token
-            - name: AF_GATEWAY_ENDPOINT
-              value: "http://agentfabric-gateway-svc:8080"
+            - name: GV_GATEWAY_ENDPOINT
+              value: "http://govagn-gateway-svc:8080"
           volumeMounts:
             - name: config
-              mountPath: /etc/agentfabric
+              mountPath: /etc/govagn
           resources:
             requests:
               cpu: 200m
@@ -153,18 +153,18 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: agentfabric-config
+            name: govagn-config
 
 ---
 # ─── Collector Service ────────────────────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentfabric-collector-svc
-  namespace: agentfabric
+  name: govagn-collector-svc
+  namespace: govagn
 spec:
   selector:
-    app: agentfabric-collector
+    app: govagn-collector
   type: ClusterIP
   clusterIP: None  # headless — SDKs hit the local node pod directly
   ports:
@@ -182,13 +182,13 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agentfabric-gateway
-  namespace: agentfabric
+  name: govagn-gateway
+  namespace: govagn
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: agentfabric-gateway
+      app: govagn-gateway
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -197,7 +197,7 @@ spec:
   template:
     metadata:
       labels:
-        app: agentfabric-gateway
+        app: govagn-gateway
     spec:
       terminationGracePeriodSeconds: 30
       affinity:
@@ -207,75 +207,75 @@ spec:
               podAffinityTerm:
                 labelSelector:
                   matchLabels:
-                    app: agentfabric-gateway
+                    app: govagn-gateway
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: gateway
-          image: ghcr.io/agentfabric/api-gateway:1.0.0
+          image: ghcr.io/govagn/api-gateway:1.0.0
           ports:
             - containerPort: 8080
           env:
-            - name: AF_ENV
+            - name: GV_ENV
               value: "production"
-            - name: AF_STRICT_CONFIG
+            - name: GV_STRICT_CONFIG
               value: "true"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: database-url
             - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: redis-url
-            - name: AF_CORS_ORIGINS
-              value: "https://app.agentfabric.io"
-            - name: AF_JWT_SECRET
+            - name: GV_CORS_ORIGINS
+              value: "https://app.govagn.io"
+            - name: GV_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: jwt-secret
-            - name: AF_GATEWAY_AUTH_TOKEN
+            - name: GV_GATEWAY_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: gateway-auth-token
-            # AF_JWT_SECRETS: set for zero-downtime key rotation.
-            # When empty the gateway falls back to AF_JWT_SECRET.
-            - name: AF_JWT_SECRETS
+            # GV_JWT_SECRETS: set for zero-downtime key rotation.
+            # When empty the gateway falls back to GV_JWT_SECRET.
+            - name: GV_JWT_SECRETS
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: jwt-secrets
-            - name: AF_ADMIN_PASSWORD
+            - name: GV_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: admin-password
-            - name: AF_VAULT_KEY
+            - name: GV_VAULT_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agentfabric-secrets
+                  name: govagn-secrets
                   key: vault-key
             # Uncomment and populate these when enabling enterprise SSO.
-            # AF_SSO_REQUIRED=true requires issuer, client ID, client secret, and redirect URI together.
-            # - name: AF_SSO_REQUIRED
+            # GV_SSO_REQUIRED=true requires issuer, client ID, client secret, and redirect URI together.
+            # - name: GV_SSO_REQUIRED
             #   value: "true"
-            # - name: AF_PASSWORD_LOGIN_DISABLED
+            # - name: GV_PASSWORD_LOGIN_DISABLED
             #   value: "true"
-            # - name: AF_OIDC_ISSUER
+            # - name: GV_OIDC_ISSUER
             #   value: "https://login.example.com/tenant/v2.0"
-            # - name: AF_OIDC_CLIENT_ID
-            #   value: "agentfabric-portal"
-            # - name: AF_OIDC_CLIENT_SECRET
+            # - name: GV_OIDC_CLIENT_ID
+            #   value: "govagn-portal"
+            # - name: GV_OIDC_CLIENT_SECRET
             #   valueFrom:
             #     secretKeyRef:
-            #       name: agentfabric-secrets
+            #       name: govagn-secrets
             #       key: oidc-client-secret
-            # - name: AF_OIDC_REDIRECT_URI
-            #   value: "https://app.agentfabric.io/auth/callback"
-            # - name: AF_OIDC_LOGOUT_URL
+            # - name: GV_OIDC_REDIRECT_URI
+            #   value: "https://app.govagn.io/auth/callback"
+            # - name: GV_OIDC_LOGOUT_URL
             #   value: "https://login.example.com/logout"
           resources:
             requests:
@@ -308,11 +308,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentfabric-gateway-svc
-  namespace: agentfabric
+  name: govagn-gateway-svc
+  namespace: govagn
 spec:
   selector:
-    app: agentfabric-gateway
+    app: govagn-gateway
   type: ClusterIP
   ports:
     - port: 8080
@@ -324,15 +324,15 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agentfabric-portal
-  namespace: agentfabric
+  name: govagn-portal
+  namespace: govagn
   labels:
-    app: agentfabric-portal
+    app: govagn-portal
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: agentfabric-portal
+      app: govagn-portal
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -341,12 +341,12 @@ spec:
   template:
     metadata:
       labels:
-        app: agentfabric-portal
+        app: govagn-portal
     spec:
       terminationGracePeriodSeconds: 15
       containers:
         - name: portal
-          image: ghcr.io/agentfabric/portal:1.0.0
+          image: ghcr.io/govagn/portal:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
@@ -379,11 +379,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentfabric-portal-svc
-  namespace: agentfabric
+  name: govagn-portal-svc
+  namespace: govagn
 spec:
   selector:
-    app: agentfabric-portal
+    app: govagn-portal
   type: ClusterIP
   ports:
     - port: 80
@@ -394,14 +394,14 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: agentfabric-collector
-  namespace: agentfabric
+  name: govagn-collector
+  namespace: govagn
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: agentfabric-collector
+  name: govagn-collector
 rules:
   - apiGroups: [""]
     resources: ["pods", "nodes", "namespaces"]
@@ -414,28 +414,28 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: agentfabric-collector
+  name: govagn-collector
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: agentfabric-collector
+  name: govagn-collector
 subjects:
   - kind: ServiceAccount
-    name: agentfabric-collector
-    namespace: agentfabric
+    name: govagn-collector
+    namespace: govagn
 
 ---
 # ─── HorizontalPodAutoscaler ──────────────────────────────────────────────────
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: agentfabric-gateway-hpa
-  namespace: agentfabric
+  name: govagn-gateway-hpa
+  namespace: govagn
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: agentfabric-gateway
+    name: govagn-gateway
   minReplicas: 3
   maxReplicas: 10
   metrics:
@@ -464,13 +464,13 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: agentfabric-gateway-pdb
-  namespace: agentfabric
+  name: govagn-gateway-pdb
+  namespace: govagn
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: agentfabric-gateway
+      app: govagn-gateway
 
 ---
 # collector (DaemonSet): minAvailable:1 prevents simultaneous drain of ALL nodes.
@@ -479,10 +479,10 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: agentfabric-collector-pdb
-  namespace: agentfabric
+  name: govagn-collector-pdb
+  namespace: govagn
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: agentfabric-collector
+      app: govagn-collector

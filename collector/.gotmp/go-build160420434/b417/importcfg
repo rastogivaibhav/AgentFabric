@@ -1,16 +1,16 @@
 # import config
 packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\68\68ebcedb076b13fe2277c33e90f8b1a5c487236e93e6d2478b550c2f2f8d5f12-d
-packagefile github.com/agentfabric/collector/internal/config=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5b\5b55816bc486550f4ad96c47053ebf12953a4bf0e59f0cbccba53211b04e0841-d
-packagefile github.com/agentfabric/collector/internal/processor=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\1d\1da6102455e509afff908397a84b12224523c233cc474c5ed01a725f6cfd49c8-d
+packagefile github.com/govagn/collector/internal/config=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5b\5b55816bc486550f4ad96c47053ebf12953a4bf0e59f0cbccba53211b04e0841-d
+packagefile github.com/govagn/collector/internal/processor=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\1d\1da6102455e509afff908397a84b12224523c233cc474c5ed01a725f6cfd49c8-d
 packagefile go.opentelemetry.io/proto/otlp/collector/trace/v1=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\51\515707a13d0810c7983e07ee9560ee1f74842353b130547faaf99d7e2c18a115-d
 packagefile go.opentelemetry.io/proto/otlp/trace/v1=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\6e\6e741f109dc802ebf6f06991e62d39674abce7e0a48c6b34db3cbc842b280cdc-d
 packagefile go.uber.org/zap=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\e6\e6aec622f68e978d365979aed4d1f95f777953a544200b582451cb975772700d-d
 packagefile testing=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\cd\cd99464d6f6f58b8c0ac194c460e084745f2548472a36f3eb75521cdda42e571-d
 packagefile context=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\68\68ebcedb076b13fe2277c33e90f8b1a5c487236e93e6d2478b550c2f2f8d5f12-d
 packagefile encoding/json=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\b8\b8842da09d068d1da5161ca2d099a0660c691da1534b41f53463799b74b5d33e-d
-packagefile github.com/agentfabric/collector/internal/auth=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\db\db3367638a2e1f2bafb7f21f6eb1fc8dcc74179a5491578999965d5da1220f17-d
-packagefile github.com/agentfabric/collector/internal/config=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5b\5b55816bc486550f4ad96c47053ebf12953a4bf0e59f0cbccba53211b04e0841-d
-packagefile github.com/agentfabric/collector/internal/processor=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\1d\1da6102455e509afff908397a84b12224523c233cc474c5ed01a725f6cfd49c8-d
+packagefile github.com/govagn/collector/internal/auth=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\db\db3367638a2e1f2bafb7f21f6eb1fc8dcc74179a5491578999965d5da1220f17-d
+packagefile github.com/govagn/collector/internal/config=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\5b\5b55816bc486550f4ad96c47053ebf12953a4bf0e59f0cbccba53211b04e0841-d
+packagefile github.com/govagn/collector/internal/processor=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\1d\1da6102455e509afff908397a84b12224523c233cc474c5ed01a725f6cfd49c8-d
 packagefile github.com/prometheus/client_golang/prometheus=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\48\48a60b81e25be36a66572baaa3128ad26d9805f62f3b15bfef050b9ec612b4dd-d
 packagefile github.com/prometheus/client_golang/prometheus/promauto=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\d4\d46795a0959bfffe80862f9bffb4bfecfe749c906bb24996d8f1d8c227f7de70-d
 packagefile go.opentelemetry.io/proto/otlp/collector/trace/v1=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\51\515707a13d0810c7983e07ee9560ee1f74842353b130547faaf99d7e2c18a115-d
@@ -22,4 +22,4 @@ packagefile google.golang.org/protobuf/proto=C:\Users\vrast\Documents\Agentic Co
 packagefile io=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\e3\e35d9a76ce86bbca326dfb7c7c65f1a133c9565b080fdc6421468371b0a5dfa3-d
 packagefile net/http=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\57\57593cb47a13e03e087b2cfc1e59d87e6bcbab99dcffb2e2887737448aad64df-d
 packagefile time=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\d2\d2c8c6a3dd898f5423875686736ab809019d14593a37bb543b1eb186aa7b8524-d
-packagefile github.com/agentfabric/collector/internal/receiver=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\cc\ccffd87c54e7d5070d579d51e9ff4767dcfda7ede6ffd6485151ba610629e0c7-d
+packagefile github.com/govagn/collector/internal/receiver=C:\Users\vrast\Documents\Agentic Code\files\collector\.gocache\cc\ccffd87c54e7d5070d579d51e9ff4767dcfda7ede6ffd6485151ba610629e0c7-d

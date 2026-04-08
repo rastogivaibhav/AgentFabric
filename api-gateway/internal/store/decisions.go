@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func (s *PostgresStore) CreateDecisionRecord(ctx context.Context, record models.DecisionRecord) error {

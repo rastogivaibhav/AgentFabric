@@ -10,16 +10,16 @@ const FRAMEWORK_COLORS: Record<string, string> = {
   google_adk: '#4285F4',
   openai_agents: '#10A37F',
   claude_agents: '#D97706',
-  policy: '#F59E0B',
-  unknown: '#475569',
+  policy: 'var(--prove)',
+  unknown: 'var(--text-tertiary)',
 }
 
 const EVENT_TYPE_COLOR: Record<string, string> = {
-  span: '#3B82F6',
-  run_start: '#10B981',
-  run_end: '#6366F1',
-  error: '#EF4444',
-  policy: '#F59E0B',
+  span: 'var(--control)',
+  run_start: 'var(--spend)',
+  run_end: 'var(--ship)',
+  error: 'var(--protect)',
+  policy: 'var(--prove)',
 }
 
 function fmtDuration(ns: number) {
@@ -43,19 +43,12 @@ export default function LiveStream() {
   const tableRef = useRef<HTMLDivElement>(null)
 
   const togglePause = () => {
-    if (paused) {
-      resume()
-      setPaused(false)
-    } else {
-      pause()
-      setPaused(true)
-    }
+    if (paused) { resume(); setPaused(false) }
+    else { pause(); setPaused(true) }
   }
 
   useEffect(() => {
-    if (autoScroll && !paused && tableRef.current) {
-      tableRef.current.scrollTop = 0
-    }
+    if (autoScroll && !paused && tableRef.current) tableRef.current.scrollTop = 0
   }, [events, autoScroll, paused])
 
   const filtered = filter
@@ -93,23 +86,21 @@ export default function LiveStream() {
     const blob = new Blob([rows], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = `agentfabric-stream-${Date.now()}.csv`
-    a.click()
+    a.href = url; a.download = `govagn-stream-${Date.now()}.csv`; a.click()
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 24, gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#F0F9FF', margin: 0 }}>Live Stream</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Live Stream</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: connected ? '#10B981' : '#EF4444', boxShadow: connected ? '0 0 8px #10B981' : 'none', animation: connected && !paused ? 'pulse 2s infinite' : 'none' }} />
-            <span style={{ fontSize: 11, color: connected ? '#10B981' : '#EF4444', letterSpacing: '0.1em' }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: connected ? 'var(--spend)' : 'var(--protect)', boxShadow: connected ? '0 0 8px var(--spend)' : 'none', animation: connected && !paused ? 'pulse 2s infinite' : 'none' }} />
+            <span style={{ fontSize: 11, color: connected ? 'var(--spend)' : 'var(--protect)', letterSpacing: '0.1em' }}>
               {connected ? (paused ? 'PAUSED' : 'LIVE') : 'DISCONNECTED'}
             </span>
           </div>
-          <span style={{ fontSize: 11, color: '#334155' }}>{filtered.length.toLocaleString()} events</span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{filtered.length.toLocaleString()} events</span>
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -117,49 +108,24 @@ export default function LiveStream() {
             value={filter}
             onChange={e => setFilter(e.target.value)}
             placeholder="Filter: framework, name, trace_id..."
-            style={{
-              padding: '6px 12px',
-              borderRadius: 6,
-              fontSize: 11,
-              background: '#0D1B2A',
-              border: '1px solid #1E3A5F',
-              color: '#CBD5E1',
-              width: 280,
-              outline: 'none',
-              fontFamily: "'JetBrains Mono',monospace",
-            }}
+            style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, background: 'var(--layer-2)', border: '1px solid var(--layer-border)', color: 'var(--text-secondary)', width: 280, outline: 'none' }}
           />
-          <button onClick={togglePause} style={btnStyle(paused ? '#10B981' : '#F59E0B')}>
+          <button onClick={togglePause} style={btnStyle(paused ? 'var(--spend)' : 'var(--prove)')}>
             {paused ? <><Play size={12} /> Resume</> : <><Pause size={12} /> Pause</>}
           </button>
-          <button onClick={clear} style={btnStyle('#EF4444')}>
-            <Trash2 size={12} /> Clear
-          </button>
-          <button onClick={exportCSV} style={btnStyle('#3B82F6')}>
-            <Download size={12} /> Export
-          </button>
-          <button onClick={() => setAutoScroll(a => !a)} style={btnStyle(autoScroll ? '#8B5CF6' : '#475569')}>
+          <button onClick={clear} style={btnStyle('var(--protect)')}><Trash2 size={12} /> Clear</button>
+          <button onClick={exportCSV} style={btnStyle('var(--control)')}><Download size={12} /> Export</button>
+          <button onClick={() => setAutoScroll(a => !a)} style={btnStyle(autoScroll ? 'var(--ship)' : 'var(--text-tertiary)')}>
             Auto-scroll {autoScroll ? 'ON' : 'OFF'}
           </button>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 16, flex: 1, overflow: 'hidden' }}>
-        <div ref={tableRef} style={{ flex: 1, overflow: 'auto', background: '#060A14', border: '1px solid #0F1F35', borderRadius: 8 }}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '90px 70px 140px 130px 1fr 100px 70px 90px',
-              gap: 0,
-              position: 'sticky',
-              top: 0,
-              background: '#080C18',
-              borderBottom: '1px solid #0F1F35',
-              zIndex: 10,
-            }}
-          >
+        <div ref={tableRef} style={{ flex: 1, overflow: 'auto', background: 'var(--layer-0)', border: '1px solid var(--layer-border)', borderRadius: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '90px 70px 140px 130px 1fr 100px 70px 90px', gap: 0, position: 'sticky', top: 0, background: 'var(--layer-1)', borderBottom: '1px solid var(--layer-border)', zIndex: 10 }}>
             {['TIME', 'TYPE', 'TRACE ID', 'SPAN ID', 'NAME', 'FRAMEWORK', 'DURATION', 'COST'].map(h => (
-              <div key={h} style={{ padding: '8px 12px', fontSize: 9, color: '#334155', letterSpacing: '0.15em', fontWeight: 700 }}>{h}</div>
+              <div key={h} style={{ padding: '8px 12px', fontSize: 9, color: 'var(--text-tertiary)', letterSpacing: '0.15em', fontWeight: 700 }}>{h}</div>
             ))}
           </div>
 
@@ -177,7 +143,7 @@ export default function LiveStream() {
             const framework = ev.type === 'policy' ? 'policy' : (span.framework ?? '-')
             const duration = ev.type === 'policy' ? '-' : (span.duration_ns ? fmtDuration(span.duration_ns) : '-')
             const cost = ev.type === 'policy' ? '-' : (span.cost_usd ? `$${span.cost_usd.toFixed(6)}` : '-')
-            const frameworkColor = ev.type === 'policy' ? FRAMEWORK_COLORS.policy : (FRAMEWORK_COLORS[span.framework ?? 'unknown'] ?? '#475569')
+            const frameworkColor = ev.type === 'policy' ? FRAMEWORK_COLORS.policy : (FRAMEWORK_COLORS[span.framework ?? 'unknown'] ?? 'var(--text-tertiary)')
 
             return (
               <div
@@ -187,55 +153,43 @@ export default function LiveStream() {
                   display: 'grid',
                   gridTemplateColumns: '90px 70px 140px 130px 1fr 100px 70px 90px',
                   cursor: 'pointer',
-                  borderBottom: '1px solid #0A1020',
-                  background: isSelected ? '#1E3A5F30' : isBlocked ? '#EF444418' : isRedacted ? '#F59E0B12' : isError ? '#EF444408' : i % 2 === 0 ? 'transparent' : '#060A1480',
+                  borderBottom: '1px solid var(--layer-border)',
+                  background: isSelected ? 'rgba(10,132,255,0.08)' : isBlocked ? 'rgba(255,69,58,0.07)' : isRedacted ? 'rgba(255,159,10,0.06)' : isError ? 'rgba(255,69,58,0.04)' : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
                   transition: 'background 0.1s',
                 }}
               >
-                <div style={{ padding: '5px 12px', fontSize: 10, color: '#334155', fontFamily: 'monospace' }}>{fmtTime(ev.ts)}</div>
+                <div style={{ padding: '5px 12px', fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>{fmtTime(ev.ts)}</div>
                 <div style={{ padding: '5px 12px' }}>
-                  <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: (EVENT_TYPE_COLOR[ev.type] ?? '#475569') + '20', color: EVENT_TYPE_COLOR[ev.type] ?? '#475569' }}>
+                  <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: `${EVENT_TYPE_COLOR[ev.type] ?? 'var(--text-tertiary)'}25`, color: EVENT_TYPE_COLOR[ev.type] ?? 'var(--text-tertiary)' }}>
                     {ev.type}
                   </span>
                 </div>
-                <div style={{ padding: '5px 12px', fontSize: 10, color: '#3B82F6', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <button
-                    onClick={e => {
-                      e.stopPropagation()
-                      if (traceID) nav(`/traces/${traceID}`)
-                    }}
-                    style={{ background: 'transparent', border: 'none', color: '#3B82F6', cursor: traceID ? 'pointer' : 'default', fontFamily: 'monospace', padding: 0 }}
-                  >
+                <div style={{ padding: '5px 12px', fontSize: 10, color: 'var(--control)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <button onClick={e => { e.stopPropagation(); if (traceID) nav(`/traces/${traceID}`) }}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--control)', cursor: traceID ? 'pointer' : 'default', fontFamily: 'monospace', padding: 0 }}>
                     {traceID.substring(0, 16)}
                   </button>
                 </div>
-                <div style={{ padding: '5px 12px', fontSize: 10, color: '#475569', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {spanID.substring(0, 16)}
+                <div style={{ padding: '5px 12px', fontSize: 10, color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{spanID.substring(0, 16)}</div>
+                <div style={{ padding: '5px 12px', fontSize: 11, color: isError ? 'var(--protect)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {rowName}{isBlocked ? ' [blocked]' : isRedacted ? ' [redacted]' : ''}
                 </div>
-                <div style={{ padding: '5px 12px', fontSize: 11, color: isError ? '#EF4444' : '#CBD5E1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {rowName}
-                  {isBlocked ? ' [blocked]' : isRedacted ? ' [redacted]' : ''}
-                </div>
-                <div style={{ padding: '5px 12px' }}>
-                  <span style={{ fontSize: 9, color: frameworkColor }}>
-                    {framework}
-                  </span>
-                </div>
-                <div style={{ padding: '5px 12px', fontSize: 10, color: '#64748B' }}>{duration}</div>
-                <div style={{ padding: '5px 12px', fontSize: 10, color: '#F59E0B' }}>{cost}</div>
+                <div style={{ padding: '5px 12px' }}><span style={{ fontSize: 9, color: frameworkColor }}>{framework}</span></div>
+                <div style={{ padding: '5px 12px', fontSize: 10, color: 'var(--text-secondary)' }}>{duration}</div>
+                <div style={{ padding: '5px 12px', fontSize: 10, color: 'var(--prove)' }}>{cost}</div>
               </div>
             )
           })}
 
           {filtered.length === 0 && (
-            <div style={{ padding: 48, textAlign: 'center', color: '#334155', fontSize: 13 }}>
+            <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
               {connected ? 'Waiting for agent activity...' : 'Connecting to stream...'}
             </div>
           )}
         </div>
 
         {selectedEvent && (
-          <div style={{ width: 340, background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 8, overflow: 'auto', flexShrink: 0 }}>
+          <div style={{ width: 340, background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 8, overflow: 'auto', flexShrink: 0 }}>
             {selectedEvent.type === 'policy' ? <PolicyDetail event={selectedEvent} /> : <SpanDetail event={selectedEvent} />}
           </div>
         )}
@@ -255,8 +209,8 @@ function PolicyDetail({ event }: { event: LiveEvent }) {
   const data = event.data as PolicyLiveEventData
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ fontSize: 11, color: '#475569', letterSpacing: '0.1em', marginBottom: 12 }}>POLICY EVENT</div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#F0F9FF', marginBottom: 16, wordBreak: 'break-all' }}>{data.policy_name}</div>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', letterSpacing: '0.1em', marginBottom: 12 }}>POLICY EVENT</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16, wordBreak: 'break-all' }}>{data.policy_name}</div>
 
       {[
         ['Result', data.result],
@@ -269,17 +223,17 @@ function PolicyDetail({ event }: { event: LiveEvent }) {
         ['Span ID', data.span_id],
         ['Redactions', data.redactions],
       ].filter(([, v]) => v != null && v !== '').map(([k, v]) => (
-        <div key={String(k)} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #060A14', fontSize: 11, gap: 8 }}>
-          <span style={{ color: '#475569' }}>{k}</span>
-          <span style={{ color: '#CBD5E1', fontFamily: 'monospace', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>{String(v)}</span>
+        <div key={String(k)} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--layer-border)', fontSize: 11, gap: 8 }}>
+          <span style={{ color: 'var(--text-tertiary)' }}>{k}</span>
+          <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>{String(v)}</span>
         </div>
       ))}
 
       {(data.matched ?? []).length > 0 && (
         <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 10, color: '#334155', letterSpacing: '0.1em', marginBottom: 8 }}>MATCHED DETECTORS</div>
+          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '0.1em', marginBottom: 8 }}>MATCHED DETECTORS</div>
           {(data.matched ?? []).map(item => (
-            <div key={item} style={{ fontSize: 10, color: '#64748B', padding: '4px 0' }}>{item}</div>
+            <div key={item} style={{ fontSize: 10, color: 'var(--text-secondary)', padding: '4px 0' }}>{item}</div>
           ))}
         </div>
       )}
@@ -289,16 +243,10 @@ function PolicyDetail({ event }: { event: LiveEvent }) {
 
 function btnStyle(color: string) {
   return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 5,
-    padding: '6px 12px',
-    borderRadius: 6,
-    fontSize: 11,
-    cursor: 'pointer',
-    background: `${color}15`,
-    border: `1px solid ${color}40`,
+    display: 'flex', alignItems: 'center', gap: 5,
+    padding: '6px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+    background: `color-mix(in srgb, ${color} 12%, transparent)`,
+    border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`,
     color,
-    fontFamily: "'JetBrains Mono',monospace",
   } as React.CSSProperties
 }

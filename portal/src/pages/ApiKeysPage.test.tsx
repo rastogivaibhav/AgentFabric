@@ -72,7 +72,7 @@ describe('ApiKeysPage', () => {
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith('af-vk-1234567890')
     })
-    expect(screen.getByText('Copied')).toBeInTheDocument()
+    expect(screen.getByText('Copied!')).toBeInTheDocument()
   })
 
   it('renders keys and handles revoke confirmation', async () => {

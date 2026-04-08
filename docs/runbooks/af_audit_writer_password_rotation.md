@@ -15,8 +15,8 @@ It is used exclusively by af-core to append hash-chained audit entries — it ca
 The migration creates the role as `NOLOGIN` by default. Before af-core can connect as this role, an operator must:
 1. Enable `LOGIN` on the role
 2. Set a strong random password
-3. Store the password in the `agentfabric-secrets` Kubernetes Secret (or equivalent vault entry)
-4. Set `AF_AUDIT_DSN` in the af-core deployment to a connection string using this role
+3. Store the password in the `govagn-secrets` Kubernetes Secret (or equivalent vault entry)
+4. Set `GV_AUDIT_DSN` in the af-core deployment to a connection string using this role
 
 This runbook covers the initial setup **and** periodic rotation.
 
@@ -25,7 +25,7 @@ This runbook covers the initial setup **and** periodic rotation.
 ## Pre-requisites
 
 - `psql` access to the production PostgreSQL instance (or `kubectl exec` into the postgres pod)
-- Access to the cluster secret store (`kubectl` with write to `agentfabric-secrets`, or Vault operator access)
+- Access to the cluster secret store (`kubectl` with write to `govagn-secrets`, or Vault operator access)
 - `openssl` or `pwgen` for generating random passwords
 
 ---
@@ -47,9 +47,9 @@ Connect to the production database as a superuser (e.g. `fabric` / the `postgres
 
 ```bash
 # Kubernetes — exec into the postgres pod
-kubectl exec -n agentfabric -it \
-  $(kubectl get pod -n agentfabric -l app=postgresql -o jsonpath='{.items[0].metadata.name}') \
-  -- psql -U fabric -d agentfabric
+kubectl exec -n govagn -it \
+  $(kubectl get pod -n govagn -l app=postgresql -o jsonpath='{.items[0].metadata.name}') \
+  -- psql -U fabric -d govagn
 ```
 
 ```sql
@@ -71,31 +71,31 @@ ALTER ROLE af_audit_writer WITH LOGIN PASSWORD '<NEW_PASS>';
 
 ```bash
 # Base64-encode the connection string
-AF_AUDIT_DSN="postgres://af_audit_writer:<NEW_PASS>@postgres:5432/agentfabric?sslmode=require"
-ENCODED=$(echo -n "${AF_AUDIT_DSN}" | base64 -w0)
+GV_AUDIT_DSN="postgres://af_audit_writer:<NEW_PASS>@postgres:5432/govagn?sslmode=require"
+ENCODED=$(echo -n "${GV_AUDIT_DSN}" | base64 -w0)
 
 # Patch the secret
-kubectl patch secret agentfabric-secrets -n agentfabric \
+kubectl patch secret govagn-secrets -n govagn \
   --type='json' \
   -p="[{\"op\": \"replace\", \"path\": \"/data/af-audit-dsn\", \"value\": \"${ENCODED}\"}]"
 
 # Verify the secret was updated
-kubectl get secret agentfabric-secrets -n agentfabric \
+kubectl get secret govagn-secrets -n govagn \
   -o jsonpath='{.data.af-audit-dsn}' | base64 -d
 ```
 
-For **Vault** deployments: update the `secret/agentfabric/production/af-audit-dsn` path.
+For **Vault** deployments: update the `secret/govagn/production/af-audit-dsn` path.
 
 ---
 
 ## Step 4 — Roll af-core to pick up the new Secret
 
 ```bash
-kubectl rollout restart deployment/af-core -n agentfabric
-kubectl rollout status deployment/af-core -n agentfabric --timeout=120s
+kubectl rollout restart deployment/af-core -n govagn
+kubectl rollout status deployment/af-core -n govagn --timeout=120s
 ```
 
-af-core reads `AF_AUDIT_DSN` from the Secret at pod startup via `envFrom.secretRef`.
+af-core reads `GV_AUDIT_DSN` from the Secret at pod startup via `envFrom.secretRef`.
 The rolling update ensures zero downtime: new pods come up with the new password before old pods terminate.
 
 ---
@@ -104,17 +104,17 @@ The rolling update ensures zero downtime: new pods come up with the new password
 
 ```bash
 # Check af-core logs for successful audit connection
-kubectl logs -n agentfabric -l app=af-core --tail=50 | grep -i "audit"
+kubectl logs -n govagn -l app=af-core --tail=50 | grep -i "audit"
 # Expected: "af_audit_writer connected" or similar startup log
 
 # Confirm no auth errors in PostgreSQL logs
-kubectl logs -n agentfabric -l app=postgresql --tail=50 | grep "af_audit_writer"
+kubectl logs -n govagn -l app=postgresql --tail=50 | grep "af_audit_writer"
 # Must NOT contain: "password authentication failed"
 
 # Spot-check a recent audit entry was written
-kubectl exec -n agentfabric -it \
-  $(kubectl get pod -n agentfabric -l app=postgresql -o jsonpath='{.items[0].metadata.name}') \
-  -- psql -U fabric -d agentfabric \
+kubectl exec -n govagn -it \
+  $(kubectl get pod -n govagn -l app=postgresql -o jsonpath='{.items[0].metadata.name}') \
+  -- psql -U fabric -d govagn \
   -c "SELECT id, evaluated_at, result FROM policy_audit_log ORDER BY id DESC LIMIT 5;"
 ```
 
@@ -141,12 +141,12 @@ If af-core fails to start after the rotation (e.g. wrong password applied):
 ALTER ROLE af_audit_writer WITH LOGIN PASSWORD '<OLD_PASS>';
 
 # 2. Restore the old Secret value
-kubectl patch secret agentfabric-secrets -n agentfabric \
+kubectl patch secret govagn-secrets -n govagn \
   --type='json' \
   -p="[{\"op\": \"replace\", \"path\": \"/data/af-audit-dsn\", \"value\": \"<OLD_BASE64>\"}]"
 
 # 3. Roll af-core back
-kubectl rollout undo deployment/af-core -n agentfabric
+kubectl rollout undo deployment/af-core -n govagn
 ```
 
 ---

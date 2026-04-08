@@ -5,15 +5,18 @@ import Layout from './Layout'
 
 vi.mock('../hooks/auth', () => ({
   useAuth: vi.fn(),
+  isAuthEnabled: vi.fn(),
 }))
 
-import { useAuth } from '../hooks/auth'
+import { isAuthEnabled, useAuth } from '../hooks/auth'
 
 const mockUseAuth = vi.mocked(useAuth)
+const mockIsAuthEnabled = vi.mocked(isAuthEnabled)
 
 describe('Layout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockIsAuthEnabled.mockReturnValue(true)
   })
 
   function renderLayout() {

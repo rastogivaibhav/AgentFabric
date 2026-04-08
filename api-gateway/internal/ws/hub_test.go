@@ -29,8 +29,8 @@ func TestIsAllowedWSOrigin_DevAllowsMissingOrigin(t *testing.T) {
 }
 
 func TestIsAllowedWSOrigin_ExplicitOriginAllowed(t *testing.T) {
-	allowed := buildAllowedWSOrigins("https://app.agentfabric.io", true)
-	if !isAllowedWSOrigin("https://app.agentfabric.io", allowed, true) {
+	allowed := buildAllowedWSOrigins("https://app.govagn.io", true)
+	if !isAllowedWSOrigin("https://app.govagn.io", allowed, true) {
 		t.Fatal("expected explicit websocket origin to be allowed")
 	}
 }

@@ -8,7 +8,7 @@ Use the single-tenant model when:
 - one operations team manages the deployment
 - tenant separation inside the control plane is not the primary design goal
 
-This is the simplest production shape for AgentFabric and the recommended starting point for first serious rollout.
+This is the simplest production shape for Govagn and the recommended starting point for first serious rollout.
 
 ## Target Topology
 
@@ -56,30 +56,30 @@ Use:
 
 At minimum, configure:
 
-- `AF_JWT_SECRET`
-- `AF_ADMIN_PASSWORD`
-- `AF_VAULT_KEY`
+- `GV_JWT_SECRET`
+- `GV_ADMIN_PASSWORD`
+- `GV_VAULT_KEY`
 - `DATABASE_URL`
 - `REDIS_URL`
-- `AF_CORS_ORIGINS`
-- `AF_GATEWAY_AUTH_TOKEN` shared between collector and gateway for `/internal/ingest` bearer auth
-- `AF_ENV=production` or `AF_STRICT_CONFIG=true` on both gateway and collector
-- `AF_AUTH_REQUIRE_AUTH=true` on the collector
+- `GV_CORS_ORIGINS`
+- `GV_GATEWAY_AUTH_TOKEN` shared between collector and gateway for `/internal/ingest` bearer auth
+- `GV_ENV=production` or `GV_STRICT_CONFIG=true` on both gateway and collector
+- `GV_AUTH_REQUIRE_AUTH=true` on the collector
 
 If using OIDC:
 
-- `AF_OIDC_ISSUER`
-- `AF_OIDC_CLIENT_ID`
-- `AF_OIDC_CLIENT_SECRET`
-- `AF_OIDC_REDIRECT_URI`
-- optional `AF_OIDC_LOGOUT_URL`
+- `GV_OIDC_ISSUER`
+- `GV_OIDC_CLIENT_ID`
+- `GV_OIDC_CLIENT_SECRET`
+- `GV_OIDC_REDIRECT_URI`
+- optional `GV_OIDC_LOGOUT_URL`
 
 In strict production mode, do not set only part of the OIDC tuple. Any configured OIDC path must include issuer, client ID, client secret, and redirect URI together.
 
 If enforcing SSO:
 
-- `AF_SSO_REQUIRED=true`
-- `AF_PASSWORD_LOGIN_DISABLED=true` after cutover
+- `GV_SSO_REQUIRED=true`
+- `GV_PASSWORD_LOGIN_DISABLED=true` after cutover
 
 For Helm, set:
 

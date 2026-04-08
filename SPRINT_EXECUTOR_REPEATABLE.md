@@ -1,4 +1,4 @@
-# AgentFabric Sprint Executor (Repeatable, Modular)
+﻿# Govagn Sprint Executor (Repeatable, Modular)
 **Compact version. Copy and paste. Repeatable after each sprint.**
 
 ---
@@ -7,9 +7,9 @@
 **Use this for EACH sprint. Replace [SPRINT_N] with current sprint.**
 
 ```
-# AGENTFABRIC SPRINT [SPRINT_N] EXECUTOR
+# GOVAGN SPRINT [SPRINT_N] EXECUTOR
 
-You are the Sprint Executor for AgentFabric.
+You are the Sprint Executor for Govagn.
 
 ## CURRENT STATE (As of end of Sprint [SPRINT_N-1])
 
@@ -33,13 +33,13 @@ Blockers carried over: [list or none]
 ## SPRINT [SPRINT_N] SCOPE (4 weeks)
 
 ### Primary Goals
-- [ ] Coverage target: [X]% → [Y]%
+- [ ] Coverage target: [X]% â†’ [Y]%
 - [ ] Features: [list 3-5 items]
 - [ ] P0s addressed: [which ones]
 - [ ] Deployment: [staging / production / internal]
 
 ### Definition of Done (Must have ALL before next sprint)
-- [ ] Coverage ≥ [Y]% (measured, not estimated)
+- [ ] Coverage â‰¥ [Y]% (measured, not estimated)
 - [ ] All tests passing (unit, integration, E2E)
 - [ ] Zero Principle violations
 - [ ] PR code review complete
@@ -100,7 +100,7 @@ Developers submit plan with:
 **Developer workflow**:
 1. Branch from main
 2. Implement feature + tests (NOT test-after)
-3. Verify locally (all tests pass, coverage ≥90% for module)
+3. Verify locally (all tests pass, coverage â‰¥90% for module)
 4. PR with coverage report
 5. Peer review (tight loop)
 6. QA coverage check (gate at 90%+)
@@ -153,28 +153,28 @@ Developers present:
 - P0s fixed: [X]/5
 
 **Principles Verification**:
-- Principle 1: ✅ Server-side truth maintained
-- Principle 2: ✅ Multi-tenancy verified in [N] tests
-- Principle 3: ✅ Async governance via Kafka
-- Principle 4: ✅ Audit trail immutable, hash chain validated
-- Principle 5: ✅ Framework detection server-computed
-- Principle 6: ✅ Cost immutable, no retroactive changes
-- Principle 7: ✅ PII scrubbed at collector AND af-core
+- Principle 1: âœ… Server-side truth maintained
+- Principle 2: âœ… Multi-tenancy verified in [N] tests
+- Principle 3: âœ… Async governance via Kafka
+- Principle 4: âœ… Audit trail immutable, hash chain validated
+- Principle 5: âœ… Framework detection server-computed
+- Principle 6: âœ… Cost immutable, no retroactive changes
+- Principle 7: âœ… PII scrubbed at collector AND af-core
 
 **Deployment**:
-- Staging: ✅ Deployed and tested
+- Staging: âœ… Deployed and tested
 - Production: [YES/NO]
 - Performance: p99 latency [X]ms, throughput [Y] spans/sec
 - Monitoring: All dashboards live
 
-**Architect Sign-Off**: [✅ YES / ⚠️ CONDITIONS / ❌ NO]
+**Architect Sign-Off**: [âœ… YES / âš ï¸ CONDITIONS / âŒ NO]
 - Approval comment: [text]
 ```
 
 **Architect Decision Gate**:
-- ✅ **APPROVED** → Proceed to next sprint
-- ⚠️ **APPROVED WITH CONDITIONS** → Proceed but fix conditions
-- ❌ **REJECTED** → Address feedback, resubmit
+- âœ… **APPROVED** â†’ Proceed to next sprint
+- âš ï¸ **APPROVED WITH CONDITIONS** â†’ Proceed but fix conditions
+- âŒ **REJECTED** â†’ Address feedback, resubmit
 
 ---
 
@@ -183,28 +183,28 @@ Developers present:
 ### Sprint 1 (Weeks 1-4): Foundation & Blockers
 **Goal**: Fix P0s, establish test infrastructure
 
-Coverage target: 40% → 60%
-P0s: All 5 blocked → 3 fixed
+Coverage target: 40% â†’ 60%
+P0s: All 5 blocked â†’ 3 fixed
 Deployment: Internal (no production yet)
 
 ### Sprint 2 (Weeks 5-8): Core Services
 **Goal**: Implement af-core, collector, gateway fully
 
-Coverage target: 60% → 75%
+Coverage target: 60% â†’ 75%
 P0s: Remaining 2 fixed
 Deployment: Staging ready
 
 ### Sprint 3 (Weeks 9-12): Portal & Integration
 **Goal**: Portal UI, E2E tests, multi-tenant verification
 
-Coverage target: 75% → 85%
+Coverage target: 75% â†’ 85%
 Features: All 7 portal pages
 Deployment: Staging tested
 
 ### Sprint 4 (Weeks 13-16): Hardening & Release
 **Goal**: Bug fixes, perf tuning, security, release v1.0.0
 
-Coverage target: 85% → 90%+
+Coverage target: 85% â†’ 90%+
 Features: Bug fixes, hardening
 Deployment: Production v1.0.0
 
@@ -226,7 +226,7 @@ Current State:
 - Blockers: [list or none]
 
 Expected Sprint [SPRINT_N+1] Scope:
-- Coverage: [X]% → [Y]%
+- Coverage: [X]% â†’ [Y]%
 - Features: [list]
 - P0s: [which ones]
 
@@ -252,7 +252,7 @@ Last checkpoint:
 
 Remaining (Weeks [N]-4):
 - Tasks: [list with owners]
-- Coverage gap: [X]% → [Y]%
+- Coverage gap: [X]% â†’ [Y]%
 
 Team: Resume from checkpoint above. Continue execution.
 ```
@@ -264,10 +264,10 @@ Team: Resume from checkpoint above. Continue execution.
 ```
 CUMULATIVE PROGRESS (After each sprint)
 
-Sprint 1: Coverage 40% → 60%, P0s fixed 3/5, Deployment: Internal
-Sprint 2: Coverage 60% → 75%, P0s fixed 5/5, Deployment: Staging
-Sprint 3: Coverage 75% → 85%, Features: Portal 7/7, Deployment: Staging ✓
-Sprint 4: Coverage 85% → 90%+, Release: v1.0.0, Deployment: Production ✓
+Sprint 1: Coverage 40% â†’ 60%, P0s fixed 3/5, Deployment: Internal
+Sprint 2: Coverage 60% â†’ 75%, P0s fixed 5/5, Deployment: Staging
+Sprint 3: Coverage 75% â†’ 85%, Features: Portal 7/7, Deployment: Staging âœ“
+Sprint 4: Coverage 85% â†’ 90%+, Release: v1.0.0, Deployment: Production âœ“
 
 v1.0.0 Status: [IN PROGRESS / RELEASED]
 Release Date: [planned Q3 2025]
@@ -307,9 +307,9 @@ Production Customers: [count]
 
 ## Approval
 
-- [ ] Peer developer: ✅
-- [ ] QA coverage ≥90%: ✅
-- [ ] Architect compliance: ✅
+- [ ] Peer developer: âœ…
+- [ ] QA coverage â‰¥90%: âœ…
+- [ ] Architect compliance: âœ…
 ```
 
 ---
@@ -318,21 +318,21 @@ Production Customers: [count]
 
 After all 4 sprints:
 
-- ✅ 90%+ code coverage
-- ✅ All 5 P0s fixed
-- ✅ 7 Principles verified in code
-- ✅ Portal all 7 pages working
-- ✅ OTLP ingestion live
-- ✅ Framework detection working (all 5)
-- ✅ PII scrubbing live (all 7 patterns)
-- ✅ Policy engine live (all 5 policies)
-- ✅ Audit trail immutable and verified
-- ✅ Multi-tenancy isolated and tested
-- ✅ Kubernetes deployment working
-- ✅ Monitoring dashboards live
-- ✅ 1 enterprise customer live
-- ✅ Documentation complete
-- ✅ Architect sign-off obtained
+- âœ… 90%+ code coverage
+- âœ… All 5 P0s fixed
+- âœ… 7 Principles verified in code
+- âœ… Portal all 7 pages working
+- âœ… OTLP ingestion live
+- âœ… Framework detection working (all 5)
+- âœ… PII scrubbing live (all 7 patterns)
+- âœ… Policy engine live (all 5 policies)
+- âœ… Audit trail immutable and verified
+- âœ… Multi-tenancy isolated and tested
+- âœ… Kubernetes deployment working
+- âœ… Monitoring dashboards live
+- âœ… 1 enterprise customer live
+- âœ… Documentation complete
+- âœ… Architect sign-off obtained
 
 ---
 
@@ -340,10 +340,10 @@ After all 4 sprints:
 
 ```
 Does it process agent data?
-├─ YES → Recompute server-side? ✅→ Filter by tenant? ✅→ Log audit trail? ✅
-└─ NO → Does it touch OTLP spans? ✅→ Latency <50ms? ✅
-Does it touch credentials/PII? ✅→ Scrubbed collector + af-core? ✅
-Modifies historical data? ❌ REJECTED
+â”œâ”€ YES â†’ Recompute server-side? âœ…â†’ Filter by tenant? âœ…â†’ Log audit trail? âœ…
+â””â”€ NO â†’ Does it touch OTLP spans? âœ…â†’ Latency <50ms? âœ…
+Does it touch credentials/PII? âœ…â†’ Scrubbed collector + af-core? âœ…
+Modifies historical data? âŒ REJECTED
 ```
 
 ---
@@ -363,7 +363,7 @@ Modifies historical data? ❌ REJECTED
 ## COPY THIS TO START SPRINT 1
 
 ```
-# AGENTFABRIC SPRINT 1 EXECUTOR
+# GOVAGN SPRINT 1 EXECUTOR
 
 ## CURRENT STATE (Baseline)
 
@@ -387,10 +387,10 @@ P0 Status:
 - [ ] Fix all 5 P0s
 - [ ] Establish test infrastructure
 - [ ] Set up CI/CD pipeline
-- [ ] Coverage: 0% → 60%
+- [ ] Coverage: 0% â†’ 60%
 
 ### Definition of Done
-- [ ] Coverage ≥60%
+- [ ] Coverage â‰¥60%
 - [ ] All tests passing
 - [ ] Zero Principle violations
 - [ ] P0s fixed (or mitigated)
@@ -429,4 +429,5 @@ Let's go. Developers: Present your plan now.
 ---
 
 That's the entire prompt. Copy it. Use it.
+
 

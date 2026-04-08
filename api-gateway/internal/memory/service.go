@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 type serviceStore interface {

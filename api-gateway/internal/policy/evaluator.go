@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func evaluateTrafficRules(rules []compiledRule, input EvaluationInput) Decision {

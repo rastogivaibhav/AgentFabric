@@ -1,5 +1,5 @@
 """
-conftest.py — Shared pytest fixtures for AgentFabric E2E pipeline tests.
+conftest.py — Shared pytest fixtures for Govagn E2E pipeline tests.
 
 Provides:
   - mock_collector     : in-process OTLP HTTP stub (no real network needed)
@@ -101,7 +101,7 @@ def sample_otlp_span(
                 },
                 "scopeSpans": [
                     {
-                        "scope": {"name": "agentfabric", "version": "1.0.0"},
+                        "scope": {"name": "govagn", "version": "1.0.0"},
                         "spans": [
                             {
                                 "traceId": trace_id,

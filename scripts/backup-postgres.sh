@@ -25,7 +25,7 @@ case "${BACKUP_FORMAT}" in
   tar) EXT="tar" ;;
 esac
 
-TARGET="${OUTPUT_DIR}/agentfabric-${STAMP}.${EXT}"
+TARGET="${OUTPUT_DIR}/govagn-${STAMP}.${EXT}"
 pg_dump "${DATABASE_URL}" --format="${BACKUP_FORMAT}" --file="${TARGET}"
 find "${OUTPUT_DIR}" -type f -mtime +"${RETENTION_DAYS}" -delete
 echo "Backup created at ${TARGET}"

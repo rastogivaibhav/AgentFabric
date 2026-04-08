@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-# AgentFabric — full-stack E2E test runner
+﻿#!/usr/bin/env bash
+# Govagn â€” full-stack E2E test runner
 #
 # Usage: bash scripts/e2e.sh
 #   or:  make e2e
@@ -7,9 +7,9 @@
 # What it does:
 #   1. Brings up the full docker-compose stack
 #   2. Polls each critical service until healthy (or times out)
-#   3. Exports AGENTFABRIC_API_URL so tests can talk to the live stack
+#   3. Exports GOVAGN_API_URL so tests can talk to the live stack
 #   4. Runs pytest -m integration against tests/e2e/
-#   5. Always tears the stack down — even on failure (trap EXIT)
+#   5. Always tears the stack down â€” even on failure (trap EXIT)
 #
 # Exit code mirrors pytest's exit code (0 = all pass, non-zero = failure).
 
@@ -27,11 +27,11 @@ declare -A HEALTH_URLS=(
 WAIT_TIMEOUT=120   # seconds before giving up
 WAIT_INTERVAL=3    # poll interval
 
-# ─── Cleanup on exit ─────────────────────────────────────────────────────────
+# â”€â”€â”€ Cleanup on exit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _teardown() {
   local code=$?
   echo ""
-  echo "──────────────────────────────────────────"
+  echo "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€"
   echo "  Tearing down docker-compose stack..."
   ${COMPOSE} down --remove-orphans >/dev/null 2>&1 || true
   if [ "$code" -eq 0 ]; then
@@ -39,19 +39,19 @@ _teardown() {
   else
     echo "  E2E result: FAIL (exit ${code})"
   fi
-  echo "──────────────────────────────────────────"
+  echo "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€"
   exit "$code"
 }
 trap _teardown EXIT
 
-# ─── Start the stack ─────────────────────────────────────────────────────────
-echo "──────────────────────────────────────────"
-echo "  AgentFabric E2E — starting stack"
-echo "──────────────────────────────────────────"
+# â”€â”€â”€ Start the stack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+echo "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€"
+echo "  Govagn E2E â€” starting stack"
+echo "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€"
 cd "${REPO_ROOT}"
 ${COMPOSE} up -d --build --quiet-pull
 
-# ─── Wait for services ───────────────────────────────────────────────────────
+# â”€â”€â”€ Wait for services â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo ""
 echo "  Waiting for services to become healthy (timeout: ${WAIT_TIMEOUT}s)..."
 
@@ -72,7 +72,7 @@ for svc in "${!HEALTH_URLS[@]}"; do
   echo " ready (${elapsed}s)"
 done
 
-# ─── Install Python test dependencies ────────────────────────────────────────
+# â”€â”€â”€ Install Python test dependencies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo ""
 echo "  Installing Python test dependencies..."
 if [ -f "${REPO_ROOT}/requirements-test.txt" ]; then
@@ -81,12 +81,13 @@ else
   pip install -q pytest requests
 fi
 
-# ─── Run integration tests ───────────────────────────────────────────────────
+# â”€â”€â”€ Run integration tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 echo ""
 echo "  Running integration tests..."
-echo "──────────────────────────────────────────"
-export AGENTFABRIC_API_URL="http://localhost:8080"
-export AGENTFABRIC_OTLP_URL="http://localhost:4318"
+echo "â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€"
+export GOVAGN_API_URL="http://localhost:8080"
+export GOVAGN_OTLP_URL="http://localhost:4318"
 
 cd "${E2E_DIR}"
 python -m pytest -m integration -v --tb=short "$@"
+

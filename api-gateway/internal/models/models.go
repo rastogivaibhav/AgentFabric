@@ -439,7 +439,7 @@ type Page[T any] struct {
 
 // ─── User ─────────────────────────────────────────────────────────────────────
 
-// User represents an AgentFabric platform user within a tenant.
+// User represents an Govagn platform user within a tenant.
 // Password is never serialised to JSON — use CreateUserRequest/UpdateUserRequest for writes.
 type User struct {
 	ID          string     `json:"user_id"`

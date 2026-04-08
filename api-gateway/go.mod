@@ -1,4 +1,4 @@
-module github.com/agentfabric/api-gateway
+module github.com/govagn/api-gateway
 
 go 1.22
 

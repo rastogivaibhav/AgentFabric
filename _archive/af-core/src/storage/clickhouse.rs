@@ -66,8 +66,8 @@ impl From<&EnrichedSpan> for SpanRow {
             run_id:          s.run_id.clone(),
             input_tokens:    s.input_tokens as u32,
             output_tokens:   s.output_tokens as u32,
-            cost_input_usd:  s.cost_usd * 0.6,
-            cost_output_usd: s.cost_usd * 0.4,
+            cost_input_usd:  s.input_cost_usd,
+            cost_output_usd: s.output_cost_usd,
             service_name:    s.service_name.clone(),
             environment:     s.environment.clone(),
             cloud_region:    s.cloud_region.clone(),
@@ -141,7 +141,7 @@ impl ClickHouseStore {
         // Schema is applied via clickhouse_init.sql at startup
         // This just verifies the table exists
         self.client
-            .query("SELECT count() FROM agentfabric.spans LIMIT 1")
+            .query("SELECT count() FROM govagn.spans LIMIT 1")
             .execute()
             .await?;
         info!("ClickHouse schema verified");
@@ -153,7 +153,7 @@ impl ClickHouseStore {
         if spans.is_empty() { return Ok(()); }
 
         let mut inserter = self.client
-            .inserter::<SpanRow>("agentfabric.spans")?
+            .inserter::<SpanRow>("govagn.spans")?
             .with_max_entries(10_000);
 
         for span in spans {

@@ -17,11 +17,11 @@ function statusBadge(status?: string) {
       display: 'inline-flex', alignItems: 'center', gap: 5,
       padding: '3px 10px', borderRadius: 999, fontSize: 10, fontWeight: 700,
       letterSpacing: '0.08em',
-      background: active ? '#10B98120' : '#47556920',
-      color: active ? '#10B981' : '#64748B',
-      border: `1px solid ${active ? '#10B98140' : '#47556940'}`,
+      background: active ? 'var(--spend)20' : 'var(--text-tertiary)20',
+      color: active ? 'var(--spend)' : 'var(--text-tertiary)',
+      border: `1px solid ${active ? 'var(--spend)40' : 'var(--text-tertiary)40'}`,
     }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: active ? '#10B981' : '#64748B', display: 'inline-block' }} />
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: active ? 'var(--spend)' : 'var(--text-tertiary)', display: 'inline-block' }} />
       {active ? 'ACTIVE' : 'PAUSED'}
     </span>
   )
@@ -29,11 +29,11 @@ function statusBadge(status?: string) {
 
 function targetTypeBadge(type: string) {
   const colors: Record<string, string> = {
-    model: '#3B82F6',
-    prompt_release: '#8B5CF6',
-    policy_rule: '#F59E0B',
+    model: 'var(--control)',
+    prompt_release: 'var(--ship)',
+    policy_rule: 'var(--prove)',
   }
-  const c = colors[type] ?? '#64748B'
+  const c = colors[type] ?? 'var(--text-tertiary)'
   return (
     <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 10, background: `${c}20`, color: c, border: `1px solid ${c}40` }}>
       {type.replace('_', ' ')}
@@ -44,10 +44,10 @@ function targetTypeBadge(type: string) {
 function pct(n: number) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <div style={{ flex: 1, height: 6, background: '#0F1F35', borderRadius: 999, overflow: 'hidden' }}>
-        <div style={{ width: `${n}%`, height: '100%', background: n < 20 ? '#F59E0B' : n < 80 ? '#3B82F6' : '#10B981', borderRadius: 999 }} />
+      <div style={{ flex: 1, height: 6, background: 'var(--layer-border)', borderRadius: 999, overflow: 'hidden' }}>
+        <div style={{ width: `${n}%`, height: '100%', background: n < 20 ? 'var(--prove)' : n < 80 ? 'var(--control)' : 'var(--spend)', borderRadius: 999 }} />
       </div>
-      <span style={{ color: '#94A3B8', fontSize: 11, flexShrink: 0 }}>{n}%</span>
+      <span style={{ color: 'var(--text-secondary)', fontSize: 11, flexShrink: 0 }}>{n}%</span>
     </div>
   )
 }
@@ -136,16 +136,16 @@ export default function RolloutsPage() {
       {/* Metric strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginBottom: 24 }}>
         <MetricCard label="Total Rules" value={String(rules.length)} />
-        <MetricCard label="Active" value={String(rules.filter(r => r.status !== 'paused').length)} color="#10B981" />
-        <MetricCard label="Paused" value={String(rules.filter(r => r.status === 'paused').length)} color="#64748B" />
+        <MetricCard label="Active" value={String(rules.filter(r => r.status !== 'paused').length)} color="var(--spend)" />
+        <MetricCard label="Paused" value={String(rules.filter(r => r.status === 'paused').length)} color="var(--text-tertiary)" />
       </div>
 
       {/* Rule table */}
       <div style={panelStyle}>
-        <div style={{ fontSize: 11, color: '#334155', letterSpacing: '0.12em', marginBottom: 16 }}>ROLLOUT RULES</div>
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', letterSpacing: '0.12em', marginBottom: 16 }}>ROLLOUT RULES</div>
 
         {isLoading && <div style={subtleText}>Loading rollout rules…</div>}
-        {error && <div style={{ color: '#FCA5A5', fontSize: 12 }}>Failed to load rollout rules.</div>}
+        {error && <div style={{ color: 'var(--protect)', fontSize: 12 }}>Failed to load rollout rules.</div>}
 
         {!isLoading && !error && rules.length === 0 && (
           <div style={{ ...subtleText, textAlign: 'center', padding: 40 }}>
@@ -166,11 +166,11 @@ export default function RolloutsPage() {
               {rules.map((rule, i) => (
                 <tr key={rule.id ?? rule.name} style={{ background: i % 2 === 0 ? 'transparent' : '#06091430' }}>
                   <td style={tdStyle}>
-                    <div style={{ color: '#E2E8F0', fontWeight: 600 }}>{rule.name}</div>
-                    {rule.environment && <div style={{ color: '#475569', fontSize: 10, marginTop: 2 }}>{rule.environment}</div>}
+                    <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{rule.name}</div>
+                    {rule.environment && <div style={{ color: 'var(--text-tertiary)', fontSize: 10, marginTop: 2 }}>{rule.environment}</div>}
                   </td>
                   <td style={tdStyle}>{targetTypeBadge(rule.target_type)}</td>
-                  <td style={{ ...tdStyle, fontFamily: 'monospace', color: '#94A3B8', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', color: 'var(--text-secondary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {rule.target_id}
                   </td>
                   <td style={{ ...tdStyle, minWidth: 160 }}>{pct(rule.percentage)}</td>
@@ -178,18 +178,18 @@ export default function RolloutsPage() {
                   <td style={tdStyle}>
                     {rule.recent_requests != null ? (
                       <div>
-                        <div style={{ color: '#94A3B8' }}>{rule.recent_requests.toLocaleString()} req</div>
+                        <div style={{ color: 'var(--text-secondary)' }}>{rule.recent_requests.toLocaleString()} req</div>
                         {(rule.recent_error_rate ?? 0) > 0 && (
-                          <div style={{ color: '#FCA5A5', fontSize: 10 }}>{((rule.recent_error_rate ?? 0) * 100).toFixed(1)}% err</div>
+                          <div style={{ color: 'var(--protect)', fontSize: 10 }}>{((rule.recent_error_rate ?? 0) * 100).toFixed(1)}% err</div>
                         )}
                       </div>
-                    ) : <span style={{ color: '#334155' }}>—</span>}
+                    ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button id={`edit-rollout-${rule.id}`} style={ghostBtn} onClick={() => openEdit(rule)}>Edit</button>
                     <button
                       id={`toggle-rollout-${rule.id}`}
-                      style={{ ...ghostBtn, color: rule.status === 'active' ? '#F59E0B' : '#10B981', marginLeft: 6 }}
+                      style={{ ...ghostBtn, color: rule.status === 'active' ? 'var(--prove)' : 'var(--spend)', marginLeft: 6 }}
                       onClick={() => handleToggle(rule)}
                       disabled={toggleStatus.isPending}
                     >
@@ -205,7 +205,7 @@ export default function RolloutsPage() {
 
       {/* Preview panel */}
       <div style={{ ...panelStyle, marginTop: 24 }}>
-        <div style={{ fontSize: 11, color: '#334155', letterSpacing: '0.12em', marginBottom: 16 }}>ASSIGNMENT PREVIEW</div>
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', letterSpacing: '0.12em', marginBottom: 16 }}>ASSIGNMENT PREVIEW</div>
         <p style={{ ...subtleText, marginBottom: 16 }}>Simulate which rollout rule would be assigned to a given request context.</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
@@ -246,7 +246,7 @@ export default function RolloutsPage() {
           </div>
         )}
         {previewMut.isError && (
-          <div style={{ color: '#FCA5A5', fontSize: 12, marginTop: 12 }}>Preview failed: {(previewMut.error as Error).message}</div>
+          <div style={{ color: 'var(--protect)', fontSize: 12, marginTop: 12 }}>Preview failed: {(previewMut.error as Error).message}</div>
         )}
       </div>
 
@@ -254,7 +254,7 @@ export default function RolloutsPage() {
       {showForm && (
         <div style={overlay}>
           <div style={modal}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#F0F9FF', marginBottom: 20 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 20 }}>
               {editRule.id ? 'Edit Rollout Rule' : 'New Rollout Rule'}
             </div>
 
@@ -289,7 +289,7 @@ export default function RolloutsPage() {
                 Traffic Percentage: {editRule.percentage}%
                 <input id="form-rollout-pct" type="range" min={0} max={100} step={1}
                   value={editRule.percentage}
-                  style={{ width: '100%', accentColor: '#3B82F6', marginTop: 6 }}
+                  style={{ width: '100%', accentColor: 'var(--control)', marginTop: 6 }}
                   onChange={e => setEditRule(prev => ({ ...prev, percentage: Number(e.target.value) }))} />
               </label>
 
@@ -335,7 +335,7 @@ export default function RolloutsPage() {
               </label>
             </div>
 
-            {formError && <div style={{ color: '#FCA5A5', fontSize: 12, marginTop: 12 }}>{formError}</div>}
+            {formError && <div style={{ color: 'var(--protect)', fontSize: 12, marginTop: 12 }}>{formError}</div>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24 }}>
               <button id="rollout-form-cancel" style={ghostBtn} onClick={() => setShowForm(false)}>Cancel</button>
@@ -354,8 +354,8 @@ export default function RolloutsPage() {
 
 function MetricCard({ label, value, color = '#60A5FA' }: { label: string; value: string; color?: string }) {
   return (
-    <div style={{ background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: '18px 20px' }}>
-      <div style={{ fontSize: 10, color: '#475569', letterSpacing: '0.1em', marginBottom: 8 }}>{label.toUpperCase()}</div>
+    <div style={{ background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: '18px 20px' }}>
+      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '0.1em', marginBottom: 8 }}>{label.toUpperCase()}</div>
       <div style={{ fontSize: 28, fontWeight: 700, color }}>{value}</div>
     </div>
   )
@@ -363,33 +363,33 @@ function MetricCard({ label, value, color = '#60A5FA' }: { label: string; value:
 
 function PreviewResult({ assignment, rules }: { assignment: import('../hooks/api').RolloutAssignment; rules: import('../hooks/api').RolloutRule[] }) {
   return (
-    <div style={{ border: '1px solid #0F1F35', borderRadius: 10, padding: 20, background: '#071525' }}>
-      <div style={{ fontSize: 11, color: '#334155', letterSpacing: '0.12em', marginBottom: 12 }}>ASSIGNMENT RESULT</div>
+    <div style={{ border: '1px solid var(--layer-border)', borderRadius: 10, padding: 20, background: 'var(--layer-1)' }}>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', letterSpacing: '0.12em', marginBottom: 12 }}>ASSIGNMENT RESULT</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
         <div>
-          <div style={{ fontSize: 10, color: '#475569', marginBottom: 4 }}>SELECTED</div>
-          <div style={{ fontSize: 13, color: assignment.selected ? '#10B981' : '#94A3B8', fontWeight: 600 }}>
+          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 4 }}>SELECTED</div>
+          <div style={{ fontSize: 13, color: assignment.selected ? 'var(--spend)' : 'var(--text-secondary)', fontWeight: 600 }}>
             {assignment.selected ? 'Yes (candidate)' : 'No (control)'}
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 10, color: '#475569', marginBottom: 4 }}>VARIANT</div>
-          <div style={{ fontSize: 13, color: '#E2E8F0' }}>{assignment.variant ?? '—'}</div>
+          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 4 }}>VARIANT</div>
+          <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>{assignment.variant ?? '—'}</div>
         </div>
         <div>
-          <div style={{ fontSize: 10, color: '#475569', marginBottom: 4 }}>BUCKET</div>
-          <div style={{ fontSize: 13, color: '#E2E8F0' }}>{assignment.bucket ?? '—'}</div>
+          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 4 }}>BUCKET</div>
+          <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>{assignment.bucket ?? '—'}</div>
         </div>
       </div>
       {assignment.rule_name && (
-        <div style={{ fontSize: 12, color: '#94A3B8' }}>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
           Matched rule: <span style={{ color: '#60A5FA' }}>{assignment.rule_name}</span>
           {assignment.candidate_model && <> · candidate model: <span style={{ color: '#60A5FA' }}>{assignment.candidate_model}</span></>}
-          {assignment.release_tag && <> · release: <span style={{ color: '#8B5CF6' }}>{assignment.release_tag}</span></>}
+          {assignment.release_tag && <> · release: <span style={{ color: 'var(--ship)' }}>{assignment.release_tag}</span></>}
         </div>
       )}
       {rules.length > 0 && (
-        <div style={{ marginTop: 12, fontSize: 11, color: '#334155' }}>
+        <div style={{ marginTop: 12, fontSize: 11, color: 'var(--text-tertiary)' }}>
           {rules.length} rule{rules.length > 1 ? 's' : ''} evaluated
         </div>
       )}
@@ -399,34 +399,34 @@ function PreviewResult({ assignment, rules }: { assignment: import('../hooks/api
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const titleStyle: CSSProperties = { fontSize: 22, fontWeight: 700, color: '#F0F9FF', margin: 0 }
-const subtleText: CSSProperties = { fontSize: 12, color: '#475569', marginTop: 4 }
-const panelStyle: CSSProperties = { background: '#0D1B2A', border: '1px solid #0F1F35', borderRadius: 10, padding: 24 }
-const labelStyle: CSSProperties = { display: 'grid', gap: 6, fontSize: 11, color: '#94A3B8' }
+const titleStyle: CSSProperties = { fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }
+const subtleText: CSSProperties = { fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }
+const panelStyle: CSSProperties = { background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 10, padding: 24 }
+const labelStyle: CSSProperties = { display: 'grid', gap: 6, fontSize: 11, color: 'var(--text-secondary)' }
 const inputStyle: CSSProperties = {
-  background: '#060A14', border: '1px solid #0F1F35', borderRadius: 8,
-  color: '#E2E8F0', padding: '9px 12px', fontSize: 12, outline: 'none',
+  background: 'var(--layer-1)', border: '1px solid var(--layer-border)', borderRadius: 8,
+  color: 'var(--text-primary)', padding: '9px 12px', fontSize: 12, outline: 'none',
 }
 const primaryBtn: CSSProperties = {
-  background: 'linear-gradient(135deg, #2563EB, #3B82F6)', color: '#fff',
+  background: 'linear-gradient(135deg, #2563EB, var(--control))', color: '#fff',
   border: 'none', borderRadius: 8, padding: '10px 18px', fontSize: 12,
   fontWeight: 600, cursor: 'pointer', letterSpacing: '0.02em',
 }
 const ghostBtn: CSSProperties = {
-  background: 'none', border: '1px solid #0F1F35', borderRadius: 8,
-  color: '#64748B', padding: '7px 14px', fontSize: 12, cursor: 'pointer',
+  background: 'none', border: '1px solid var(--layer-border)', borderRadius: 8,
+  color: 'var(--text-tertiary)', padding: '7px 14px', fontSize: 12, cursor: 'pointer',
 }
 const thStyle: CSSProperties = {
-  padding: '8px 14px', textAlign: 'left', color: '#334155',
-  borderBottom: '1px solid #0F1F35', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
+  padding: '8px 14px', textAlign: 'left', color: 'var(--text-tertiary)',
+  borderBottom: '1px solid var(--layer-border)', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em',
 }
-const tdStyle: CSSProperties = { padding: '10px 14px', color: '#94A3B8', verticalAlign: 'middle' }
+const tdStyle: CSSProperties = { padding: '10px 14px', color: 'var(--text-secondary)', verticalAlign: 'middle' }
 const overlay: CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(4,8,20,0.85)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
   backdropFilter: 'blur(4px)',
 }
 const modal: CSSProperties = {
-  background: '#0D1B2A', border: '1px solid #1E3A5F', borderRadius: 14,
+  background: 'var(--layer-2)', border: '1px solid var(--layer-border)', borderRadius: 14,
   padding: 28, maxWidth: 600, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
 }

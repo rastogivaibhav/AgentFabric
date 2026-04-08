@@ -4,7 +4,7 @@
 //
 // Flow:
 //   GET /auth/login     → redirect to OIDC provider with PKCE challenge
-//   GET /auth/callback  → exchange code for tokens, issue AgentFabric JWT
+//   GET /auth/callback  → exchange code for tokens, issue Govagn JWT
 //   GET /auth/logout    → clear session cookie, redirect to provider logout
 
 package auth
@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -51,7 +51,7 @@ type OIDCConfig struct {
 	Issuer        string // e.g. https://login.microsoftonline.com/{tenantId}/v2.0
 	ClientID      string
 	ClientSecret  string
-	RedirectURI   string // e.g. https://portal.agentfabric.io/auth/callback
+	RedirectURI   string // e.g. https://portal.govagn.io/auth/callback
 	Scopes        []string
 	JWTSecret     string   // primary secret (legacy / single-secret mode)
 	JWTSecrets    []string // ordered list for zero-downtime rotation: [0]=active, rest=old
@@ -62,7 +62,7 @@ type OIDCConfig struct {
 	RequireSSO           bool
 	DisablePasswordLogin bool
 	// Local password login (non-OIDC). Defaults: admin / admin.
-	// Override via AF_ADMIN_USER + AF_ADMIN_PASSWORD environment variables.
+	// Override via GV_ADMIN_USER + GV_ADMIN_PASSWORD environment variables.
 	AdminUser     string
 	AdminPassword string
 }
@@ -207,21 +207,21 @@ func ValidateConfig(cfg OIDCConfig, strict bool) error {
 	if cfg.RequireSSO || oidcConfigured {
 		prefix := "OIDC configuration requires "
 		if cfg.RequireSSO {
-			prefix = "AF_SSO_REQUIRED=true requires "
+			prefix = "GV_SSO_REQUIRED=true requires "
 		}
 		switch {
 		case issuer == "":
-			return fmt.Errorf("%sAF_OIDC_ISSUER", prefix)
+			return fmt.Errorf("%sGV_OIDC_ISSUER", prefix)
 		case clientID == "":
-			return fmt.Errorf("%sAF_OIDC_CLIENT_ID", prefix)
+			return fmt.Errorf("%sGV_OIDC_CLIENT_ID", prefix)
 		case clientSecret == "":
-			return fmt.Errorf("%sAF_OIDC_CLIENT_SECRET", prefix)
+			return fmt.Errorf("%sGV_OIDC_CLIENT_SECRET", prefix)
 		case redirectURI == "":
-			return fmt.Errorf("%sAF_OIDC_REDIRECT_URI", prefix)
+			return fmt.Errorf("%sGV_OIDC_REDIRECT_URI", prefix)
 		}
 	}
 	if cfg.DisablePasswordLogin && !oidcConfigured {
-		return fmt.Errorf("AF_PASSWORD_LOGIN_DISABLED=true requires OIDC SSO to be configured")
+		return fmt.Errorf("GV_PASSWORD_LOGIN_DISABLED=true requires OIDC SSO to be configured")
 	}
 	return nil
 }
@@ -335,7 +335,7 @@ func (h *OIDCHandler) Login(w http.ResponseWriter, r *http.Request) {
 //
 // Receives the authorization code from the OIDC provider, validates the state,
 // exchanges the code for tokens using PKCE, validates the ID token,
-// then issues an AgentFabric JWT and redirects the browser to the portal.
+// then issues an Govagn JWT and redirects the browser to the portal.
 
 func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	// Validate state anti-CSRF parameter
@@ -418,7 +418,7 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue AgentFabric JWT
+	// Issue Govagn JWT
 	afJWT, err := h.issueAFToken(claims)
 	if err != nil {
 		h.logger.Error("AF token issuance failed", zap.Error(err))
@@ -773,7 +773,7 @@ func parseIDTokenUnsafe(idToken string) (*idTokenClaims, error) {
 	return &claims, nil
 }
 
-// ─── AgentFabric JWT issuance ─────────────────────────────────────────────────
+// ─── Govagn JWT issuance ─────────────────────────────────────────────────
 
 type afClaims struct {
 	TenantID string `json:"tenant_id"`
@@ -799,10 +799,10 @@ func (h *OIDCHandler) issueAFToken(idClaims *idTokenClaims) (string, error) {
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   idClaims.Subject,
-			Issuer:    "agentfabric",
+			Issuer:    "govagn",
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(h.cfg.SessionMaxAge)),
-			Audience:  jwt.ClaimStrings{"agentfabric-portal"},
+			Audience:  jwt.ClaimStrings{"govagn-portal"},
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -1004,7 +1004,7 @@ func (h *OIDCHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 //
 // Username + password login for environments without an OIDC provider.
 // Default credentials: admin / admin
-// Override via AF_ADMIN_USER + AF_ADMIN_PASSWORD environment variables.
+// Override via GV_ADMIN_USER + GV_ADMIN_PASSWORD environment variables.
 //
 // On success: returns {"token":"<JWT>"} with Content-Type: application/json
 // The portal stores the token in localStorage and includes it as Bearer on all API calls.
@@ -1076,7 +1076,7 @@ func (h *OIDCHandler) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		if userOK && passOK {
 			idClaims = &idTokenClaims{
 				Subject:  wantUser,
-				Email:    wantUser + "@agentfabric.local",
+				Email:    wantUser + "@govagn.local",
 				Name:     "Admin",
 				Role:     "admin",
 				TenantID: defaultTenantID,

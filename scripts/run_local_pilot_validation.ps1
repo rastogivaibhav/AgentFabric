@@ -166,7 +166,7 @@ $scorecard = @"
 "@
 
 $summary = @"
-# AgentFabric Local Pilot Validation
+# Govagn Local Pilot Validation
 
 - Pilot: **$PilotName**
 - Team: **$TeamName**

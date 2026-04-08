@@ -54,11 +54,11 @@ func TenantIDFromCtx(ctx context.Context) string {
 
 var (
 	httpRequests = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "agentfabric_http_requests_total",
+		Name: "govagn_http_requests_total",
 	}, []string{"method", "path", "status"})
 
 	httpDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "agentfabric_http_duration_seconds",
+		Name:    "govagn_http_duration_seconds",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "path"})
 )
@@ -182,6 +182,23 @@ func JWTAuth(secrets ...string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// DevAuthInjector is a simplified authenticator used when GV_AUTH_DISABLED=true.
+// It injects a mock "admin" claim so role-gated routes (RequireRole) function
+// without a valid JWT.
+func DevAuthInjector(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims := &Claims{
+			TenantID: DefaultTenantID,
+			Role:     "admin",
+			Name:     "Dev Admin",
+			Email:    "admin@govagn.local",
+		}
+		claims.Subject = "dev-admin-id"
+		ctx := context.WithValue(r.Context(), claimsKey, claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // ─── RBAC / ABAC middleware ───────────────────────────────────────────────────

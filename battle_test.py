@@ -154,5 +154,23 @@ def run_battle_simulation():
 
     log_step("Super-Test Verification Complete.")
 
+def seed_decisions_via_sql():
+    log_step("Seeding Decision Evidence (PROTECT Table)")
+    # We use docker exec to insert directly since the collector is out-of-band
+    sql = """
+    INSERT INTO decision_records (decision_type, result, reason, explanation, action_taken, framework, provider, model, environment, tenant_id)
+    VALUES 
+    ('policy', 'redact', 'PII Leak (SSN) Detected', 'Request contained pattern matching social security number schema.', 'Redacted input span', 'langgraph', 'openai', 'gpt-4o-mini', 'production', '00000000-0000-0000-0000-000000000001'),
+    ('policy', 'deny', 'Prompt Injection Detected', 'System override attempt detected: "ignore previous instructions".', 'Blocked request', 'crewai', 'anthropic', 'claude-3-5-sonnet', 'staging', '00000000-0000-0000-0000-000000000001'),
+    ('budget', 'deny', 'Monthly Budget Limit Reached', 'Tenant has exceeded the $10.00 monthly cap.', 'Blocked request (429)', 'langchain', 'google', 'gemini-2.0-flash', 'production', '00000000-0000-0000-0000-000000000001');
+    """
+    try:
+        import subprocess
+        subprocess.run(["docker", "exec", "-i", "files-postgres-1", "psql", "-U", "fabric", "-d", "govagn"], input=sql.encode(), check=True)
+        print("  [OK] Decision records seeded into Database.")
+    except Exception as e:
+        print(f"  [ERR] Failed to seed decisions: {e}")
+
 if __name__ == "__main__":
     run_battle_simulation()
+    seed_decisions_via_sql()

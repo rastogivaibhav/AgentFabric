@@ -1,9 +1,9 @@
-# AgentFabric — Alertmanager configuration
+# Govagn — Alertmanager configuration
 # Receives firing alerts from Prometheus and routes them to the ops team.
 #
 # Override receiver settings via environment before deploying:
-#   AF_ALERTMANAGER_WEBHOOK_URL   Slack / PagerDuty / custom webhook
-#   AF_OPS_EMAIL                  ops@yourcompany.com
+#   GV_ALERTMANAGER_WEBHOOK_URL   Slack / PagerDuty / custom webhook
+#   GV_OPS_EMAIL                  ops@yourcompany.com
 #
 # Reload without restart:
 #   curl -X POST http://alertmanager:9093/-/reload
@@ -12,9 +12,9 @@ global:
   resolve_timeout: 5m
   # SMTP — uncomment and set for email delivery
   # smtp_smarthost: 'smtp.yourcompany.com:587'
-  # smtp_from: 'alertmanager@agentfabric.io'
-  # smtp_auth_username: '${AF_SMTP_USER}'
-  # smtp_auth_password: '${AF_SMTP_PASSWORD}'
+  # smtp_from: 'alertmanager@govagn.io'
+  # smtp_auth_username: '${GV_SMTP_USER}'
+  # smtp_auth_password: '${GV_SMTP_PASSWORD}'
   # smtp_require_tls: true
 
 # ─── Routing tree ────────────────────────────────────────────────────────────
@@ -44,14 +44,14 @@ route:
 receivers:
   - name: 'ops-webhook'
     webhook_configs:
-      - url: '${AF_ALERTMANAGER_WEBHOOK_URL:-http://localhost:9091/webhook}'
+      - url: '${GV_ALERTMANAGER_WEBHOOK_URL:-http://localhost:9091/webhook}'
         send_resolved: true
         http_config:
-          # bearer_token: '${AF_WEBHOOK_TOKEN}'  # add if webhook requires auth
+          # bearer_token: '${GV_WEBHOOK_TOKEN}'  # add if webhook requires auth
 
     # Uncomment to enable email notifications:
     # email_configs:
-    #   - to: '${AF_OPS_EMAIL:-ops@agentfabric.io}'
+    #   - to: '${GV_OPS_EMAIL:-ops@govagn.io}'
     #     send_resolved: true
     #     headers:
     #       Subject: '[{{ .Status | toUpper }}] {{ .CommonAnnotations.summary }}'

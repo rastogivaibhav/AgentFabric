@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentfabric/collector/internal/config"
-	"github.com/agentfabric/collector/internal/exporter"
+	"github.com/govagn/collector/internal/config"
+	"github.com/govagn/collector/internal/exporter"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -26,16 +26,16 @@ import (
 
 var (
 	processedSpans = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "agentfabric_processed_spans_total",
+		Name: "govagn_processed_spans_total",
 	}, []string{"framework", "status"})
 
 	queueDepth = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "agentfabric_queue_depth",
+		Name: "govagn_queue_depth",
 		Help: "Current span queue depth",
 	})
 
 	piiScrubbed = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "agentfabric_pii_scrubbed_total",
+		Name: "govagn_pii_scrubbed_total",
 		Help: "PII values redacted",
 	})
 )

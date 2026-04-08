@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
-  title: AgentFabric API
+  title: Govagn API
   version: 2026-03-21
   description: |
-    OpenAPI description for the current AgentFabric gateway surface.
+    OpenAPI description for the current Govagn gateway surface.
 
     This spec is based on the implemented code paths in api-gateway/.
     It covers the main control-plane APIs, auth endpoints, admin endpoints,
@@ -12,7 +12,7 @@ info:
     Notes:
     - Browser clients normally authenticate through the af_token HttpOnly cookie.
     - API clients may also use Authorization: Bearer <jwt> for authenticated routes.
-    - Proxy routes authenticate with an AgentFabric virtual key, not a JWT.
+    - Proxy routes authenticate with an Govagn virtual key, not a JWT.
     - The WebSocket live stream route exists at /api/v1/stream/live, but is not fully modeled here as an HTTP response schema.
 servers:
   - url: http://localhost:8080
@@ -208,7 +208,7 @@ paths:
       tags: [Internal]
       summary: Internal collector ingest
       description: |
-        Internal ingest endpoint used by the collector. In secured mode this route expects Authorization: Bearer <AF_GATEWAY_AUTH_TOKEN>.
+        Internal ingest endpoint used by the collector. In secured mode this route expects Authorization: Bearer <GV_GATEWAY_AUTH_TOKEN>.
         The tenant can also be supplied with X-AF-Tenant.
       security:
         - collectorBearerAuth: []
@@ -1084,7 +1084,7 @@ paths:
       description: |
         Pass-through reverse-proxy endpoint for supported provider APIs.
         Request and response bodies vary by provider and upstream endpoint.
-        Authentication uses an AgentFabric virtual key in the Bearer header.
+        Authentication uses an Govagn virtual key in the Bearer header.
       security:
         - virtualKeyAuth: []
       parameters:
@@ -1135,7 +1135,7 @@ components:
     virtualKeyAuth:
       type: http
       scheme: bearer
-      description: Bearer token containing an AgentFabric virtual key (af-vk-*).
+      description: Bearer token containing an Govagn virtual key (af-vk-*).
     sessionCookie:
       type: apiKey
       in: cookie

@@ -1,5 +1,5 @@
 """
-AgentFabric real agent runner.
+Govagn real agent runner.
 Runs LangGraph, CrewAI, OpenAI, and Anthropic agents (LLM calls mocked via respx)
 and exports every span directly to the mock gateway at http://localhost:8080.
 
@@ -66,7 +66,7 @@ class MockGatewayExporter(SpanExporter):
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-import agentfabric
+import govagn
 
 # Set provider once before any OTel usage; suppress the "not allowed" warning
 # by only setting when the current provider is a no-op proxy.
@@ -78,28 +78,28 @@ if type(_current).__name__ in ("ProxyTracerProvider", "NoOpTracerProvider", "_De
 else:
     _provider = _current
     _provider.add_span_processor(SimpleSpanProcessor(MockGatewayExporter()))
-agentfabric._tracer      = trace.get_tracer("agentfabric", "1.0.0")
-agentfabric._initialized = True
+govagn._tracer      = trace.get_tracer("govagn", "1.0.0")
+govagn._initialized = True
 
 # Patch all available frameworks up front
 try:
-    import langgraph as _lg; agentfabric._patch_langgraph(_lg); print("[setup] langgraph patched")
+    import langgraph as _lg; govagn._patch_langgraph(_lg); print("[setup] langgraph patched")
 except ImportError: pass
 
 try:
-    import crewai as _ca; agentfabric._patch_crewai(_ca); print("[setup] crewai patched")
+    import crewai as _ca; govagn._patch_crewai(_ca); print("[setup] crewai patched")
 except ImportError: pass
 
 try:
-    import openai as _oa; agentfabric._patch_openai(_oa); print("[setup] openai patched")
+    import openai as _oa; govagn._patch_openai(_oa); print("[setup] openai patched")
 except ImportError: pass
 
 try:
-    import anthropic as _an; agentfabric._patch_anthropic(_an); print("[setup] anthropic patched")
+    import anthropic as _an; govagn._patch_anthropic(_an); print("[setup] anthropic patched")
 except ImportError: pass
 
 try:
-    import google.adk as _adk; agentfabric._patch_google_adk(); print("[setup] google_adk patched")
+    import google.adk as _adk; govagn._patch_google_adk(); print("[setup] google_adk patched")
 except ImportError: pass
 
 print()
@@ -126,7 +126,7 @@ def run_langgraph():
         "summarise": lambda s: {**s, "summary": "Summarised: " + str(s.get("docs"))},
         "write":     lambda s: {**s, "output":  "Report ready"},
     })
-    r = research.invoke({"query": "AgentFabric observability"})
+    r = research.invoke({"query": "Govagn observability"})
     print(f"  research-pipeline  output={r['output']}")
 
     qa = make_graph({
@@ -192,7 +192,7 @@ def run_openai():
 
     for model, prompt in [
         ("gpt-4o",      "Classify this support ticket: app crashes on login"),
-        ("gpt-4o-mini", "Summarise: AgentFabric tracks AI agent runs end-to-end"),
+        ("gpt-4o-mini", "Summarise: Govagn tracks AI agent runs end-to-end"),
         ("gpt-4o",      "Extract action items from: deploy by Friday, test Monday"),
     ]:
         fake = {
@@ -289,8 +289,8 @@ def run_google_adk():
     async def _run_scenario(agent_name, description, prompt, reply):
         ss = InMemorySessionService()
         agent = Agent(name=agent_name, description=description, model="gemini-2.0-flash")
-        runner = Runner(agent=agent, app_name="agentfabric-demo", session_service=ss)
-        session = await ss.create_session(app_name="agentfabric-demo", user_id="demo_user")
+        runner = Runner(agent=agent, app_name="govagn-demo", session_service=ss)
+        session = await ss.create_session(app_name="govagn-demo", user_id="demo_user")
         msg = genai_types.Content(role="user", parts=[genai_types.Part(text=prompt)])
         with patch(LLM_TARGET, side_effect=_fake_llm(reply)):
             async for _ in runner.run_async(

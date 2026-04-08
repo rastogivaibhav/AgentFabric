@@ -208,14 +208,15 @@ test.beforeEach(async ({ page }) => {
 
 test('dashboard and navigation render with mocked admin data', async ({ page }) => {
   await page.goto('/dashboard')
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
-  await expect(page.getByText('1.2345')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Your AI. Under control.' })).toBeVisible()
+  await expect(page.getByText('LIVE ACTIVITY FEED')).toBeVisible()
+  await expect(page.getByText('ACTIVE ROLLOUTS', { exact: true })).toBeVisible()
 
   await page.goto('/traces')
   await expect(page).toHaveURL(/\/traces$/)
 
   await page.goto('/evals')
-  await expect(page.getByRole('heading', { name: 'Evals' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Evaluations' })).toBeVisible()
 
   await page.goto('/prompts')
   await expect(page.getByText('Prompt Registry')).toBeVisible()

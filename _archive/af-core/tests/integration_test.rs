@@ -5,7 +5,7 @@
 // These tests require a live PostgreSQL instance.  In CI the database is
 // provided by the GitHub Actions service container defined in .github/workflows/ci.yml:
 //
-//   TEST_DATABASE_URL=postgres://fabric:fabric@localhost:5432/agentfabric_test
+//   TEST_DATABASE_URL=postgres://fabric:fabric@localhost:5432/govagn_test
 //
 // When TEST_DATABASE_URL is unset the tests skip gracefully rather than panic,
 // so local development without Docker does not break the test run.
@@ -30,7 +30,7 @@ use af_core::config::Config; // used in test_config()
 fn test_config(allowed_regions: Vec<String>, denied_tools: Vec<String>) -> Config {
     Config {
         database_url:              std::env::var("TEST_DATABASE_URL")
-                                       .unwrap_or_else(|_| "postgres://fabric:fabric@localhost:5432/agentfabric_test".into()),
+                                       .unwrap_or_else(|_| "postgres://fabric:fabric@localhost:5432/govagn_test".into()),
         clickhouse_url:            "http://localhost:8123".into(),
         redis_url:                 "redis://localhost:6379/0".into(),
         grpc_addr:                 "0.0.0.0:50051".into(),

@@ -1,5 +1,5 @@
 """
-Integration tests for AgentFabric SDK framework patching.
+Integration tests for Govagn SDK framework patching.
 
 Unlike test_patching.py (which uses sys.modules mocks), these tests install
 and exercise the REAL framework packages. HTTP calls are intercepted at the
@@ -37,15 +37,15 @@ _mem_exporter = InMemorySpanExporter()
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _setup_agentfabric_tracer():
-    """Wire agentfabric to in-memory exporter without hitting a real OTLP endpoint."""
-    import agentfabric  # noqa: PLC0415
+def _setup_govagn_tracer():
+    """Wire govagn to in-memory exporter without hitting a real OTLP endpoint."""
+    import govagn  # noqa: PLC0415
 
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(_mem_exporter))
     trace.set_tracer_provider(provider)
-    agentfabric._tracer = trace.get_tracer("agentfabric", "1.0.0")
-    agentfabric._initialized = True
+    govagn._tracer = trace.get_tracer("govagn", "1.0.0")
+    govagn._initialized = True
 
 
 @pytest.fixture(autouse=True)
@@ -121,11 +121,11 @@ class TestLangGraphIntegration:
     @pytest.fixture(scope="class", autouse=True)
     def _require_and_patch(self):
         lg = pytest.importorskip("langgraph", reason="langgraph not installed")
-        import agentfabric  # noqa: PLC0415
+        import govagn  # noqa: PLC0415
         from langgraph.graph import StateGraph  # noqa: PLC0415
 
         original_compile = StateGraph.compile
-        agentfabric._patch_langgraph(lg)
+        govagn._patch_langgraph(lg)
         yield
         StateGraph.compile = original_compile  # restore for other test modules
 
@@ -212,10 +212,10 @@ class TestOpenAIIntegration:
         pytest.importorskip("respx", reason="respx not installed")
         pytest.importorskip("httpx", reason="httpx not installed")
         openai = pytest.importorskip("openai", reason="openai not installed")
-        import agentfabric  # noqa: PLC0415
+        import govagn  # noqa: PLC0415
 
         original = openai.chat.completions.create
-        agentfabric._patch_openai(openai)
+        govagn._patch_openai(openai)
         yield
         openai.chat.completions.create = original
 
@@ -312,12 +312,12 @@ class TestAnthropicIntegration:
         pytest.importorskip("respx", reason="respx not installed")
         pytest.importorskip("httpx", reason="httpx not installed")
         anthropic = pytest.importorskip("anthropic", reason="anthropic not installed")
-        import agentfabric  # noqa: PLC0415
+        import govagn  # noqa: PLC0415
 
         from anthropic import Anthropic  # noqa: PLC0415
         Messages = type(Anthropic(api_key="test").messages)
         original = Messages.create
-        agentfabric._patch_anthropic(anthropic)
+        govagn._patch_anthropic(anthropic)
         yield
         Messages.create = original
 
@@ -425,10 +425,10 @@ class TestCrewAIIntegration:
         crewai = pytest.importorskip("crewai", reason="crewai not installed")
         if not hasattr(crewai.Agent, "execute_task"):
             pytest.skip("crewai.Agent.execute_task not present in this version")
-        import agentfabric  # noqa: PLC0415
+        import govagn  # noqa: PLC0415
 
         original = crewai.Agent.execute_task
-        agentfabric._patch_crewai(crewai)
+        govagn._patch_crewai(crewai)
         yield
         crewai.Agent.execute_task = original
 
@@ -507,7 +507,7 @@ class TestCrewAIIntegration:
 
 @pytest.mark.integration
 class TestGoogleADKIntegration:
-    """Tests for agentfabric._patch_google_adk().
+    """Tests for govagn._patch_google_adk().
 
     Uses a lightweight EchoAgent (no LLM) so tests run without API keys or
     network access.  The patching wraps Runner.run_async and BaseAgent.run_async
@@ -522,9 +522,10 @@ class TestGoogleADKIntegration:
         BaseAgent.run_async repeatedly, creating N spans per invocation on the
         Nth test — which breaks span-count and parent-child assertions.
         """
-        import agentfabric  # noqa: PLC0415
+        pytest.importorskip("google.adk", reason="google.adk not installed")
+        import govagn  # noqa: PLC0415
 
-        agentfabric._patch_google_adk()
+        govagn._patch_google_adk()
 
     # ── minimal agent fixture ─────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide describes the minimum high-availability posture for running AgentFabric as a serious production candidate.
+This guide describes the minimum high-availability posture for running Govagn as a serious production candidate.
 
 Use it to answer:
 

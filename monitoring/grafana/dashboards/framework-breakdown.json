@@ -18,13 +18,13 @@
     { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" }
   ],
   "annotations": { "list": [] },
-  "description": "AgentFabric — per-framework span volume, token usage, latency, and error rates",
+  "description": "Govagn — per-framework span volume, token usage, latency, and error rates",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
   "links": [
-    { "title": "Platform Overview", "url": "/d/agentfabric-overview", "type": "dashboards" }
+    { "title": "Platform Overview", "url": "/d/govagn-overview", "type": "dashboards" }
   ],
   "panels": [
     {
@@ -35,7 +35,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -53,8 +53,8 @@
       },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_spans_received_total[10m])) by (framework)",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_spans_received_total[10m])) by (framework)",
           "legendFormat": "{{ framework }}"
         }
       ],
@@ -62,7 +62,7 @@
       "type": "piechart"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -79,8 +79,8 @@
       },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_spans_received_total[2m])) by (framework) * 60",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_spans_received_total[2m])) by (framework) * 60",
           "legendFormat": "{{ framework }}"
         }
       ],
@@ -95,7 +95,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -112,13 +112,13 @@
       },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_tokens_total{type=\"input\"}[5m])) by (framework) * 60",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_tokens_total{type=\"input\"}[5m])) by (framework) * 60",
           "legendFormat": "{{ framework }} input"
         },
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_tokens_total{type=\"output\"}[5m])) by (framework) * 60",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_tokens_total{type=\"output\"}[5m])) by (framework) * 60",
           "legendFormat": "{{ framework }} output"
         }
       ],
@@ -126,7 +126,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -147,8 +147,8 @@
       },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "sum(rate(agentfabric_tokens_total{type=\"input\"}[10m])) by (framework) / sum(rate(agentfabric_tokens_total{type=\"output\"}[10m])) by (framework)",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "sum(rate(govagn_tokens_total{type=\"input\"}[10m])) by (framework) / sum(rate(govagn_tokens_total{type=\"output\"}[10m])) by (framework)",
           "legendFormat": "{{ framework }} input/output ratio"
         }
       ],
@@ -163,7 +163,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -180,8 +180,8 @@
       },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "histogram_quantile(0.95, sum(rate(agentfabric_agent_run_duration_seconds_bucket[5m])) by (le, framework))",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(govagn_agent_run_duration_seconds_bucket[5m])) by (le, framework))",
           "legendFormat": "{{ framework }} P95"
         }
       ],
@@ -189,7 +189,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -211,8 +211,8 @@
       },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "100 * sum(rate(agentfabric_agent_runs_total{status=\"error\"}[5m])) by (framework) / sum(rate(agentfabric_agent_runs_total[5m])) by (framework)",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "100 * sum(rate(govagn_agent_runs_total{status=\"error\"}[5m])) by (framework) / sum(rate(govagn_agent_runs_total[5m])) by (framework)",
           "legendFormat": "{{ framework }} error %"
         }
       ],
@@ -227,7 +227,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -247,8 +247,8 @@
       },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "topk(10, sum(rate(agentfabric_spans_received_total[10m])) by (agent_name) * 60)",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "topk(10, sum(rate(govagn_spans_received_total[10m])) by (agent_name) * 60)",
           "legendFormat": "{{ agent_name }}"
         }
       ],
@@ -256,7 +256,7 @@
       "type": "bargauge"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
+      "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -276,8 +276,8 @@
       },
       "targets": [
         {
-          "datasource": { "uid": "agentfabric-prometheus" },
-          "expr": "topk(10, sum(rate(agentfabric_cost_usd_total[1h])) by (agent_name) * 3600)",
+          "datasource": { "uid": "govagn-prometheus" },
+          "expr": "topk(10, sum(rate(govagn_cost_usd_total[1h])) by (agent_name) * 3600)",
           "legendFormat": "{{ agent_name }}"
         }
       ],
@@ -287,19 +287,19 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["agentfabric", "frameworks", "ai-agents"],
+  "tags": ["govagn", "frameworks", "ai-agents"],
   "templating": {
     "list": [
       {
         "current": {},
-        "datasource": { "type": "prometheus", "uid": "agentfabric-prometheus" },
-        "definition": "label_values(agentfabric_spans_received_total, framework)",
+        "datasource": { "type": "prometheus", "uid": "govagn-prometheus" },
+        "definition": "label_values(govagn_spans_received_total, framework)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "framework",
         "options": [],
-        "query": "label_values(agentfabric_spans_received_total, framework)",
+        "query": "label_values(govagn_spans_received_total, framework)",
         "refresh": 2,
         "type": "query",
         "label": "Framework"
@@ -309,7 +309,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "AgentFabric — Framework Breakdown",
-  "uid": "agentfabric-framework",
+  "title": "Govagn — Framework Breakdown",
+  "uid": "govagn-framework",
   "version": 1
 }

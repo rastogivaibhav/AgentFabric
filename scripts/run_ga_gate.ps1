@@ -125,7 +125,7 @@ function Render-Summary {
   param([string]$Decision)
 
   $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'")
-  Add-SummaryLine "# AgentFabric GA Gate"
+  Add-SummaryLine "# Govagn GA Gate"
   Add-SummaryLine ""
   Add-SummaryLine "- Decision: **$Decision**"
   Add-SummaryLine "- Mode: $Mode"
@@ -161,6 +161,7 @@ if ($Mode -eq "ci") {
     "collector tests"      = [string]$env:GA_COLLECTOR_RESULT
     "api-gateway tests"    = [string]$env:GA_GATEWAY_RESULT
     "portal tests/build"   = [string]$env:GA_PORTAL_RESULT
+    "portal playwright"    = [string]$env:GA_PORTAL_E2E_RESULT
     "agent-sdk tests"      = [string]$env:GA_SDK_RESULT
     "helm smoke"           = [string]$env:GA_HELM_RESULT
     "packaging smoke"      = [string]$env:GA_PACKAGING_RESULT
@@ -215,7 +216,7 @@ if ($PackagingGreen -or (Get-EnvBool "GA_PACKAGING_GREEN")) {
   Invoke-Required -Name "Helm template" -Action {
     Push-Location $RepoRoot
     try {
-      helm template agentfabric deploy/helm --set collector.image.tag=ga --set api.image.tag=ga --set portal.image.tag=ga | Out-Null
+      helm template govagn deploy/helm --set collector.image.tag=ga --set api.image.tag=ga --set portal.image.tag=ga | Out-Null
     } finally {
       Pop-Location
     }

@@ -92,11 +92,11 @@ func Load() (*Config, error) {
 	// Config file
 	v.SetConfigName("collector")
 	v.SetConfigType("yaml")
-	v.AddConfigPath("/etc/agentfabric")
+	v.AddConfigPath("/etc/govagn")
 	v.AddConfigPath(".")
 
-	// Env overrides: AF_GRPC_ADDR, AF_GATEWAY_ENDPOINT etc
-	v.SetEnvPrefix("AF")
+	// Env overrides: GV_GRPC_ADDR, GV_GATEWAY_ENDPOINT etc
+	v.SetEnvPrefix("GV")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
@@ -112,10 +112,10 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.Auth.JWTSecret == "" {
-		cfg.Auth.JWTSecret = os.Getenv("AF_JWT_SECRET")
+		cfg.Auth.JWTSecret = os.Getenv("GV_JWT_SECRET")
 	}
 	if cfg.Gateway.AuthToken == "" {
-		cfg.Gateway.AuthToken = os.Getenv("AF_GATEWAY_AUTH_TOKEN")
+		cfg.Gateway.AuthToken = os.Getenv("GV_GATEWAY_AUTH_TOKEN")
 	}
 
 	if err := validateConfig(&cfg); err != nil {
@@ -147,10 +147,10 @@ func validateConfig(cfg *Config) error {
 		return fmt.Errorf("auth.require_auth=false is not supported in production; OTLP auth must remain enabled")
 	}
 	if strings.TrimSpace(cfg.Gateway.AuthToken) == "" {
-		return fmt.Errorf("AF_GATEWAY_AUTH_TOKEN is required in production so the collector can authenticate to the gateway /internal/ingest endpoint")
+		return fmt.Errorf("GV_GATEWAY_AUTH_TOKEN is required in production so the collector can authenticate to the gateway /internal/ingest endpoint")
 	}
 	if cfg.Auth.RequireAuth && strings.TrimSpace(cfg.Auth.JWTSecret) == "" {
-		return fmt.Errorf("AF_JWT_SECRET is required when auth.require_auth=true in production")
+		return fmt.Errorf("GV_JWT_SECRET is required when auth.require_auth=true in production")
 	}
 	if cfg.TLS.Enabled {
 		if strings.TrimSpace(cfg.TLS.CertFile) == "" || strings.TrimSpace(cfg.TLS.KeyFile) == "" {
@@ -159,14 +159,14 @@ func validateConfig(cfg *Config) error {
 	}
 	switch strings.TrimSpace(cfg.Auth.JWTSecret) {
 	case "dev-secret-change-in-production", "dev-secret-change-in-prod":
-		return fmt.Errorf("AF_JWT_SECRET must not use the development sentinel in production")
+		return fmt.Errorf("GV_JWT_SECRET must not use the development sentinel in production")
 	}
 	return nil
 }
 
 func strictConfigEnabled() bool {
-	if os.Getenv("AF_STRICT_CONFIG") == "true" {
+	if os.Getenv("GV_STRICT_CONFIG") == "true" {
 		return true
 	}
-	return strings.EqualFold(os.Getenv("AF_ENV"), "production")
+	return strings.EqualFold(os.Getenv("GV_ENV"), "production")
 }

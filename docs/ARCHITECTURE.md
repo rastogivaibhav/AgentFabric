@@ -1,8 +1,8 @@
-# AgentFabric Architecture
+# Govagn Architecture
 
 ## Overview
 
-AgentFabric is a self-hosted AI runtime governance, observability, and control-plane platform for production LLM and agent workloads.
+Govagn is a self-hosted AI runtime governance, observability, and control-plane platform for production LLM and agent workloads.
 
 Its architectural purpose is to place enterprise AI traffic behind a governed operational layer that can:
 
@@ -13,12 +13,12 @@ Its architectural purpose is to place enterprise AI traffic behind a governed op
 - support evaluation and release decisions
 - provide operators with one control surface
 
-AgentFabric is not a generic AI application framework. It is an infrastructure and operations platform for teams running AI workloads in production.
+Govagn is not a generic AI application framework. It is an infrastructure and operations platform for teams running AI workloads in production.
 
 ## Architectural Principles
 
 ### 1. Control plane first
-AgentFabric is designed as a centralized control plane for AI runtime operations rather than a set of isolated monitoring utilities.
+Govagn is designed as a centralized control plane for AI runtime operations rather than a set of isolated monitoring utilities.
 
 ### 2. Self-hosted by default
 The system is optimized for environments that require deployment control, network control, and enterprise data handling.
@@ -30,7 +30,7 @@ Policy, audit, pricing, budget, prompt release, and evaluation concerns are trea
 The platform is designed to make traces useful for debugging, policy inspection, and spend visibility, not just telemetry collection.
 
 ### 5. Product boundaries are intentional
-AgentFabric focuses on governance, observability, and runtime control rather than trying to become a prompt IDE, experimentation lab, or chatbot builder.
+Govagn focuses on governance, observability, and runtime control rather than trying to become a prompt IDE, experimentation lab, or chatbot builder.
 
 ## High-Level Architecture
 
@@ -219,17 +219,17 @@ The gateway supports:
 
 Production-relevant controls include:
 
-- `AF_SSO_REQUIRED`
-- `AF_PASSWORD_LOGIN_DISABLED`
-- `AF_JWT_SECRET`
-- `AF_JWT_SECRETS`
-- `AF_GATEWAY_AUTH_TOKEN` for collector -> gateway `/internal/ingest`
+- `GV_SSO_REQUIRED`
+- `GV_PASSWORD_LOGIN_DISABLED`
+- `GV_JWT_SECRET`
+- `GV_JWT_SECRETS`
+- `GV_GATEWAY_AUTH_TOKEN` for collector -> gateway `/internal/ingest`
 
 See [SSO_RBAC_PLAN.md](SSO_RBAC_PLAN.md).
 
 ## Tenancy Model
 
-AgentFabric is built for central deployment. A single control plane can serve:
+Govagn is built for central deployment. A single control plane can serve:
 
 - one tenant
 - multiple internal tenants
@@ -255,7 +255,7 @@ The current codebase includes provider registry support for:
 - `vertexai`
 - `bedrock`
 
-The proxy path is where AgentFabric combines:
+The proxy path is where Govagn combines:
 
 - provider mediation
 - policy evaluation
@@ -295,7 +295,7 @@ Key deployment and operations assets:
 
 Important boundaries to communicate clearly:
 
-- AgentFabric does not automatically observe unmanaged hosts.
+- Govagn does not automatically observe unmanaged hosts.
 - Coverage depends on onboarding through SDK, OTLP, proxy, or netproxy paths.
 - The platform is a governed AI runtime control plane, not a generic infrastructure monitoring product.
 - Production readiness depends on deployment validation, release-gate evidence, and pilot proof, not code presence alone.

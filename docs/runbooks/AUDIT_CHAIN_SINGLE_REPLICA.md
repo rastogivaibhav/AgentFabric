@@ -41,31 +41,31 @@ This is a known architectural constraint tracked as
 ### 1 — Scale af-core back to 1 replica
 
 ```bash
-kubectl scale deployment agentfabric-af-core --replicas=1 -n agentfabric
+kubectl scale deployment govagn-af-core --replicas=1 -n govagn
 ```
 
 Verify:
 ```bash
-kubectl get pods -n agentfabric -l app.kubernetes.io/component=af-core
+kubectl get pods -n govagn -l app.kubernetes.io/component=af-core
 ```
 
 ### 2 — Disable HPA if it re-scaled
 
 ```bash
-kubectl patch hpa agentfabric-af-core -n agentfabric \
+kubectl patch hpa govagn-af-core -n govagn \
   -p '{"spec":{"minReplicas":1,"maxReplicas":1}}'
 ```
 
 Or disable entirely:
 ```bash
-kubectl delete hpa agentfabric-af-core -n agentfabric
+kubectl delete hpa govagn-af-core -n govagn
 ```
 
 ### 3 — Verify audit chain health
 
 ```bash
-curl -s -H "Authorization: Bearer $AF_TOKEN" \
-  https://api.agentfabric.io/api/v1/audit/verify | jq .
+curl -s -H "Authorization: Bearer $GV_TOKEN" \
+  https://api.govagn.io/api/v1/audit/verify | jq .
 ```
 
 Expected healthy response:
@@ -78,7 +78,7 @@ If the chain is broken, see [Chain Repair](#chain-repair-procedure) below.
 ### 4 — Confirm Helm values prevent recurrence
 
 ```bash
-helm get values agentfabric -n agentfabric | grep -A 10 afCore
+helm get values govagn -n govagn | grep -A 10 afCore
 ```
 
 Ensure:
@@ -87,7 +87,7 @@ Ensure:
 
 If not, update:
 ```bash
-helm upgrade agentfabric deploy/helm -n agentfabric \
+helm upgrade govagn deploy/helm -n govagn \
   --set afCore.replicas=1 \
   --set afCore.hpa.enabled=false \
   --reuse-values
@@ -113,7 +113,7 @@ If the audit chain shows breaks due to multi-replica contamination:
    ```sql
    SELECT hash FROM audit_log ORDER BY created_at DESC LIMIT 1;
    ```
-   Then restart af-core with `AF_AUDIT_SEED_HASH=<hash>` environment variable
+   Then restart af-core with `GV_AUDIT_SEED_HASH=<hash>` environment variable
    to re-initialise `last_hash` from the database value.
 
 4. **Document the incident** in your compliance system with:
@@ -155,6 +155,6 @@ Until v1.2.0 ships, **do not enable HPA for af-core in any environment**.
 
 | Role | Contact |
 |------|---------|
-| On-call | PagerDuty — `agentfabric-platform` |
+| On-call | PagerDuty — `govagn-platform` |
 | af-core owner | Platform Engineering team |
 | Compliance | Security team (for audit log incidents) |

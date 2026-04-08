@@ -1,8 +1,8 @@
 """
-AgentFabric — Anthropic Integration Test Suite
+Govagn — Anthropic Integration Test Suite
 ===============================================
 
-Tests the AgentFabric SDK's Anthropic patching layer using the real Anthropic
+Tests the Govagn SDK's Anthropic patching layer using the real Anthropic
 Python SDK with all HTTP traffic intercepted at the httpx transport layer via
 `respx`. No real API key or outbound network access is required.
 
@@ -30,7 +30,7 @@ import os
 import sys
 
 # ---------------------------------------------------------------------------
-# Path bootstrap — must happen before any agentfabric / anthropic import
+# Path bootstrap — must happen before any govagn / anthropic import
 # ---------------------------------------------------------------------------
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "agent-sdk"))
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-integration-test-placeholder")
@@ -45,7 +45,7 @@ import respx
 anthropic = pytest.importorskip("anthropic")
 respx = pytest.importorskip("respx")  # noqa: F811 (shadow import fine here)
 
-import agentfabric  # noqa: E402
+import govagn  # noqa: E402
 
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -88,7 +88,7 @@ def _error_response(error_type: str = "authentication_error", message: str = "ba
 
 @pytest.mark.integration
 class TestAnthropicIntegration:
-    """Full integration suite for the AgentFabric Anthropic patch."""
+    """Full integration suite for the Govagn Anthropic patch."""
 
     # ------------------------------------------------------------------
     # Fixtures
@@ -105,26 +105,26 @@ class TestAnthropicIntegration:
         """
         Module-scoped fixture that:
         1. Creates an InMemorySpanExporter + TracerProvider.
-        2. Injects the tracer into agentfabric globals.
+        2. Injects the tracer into govagn globals.
         3. Applies the Anthropic class-level monkey-patch.
         4. Restores the original Messages.create on teardown.
-        Spans are also forwarded to the AgentFabric dashboard in real-time.
+        Spans are also forwarded to the Govagn dashboard in real-time.
         """
         exporter = InMemorySpanExporter()
         provider = TracerProvider()
         provider.add_span_processor(SimpleSpanProcessor(exporter))
         provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
 
-        tracer = provider.get_tracer("agentfabric-test", "1.0.0")
-        agentfabric._tracer = tracer
-        agentfabric._initialized = True
+        tracer = provider.get_tracer("govagn-test", "1.0.0")
+        govagn._tracer = tracer
+        govagn._initialized = True
 
         # Identify the Messages class BEFORE patching so we can restore it
         _dummy_client = anthropic.Anthropic(api_key="test")
         Messages = type(_dummy_client.messages)
         original_create = Messages.create
 
-        agentfabric._patch_anthropic(anthropic)
+        govagn._patch_anthropic(anthropic)
 
         # Expose exporter to instance methods via class attribute
         self.__class__._exporter = exporter
@@ -135,8 +135,8 @@ class TestAnthropicIntegration:
 
         # Teardown — restore original method
         Messages.create = original_create
-        agentfabric._initialized = False
-        agentfabric._tracer = None
+        govagn._initialized = False
+        govagn._tracer = None
 
     @pytest.fixture(autouse=True)
     def _clear_spans(self):

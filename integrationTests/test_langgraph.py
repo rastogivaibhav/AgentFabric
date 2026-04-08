@@ -1,5 +1,5 @@
 """
-Integration tests for AgentFabric LangGraph instrumentation.
+Integration tests for Govagn LangGraph instrumentation.
 
 Uses the REAL LangGraph SDK — no mocks of LangGraph itself.
 Pure Python nodes are used for most tests; respx is available for
@@ -23,7 +23,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-import agentfabric
+import govagn
 
 # ─── Module-level span exporter shared by all tests ──────────────────────────
 
@@ -70,21 +70,21 @@ def _setup_tracer_and_patch(gateway_exporter):
     Module-scoped fixture: wire up an InMemorySpanExporter and patch LangGraph
     once for the entire module.  NOT session-scoped so the patch stays isolated
     to this test file.
-    Spans are also forwarded to the AgentFabric dashboard in real-time.
+    Spans are also forwarded to the Govagn dashboard in real-time.
     """
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(_exporter))
     provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
 
-    agentfabric._tracer = provider.get_tracer("agentfabric-test", "1.0.0")
-    agentfabric._initialized = True
+    govagn._tracer = provider.get_tracer("govagn-test", "1.0.0")
+    govagn._initialized = True
 
     try:
         import langgraph as _lg
     except ImportError:
         pytest.skip("langgraph not installed")
 
-    agentfabric._patch_langgraph(_lg)
+    govagn._patch_langgraph(_lg)
     yield
 
 

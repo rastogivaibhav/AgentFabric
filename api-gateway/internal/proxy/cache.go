@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	priced "github.com/agentfabric/api-gateway/internal/pricing"
+	priced "github.com/govagn/api-gateway/internal/pricing"
 )
 
 type cachedProxyResponse struct {

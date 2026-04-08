@@ -110,7 +110,7 @@ func TestValidateConfig_StrictRejectsPartialOIDCConfiguration(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected strict mode to reject partial OIDC configuration")
 	}
-	if !strings.Contains(err.Error(), "AF_OIDC_CLIENT_ID") {
+	if !strings.Contains(err.Error(), "GV_OIDC_CLIENT_ID") {
 		t.Fatalf("expected missing client id error, got %v", err)
 	}
 }
@@ -118,14 +118,14 @@ func TestValidateConfig_StrictRejectsPartialOIDCConfiguration(t *testing.T) {
 func TestValidateConfig_StrictRejectsMissingRedirectWhenSSORequired(t *testing.T) {
 	err := ValidateConfig(OIDCConfig{
 		Issuer:       "https://login.example.com/tenant/v2.0",
-		ClientID:     "agentfabric-portal",
+		ClientID:     "govagn-portal",
 		ClientSecret: "oidc-client-secret",
 		RequireSSO:   true,
 	}, true)
 	if err == nil {
 		t.Fatal("expected strict mode to reject missing redirect URI when SSO is required")
 	}
-	if !strings.Contains(err.Error(), "AF_OIDC_REDIRECT_URI") {
+	if !strings.Contains(err.Error(), "GV_OIDC_REDIRECT_URI") {
 		t.Fatalf("expected missing redirect URI error, got %v", err)
 	}
 }
@@ -133,9 +133,9 @@ func TestValidateConfig_StrictRejectsMissingRedirectWhenSSORequired(t *testing.T
 func TestValidateConfig_StrictAcceptsCompleteOptionalOIDCConfig(t *testing.T) {
 	err := ValidateConfig(OIDCConfig{
 		Issuer:       "https://login.example.com/tenant/v2.0",
-		ClientID:     "agentfabric-portal",
+		ClientID:     "govagn-portal",
 		ClientSecret: "oidc-client-secret",
-		RedirectURI:  "https://app.agentfabric.io/auth/callback",
+		RedirectURI:  "https://app.govagn.io/auth/callback",
 		LogoutURL:    "https://login.example.com/logout",
 	}, true)
 	if err != nil {
@@ -277,7 +277,7 @@ func TestIssueAFToken_ExpiresWithinSessionMaxAge(t *testing.T) {
 	}
 }
 
-func TestIssueAFToken_IssuerIsAgentFabric(t *testing.T) {
+func TestIssueAFToken_IssuerIsGovagn(t *testing.T) {
 	h := testHandler()
 	claims := &idTokenClaims{Subject: "s", TenantID: "11111111-2222-3333-4444-555555555555"}
 	tokenStr, _ := h.issueAFToken(claims)
@@ -285,8 +285,8 @@ func TestIssueAFToken_IssuerIsAgentFabric(t *testing.T) {
 	jwt.ParseWithClaims(tokenStr, parsed, func(tok *jwt.Token) (interface{}, error) {
 		return []byte("test-jwt-secret-32-chars-long-ok"), nil
 	})
-	if parsed.Issuer != "agentfabric" {
-		t.Errorf("issuer should be 'agentfabric', got %q", parsed.Issuer)
+	if parsed.Issuer != "govagn" {
+		t.Errorf("issuer should be 'govagn', got %q", parsed.Issuer)
 	}
 }
 
@@ -297,7 +297,7 @@ func TestIssueAFToken_AudienceIsPortal(t *testing.T) {
 	parsed := &afClaims{}
 	jwt.ParseWithClaims(tokenStr, parsed, func(tok *jwt.Token) (interface{}, error) {
 		return []byte("test-jwt-secret-32-chars-long-ok"), nil
-	}, jwt.WithAudience("agentfabric-portal"))
+	}, jwt.WithAudience("govagn-portal"))
 	// If audience check passes without error, the test passes implicitly
 }
 
@@ -502,15 +502,15 @@ func TestPasswordLogin_TokenIsValidJWT(t *testing.T) {
 	claims := &afClaims{}
 	_, err := jwt.ParseWithClaims(resp["token"], claims, func(tok *jwt.Token) (interface{}, error) {
 		return []byte("test-jwt-secret-32-chars-long-ok"), nil
-	}, jwt.WithAudience("agentfabric-portal"))
+	}, jwt.WithAudience("govagn-portal"))
 	if err != nil {
 		t.Fatalf("issued token should be a valid AF JWT: %v", err)
 	}
 	if claims.Subject != "admin" {
 		t.Errorf("subject should be 'admin', got %q", claims.Subject)
 	}
-	if claims.Email != "admin@agentfabric.local" {
-		t.Errorf("email should be 'admin@agentfabric.local', got %q", claims.Email)
+	if claims.Email != "admin@govagn.local" {
+		t.Errorf("email should be 'admin@govagn.local', got %q", claims.Email)
 	}
 	if claims.TenantID != defaultTenantID {
 		t.Errorf("tenant_id should be %q, got %q", defaultTenantID, claims.TenantID)
@@ -734,8 +734,8 @@ func TestRefresh_NewTokenPreservesIdentity(t *testing.T) {
 	if claims.Subject != "admin" {
 		t.Errorf("expected sub=admin, got %q", claims.Subject)
 	}
-	if claims.Email != "admin@agentfabric.local" {
-		t.Errorf("expected email=admin@agentfabric.local, got %q", claims.Email)
+	if claims.Email != "admin@govagn.local" {
+		t.Errorf("expected email=admin@govagn.local, got %q", claims.Email)
 	}
 	if claims.TenantID != defaultTenantID {
 		t.Errorf("expected tenant_id=%s, got %q", defaultTenantID, claims.TenantID)

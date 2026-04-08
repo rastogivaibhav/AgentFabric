@@ -7,13 +7,13 @@ import urllib.error as _urlerr
 import pytest
 
 
-_INTEGRATION = os.environ.get("AF_TEST_MODE", "unit") == "integration"
-_BASE_URL = os.environ.get("AF_API", "http://localhost:8080")
-_ADMIN_USER = os.environ.get("AF_ADMIN_USER", "")
-_ADMIN_PASSWORD = os.environ.get("AF_ADMIN_PASSWORD", "")
-_VIRTUAL_KEY = os.environ.get("AF_GOVERNANCE_VIRTUAL_KEY", "")
-_PROXY_PATH = os.environ.get("AF_GOVERNANCE_PROXY_PATH", "/proxy/openai/v1/chat/completions")
-_PROXY_BODY = os.environ.get("AF_GOVERNANCE_PROXY_BODY", '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}],"stream":false}')
+_INTEGRATION = os.environ.get("GV_TEST_MODE", "unit") == "integration"
+_BASE_URL = os.environ.get("GV_API", "http://localhost:8080")
+_ADMIN_USER = os.environ.get("GV_ADMIN_USER", "")
+_ADMIN_PASSWORD = os.environ.get("GV_ADMIN_PASSWORD", "")
+_VIRTUAL_KEY = os.environ.get("GV_GOVERNANCE_VIRTUAL_KEY", "")
+_PROXY_PATH = os.environ.get("GV_GOVERNANCE_PROXY_PATH", "/proxy/openai/v1/chat/completions")
+_PROXY_BODY = os.environ.get("GV_GOVERNANCE_PROXY_BODY", '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}],"stream":false}')
 
 
 def _json_request(url: str, method: str = "GET", body: dict | None = None, headers: dict | None = None):
@@ -34,7 +34,7 @@ def _json_request(url: str, method: str = "GET", body: dict | None = None, heade
 
 def _require_integration():
     if not _INTEGRATION:
-        pytest.skip("Set AF_TEST_MODE=integration to run this test")
+        pytest.skip("Set GV_TEST_MODE=integration to run this test")
 
 
 def _admin_cookie() -> str:
@@ -54,7 +54,7 @@ def _admin_cookie() -> str:
 def test_budget_crud_and_usage_scenario():
     _require_integration()
     if not (_ADMIN_USER and _ADMIN_PASSWORD):
-        pytest.skip("Set AF_ADMIN_USER and AF_ADMIN_PASSWORD to run admin integration tests")
+        pytest.skip("Set GV_ADMIN_USER and GV_ADMIN_PASSWORD to run admin integration tests")
 
     tenant_id = f"governance-budget-{int(time.time())}"
     cookie = _admin_cookie()
@@ -101,9 +101,9 @@ def test_budget_crud_and_usage_scenario():
 def test_budget_limit_scenario_if_proxy_credentials_available():
     _require_integration()
     if not (_ADMIN_USER and _ADMIN_PASSWORD and _VIRTUAL_KEY):
-        pytest.skip("Set AF_ADMIN_USER, AF_ADMIN_PASSWORD, and AF_GOVERNANCE_VIRTUAL_KEY to run live budget limit validation")
+        pytest.skip("Set GV_ADMIN_USER, GV_ADMIN_PASSWORD, and GV_GOVERNANCE_VIRTUAL_KEY to run live budget limit validation")
 
-    tenant_id = os.environ.get("AF_GOVERNANCE_TENANT_ID", "00000000-0000-0000-0000-000000000001")
+    tenant_id = os.environ.get("GV_GOVERNANCE_TENANT_ID", "00000000-0000-0000-0000-000000000001")
     cookie = _admin_cookie()
 
     _json_request(

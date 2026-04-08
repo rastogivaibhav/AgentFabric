@@ -13,7 +13,7 @@ from unittest import mock
 
 import pytest
 
-from agentfabric.auto_instrument import AutoInstrumentor
+from govagn.auto_instrument import AutoInstrumentor
 from install_hooks import SitecustomizeInstaller
 
 
@@ -30,8 +30,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         os.environ.update(self.original_env)
 
     def test_disabled_when_env_var_zero(self):
-        """AF_AUTO_INSTRUMENT=0 → no instrumentation"""
-        os.environ["AF_AUTO_INSTRUMENT"] = "0"
+        """GV_AUTO_INSTRUMENT=0 → no instrumentation"""
+        os.environ["GV_AUTO_INSTRUMENT"] = "0"
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -39,8 +39,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.enabled is False
 
     def test_enabled_by_default(self):
-        """Without AF_AUTO_INSTRUMENT → enabled"""
-        os.environ.pop("AF_AUTO_INSTRUMENT", None)
+        """Without GV_AUTO_INSTRUMENT → enabled"""
+        os.environ.pop("GV_AUTO_INSTRUMENT", None)
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -48,8 +48,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.enabled is True
 
     def test_reads_endpoint_from_env(self):
-        """AF_ENDPOINT overrides default"""
-        os.environ["AF_ENDPOINT"] = "http://custom:4318"
+        """GV_ENDPOINT overrides default"""
+        os.environ["GV_ENDPOINT"] = "http://custom:4318"
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -57,8 +57,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.endpoint == "http://custom:4318"
 
     def test_default_endpoint_localhost(self):
-        """Without AF_ENDPOINT → http://localhost:4318"""
-        os.environ.pop("AF_ENDPOINT", None)
+        """Without GV_ENDPOINT → http://localhost:4318"""
+        os.environ.pop("GV_ENDPOINT", None)
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -66,8 +66,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.endpoint == "http://localhost:4318"
 
     def test_reads_tenant_id_from_env(self):
-        """AF_TENANT_ID sets tenant"""
-        os.environ["AF_TENANT_ID"] = "acme-corp"
+        """GV_TENANT_ID sets tenant"""
+        os.environ["GV_TENANT_ID"] = "acme-corp"
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -75,8 +75,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.tenant_id == "acme-corp"
 
     def test_default_tenant_id_is_default(self):
-        """Without AF_TENANT_ID → 'default'"""
-        os.environ.pop("AF_TENANT_ID", None)
+        """Without GV_TENANT_ID → 'default'"""
+        os.environ.pop("GV_TENANT_ID", None)
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -84,8 +84,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.tenant_id == "default"
 
     def test_reads_service_name_from_env(self):
-        """AF_SERVICE_NAME sets service name"""
-        os.environ["AF_SERVICE_NAME"] = "my-agent-service"
+        """GV_SERVICE_NAME sets service name"""
+        os.environ["GV_SERVICE_NAME"] = "my-agent-service"
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -93,8 +93,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.service_name == "my-agent-service"
 
     def test_detects_service_name_from_argv(self):
-        """Without AF_SERVICE_NAME → detect from sys.argv[0]"""
-        os.environ.pop("AF_SERVICE_NAME", None)
+        """Without GV_SERVICE_NAME → detect from sys.argv[0]"""
+        os.environ.pop("GV_SERVICE_NAME", None)
         with mock.patch.object(sys, "argv", ["/path/to/my_script.py", "arg1"]):
             instrumentor = AutoInstrumentor()
             instrumentor.read_config()
@@ -103,9 +103,9 @@ class TestAutoInstrumentor(unittest.TestCase):
             assert "my_script" in instrumentor.service_name or instrumentor.service_name != ""
 
     def test_insecure_defaults_true_for_localhost(self):
-        """AF_ENDPOINT localhost → insecure=True"""
-        os.environ["AF_ENDPOINT"] = "http://localhost:4318"
-        os.environ.pop("AF_INSECURE", None)
+        """GV_ENDPOINT localhost → insecure=True"""
+        os.environ["GV_ENDPOINT"] = "http://localhost:4318"
+        os.environ.pop("GV_INSECURE", None)
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -113,9 +113,9 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.insecure is True
 
     def test_insecure_defaults_false_for_remote(self):
-        """AF_ENDPOINT remote → insecure=False"""
-        os.environ["AF_ENDPOINT"] = "http://api.example.com:4318"
-        os.environ.pop("AF_INSECURE", None)
+        """GV_ENDPOINT remote → insecure=False"""
+        os.environ["GV_ENDPOINT"] = "http://api.example.com:4318"
+        os.environ.pop("GV_INSECURE", None)
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -123,8 +123,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.insecure is False
 
     def test_reads_api_key_from_env(self):
-        """AF_API_KEY sets api key"""
-        os.environ["AF_API_KEY"] = "my-secret-key"
+        """GV_API_KEY sets api key"""
+        os.environ["GV_API_KEY"] = "my-secret-key"
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -132,8 +132,8 @@ class TestAutoInstrumentor(unittest.TestCase):
         assert instrumentor.api_key == "my-secret-key"
 
     def test_api_key_empty_string_treated_as_none(self):
-        """AF_API_KEY='' → None"""
-        os.environ["AF_API_KEY"] = ""
+        """GV_API_KEY='' → None"""
+        os.environ["GV_API_KEY"] = ""
 
         instrumentor = AutoInstrumentor()
         instrumentor.read_config()
@@ -142,19 +142,19 @@ class TestAutoInstrumentor(unittest.TestCase):
 
     def test_run_respects_disabled(self):
         """AutoInstrumentor.run() with enabled=False → early return"""
-        os.environ["AF_AUTO_INSTRUMENT"] = "0"
+        os.environ["GV_AUTO_INSTRUMENT"] = "0"
 
         instrumentor = AutoInstrumentor()
         # Should not raise
         instrumentor.run()
 
-    @mock.patch("agentfabric.instrument")
+    @mock.patch("govagn.instrument")
     def test_setup_tracer_calls_instrument(self, mock_instrument):
-        """setup_tracer() calls agentfabric.instrument()"""
-        # Mock agentfabric to avoid actually initializing a tracer
-        import agentfabric
+        """setup_tracer() calls govagn.instrument()"""
+        # Mock govagn to avoid actually initializing a tracer
+        import govagn
 
-        with mock.patch.object(agentfabric, "_initialized", False):
+        with mock.patch.object(govagn, "_initialized", False):
             instrumentor = AutoInstrumentor()
             instrumentor.endpoint = "http://localhost:4318"
             instrumentor.service_name = "test-service"
@@ -164,12 +164,12 @@ class TestAutoInstrumentor(unittest.TestCase):
             # Verify instrument was called
             assert mock_instrument.called
 
-    @mock.patch("agentfabric.instrument")
+    @mock.patch("govagn.instrument")
     def test_setup_tracer_idempotent(self, mock_instrument):
         """setup_tracer() skips if already initialized"""
-        import agentfabric
+        import govagn
 
-        with mock.patch.object(agentfabric, "_initialized", True):
+        with mock.patch.object(govagn, "_initialized", True):
             instrumentor = AutoInstrumentor()
             instrumentor.endpoint = "http://localhost:4318"
 
@@ -203,7 +203,7 @@ class TestSitecustomizeInstaller(unittest.TestCase):
 
                 assert sitecustomize_path.exists()
                 content = sitecustomize_path.read_text()
-                assert "agentfabric-auto-instrument-start" in content
+                assert "govagn-auto-instrument-start" in content
                 assert "AutoInstrumentor" in content
 
     def test_install_merges_with_existing_sitecustomize(self):
@@ -248,20 +248,20 @@ class TestSitecustomizeInstaller(unittest.TestCase):
 
                 # Content should not have duplicate blocks
                 assert first_content == second_content
-                count = second_content.count("agentfabric-auto-instrument-start")
-                assert count == 1, f"Expected 1 agentfabric block, got {count}"
+                count = second_content.count("govagn-auto-instrument-start")
+                assert count == 1, f"Expected 1 govagn block, got {count}"
 
-    def test_uninstall_removes_agentfabric_block(self):
-        """SitecustomizeInstaller.uninstall() removes agentfabric block"""
+    def test_uninstall_removes_govagn_block(self):
+        """SitecustomizeInstaller.uninstall() removes govagn block"""
         with tempfile.TemporaryDirectory() as tmpdir:
             site_packages = Path(tmpdir)
             sitecustomize_path = site_packages / "sitecustomize.py"
 
-            # Create sitecustomize with both old and agentfabric content
+            # Create sitecustomize with both old and govagn content
             original_content = "print('hello')\n"
             installer = SitecustomizeInstaller()
-            agentfabric_block = installer._read_boot_code()
-            mixed_content = original_content + agentfabric_block
+            govagn_block = installer._read_boot_code()
+            mixed_content = original_content + govagn_block
 
             sitecustomize_path.write_text(mixed_content)
 
@@ -273,22 +273,22 @@ class TestSitecustomizeInstaller(unittest.TestCase):
 
                 content = sitecustomize_path.read_text()
 
-                # Agentfabric block should be gone
-                assert "agentfabric-auto-instrument-start" not in content
+                # Govagn block should be gone
+                assert "govagn-auto-instrument-start" not in content
                 # Original content should remain
                 assert "print('hello')" in content
 
     def test_uninstall_deletes_empty_file(self):
-        """SitecustomizeInstaller.uninstall() deletes file if only agentfabric content"""
+        """SitecustomizeInstaller.uninstall() deletes file if only govagn content"""
         with tempfile.TemporaryDirectory() as tmpdir:
             site_packages = Path(tmpdir)
             sitecustomize_path = site_packages / "sitecustomize.py"
 
-            # Create sitecustomize with only agentfabric content
+            # Create sitecustomize with only govagn content
             installer = SitecustomizeInstaller()
-            agentfabric_block = installer._read_boot_code()
+            govagn_block = installer._read_boot_code()
 
-            sitecustomize_path.write_text(agentfabric_block)
+            sitecustomize_path.write_text(govagn_block)
 
             with mock.patch.object(
                 SitecustomizeInstaller, "_find_site_packages", return_value=site_packages

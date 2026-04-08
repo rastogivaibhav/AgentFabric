@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 type TraceViewInputs struct {

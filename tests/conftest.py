@@ -4,7 +4,7 @@ from pathlib import Path
 
 def _load_e2e_conftest():
     path = Path(__file__).parent / "e2e" / "conftest.py"
-    spec = importlib.util.spec_from_file_location("agentfabric_e2e_conftest", path)
+    spec = importlib.util.spec_from_file_location("govagn_e2e_conftest", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)

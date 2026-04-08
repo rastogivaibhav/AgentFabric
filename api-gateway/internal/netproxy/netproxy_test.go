@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/models"
-	"github.com/agentfabric/api-gateway/internal/proxy"
-	"github.com/agentfabric/api-gateway/internal/vault"
+	"github.com/govagn/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/proxy"
+	"github.com/govagn/api-gateway/internal/vault"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"

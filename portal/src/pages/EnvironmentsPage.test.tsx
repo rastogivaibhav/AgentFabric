@@ -83,7 +83,7 @@ describe('EnvironmentsPage — environment cards', () => {
 
   it('renders the page subtitle', () => {
     render(<EnvironmentsPage />)
-    expect(screen.getByText(/collector fleet and environment status/i)).toBeDefined()
+    expect(screen.getByText(/collector fleet status and environment health overview/i)).toBeDefined()
   })
 
   it('renders all three environment cards', () => {
@@ -214,11 +214,11 @@ describe('EnvironmentsPage — quick-start section', () => {
     expect(screen.getByText(/quick start/i)).toBeDefined()
   })
 
-  it('shows pip install agentfabric in the quick-start code block', () => {
+  it('shows pip install govagn in the quick-start code block', () => {
     mockUseEnvironments.mockReturnValue({ data: [], isLoading: false } as any)
     mockUseCollectors.mockReturnValue({ data: [], isLoading: false, isError: false } as any)
 
     render(<EnvironmentsPage />)
-    expect(screen.getByText(/pip install agentfabric/i)).toBeDefined()
+    expect(screen.getByText(/pip install govagn/i)).toBeDefined()
   })
 })

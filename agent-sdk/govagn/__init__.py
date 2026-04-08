@@ -1,9 +1,9 @@
 """
-AgentFabric Python SDK
+Govagn Python SDK
 Automatic instrumentation for CrewAI, LangGraph, Google ADK, OpenAI Agents SDK, Claude
 
 Usage:
-    from agentfabric import instrument
+    from govagn import instrument
 
     instrument(
         endpoint="http://localhost:4317",
@@ -36,7 +36,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-logger = logging.getLogger("agentfabric")
+logger = logging.getLogger("govagn")
 
 # ─── Semantic Attribute Constants ────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ class Attrs:
     GEN_AI_MAX_TOKENS     = "gen_ai.request.max_tokens"
     GEN_AI_FINISH_REASONS = "gen_ai.response.finish_reasons"
 
-    # AgentFabric SDK attributes
+    # Govagn SDK attributes
     AGENT_NAME     = "af.agent.name"
     AGENT_ROLE     = "af.agent.role"
     AGENT_RUN_ID   = "af.agent.run_id"
@@ -97,7 +97,7 @@ _initialized = False
 
 def instrument(
     endpoint: str = None,
-    service_name: str = "agentfabric-service",
+    service_name: str = "govagn-service",
     service_version: str = "1.0.0",
     environment: str = "development",
     api_key: str = None,
@@ -109,22 +109,22 @@ def instrument(
     auto_instrument_google_adk: bool = True,
 ) -> trace.Tracer:
     """
-    Initialise AgentFabric instrumentation.
+    Initialise Govagn instrumentation.
     Call once at application startup before importing agent frameworks.
     """
     global _tracer, _initialized
 
-    endpoint = endpoint or os.environ.get("AF_ENDPOINT", "http://localhost:4317")
-    api_key  = api_key  or os.environ.get("AF_API_KEY", "")
+    endpoint = endpoint or os.environ.get("GV_ENDPOINT", "http://localhost:4317")
+    api_key  = api_key  or os.environ.get("GV_API_KEY", "")
 
     resource = Resource.create({
         "service.name":    service_name,
         "service.version": service_version,
         "deployment.environment": environment,
-        Attrs.PROMPT_ID: os.environ.get("AF_PROMPT_ID", "").strip(),
-        Attrs.PROMPT_VERSION: os.environ.get("AF_PROMPT_VERSION", "").strip(),
-        Attrs.PROMPT_RELEASE_TAG: os.environ.get("AF_PROMPT_RELEASE_TAG", "").strip(),
-        Attrs.PROMPT_ENVIRONMENT: os.environ.get("AF_PROMPT_ENVIRONMENT", environment).strip(),
+        Attrs.PROMPT_ID: os.environ.get("GV_PROMPT_ID", "").strip(),
+        Attrs.PROMPT_VERSION: os.environ.get("GV_PROMPT_VERSION", "").strip(),
+        Attrs.PROMPT_RELEASE_TAG: os.environ.get("GV_PROMPT_RELEASE_TAG", "").strip(),
+        Attrs.PROMPT_ENVIRONMENT: os.environ.get("GV_PROMPT_ENVIRONMENT", environment).strip(),
     })
 
     headers = {}
@@ -147,7 +147,7 @@ def instrument(
         )
     )
     trace.set_tracer_provider(provider)
-    _tracer = trace.get_tracer("agentfabric", "1.0.0")
+    _tracer = trace.get_tracer("govagn", "1.0.0")
     _initialized = True
 
     # Auto-instrument frameworks
@@ -162,13 +162,13 @@ def instrument(
     if auto_instrument_google_adk:
         _try_instrument_google_adk()
 
-    logger.info(f"AgentFabric instrumentation active → {endpoint}")
+    logger.info(f"Govagn instrumentation active → {endpoint}")
     return _tracer
 
 
 def get_tracer() -> trace.Tracer:
     if not _initialized:
-        raise RuntimeError("Call agentfabric.instrument() before using the SDK")
+        raise RuntimeError("Call govagn.instrument() before using the SDK")
     return _tracer
 
 
@@ -239,7 +239,7 @@ def _try_instrument_crewai():
     try:
         import crewai
         _patch_crewai(crewai)
-        logger.info("AgentFabric: CrewAI instrumented")
+        logger.info("Govagn: CrewAI instrumented")
     except ImportError:
         pass
 
@@ -283,7 +283,7 @@ def _try_instrument_langgraph():
     try:
         import langgraph
         _patch_langgraph(langgraph)
-        logger.info("AgentFabric: LangGraph instrumented")
+        logger.info("Govagn: LangGraph instrumented")
     except ImportError:
         pass
 
@@ -297,7 +297,7 @@ def _patch_langgraph(langgraph):
         # Wrap each node function at add_node time so every node execution
         # produces a child span under the parent graph.invoke span.
 
-        original_add_node = StateGraph.add_node
+        original_add_node = getattr(StateGraph, "add_node", None)
 
         def _wrap_node(node_name: str, fn):
             """Return a traced wrapper for a node function (sync or async)."""
@@ -338,18 +338,21 @@ def _patch_langgraph(langgraph):
                             raise
                 return traced_sync_node
 
-        def patched_add_node(self, node, action=None, **kwargs):
-            # LangGraph accepts add_node(name, func) or add_node(func).
-            # Only wrap plain callables — Runnables expose .invoke() and are
-            # handled by LangChain's own tracing layer.
-            if callable(node) and action is None:
-                node_name = getattr(node, "__name__", "node")
-                node = _wrap_node(node_name, node)
-            elif isinstance(node, str) and callable(action):
-                action = _wrap_node(node, action)
-            return original_add_node(self, node, action, **kwargs)
+        # Some minimal/mock StateGraph implementations expose compile() only.
+        # Keep graph-level tracing active even if node-level hook points are absent.
+        if callable(original_add_node):
+            def patched_add_node(self, node, action=None, **kwargs):
+                # LangGraph accepts add_node(name, func) or add_node(func).
+                # Only wrap plain callables — Runnables expose .invoke() and are
+                # handled by LangChain's own tracing layer.
+                if callable(node) and action is None:
+                    node_name = getattr(node, "__name__", "node")
+                    node = _wrap_node(node_name, node)
+                elif isinstance(node, str) and callable(action):
+                    action = _wrap_node(node, action)
+                return original_add_node(self, node, action, **kwargs)
 
-        StateGraph.add_node = patched_add_node
+            StateGraph.add_node = patched_add_node
 
         # ── Graph-level tracing ───────────────────────────────────────────────
         # Wrap the compiled graph's invoke() to create the outer span that all
@@ -387,7 +390,7 @@ def _try_instrument_openai():
     try:
         import openai
         _patch_openai(openai)
-        logger.info("AgentFabric: OpenAI instrumented")
+        logger.info("Govagn: OpenAI instrumented")
     except ImportError:
         pass
 
@@ -433,7 +436,7 @@ def _try_instrument_anthropic():
     try:
         import anthropic
         _patch_anthropic(anthropic)
-        logger.info("AgentFabric: Anthropic instrumented")
+        logger.info("Govagn: Anthropic instrumented")
     except ImportError:
         pass
 
@@ -495,7 +498,7 @@ def _try_instrument_google_adk():
     try:
         import google.adk  # noqa: F401
         _patch_google_adk()
-        logger.info("AgentFabric: Google ADK instrumented")
+        logger.info("Govagn: Google ADK instrumented")
     except ImportError:
         pass
 

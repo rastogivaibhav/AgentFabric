@@ -1,6 +1,6 @@
 # Pilot Playbook
 
-Use this playbook when validating AgentFabric with a real internal team or design partner.
+Use this playbook when validating Govagn with a real internal team or design partner.
 
 ## Pilot goal
 

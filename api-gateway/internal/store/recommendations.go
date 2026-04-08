@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func (s *PostgresStore) UpsertRecommendation(ctx context.Context, record models.Recommendation) (models.Recommendation, error) {

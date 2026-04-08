@@ -1,5 +1,5 @@
 """
-Unit tests for AgentFabric SDK.
+Unit tests for Govagn SDK.
 Tests: Attrs constants, trace_llm_call decorator, trace_tool_call decorator,
        record_llm_usage helper, Principle 5 compliance (server-side framework detection).
 
@@ -9,7 +9,7 @@ Run: pytest tests/ -v
 import pytest
 import functools
 from unittest.mock import MagicMock, patch, call
-from agentfabric import Attrs
+from govagn import Attrs
 
 
 # ─── Attrs Constants ─────────────────────────────────────────────────────────
@@ -95,8 +95,8 @@ class TestGetTracerNotInitialized:
     """Verify SDK raises informative error when used before instrument()."""
 
     def test_get_tracer_raises_before_instrument(self):
-        from agentfabric import get_tracer, _initialized
-        import agentfabric as af
+        from govagn import get_tracer, _initialized
+        import govagn as af
         # Save and reset state
         original = af._initialized
         af._initialized = False
@@ -119,12 +119,12 @@ class TestTraceToolCallDecorator:
         return span
 
     def test_decorator_preserves_function_name(self):
-        from agentfabric import trace_tool_call
+        from govagn import trace_tool_call
         mock_tracer = MagicMock()
         mock_span = self._make_mock_span()
         mock_tracer.start_as_current_span.return_value = mock_span
 
-        with patch("agentfabric.get_tracer", return_value=mock_tracer):
+        with patch("govagn.get_tracer", return_value=mock_tracer):
             @trace_tool_call("web_search")
             def my_tool(query: str) -> str:
                 return f"results for {query}"
@@ -132,12 +132,12 @@ class TestTraceToolCallDecorator:
             assert my_tool.__name__ == "my_tool"
 
     def test_decorator_calls_wrapped_function(self):
-        from agentfabric import trace_tool_call
+        from govagn import trace_tool_call
         mock_tracer = MagicMock()
         mock_span = self._make_mock_span()
         mock_tracer.start_as_current_span.return_value = mock_span
 
-        with patch("agentfabric.get_tracer", return_value=mock_tracer):
+        with patch("govagn.get_tracer", return_value=mock_tracer):
             call_count = []
 
             @trace_tool_call("counter_tool")
@@ -149,12 +149,12 @@ class TestTraceToolCallDecorator:
             assert len(call_count) == 1
 
     def test_decorator_returns_function_result(self):
-        from agentfabric import trace_tool_call
+        from govagn import trace_tool_call
         mock_tracer = MagicMock()
         mock_span = self._make_mock_span()
         mock_tracer.start_as_current_span.return_value = mock_span
 
-        with patch("agentfabric.get_tracer", return_value=mock_tracer):
+        with patch("govagn.get_tracer", return_value=mock_tracer):
             @trace_tool_call("adder")
             def add(a: int, b: int) -> int:
                 return a + b
@@ -163,12 +163,12 @@ class TestTraceToolCallDecorator:
             assert result == 7
 
     def test_decorator_sets_tool_name_attribute(self):
-        from agentfabric import trace_tool_call
+        from govagn import trace_tool_call
         mock_tracer = MagicMock()
         mock_span = self._make_mock_span()
         mock_tracer.start_as_current_span.return_value = mock_span
 
-        with patch("agentfabric.get_tracer", return_value=mock_tracer):
+        with patch("govagn.get_tracer", return_value=mock_tracer):
             @trace_tool_call("web_search")
             def search(q):
                 return "results"
@@ -187,7 +187,7 @@ class TestAgentSpan:
 
     def test_agent_span_raises_without_instrument(self):
         """agent_span calls get_tracer() which requires instrument() first."""
-        import agentfabric as af
+        import govagn as af
         original = af._initialized
         af._initialized = False
         try:
@@ -199,14 +199,14 @@ class TestAgentSpan:
 
     def test_agent_span_sets_run_id(self):
         """agent_span auto-generates run_id if not provided."""
-        import agentfabric as af
+        import govagn as af
         mock_tracer = MagicMock()
         mock_span = MagicMock()
         mock_span.__enter__ = MagicMock(return_value=mock_span)
         mock_span.__exit__ = MagicMock(return_value=False)
         mock_tracer.start_as_current_span.return_value = mock_span
 
-        with patch("agentfabric.get_tracer", return_value=mock_tracer):
+        with patch("govagn.get_tracer", return_value=mock_tracer):
             with af.agent_span("test.agent") as span:
                 pass
         mock_tracer.start_as_current_span.assert_called_once()
@@ -228,8 +228,8 @@ class TestPrincipleCompliance:
         # The SDK should emit crewai.agent.role, langgraph.node.name, etc.
         # but NOT af.agent.framework (which is collector-computed)
         # This is validated by checking the Attrs class does NOT have an
-        # AF_AGENT_FRAMEWORK constant intended for client emission
-        import agentfabric
+        # GV_AGENT_FRAMEWORK constant intended for client emission
+        import govagn
         # Verify SDK attributes for each framework are SDK-emitted
         assert hasattr(Attrs, 'CREWAI_AGENT_ROLE')   # CrewAI detection attr
         assert hasattr(Attrs, 'LANGGRAPH_NODE')       # LangGraph detection attr

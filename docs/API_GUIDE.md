@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide explains the API surface of AgentFabric at a product and integration level.
+This guide explains the API surface of Govagn at a product and integration level.
 
 It is designed to help:
 
@@ -13,7 +13,7 @@ It is designed to help:
 
 ## API Model
 
-AgentFabric exposes a control-plane API rather than a single narrow service API.
+Govagn exposes a control-plane API rather than a single narrow service API.
 
 The API surface is organized around these domains:
 
@@ -238,7 +238,7 @@ Typical use cases:
 
 ## API Design Principles
 
-The AgentFabric API is designed around these principles:
+The Govagn API is designed around these principles:
 
 - control-plane first, not just data retrieval
 - explainability over opaque outcomes
@@ -290,7 +290,7 @@ For stable integrations:
 
 ## What This API Is Not
 
-The AgentFabric API is not primarily designed as:
+The Govagn API is not primarily designed as:
 
 - an end-user chat API
 - a generic playground API

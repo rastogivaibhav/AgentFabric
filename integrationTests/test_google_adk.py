@@ -1,12 +1,12 @@
 """
-Integration tests for AgentFabric SDK — Google ADK instrumentation.
+Integration tests for Govagn SDK — Google ADK instrumentation.
 
 These tests exercise the REAL Google ADK (google-adk package must be installed).
 LLM calls are intercepted at the Gemini model layer via unittest.mock.patch so
 no network access or real API keys are required.
 
 What is verified:
-  - AgentFabric patches google.adk.runners.Runner.run_async correctly
+  - Govagn patches google.adk.runners.Runner.run_async correctly
   - A google_adk.runner.* span is emitted for every Runner.run_async call
   - Spans carry the correct semantic attributes (agent name, session ID, gen_ai.system)
   - Span names are derived from the agent name
@@ -32,7 +32,7 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-# ── sys.path: allow importing agentfabric without pip install ─────────────────
+# ── sys.path: allow importing govagn without pip install ─────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "agent-sdk"))
 
 # Ensure we use the AI Studio path (no real Vertex credentials needed)
@@ -148,7 +148,7 @@ def _spans(fragment: str):
 
 @pytest.mark.integration
 class TestGoogleADKIntegration:
-    """30+ integration tests for the AgentFabric Google ADK instrumentation patch."""
+    """30+ integration tests for the Govagn Google ADK instrumentation patch."""
 
     # ── fixtures ──────────────────────────────────────────────────────────────
 
@@ -160,19 +160,19 @@ class TestGoogleADKIntegration:
     @pytest.fixture(scope="module", autouse=True)
     def _setup_tracer(self, gateway_exporter):
         """
-        Wire agentfabric to the in-memory exporter and apply the Google ADK patch
+        Wire govagn to the in-memory exporter and apply the Google ADK patch
         exactly once for the whole module, mirroring how instrument() is called
         once at application startup.
-        Spans are also forwarded to the AgentFabric dashboard in real-time.
+        Spans are also forwarded to the Govagn dashboard in real-time.
         """
-        import agentfabric  # noqa: PLC0415
+        import govagn  # noqa: PLC0415
 
         provider = TracerProvider()
         provider.add_span_processor(SimpleSpanProcessor(_mem_exporter))
         provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
-        agentfabric._tracer = provider.get_tracer("agentfabric", "1.0.0")
-        agentfabric._initialized = True
-        agentfabric._patch_google_adk()
+        govagn._tracer = provider.get_tracer("govagn", "1.0.0")
+        govagn._initialized = True
+        govagn._patch_google_adk()
 
     @pytest.fixture(autouse=True)
     def _clear_spans(self):
@@ -298,7 +298,7 @@ class TestGoogleADKIntegration:
             description="Designs microservices topologies for distributed systems",
         )
         _run(runner, session_id,
-             text="Design AgentFabric v2 to handle 100K spans/sec",
+             text="Design Govagn v2 to handle 100K spans/sec",
              llm_text="Collector → Kafka → Processor → ClickHouse. Scale by partition.")
 
         assert len(_spans("google_adk.runner.architecture_design_agent")) >= 1
@@ -679,7 +679,7 @@ class TestGoogleADKIntegration:
             runner, session_id,
             text=(
                 "Design a 30-60-90 day onboarding plan for a new backend engineer "
-                "joining the AgentFabric platform team."
+                "joining the Govagn platform team."
             ),
             llm_text=(
                 "Day 1-30: setup, codebase tour, first small PR. "
@@ -798,7 +798,7 @@ class TestGoogleADKIntegration:
         assert len(beta_spans) >= 1, "Expected span for agent_beta"
 
     def test_all_required_attributes_present(self):
-        """Every runner span must carry all four required AgentFabric attributes."""
+        """Every runner span must carry all four required Govagn attributes."""
         runner, session_id = _make_runner(
             agent_name="full_attribute_verifier",
             description="Verifies all required span attributes are present",

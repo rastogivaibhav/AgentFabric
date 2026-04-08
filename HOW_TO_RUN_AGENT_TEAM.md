@@ -1,4 +1,4 @@
-# How to Run the AgentFabric Agent Team
+﻿# How to Run the Govagn Agent Team
 
 **Quick start guide for orchestrating a team of Claude Sonnet agents to build Phase 1 with 90%+ coverage**
 
@@ -30,7 +30,7 @@
 Copy this section from `AGENT_TEAM_ORCHESTRATION_PROMPT.md`:
 
 ```markdown
-You are the Orchestrator for an AgentFabric development team consisting of:
+You are the Orchestrator for an Govagn development team consisting of:
 
 1. Developer Agent 1 (Backend/af-core)
 2. Developer Agent 2 (Collector/API Gateway)
@@ -54,7 +54,7 @@ Upload or reference these files (Claude can read them from the repo):
 - ARCHITECTURE_IMMUTABILITY.md
 - CRITICAL_ISSUES_BLOCKING_PRODUCTION.md
 - EXECUTION_ROADMAP.md
-- AGENTFABRIC_REVIEW.md
+- GOVAGN_REVIEW.md
 ```
 
 Tell Claude: `These are our North Star documents. Reference them for all decisions.`
@@ -64,7 +64,7 @@ Tell Claude: `These are our North Star documents. Reference them for all decisio
 Send this message:
 
 ```
-You are the Orchestrator for AgentFabric's Phase 1 delivery.
+You are the Orchestrator for Govagn's Phase 1 delivery.
 
 Your mission: Deliver v1.0.0 by 2025-07-15 with 90%+ code coverage.
 
@@ -86,9 +86,9 @@ The agent team will present a Sprint 1 plan. Review it:
 - What's the critical path?
 
 **Respond with:**
-- ✅ `APPROVED. Start execution immediately.`
-- ⚠️ `APPROVED WITH CONDITIONS: [list conditions]`
-- ❌ `REJECTED: [specific feedback]`
+- âœ… `APPROVED. Start execution immediately.`
+- âš ï¸ `APPROVED WITH CONDITIONS: [list conditions]`
+- âŒ `REJECTED: [specific feedback]`
 
 ### **Step 6: Monitor Weekly Progress**
 
@@ -117,7 +117,7 @@ Team, present your Sprint [N] Completion Report.
 
 Architect Agent, verify:
 1. All 7 Principles maintained in merged code
-2. Coverage ≥90% for assigned modules
+2. Coverage â‰¥90% for assigned modules
 3. All P0s resolved or mitigated
 4. No architectural deviations
 5. Ready for next sprint: YES/NO
@@ -131,23 +131,23 @@ Provide detailed sign-off.
 
 ```
 User: Kick off Phase 1. Present your Sprint 1 plan.
-       ↓
+       â†“
 Team: [Presents comprehensive Sprint 1 plan]
-       ↓
+       â†“
 Architect: [Validates against North Star docs]
-       ↓
+       â†“
 User: APPROVED / APPROVED WITH CONDITIONS / REJECTED
-       ↓
+       â†“
 Team: [Executes for 4 weeks]
-       ↓
+       â†“
 User: Weekly check-in
-       ↓
+       â†“
 Team: [Reports progress]
-       ↓
+       â†“
 Architect: [Verifies compliance]
-       ↓
+       â†“
 User: Continue / Fix blockers / Proceed to next sprint
-       ↓
+       â†“
 [REPEAT for Sprints 2, 3, 4]
 ```
 
@@ -213,7 +213,7 @@ User: Continue / Fix blockers / Proceed to next sprint
 **Team works on:**
 - Implementation (tight code review loops, <4h feedback time)
 - Testing as you go (not after)
-- Coverage measurement (must maintain ≥90%)
+- Coverage measurement (must maintain â‰¥90%)
 - Documentation (README, CHANGELOG)
 
 **You monitor:**
@@ -248,7 +248,7 @@ User: Continue / Fix blockers / Proceed to next sprint
 
 **Architect verifies:**
 - All 7 Principles maintained
-- Coverage ≥90% (actual numbers)
+- Coverage â‰¥90% (actual numbers)
 - All tests passing
 - P0s actually fixed
 - No technical debt introduced
@@ -265,23 +265,23 @@ User: Continue / Fix blockers / Proceed to next sprint
 
 ### **Good Signs (On Track)**
 
-✅ Team presents detailed, specific plans (not hand-wavy)
-✅ Coverage trending toward 90% week by week
-✅ P0s being fixed in parallel with features
-✅ All tests passing in CI/CD
-✅ No Principle violations detected
-✅ Blockers identified early and mitigated
-✅ Architect sign-off obtained weekly
+âœ… Team presents detailed, specific plans (not hand-wavy)
+âœ… Coverage trending toward 90% week by week
+âœ… P0s being fixed in parallel with features
+âœ… All tests passing in CI/CD
+âœ… No Principle violations detected
+âœ… Blockers identified early and mitigated
+âœ… Architect sign-off obtained weekly
 
 ### **Red Flags (Off Track)**
 
-❌ Plans are vague or missing details
-❌ Coverage declining or stagnating
-❌ P0s getting deferred
-❌ Flaky tests being ignored
-❌ Principle violations detected in code review
-❌ Blockers discovered late
-❌ Architect requesting rework multiple times
+âŒ Plans are vague or missing details
+âŒ Coverage declining or stagnating
+âŒ P0s getting deferred
+âŒ Flaky tests being ignored
+âŒ Principle violations detected in code review
+âŒ Blockers discovered late
+âŒ Architect requesting rework multiple times
 
 ---
 
@@ -341,7 +341,7 @@ Week 12: Live stream + WebSocket, 88% coverage
 Week 13: Sprint 4 planning, hardening + release prep
 Week 14: Bug fixes, performance tuning, security review
 Week 15: Final testing, documentation, monitoring setup
-Week 16: v1.0.0 release, 90% coverage achieved ✅
+Week 16: v1.0.0 release, 90% coverage achieved âœ…
 ```
 
 ---
@@ -411,3 +411,4 @@ Kick off Phase 1. Present your Sprint 1 plan to the Architect.
 ---
 
 **Last Updated**: 2025-03-13
+

@@ -1,4 +1,4 @@
-# Sprint Quick Start (Copy-Paste Ready)
+﻿# Sprint Quick Start (Copy-Paste Ready)
 **Use this file to quickly kick off each sprint. No manual editing needed.**
 
 ---
@@ -6,7 +6,7 @@
 ## SPRINT 1 KICKOFF (Copy and paste into Claude Sonnet 4.6)
 
 ```
-# AGENTFABRIC SPRINT 1 EXECUTOR
+# GOVAGN SPRINT 1 EXECUTOR
 
 ## CURRENT STATE (Baseline)
 
@@ -33,10 +33,10 @@ Blockers carried over: None
 - [ ] Fix all 5 P0 blockers
 - [ ] Establish test infrastructure
 - [ ] Set up CI/CD pipeline
-- [ ] Coverage: 0% → 60%
+- [ ] Coverage: 0% â†’ 60%
 
 ### Definition of Done (Must have ALL)
-- [ ] Coverage ≥60% (measured, not estimated)
+- [ ] Coverage â‰¥60% (measured, not estimated)
 - [ ] All tests passing (unit, integration, E2E)
 - [ ] Zero Principle violations
 - [ ] P0s fixed (all 5, or mitigated with docs)
@@ -65,15 +65,15 @@ Developers present Sprint 1 plan with:
 ### STEP 2: Review (1 hour)
 
 Architect reviews plan:
-- ✅ Approves → Proceed to execution
-- ⚠️ Approves with conditions → Fix before execution
-- ❌ Rejects → Return with feedback, iterate
+- âœ… Approves â†’ Proceed to execution
+- âš ï¸ Approves with conditions â†’ Fix before execution
+- âŒ Rejects â†’ Return with feedback, iterate
 
 ### STEP 3: Execute (4 weeks)
 
 - Daily async standup (Slack)
 - Friday metrics reports (coverage, P0s, blockers)
-- PRs: peer review → QA gate (90%+) → Architect check → merge
+- PRs: peer review â†’ QA gate (90%+) â†’ Architect check â†’ merge
 - All code merges to main
 - Staging deployment by week 4
 
@@ -85,9 +85,9 @@ Team presents completion report:
 - Architect sign-off
 
 **Architect decision**:
-- ✅ APPROVED → Proceed to Sprint 2
-- ⚠️ CONDITIONS → Fix and resubmit
-- ❌ REJECTED → Continue Sprint 1, resubmit
+- âœ… APPROVED â†’ Proceed to Sprint 2
+- âš ï¸ CONDITIONS â†’ Fix and resubmit
+- âŒ REJECTED â†’ Continue Sprint 1, resubmit
 
 ---
 
@@ -101,7 +101,7 @@ Team presents completion report:
 **Use this after Sprint 1 is complete and metrics are available.**
 
 ```
-# AGENTFABRIC SPRINT 2 EXECUTOR
+# GOVAGN SPRINT 2 EXECUTOR
 
 ## CURRENT STATE (From Sprint 1 Completion)
 
@@ -128,10 +128,10 @@ Blockers carried over: OIDC UI (deferred to Sprint 3)
 - [ ] Implement af-core fully (policy engine, audit, Kafka consumer)
 - [ ] Implement collector fully (OTLP, framework detection, PII scrubbing)
 - [ ] Implement API gateway fully (20 endpoints, WebSocket)
-- [ ] Coverage: 60% → 75%
+- [ ] Coverage: 60% â†’ 75%
 
 ### Definition of Done (Must have ALL)
-- [ ] Coverage ≥75% (measured, not estimated)
+- [ ] Coverage â‰¥75% (measured, not estimated)
 - [ ] All tests passing (unit, integration, E2E)
 - [ ] Zero Principle violations
 - [ ] af-core: 90%+ coverage
@@ -165,16 +165,16 @@ Developers present Sprint 2 plan with:
 ### STEP 2: Review (1 hour)
 
 Architect reviews against 7 Principles:
-- ✅ Approves → Execution
-- ⚠️ Conditions → Fix first
-- ❌ Rejects → Iterate
+- âœ… Approves â†’ Execution
+- âš ï¸ Conditions â†’ Fix first
+- âŒ Rejects â†’ Iterate
 
 ### STEP 3: Execute (4 weeks)
 
 Same process as Sprint 1:
 - Daily standup
 - Friday metrics
-- PR workflow: peer → QA → Architect → merge
+- PR workflow: peer â†’ QA â†’ Architect â†’ merge
 - Staging deployment by week 4
 
 ### STEP 4: Sprint Review (End of week 4)
@@ -197,7 +197,7 @@ Completion report must show:
 **Use this after Sprint 2 is complete.**
 
 ```
-# AGENTFABRIC SPRINT 3 EXECUTOR
+# GOVAGN SPRINT 3 EXECUTOR
 
 ## CURRENT STATE (From Sprint 2 Completion)
 
@@ -223,12 +223,12 @@ Blockers carried over: OIDC UI implementation
 ### Primary Goals
 - [ ] Implement all 7 portal pages (Dashboard, Traces, TraceDetail, Live, Agents, Cost, Environments)
 - [ ] Implement OIDC login UI
-- [ ] E2E tests (agent → collector → portal)
+- [ ] E2E tests (agent â†’ collector â†’ portal)
 - [ ] Multi-tenancy verification and security tests
-- [ ] Coverage: 75% → 85%
+- [ ] Coverage: 75% â†’ 85%
 
 ### Definition of Done (Must have ALL)
-- [ ] Coverage ≥85% (measured, not estimated)
+- [ ] Coverage â‰¥85% (measured, not estimated)
 - [ ] Portal pages: 7/7 complete and functional
 - [ ] Dashboard: KPIs, framework breakdown, token usage
 - [ ] Traces: pagination, filtering, clickable rows
@@ -238,7 +238,7 @@ Blockers carried over: OIDC UI implementation
 - [ ] Cost: aggregate stats, framework breakdown, share progress bars
 - [ ] Environments: collector list, dynamic environment list
 - [ ] OIDC: login page, token generation, logout
-- [ ] E2E tests: agent → collector → portal flow verified
+- [ ] E2E tests: agent â†’ collector â†’ portal flow verified
 - [ ] Multi-tenancy: isolation verified in 5+ security tests
 - [ ] WebSocket: live stream working, reconnection tested
 - [ ] Deployment: Staging fully tested, production ready
@@ -267,9 +267,9 @@ Developers present Sprint 3 plan with:
 ### STEP 2: Review (1 hour)
 
 Architect reviews:
-- ✅ Approves → Execution
-- ⚠️ Conditions → Fix first
-- ❌ Rejects → Iterate
+- âœ… Approves â†’ Execution
+- âš ï¸ Conditions â†’ Fix first
+- âŒ Rejects â†’ Iterate
 
 ### STEP 3: Execute (4 weeks)
 
@@ -301,7 +301,7 @@ Completion report must show:
 **Use this after Sprint 3 is complete.**
 
 ```
-# AGENTFABRIC SPRINT 4 EXECUTOR
+# GOVAGN SPRINT 4 EXECUTOR
 
 ## CURRENT STATE (From Sprint 3 Completion)
 
@@ -322,7 +322,7 @@ P0 Status:
 Last completed: Sprint 3 (all 7 portal pages, OIDC, E2E tests)
 Blockers carried over: None
 
-## SPRINT 4 SCOPE (4 weeks) — FINAL SPRINT TO v1.0.0
+## SPRINT 4 SCOPE (4 weeks) â€” FINAL SPRINT TO v1.0.0
 
 ### Primary Goals
 - [ ] Bug fixes from Sprints 1-3
@@ -332,15 +332,15 @@ Blockers carried over: None
 - [ ] Complete monitoring dashboards (Prometheus + Grafana)
 - [ ] Complete documentation and runbooks
 - [ ] Release v1.0.0 to production
-- [ ] Coverage: 85% → 90%+
+- [ ] Coverage: 85% â†’ 90%+
 
 ### Definition of Done (Must have ALL)
-- [ ] Coverage ≥90% (measured, not estimated)
+- [ ] Coverage â‰¥90% (measured, not estimated)
 - [ ] All tests passing
 - [ ] Zero Principle violations
 - [ ] Zero known P1/P2 bugs (or documented with roadmap)
 - [ ] Performance: p99 latency <100ms for all critical paths
-- [ ] Performance: throughput ≥10K spans/sec
+- [ ] Performance: throughput â‰¥10K spans/sec
 - [ ] Security: mTLS enabled and tested
 - [ ] Security: JWT signature verification working
 - [ ] Security: Multi-tenancy isolation verified in production config
@@ -382,9 +382,9 @@ Developers present Sprint 4 plan with:
 ### STEP 2: Review (1 hour)
 
 Architect reviews:
-- ✅ Approves → Execution
-- ⚠️ Conditions → Fix first
-- ❌ Rejects → Iterate
+- âœ… Approves â†’ Execution
+- âš ï¸ Conditions â†’ Fix first
+- âŒ Rejects â†’ Iterate
 
 ### STEP 3: Execute (4 weeks)
 
@@ -399,7 +399,7 @@ Same process as Sprints 1-3:
 Completion report must show:
 - Coverage: 90%+
 - All bugs fixed
-- Performance: p99 <100ms, throughput ≥10K/sec
+- Performance: p99 <100ms, throughput â‰¥10K/sec
 - Security: mTLS, JWT, RLS verified
 - Helm charts: production-ready
 - Monitoring: dashboards live
@@ -412,9 +412,9 @@ Completion report must show:
 **FINAL GATE: v1.0.0 Release Approval**
 
 If ALL criteria met:
-- ✅ APPROVED → v1.0.0 released to production
-- ⚠️ CONDITIONS → Fix and rerelease
-- ❌ REJECTED → Hotfix and resubmit
+- âœ… APPROVED â†’ v1.0.0 released to production
+- âš ï¸ CONDITIONS â†’ Fix and rerelease
+- âŒ REJECTED â†’ Hotfix and resubmit
 
 ---
 
@@ -460,4 +460,5 @@ Each sprint prompt is self-contained, knows the current state, and guides execut
 **Total time per sprint kickoff: 5 minutes**
 
 Let's ship v1.0.0.
+
 

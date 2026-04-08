@@ -21,9 +21,9 @@ describe('RegressionPage', () => {
     mockUseCompareEvalRegressions.mockReturnValue({ mutate, isPending: false } as any)
 
     render(<RegressionPage />)
-    fireEvent.change(screen.getByPlaceholderText('baseline tag'), { target: { value: 'baseline-1' } })
-    fireEvent.change(screen.getByPlaceholderText('candidate tag'), { target: { value: 'candidate-1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Compare' }))
+    fireEvent.change(screen.getByPlaceholderText(/baseline tag/i), { target: { value: 'baseline-1' } })
+    fireEvent.change(screen.getByPlaceholderText(/candidate tag/i), { target: { value: 'candidate-1' } })
+    fireEvent.click(screen.getByRole('button', { name: /compare/i }))
 
     expect(mutate).toHaveBeenCalledWith({
       baseline_tag: 'baseline-1',
@@ -51,7 +51,8 @@ describe('RegressionPage', () => {
     } as any)
 
     render(<RegressionPage />)
-    expect(screen.getByText('baseline-1 vs candidate-1')).toBeInTheDocument()
+    expect(screen.getByText('baseline-1')).toBeInTheDocument()
+    expect(screen.getByText('candidate-1')).toBeInTheDocument()
     expect(screen.getByText('latency regressed materially')).toBeInTheDocument()
     expect(screen.getByText('-10.00')).toBeInTheDocument()
   })

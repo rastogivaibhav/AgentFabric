@@ -1,12 +1,12 @@
 """
-Integration tests for AgentFabric SDK — CrewAI instrumentation.
+Integration tests for Govagn SDK — CrewAI instrumentation.
 
 These tests exercise the REAL CrewAI SDK (crewai package must be installed).
 LLM HTTP calls are intercepted at the OpenAICompletion layer via unittest.mock.patch
 so no network access or real API keys are required beyond a placeholder value.
 
 What is verified:
-  - AgentFabric patches crewai.Agent.execute_task correctly
+  - Govagn patches crewai.Agent.execute_task correctly
   - Spans are emitted with the correct semantic attributes for every agent role
   - Span names are normalised (lowercase, spaces → underscores)
   - Task description hashes match SHA-256[:16] of the raw description string
@@ -32,7 +32,7 @@ from unittest.mock import patch
 
 import pytest
 
-# ── sys.path: allow importing agentfabric without pip install ─────────────────
+# ── sys.path: allow importing govagn without pip install ─────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "agent-sdk"))
 
 # Provide a dummy API key so the crewai bootstrap does not abort
@@ -120,7 +120,7 @@ def _spans(fragment: str):
 
 @pytest.mark.integration
 class TestCrewAIIntegration:
-    """30+ integration tests for the AgentFabric CrewAI instrumentation patch."""
+    """30+ integration tests for the Govagn CrewAI instrumentation patch."""
 
     # ── fixtures ──────────────────────────────────────────────────────────────
 
@@ -132,13 +132,13 @@ class TestCrewAIIntegration:
     @pytest.fixture(scope="module", autouse=True)
     def _setup_tracer(self, gateway_exporter):
         """
-        Wire agentfabric to the in-memory exporter and apply the CrewAI patch
+        Wire govagn to the in-memory exporter and apply the CrewAI patch
         exactly once for the whole module.  The patch is NOT restored so that
         all tests in this module share a single patched Agent.execute_task,
         mirroring real application behaviour where instrument() is called once.
-        Spans are also forwarded to the AgentFabric dashboard in real-time.
+        Spans are also forwarded to the Govagn dashboard in real-time.
         """
-        import agentfabric  # noqa: PLC0415
+        import govagn  # noqa: PLC0415
         import crewai  # noqa: PLC0415
 
         provider = TracerProvider()
@@ -146,13 +146,13 @@ class TestCrewAIIntegration:
         provider.add_span_processor(SimpleSpanProcessor(gateway_exporter))
         # Get tracer directly from the local provider to avoid the global
         # TracerProvider override warning emitted by trace.set_tracer_provider().
-        agentfabric._tracer = provider.get_tracer("agentfabric", "1.0.0")
-        agentfabric._initialized = True
+        govagn._tracer = provider.get_tracer("govagn", "1.0.0")
+        govagn._initialized = True
 
         if not hasattr(crewai.Agent, "execute_task"):
             pytest.skip("crewai.Agent.execute_task not present in this crewai version")
 
-        agentfabric._patch_crewai(crewai)
+        govagn._patch_crewai(crewai)
 
     @pytest.fixture(autouse=True)
     def _clear_spans(self):
@@ -202,14 +202,14 @@ class TestCrewAIIntegration:
         """Competitive Intelligence Specialist comparing AI observability platforms emits a span."""
         crew, response = _make_crew(
             role="Competitive Intelligence Specialist",
-            goal="Benchmark AgentFabric against competing AI observability platforms",
+            goal="Benchmark Govagn against competing AI observability platforms",
             backstory=(
                 "You track product capabilities and positioning across the "
                 "AI observability and governance space, including Arize, Langfuse, "
                 "Helicone, and Datadog AI."
             ),
             task_desc=(
-                "Compare AgentFabric with three competing platforms on the "
+                "Compare Govagn with three competing platforms on the "
                 "following dimensions: data latency, framework support breadth, "
                 "PII scrubbing, and pricing model."
             ),
@@ -218,7 +218,7 @@ class TestCrewAIIntegration:
                 "and an overall recommendation."
             ),
             llm_response=(
-                "AgentFabric leads on framework breadth and PII scrubbing. "
+                "Govagn leads on framework breadth and PII scrubbing. "
                 "Langfuse offers lower entry-level pricing. Arize excels at "
                 "model monitoring. Helicone is simpler but less extensible."
             ),
@@ -316,7 +316,7 @@ class TestCrewAIIntegration:
             ),
             llm_response=(
                 "## POST /v1/traces\n\nSends a batch of OTLP spans to the "
-                "AgentFabric collector.\n\n**Headers**: `x-af-api-key` (required)."
+                "Govagn collector.\n\n**Headers**: `x-af-api-key` (required)."
             ),
         )
         with patch(_MOCK_TARGET, return_value=response):
@@ -368,7 +368,7 @@ class TestCrewAIIntegration:
             goal="Resolve enterprise customer API integration issues quickly and accurately",
             backstory=(
                 "You are a Tier-2 support engineer who handles escalations from "
-                "enterprise customers integrating with the AgentFabric collector "
+                "enterprise customers integrating with the Govagn collector "
                 "and API gateway."
             ),
             task_desc=(
@@ -441,7 +441,7 @@ class TestCrewAIIntegration:
                 "rollout strategies, and incident response."
             ),
             task_desc=(
-                "Design a blue-green deployment plan for the AgentFabric API "
+                "Design a blue-green deployment plan for the Govagn API "
                 "gateway (Go, Kubernetes). The plan must achieve: zero dropped "
                 "requests during cutover, automated rollback on error-rate spike, "
                 "and a complete cutover in under 5 minutes."
@@ -476,7 +476,7 @@ class TestCrewAIIntegration:
                 "before root-cause analysis."
             ),
             task_desc=(
-                "The AgentFabric API gateway is returning HTTP 503 for 60% of "
+                "The Govagn API gateway is returning HTTP 503 for 60% of "
                 "requests. Symptoms: Redis connection pool exhausted, collector "
                 "queue depth at 98%. Outline the immediate mitigation steps, "
                 "communication plan, and post-incident review scope."
@@ -801,7 +801,7 @@ class TestCrewAIIntegration:
 
             collector_agent = crewai.Agent(
                 role="Data Collector",
-                goal="Gather raw telemetry from the AgentFabric collector API",
+                goal="Gather raw telemetry from the Govagn collector API",
                 backstory="Specialist in data ingestion pipelines and OTLP semantics.",
                 llm=llm,
                 allow_delegation=False,
@@ -1256,7 +1256,7 @@ class TestCrewAIIntegration:
                 "event-driven architectures using Kafka and ClickHouse."
             ),
             task_desc=(
-                "Design the microservices topology for AgentFabric v2, which must "
+                "Design the microservices topology for Govagn v2, which must "
                 "handle 100K spans/second at p99 < 50ms ingest latency. Include: "
                 "service boundaries, data flows, Kafka topic structure, and "
                 "horizontal scaling strategy."
@@ -1326,7 +1326,7 @@ class TestCrewAIIntegration:
             tech_task = crewai.Task(
                 description=(
                     "Write the technical setup guide for a new engineer joining the "
-                    "AgentFabric platform team. Cover: dev environment setup, "
+                    "Govagn platform team. Cover: dev environment setup, "
                     "Docker Compose startup, running tests, and PR workflow."
                 ),
                 expected_output="A step-by-step technical setup guide in markdown.",
@@ -1362,7 +1362,7 @@ class TestCrewAIIntegration:
                 "reserved-instance strategy, and architectural refactoring."
             ),
             task_desc=(
-                "Analyse the following monthly AWS cost breakdown for AgentFabric: "
+                "Analyse the following monthly AWS cost breakdown for Govagn: "
                 "EC2 (Kubernetes nodes): $12,400, RDS PostgreSQL: $3,200, "
                 "ElastiCache Redis: $1,800, MSK Kafka: $4,100, S3: $620. "
                 "Identify the top three savings opportunities and estimate monthly "

@@ -51,8 +51,8 @@ func NewCA() (*CA, error) {
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			Organization: []string{"AgentFabric NetProxy"},
-			CommonName:   "AgentFabric NetProxy CA",
+			Organization: []string{"Govagn NetProxy"},
+			CommonName:   "Govagn NetProxy CA",
 		},
 		NotBefore:             time.Now().Add(-time.Minute),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),

@@ -1,5 +1,5 @@
 """
-Tests for AgentFabric SDK auto-instrumentation patching.
+Tests for Govagn SDK auto-instrumentation patching.
 
 Each framework patch function replaces a key method/function with a traced
 wrapper that emits OTEL spans carrying the correct semantic attributes.
@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentfabric import Attrs
+from govagn import Attrs
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ class TestPatchCrewAI:
         """execute_task must be a different callable after patching."""
         mod, Agent, original = self._make_crewai_module()
         with patch.dict(sys.modules, {"crewai": mod}):
-            from agentfabric import _patch_crewai
+            from govagn import _patch_crewai
             _patch_crewai(mod)
         assert Agent.execute_task is not original
 
@@ -79,9 +79,9 @@ class TestPatchCrewAI:
         mod, Agent, original = self._make_crewai_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"crewai": mod}):
-            from agentfabric import _patch_crewai
+            from govagn import _patch_crewai
             _patch_crewai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_agent = Agent()
             fake_task = MagicMock()
             fake_task.description = "Do something"
@@ -94,9 +94,9 @@ class TestPatchCrewAI:
         original.return_value = "my_result"
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"crewai": mod}):
-            from agentfabric import _patch_crewai
+            from govagn import _patch_crewai
             _patch_crewai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_agent = Agent()
             fake_task = MagicMock()
             fake_task.description = None
@@ -110,9 +110,9 @@ class TestPatchCrewAI:
         mod, Agent, original = self._make_crewai_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"crewai": mod}):
-            from agentfabric import _patch_crewai
+            from govagn import _patch_crewai
             _patch_crewai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_agent = Agent()
             fake_agent.role = "Data Analyst"
             fake_task = MagicMock()
@@ -126,9 +126,9 @@ class TestPatchCrewAI:
         mod, Agent, original = self._make_crewai_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"crewai": mod}):
-            from agentfabric import _patch_crewai
+            from govagn import _patch_crewai
             _patch_crewai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_agent = Agent()
             fake_task = MagicMock()
             fake_task.description = None
@@ -143,9 +143,9 @@ class TestPatchCrewAI:
         tracer, span = _make_tracer()
         description = "Analyse confidential Q4 revenue data"
         with patch.dict(sys.modules, {"crewai": mod}):
-            from agentfabric import _patch_crewai
+            from govagn import _patch_crewai
             _patch_crewai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_agent = Agent()
             fake_task = MagicMock()
             fake_task.description = description
@@ -161,9 +161,9 @@ class TestPatchCrewAI:
         original.side_effect = RuntimeError("crewai task failed")
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"crewai": mod}):
-            from agentfabric import _patch_crewai
+            from govagn import _patch_crewai
             _patch_crewai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_agent = Agent()
             fake_task = MagicMock()
             fake_task.description = None
@@ -177,9 +177,9 @@ class TestPatchCrewAI:
         original.side_effect = ValueError("boom")
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"crewai": mod}):
-            from agentfabric import _patch_crewai
+            from govagn import _patch_crewai
             _patch_crewai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_agent = Agent()
             fake_task = MagicMock()
             fake_task.description = None
@@ -221,7 +221,7 @@ class TestPatchLangGraph:
         """StateGraph.compile is wrapped after patching."""
         lg, lg_graph, StateGraph, orig_compile, _, _ = self._make_langgraph_module()
         with patch.dict(sys.modules, {"langgraph": lg, "langgraph.graph": lg_graph}):
-            from agentfabric import _patch_langgraph
+            from govagn import _patch_langgraph
             _patch_langgraph(lg)
         assert StateGraph.compile is not orig_compile
 
@@ -229,7 +229,7 @@ class TestPatchLangGraph:
         """The compile wrapper must call the original compile and return the graph."""
         lg, lg_graph, StateGraph, orig_compile, compiled, _ = self._make_langgraph_module()
         with patch.dict(sys.modules, {"langgraph": lg, "langgraph.graph": lg_graph}):
-            from agentfabric import _patch_langgraph
+            from govagn import _patch_langgraph
             _patch_langgraph(lg)
         fake_sg = MagicMock()
         result = StateGraph.compile(fake_sg)
@@ -243,9 +243,9 @@ class TestPatchLangGraph:
         lg, lg_graph, StateGraph, orig_compile, compiled, orig_invoke = self._make_langgraph_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"langgraph": lg, "langgraph.graph": lg_graph}):
-            from agentfabric import _patch_langgraph
+            from govagn import _patch_langgraph
             _patch_langgraph(lg)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_sg = MagicMock()
             graph = StateGraph.compile(fake_sg)
             graph.invoke({"messages": []})
@@ -258,9 +258,9 @@ class TestPatchLangGraph:
         lg, lg_graph, StateGraph, _, _, _ = self._make_langgraph_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"langgraph": lg, "langgraph.graph": lg_graph}):
-            from agentfabric import _patch_langgraph
+            from govagn import _patch_langgraph
             _patch_langgraph(lg)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_sg = MagicMock()
             graph = StateGraph.compile(fake_sg)
             graph.invoke({"state": "x"})
@@ -273,9 +273,9 @@ class TestPatchLangGraph:
         lg, lg_graph, StateGraph, _, _, orig_invoke = self._make_langgraph_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"langgraph": lg, "langgraph.graph": lg_graph}):
-            from agentfabric import _patch_langgraph
+            from govagn import _patch_langgraph
             _patch_langgraph(lg)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             fake_sg = MagicMock()
             graph = StateGraph.compile(fake_sg)
             graph.invoke({"key": "value"}, config=None)
@@ -288,10 +288,10 @@ class TestPatchLangGraph:
         orig_compile.side_effect = lambda *a, **kw: MagicMock(invoke=MagicMock(return_value={}))
         tracer, _ = _make_tracer()
         with patch.dict(sys.modules, {"langgraph": lg, "langgraph.graph": lg_graph}):
-            from agentfabric import _patch_langgraph
+            from govagn import _patch_langgraph
             _patch_langgraph(lg)
         graph_ids = []
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             for _ in range(2):
                 fake_sg = MagicMock()
                 g = StateGraph.compile(fake_sg)
@@ -325,7 +325,7 @@ class TestPatchOpenAI:
     def test_create_is_replaced(self):
         """chat.completions.create must be a different callable after patching."""
         mod, original = self._make_openai_module()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
         assert mod.chat.completions.create is not original
 
@@ -335,9 +335,9 @@ class TestPatchOpenAI:
         """Traced create must delegate to the original."""
         mod, original = self._make_openai_module()
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             mod.chat.completions.create(model="gpt-4o", messages=[])
         original.assert_called_once()
 
@@ -347,9 +347,9 @@ class TestPatchOpenAI:
         sentinel = object()
         original.return_value = sentinel
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             result = mod.chat.completions.create(model="gpt-4o", messages=[])
         assert result is sentinel
 
@@ -359,9 +359,9 @@ class TestPatchOpenAI:
         """gen_ai.request.model must match the model kwarg."""
         mod, _ = self._make_openai_module()
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             mod.chat.completions.create(model="gpt-4o-mini", messages=[])
         attrs = tracer.start_as_current_span.call_args[1]["attributes"]
         assert attrs[Attrs.GEN_AI_REQUEST_MODEL] == "gpt-4o-mini"
@@ -370,9 +370,9 @@ class TestPatchOpenAI:
         """gen_ai.system must be 'openai' (Principle 5 — framework detection)."""
         mod, _ = self._make_openai_module()
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             mod.chat.completions.create(model="gpt-4", messages=[])
         attrs = tracer.start_as_current_span.call_args[1]["attributes"]
         assert attrs[Attrs.GEN_AI_SYSTEM] == "openai"
@@ -381,9 +381,9 @@ class TestPatchOpenAI:
         """Input and output tokens from the response must be recorded."""
         mod, _ = self._make_openai_module(prompt_tokens=120, completion_tokens=60)
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             mod.chat.completions.create(model="gpt-4o", messages=[])
         span.set_attribute.assert_any_call(Attrs.GEN_AI_INPUT_TOKENS, 120)
         span.set_attribute.assert_any_call(Attrs.GEN_AI_OUTPUT_TOKENS, 60)
@@ -392,9 +392,9 @@ class TestPatchOpenAI:
         """Finish reason from response choices must be set on the span."""
         mod, _ = self._make_openai_module(finish_reason="length")
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             mod.chat.completions.create(model="gpt-4o", messages=[])
         span.set_attribute.assert_any_call(Attrs.GEN_AI_FINISH_REASONS, "['length']")
 
@@ -405,9 +405,9 @@ class TestPatchOpenAI:
         mod, original = self._make_openai_module()
         original.side_effect = ConnectionError("OpenAI unreachable")
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             with pytest.raises(ConnectionError, match="OpenAI unreachable"):
                 mod.chat.completions.create(model="gpt-4o", messages=[])
 
@@ -417,9 +417,9 @@ class TestPatchOpenAI:
         mod, original = self._make_openai_module()
         original.side_effect = TimeoutError("timeout")
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             with pytest.raises(TimeoutError):
                 mod.chat.completions.create(model="gpt-4o", messages=[])
         span.set_status.assert_called()
@@ -429,11 +429,11 @@ class TestPatchOpenAI:
         """Calling _patch_openai twice must not nest the wrapper (no double-counting)."""
         mod, original = self._make_openai_module()
         tracer, span = _make_tracer()
-        from agentfabric import _patch_openai
+        from govagn import _patch_openai
         _patch_openai(mod)
         first_patched = mod.chat.completions.create
         _patch_openai(mod)  # second call patches the already-patched function
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             mod.chat.completions.create(model="gpt-4o", messages=[])
         # The original must still be called exactly once regardless of double-patch
         original.assert_called_once()
@@ -486,7 +486,7 @@ class TestPatchAnthropic:
         """Messages.create must be replaced after patching."""
         mod, _, Messages, original = self._make_anthropic_module()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
         assert Messages.create is not original
 
@@ -497,9 +497,9 @@ class TestPatchAnthropic:
         mod, MockAnthropic, Messages, original = self._make_anthropic_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             instance.create(model="claude-opus-4-6", messages=[], max_tokens=1024)
         original.assert_called_once()
@@ -511,9 +511,9 @@ class TestPatchAnthropic:
         mod, _, Messages, _ = self._make_anthropic_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             instance.create(model="claude-sonnet-4-6", messages=[], max_tokens=512)
         attrs = tracer.start_as_current_span.call_args[1]["attributes"]
@@ -524,9 +524,9 @@ class TestPatchAnthropic:
         mod, _, Messages, _ = self._make_anthropic_module()
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             instance.create(model="claude-haiku-4-5-20251001", messages=[], max_tokens=256)
         attrs = tracer.start_as_current_span.call_args[1]["attributes"]
@@ -537,9 +537,9 @@ class TestPatchAnthropic:
         mod, _, Messages, _ = self._make_anthropic_module(input_tokens=300, output_tokens=90)
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             instance.create(model="claude-opus-4-6", messages=[], max_tokens=2048)
         span.set_attribute.assert_any_call(Attrs.GEN_AI_INPUT_TOKENS, 300)
@@ -550,9 +550,9 @@ class TestPatchAnthropic:
         mod, _, Messages, _ = self._make_anthropic_module(cache_creation=450)
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             instance.create(model="claude-opus-4-6", messages=[], max_tokens=1024)
         span.set_attribute.assert_any_call(Attrs.ANTHROPIC_CACHE_CREATION, 450)
@@ -562,9 +562,9 @@ class TestPatchAnthropic:
         mod, _, Messages, _ = self._make_anthropic_module(cache_read=200)
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             instance.create(model="claude-opus-4-6", messages=[], max_tokens=1024)
         span.set_attribute.assert_any_call(Attrs.ANTHROPIC_CACHE_READ, 200)
@@ -574,9 +574,9 @@ class TestPatchAnthropic:
         mod, _, Messages, _ = self._make_anthropic_module(stop_reason="max_tokens")
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             instance.create(model="claude-sonnet-4-6", messages=[], max_tokens=100)
         span.set_attribute.assert_any_call(Attrs.GEN_AI_FINISH_REASONS, "['max_tokens']")
@@ -589,9 +589,9 @@ class TestPatchAnthropic:
         original.side_effect = TimeoutError("Anthropic API timeout")
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             with pytest.raises(TimeoutError, match="Anthropic API timeout"):
                 instance.create(model="claude-opus-4-6", messages=[], max_tokens=1024)
@@ -603,9 +603,9 @@ class TestPatchAnthropic:
         original.side_effect = ConnectionError("network error")
         tracer, span = _make_tracer()
         with patch.dict(sys.modules, {"anthropic": mod}):
-            from agentfabric import _patch_anthropic
+            from govagn import _patch_anthropic
             _patch_anthropic(mod)
-        with patch("agentfabric.get_tracer", return_value=tracer):
+        with patch("govagn.get_tracer", return_value=tracer):
             instance = Messages()
             with pytest.raises(ConnectionError):
                 instance.create(model="claude-opus-4-6", messages=[], max_tokens=1024)
@@ -620,22 +620,22 @@ class TestTryInstrumentGuards:
 
     def test_crewai_absent_does_not_raise(self):
         with patch.dict(sys.modules, {"crewai": None}):
-            from agentfabric import _try_instrument_crewai
+            from govagn import _try_instrument_crewai
             _try_instrument_crewai()  # must not raise
 
     def test_langgraph_absent_does_not_raise(self):
         with patch.dict(sys.modules, {"langgraph": None}):
-            from agentfabric import _try_instrument_langgraph
+            from govagn import _try_instrument_langgraph
             _try_instrument_langgraph()
 
     def test_openai_absent_does_not_raise(self):
         with patch.dict(sys.modules, {"openai": None}):
-            from agentfabric import _try_instrument_openai
+            from govagn import _try_instrument_openai
             _try_instrument_openai()
 
     def test_anthropic_absent_does_not_raise(self):
         with patch.dict(sys.modules, {"anthropic": None}):
-            from agentfabric import _try_instrument_anthropic
+            from govagn import _try_instrument_anthropic
             _try_instrument_anthropic()
 
     def test_crewai_import_error_logged_not_raised(self):
@@ -643,7 +643,7 @@ class TestTryInstrumentGuards:
         # Remove crewai from modules to trigger ImportError path in _try_instrument_crewai
         saved = sys.modules.pop("crewai", None)
         try:
-            from agentfabric import _try_instrument_crewai
+            from govagn import _try_instrument_crewai
             _try_instrument_crewai()  # must not raise even with real ImportError
         finally:
             if saved is not None:

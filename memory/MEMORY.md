@@ -1,7 +1,7 @@
-# AgentFabric — Project Memory
+# Govagn — Project Memory
 
 ## What This Is
-**AgentFabric** — enterprise AI agent observability & governance platform.
+**Govagn** — enterprise AI agent observability & governance platform.
 Observes CrewAI, LangGraph, OpenAI Agents, Google ADK, and Claude Agents via OpenTelemetry.
 
 ## Tech Stack
@@ -43,7 +43,7 @@ docker-compose.yml Full dev stack (all 12 services including Kafka, ClickHouse, 
 - scripts/setup-local.sh does `cd deploy/docker` then runs docker-compose from there
 
 ## Refactoring Done (2026-03-10)
-1. Moved `AgentFabric_Production_Code/agentfabric-src/*` to repo root — eliminated unnecessary nesting
+1. Moved `Govagn_Production_Code/govagn-src/*` to repo root — eliminated unnecessary nesting
 2. Deleted all root-level loose duplicate files (App.jsx, main.rs, main.go, pii.go, etc.)
 3. Deleted `portal/src/App.jsx` (monolithic old version; App.tsx + separate pages is the new architecture)
 4. Deleted old collector root files (main.go, config.go, pii.go, policy.go, detector.go) — dead code relative to Dockerfile
@@ -57,8 +57,8 @@ docker-compose.yml Full dev stack (all 12 services including Kafka, ClickHouse, 
 **Status**: ✅ COMPLETE — 21/21 tests passing, 175/175 integration tests passing
 
 **Files Created**:
-- `agent-sdk/agentfabric/auto_instrument.py` — AutoInstrumentor class, reads env vars, initializes tracer
-- `agent-sdk/agentfabric/sitecustomize.py` — Boot script auto-called by Python at startup
+- `agent-sdk/govagn/auto_instrument.py` — AutoInstrumentor class, reads env vars, initializes tracer
+- `agent-sdk/govagn/sitecustomize.py` — Boot script auto-called by Python at startup
 - `agent-sdk/install_hooks.py` — SitecustomizeInstaller class, handles install/merge/uninstall
 - `agent-sdk/tests/test_auto_instrument.py` — 21 comprehensive unit tests
 - `agent-sdk/setup.py` — Setuptools post-install hook integration
@@ -67,24 +67,24 @@ docker-compose.yml Full dev stack (all 12 services including Kafka, ClickHouse, 
 - `agent-sdk/pyproject.toml` — Changed build backend to `setuptools.build_meta`
 
 **Environment Variables Supported**:
-- `AF_ENDPOINT` — OTLP HTTP endpoint (default: http://localhost:4318)
-- `AF_TENANT_ID` — Tenant identifier (default: "default")
-- `AF_AUTO_INSTRUMENT` — Set to "0" to disable (default: enabled)
-- `AF_SERVICE_NAME` — OTel service.name (default: auto-detected from sys.argv[0])
-- `AF_API_KEY` — Optional API key for authentication
-- `AF_INSECURE` — Set to "1" for insecure gRPC (default: true for localhost)
+- `GV_ENDPOINT` — OTLP HTTP endpoint (default: http://localhost:4318)
+- `GV_TENANT_ID` — Tenant identifier (default: "default")
+- `GV_AUTO_INSTRUMENT` — Set to "0" to disable (default: enabled)
+- `GV_SERVICE_NAME` — OTel service.name (default: auto-detected from sys.argv[0])
+- `GV_API_KEY` — Optional API key for authentication
+- `GV_INSECURE` — Set to "1" for insecure gRPC (default: true for localhost)
 
 **How it works**:
-1. `pip install agentfabric` runs setup.py post-install hook
+1. `pip install govagn` runs setup.py post-install hook
 2. Hook copies sitecustomize.py into site-packages (merges with existing content)
 3. Next `python any_script.py` imports sitecustomize.py automatically
 4. AutoInstrumentor reads env vars, initializes tracer, patches all 5 frameworks
 5. User code runs fully instrumented, zero changes needed
 
 **Definition of Done**: ✅ All met
-- [x] `pip install agentfabric` installs sitecustomize.py into site-packages
-- [x] `python test.py` (with openai imported, zero agentfabric lines) → span ready to be recorded
-- [x] `AF_AUTO_INSTRUMENT=0 python test.py` → no instrumentation (opt-out works)
+- [x] `pip install govagn` installs sitecustomize.py into site-packages
+- [x] `python test.py` (with openai imported, zero govagn lines) → span ready to be recorded
+- [x] `GV_AUTO_INSTRUMENT=0 python test.py` → no instrumentation (opt-out works)
 - [x] Existing sitecustomize.py is preserved (merge, not overwrite)
 - [x] All test_auto_instrument.py tests pass (21/21)
 
@@ -94,7 +94,7 @@ docker-compose.yml Full dev stack (all 12 services including Kafka, ClickHouse, 
 **Still missing before GA**: full release smoke confidence, broader automated test coverage across store/collector paths, pricing governance depth (effective dates/priority/audit/preview), stronger policy/security controls, mTLS maturity in collector deployments, and tighter operational validation in CI/staging.
 
 ## Current Product Shape
-AgentFabric is now best described as an enterprise AI observability and control platform:
+Govagn is now best described as an enterprise AI observability and control platform:
 - observe agent and LLM activity
 - control traffic through proxy/netproxy and virtual keys
 - track tokens, budgets, and configurable pricing

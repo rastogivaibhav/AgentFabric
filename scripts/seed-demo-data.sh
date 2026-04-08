@@ -7,6 +7,6 @@ ENV_FILE="${REPO_ROOT}/.env.local"
 
 cd "${REPO_ROOT}"
 ${COMPOSE} --env-file "${ENV_FILE}" exec -T postgres \
-  psql -U fabric -d agentfabric -f /seed/demo_seed.sql >/dev/null
+  psql -U fabric -d govagn -f /seed/demo_seed.sql >/dev/null
 
 echo "Demo pricing and policy rules seeded."

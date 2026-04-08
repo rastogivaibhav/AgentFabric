@@ -1,0 +1,88 @@
+# Govagn: Master Specification & Implementation Plan
+
+This document serves as the detailed spec sheet and roadmap for making the application production-ready and pilot-ready. It addresses the application renaming to **Govagn**, critical blockers, the testing void, and network-level deployment controls.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **New Name Confirmed:** The application is now **Govagn**.
+
+> [!CAUTION]
+> Please review this final specification. Once you approve, I will begin the full migration and development cycle.
+
+---
+
+## Part 1: Govagn Renaming Strategy
+
+"Govagn" will replace all 150+ occurrences of "AgentFabric" across the repository. The renaming process will be executed seamlessly to prevent breaking the build pipeline.
+
+### Execution Scope
+1. **Documentation Updates**: Search and replace across `README.md`, `ARCHITECTURE.md`, `PILOT_PLAYBOOK.md`, `EXECUTION_PLAN.md`, and all other markdown files.
+2. **Frontend Branding (Portal)**: Update the `<title>`, application headers, logos (if applicable), and text in `portal/src/`.
+3. **Infrastructure & Configuration**: Rename configuration names in `docker-compose.yml`, Prometheus monitoring files, shell scripts (`scripts/`), and GitHub Action workflows.
+4. **Package & Imports Refactoring**: Rename underlying directories (`agentfabric-env`), Python SDK package namespaces, and Go module names natively.
+
+---
+
+## Part 2: P0/P1 Pilot Blockers (Core Bug Fixes)
+
+We cannot launch a pilot with the current codebase. The following critical bugs must be resolved immediately according to the `CRITICAL_ISSUES_BLOCKING_PRODUCTION.md`:
+
+### 1. The Cost Computation Bug (P0)
+* **Issue:** Collector computes input/output costs correctly, but the core engine ignores it and hardcodes a 60/40 cost split, resulting in massive billing discrepancies. 
+* **Fix:** Update backend storage logic (`postgres.rs` or Go equivalent depending on what is active) to consume actual costs directly from the OTLP enriched spans.
+
+### 2. SQL Injection Vulnerability (P0)
+* **Issue:** Unparameterized queries in the API Gateway.
+* **Fix:** Audit and convert all dynamic SQL formatting to strictly parameterized queries.
+
+### 3. Trace Topology API Latency (P0)
+* **Issue:** An N+1 query loop makes loading the dashboard trace topology graph take over 5 seconds.
+* **Fix:** Implement batched SQL retrieval using `IN (...)` queries to collapse N queries into 1.
+
+### 4. Authentication UI (P1)
+* **Issue:** The portal accepts tokens forcefully injected via `localStorage` with no login screen, failing enterprise CISO checks.
+* **Fix:** Build a foundational OIDC/Local login page wrapper in the React portal application.
+
+---
+
+## Part 3: Building a Vibrant Testing Pipeline
+
+The repository severely lacks formal test infrastructure (currently documented as 0% unit test coverage). We must construct a rigorous testing matrix.
+
+### 1. Go & Python Unit Testing (0% -> 60% Goal)
+* **Target:** Write unit tests for individual routing logic, policy evaluation logic (budget checks), and DLP redaction utilities.
+* **Tooling:** Use `pytest` for the `agent-sdk` and standard `go test` for the API Gateway and Collector.
+
+### 2. Integration Testing
+* **Target:** Expand the 175 existing integration tests to fully cover the new **Virtual Key proxy** logic and the **budgeting hard limit** logic (ensuring 429s are actively returned when thresholds are hit).
+
+### 3. Automated User Acceptance Testing (UAT)
+* **Target:** Implement an end-to-end frontend testing suite.
+* **Tooling:** Utilize **Playwright**.
+* **Scope:** Automate workflows where a mock user logs in, configures a budget policy, sets up an API key, views traces in the portal, and accesses the prompt registry.
+
+---
+
+## Part 4: Envoy Network / Cloud Tenancy Implementation
+
+A massive value-add of the architecture is that it can secure all network endpoints without developer SDK intervention.
+
+### 1. Envoy Sidecar / Egress Deployment
+* **Action:** Construct the `deploy/envoy/envoy.yaml` and related Dockerfiles.
+* **Logic:** Route `api.openai.com`, `api.anthropic.com`, and `generativelanguage.googleapis.com` through Envoy. Envoy will execute TLS termination using a local CA, intercept the outbound LLM payload, and asynchronously submit telemetry to the Collector using gRPC. This provides the "Govagn Perimeter" for all network devices.
+
+### 2. Deployment Documentation
+* Create detailed documentation for cloud engineers detailing how to deploy this Envoy architecture as an egress gateway within an **AWS VPC** or **Kubernetes Cluster**.
+
+---
+
+## Part 5: Prompt & Policy Library Setup
+
+Ensure the foundational enterprise features are polished and visible.
+* **Prompt Registry:** Ensure the APIs for linking traces to prompt releases are completely operational and exposed correctly in the UI.
+* **Policy Enforcement Library:** Finalize the centralized PostgreSQL tables defining daily budgets, safety guardrails, and model mediation blocking rules.
+
+## Verification Plan
+1. **Testing Gates:** CI pipeline must return passing tests across `go test`, `pytest`, and `playwright`. Unit test coverage tools must show a minimum baseline of 60% for new code.
+2. **Local Validation Check:** Use the `run_local_pilot_validation.ps1` script to simulate an end-to-end pilot traffic route locally to prove Envoy proxy and cost accounting logic function securely.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentfabric/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/models"
 )
 
 func (s *PostgresStore) ListRolloutRules(ctx context.Context, tenantID string) ([]models.RolloutRule, error) {

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the intended enterprise authentication and authorization posture for AgentFabric.
+This document defines the intended enterprise authentication and authorization posture for Govagn.
 
 Use it to answer:
 
@@ -32,13 +32,13 @@ Recommended enterprise target:
 
 ## Deployment Flags
 
-- `AF_SSO_REQUIRED=true`
-- `AF_PASSWORD_LOGIN_DISABLED=true`
-- `AF_OIDC_ISSUER`
-- `AF_OIDC_CLIENT_ID`
-- `AF_OIDC_CLIENT_SECRET`
-- `AF_OIDC_REDIRECT_URI`
-- optional `AF_OIDC_LOGOUT_URL`
+- `GV_SSO_REQUIRED=true`
+- `GV_PASSWORD_LOGIN_DISABLED=true`
+- `GV_OIDC_ISSUER`
+- `GV_OIDC_CLIENT_ID`
+- `GV_OIDC_CLIENT_SECRET`
+- `GV_OIDC_REDIRECT_URI`
+- optional `GV_OIDC_LOGOUT_URL`
 
 ## Role Model
 
@@ -63,8 +63,8 @@ Recommended enterprise target:
 1. configure OIDC in staging
 2. validate login, callback, logout, and refresh
 3. map a pilot admin group and viewer group
-4. set `AF_SSO_REQUIRED=true`
-5. set `AF_PASSWORD_LOGIN_DISABLED=true`
+4. set `GV_SSO_REQUIRED=true`
+5. set `GV_PASSWORD_LOGIN_DISABLED=true`
 6. retain break-glass credentials in the vault, not in shared runbooks
 
 ## Break-Glass Guidance

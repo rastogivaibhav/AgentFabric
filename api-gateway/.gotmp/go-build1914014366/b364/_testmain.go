@@ -11,7 +11,7 @@ import (
 
 
 
-	_test "github.com/agentfabric/api-gateway/internal/memory"
+	_test "github.com/govagn/api-gateway/internal/memory"
 
 
 )
@@ -40,8 +40,8 @@ var examples = []testing.InternalExample{
 
 func init() {
 
-	testdeps.ModulePath = "github.com/agentfabric/api-gateway"
-	testdeps.ImportPath = "github.com/agentfabric/api-gateway/internal/memory"
+	testdeps.ModulePath = "github.com/govagn/api-gateway"
+	testdeps.ImportPath = "github.com/govagn/api-gateway/internal/memory"
 }
 
 func main() {

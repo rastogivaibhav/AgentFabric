@@ -1,4 +1,4 @@
-# AgentFabric — Technical Review Report
+# Govagn — Technical Review Report
 **Version**: v1.1.0
 **Review Date**: 2026-03-16
 **Reviewers**: Technical PM + Senior Architect
@@ -28,7 +28,7 @@ Use this document as the March 16 baseline, then apply this update before making
 
 ## Executive Summary
 
-AgentFabric v1.1.0 is a well-structured, multi-service observability platform with a sound core architecture. The sprint work added meaningful production hardening: constant-time auth, TLS fail-secure, JWT key rotation, schema migration tooling, RBAC/ABAC dual-layer enforcement, and a detailed production checklist. The codebase demonstrates consistent patterns and good engineering discipline.
+Govagn v1.1.0 is a well-structured, multi-service observability platform with a sound core architecture. The sprint work added meaningful production hardening: constant-time auth, TLS fail-secure, JWT key rotation, schema migration tooling, RBAC/ABAC dual-layer enforcement, and a detailed production checklist. The codebase demonstrates consistent patterns and good engineering discipline.
 
 **However, three blockers must be resolved before a production deployment:**
 
@@ -67,7 +67,7 @@ The canonical schema is now in the migration file which uses `UUID` primary keys
 **File**: `api-gateway/internal/auth/oidc.go` — `PasswordLogin()` (lines 826–880)
 
 **What was found**:
-The `PasswordLogin` handler validates credentials exclusively against `AF_ADMIN_USER` / `AF_ADMIN_PASSWORD` environment variables — a single hardcoded admin account. It does **not** query the `users` table at all.
+The `PasswordLogin` handler validates credentials exclusively against `GV_ADMIN_USER` / `GV_ADMIN_PASSWORD` environment variables — a single hardcoded admin account. It does **not** query the `users` table at all.
 
 This means:
 - Creating users via `POST /api/v1/users` gives them a database record but **zero login capability**
@@ -224,11 +224,11 @@ No middleware sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `
 
 ---
 
-### M-9: CORS Wildcard `https://*.agentfabric.io`
+### M-9: CORS Wildcard `https://*.govagn.io`
 
-Any compromised or user-controlled subdomain of `agentfabric.io` (including e.g. attacker-owned subdomains if DNS is misconfigured) would pass the CORS origin check. Either enumerate allowed origins explicitly or switch to a configurable `AF_CORS_ORIGINS` env var already referenced in the README but not wired in `main.go`.
+Any compromised or user-controlled subdomain of `govagn.io` (including e.g. attacker-owned subdomains if DNS is misconfigured) would pass the CORS origin check. Either enumerate allowed origins explicitly or switch to a configurable `GV_CORS_ORIGINS` env var already referenced in the README but not wired in `main.go`.
 
-**Note**: `AF_CORS_ORIGINS` is documented in the README but the current `main.go` uses a hardcoded array. Wire the env var.
+**Note**: `GV_CORS_ORIGINS` is documented in the README but the current `main.go` uses a hardcoded array. Wire the env var.
 
 ---
 
@@ -277,7 +277,7 @@ The audit endpoint reads `?offset` and `?limit` from query params without boundi
 The README roadmap still lists "Web UI login page with OIDC/SSO" as a TODO item — this was delivered in v1.0.0. Several other roadmap items now exist in the codebase. The README badge still says `status-beta` but the repo is tagged v1.1.0.
 
 ### L-5: `portal/src/App.tsx` version footer is `v1.0.0`
-`LoginPage.tsx` line 155: `<div style={s.footer}>v1.0.0 · © AgentFabric</div>`. Should be driven by `import.meta.env.VITE_APP_VERSION` or bumped to match the release tag.
+`LoginPage.tsx` line 155: `<div style={s.footer}>v1.0.0 · © Govagn</div>`. Should be driven by `import.meta.env.VITE_APP_VERSION` or bumped to match the release tag.
 
 ### L-6: No `.nvmrc` or Engines Field
 The README requires Node 20+ but nothing enforces it. Add `.nvmrc` (content: `20`) and `"engines": {"node": ">=20"}` in `package.json`.
@@ -295,8 +295,8 @@ Documented in §8 of the checklist but deserves calling out again: the init SQL 
 | Area | Finding |
 |------|---------|
 | **Auth timing safety** | `crypto/subtle.ConstantTimeCompare` for both username and password fields prevents timing oracle attacks — both fields always evaluated |
-| **JWT rotation architecture** | `parseSecrets()` / `AF_JWT_SECRETS` comma-separated multi-key design enables zero-downtime rotation without invalidating active sessions |
-| **TLS fail-secure** | `serve()` refuses to start as HTTP when `AF_TLS_ENABLED=true` with missing cert/key — no silent fallback |
+| **JWT rotation architecture** | `parseSecrets()` / `GV_JWT_SECRETS` comma-separated multi-key design enables zero-downtime rotation without invalidating active sessions |
+| **TLS fail-secure** | `serve()` refuses to start as HTTP when `GV_TLS_ENABLED=true` with missing cert/key — no silent fallback |
 | **PKCE + nonce** | OIDC flow correctly implements S256 code challenge and nonce anti-replay using HMAC-signed state cookies |
 | **Dual-layer RBAC/ABAC** | `RequireRole` / `RequireRoleOrSelf` in Go middleware + `hasRole` / `isSelfOrRole` in TypeScript — UI and API both gate access independently |
 | **Migration sequencing** | Migrations run before `store.NewPostgresStore()` — schema is always consistent before the connection pool opens |
@@ -345,7 +345,7 @@ SPRINT v1.2.0 (next planned release):
   M-3  RFC 4122 UUID generation
   M-4  Keyset pagination
   M-7  Security response headers
-  M-9  Wire AF_CORS_ORIGINS env var
+  M-9  Wire GV_CORS_ORIGINS env var
   M-11 af-core integration test harness
   M-12 Admin action audit trail
   M-13 Disable Edit button or implement route
@@ -367,4 +367,4 @@ The following decisions should be formally documented as ADRs before the next sp
 
 ---
 
-*Report prepared by Senior Architect + Technical PM review, AgentFabric v1.1.0, 2026-03-16*
+*Report prepared by Senior Architect + Technical PM review, Govagn v1.1.0, 2026-03-16*

@@ -3,12 +3,12 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentfabric"
+name = "govagn"
 version = "1.0.0"
 description = "Production-grade OpenTelemetry instrumentation for AI agent frameworks"
 readme = "README.md"
 license = {text = "MIT"}
-authors = [{name = "AgentFabric Team"}]
+authors = [{name = "Govagn Team"}]
 keywords = ["opentelemetry", "otel", "ai-agents", "crewai", "langgraph", "observability", "tracing"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -64,14 +64,14 @@ integration = [
 ]
 
 [project.urls]
-Homepage = "https://agentfabric.io"
-Documentation = "https://docs.agentfabric.io"
-Repository = "https://github.com/agentfabric/agentfabric-python"
-Issues = "https://github.com/agentfabric/agentfabric-python/issues"
+Homepage = "https://govagn.io"
+Documentation = "https://docs.govagn.io"
+Repository = "https://github.com/govagn/govagn-python"
+Issues = "https://github.com/govagn/govagn-python/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agentfabric*"]
+include = ["govagn*"]
 
 [tool.ruff]
 target-version = "py39"
