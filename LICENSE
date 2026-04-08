@@ -1,0 +1,16 @@
+GOVAGN Platform License
+Copyright (c) GOVAGN. All rights reserved.
+
+This repository and its contents are proprietary and confidential.
+
+No permission is granted to use, copy, modify, merge, publish, distribute,
+sublicense, or sell this software, in whole or in part, without prior written
+authorization from the copyright holder.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+See component-level metadata for exceptions where explicitly stated
+(for example, `agent-sdk/pyproject.toml` declares MIT for the Python SDK
+package metadata).

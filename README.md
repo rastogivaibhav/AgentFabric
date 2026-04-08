@@ -1,4 +1,4 @@
-# Govagn
+# GOVAGN
 
 **Enterprise AI runtime governance, observability, and control plane for controlled LLM and agent rollouts.**
 
@@ -9,9 +9,9 @@ Self-hosted. Policy-driven. Cost-aware. Controlled-production candidate.
 ![Architecture](https://img.shields.io/badge/architecture-control%20plane-6f42c1)
 ![License](https://img.shields.io/badge/license-proprietary-lightgrey)
 
-## What Is Govagn?
+## What Is GOVAGN?
 
-Govagn is a self-hosted platform for teams that need to **observe, govern, and control AI runtime traffic** across applications, services, and autonomous agents.
+GOVAGN is a self-hosted platform for teams that need to **observe, govern, and control AI runtime traffic** across applications, services, and autonomous agents.
 
 It brings together three enterprise capability areas in one platform:
 
@@ -19,9 +19,9 @@ It brings together three enterprise capability areas in one platform:
 - **Governance** for policy enforcement, guardrails, DLP-style controls, auditability, and release checks
 - **Runtime control** for model mediation, provider management, pricing, budgets, prompt lifecycle, and evaluation workflows
 
-Think of Govagn as a **control plane for enterprise AI operations**.
+Think of GOVAGN as a **control plane for enterprise AI operations**.
 
-## Why Govagn?
+## Why GOVAGN?
 
 As AI workloads move from experimentation to production, enterprise teams run into the same problems:
 
@@ -32,7 +32,7 @@ As AI workloads move from experimentation to production, enterprise teams run in
 - security, platform, and architecture teams lack one operational surface
 - governance becomes reactive instead of enforced
 
-Govagn addresses that by placing AI runtime behavior behind a governed operational layer.
+GOVAGN addresses that by placing AI runtime behavior behind a governed operational layer.
 
 ## What The Platform Can Do
 
@@ -114,9 +114,56 @@ For the full architecture view, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 | `PostgreSQL` | Primary system of record |
 | `Redis` | Supporting cache and coordination layer |
 
+## Technology And Frameworks
+
+### Backend services
+- **Language/runtime:** Go 1.22 (`api-gateway/go.mod`, `collector/go.mod`)
+- **Gateway framework/libs:** Chi router, CORS middleware, JWT, pgx/PostgreSQL, go-redis, Gorilla WebSocket, Prometheus client, Zap logging
+- **Collector protocol stack:** OTLP over gRPC/HTTP (`go.opentelemetry.io/proto/otlp`, `google.golang.org/grpc`)
+
+### Portal UI
+- **Framework:** React 18 + TypeScript + Vite (`portal/package.json`)
+- **Key libraries:** TanStack React Query, React Router, Recharts, D3, Zustand
+- **Testing:** Vitest + Playwright
+
+### SDK and instrumentation
+- **SDK language/runtime:** Python >=3.9 (`agent-sdk/pyproject.toml`)
+- **Telemetry foundation:** OpenTelemetry API/SDK + OTLP gRPC exporter
+- **Optional framework integrations:** CrewAI, LangChain, LangGraph, OpenAI, Anthropic
+
+### Infrastructure and operations
+- **Runtime/deploy:** Docker Compose + Helm
+- **State and cache:** PostgreSQL 16 + Redis 7 (`docker-compose.yml`)
+- **Observability stack:** Prometheus, Alertmanager, Grafana, Jaeger
+- **CI:** GitHub Actions for Go, TypeScript, Python, Helm, packaging, and security checks (`.github/workflows/ci.yml`)
+
+## Product-Market Fit
+
+### Ideal customer profile
+- Enterprise AI platform teams
+- Security and governance organizations
+- Architecture teams standardizing runtime controls
+- Regulated organizations running internal LLM workloads
+
+### Problem GOVAGN solves
+- AI usage is fragmented across apps and teams
+- Runtime policy and guardrail decisions are hard to enforce consistently
+- Cost attribution and budget control are weak or delayed
+- Prompt and release changes are difficult to audit end-to-end
+
+### Why it fits this market
+- Unifies governance, observability, and runtime control in one self-hosted control plane
+- Connects runtime traces to policy, prompts, pricing, and audit records
+- Supports controlled rollout patterns needed by enterprise and regulated environments
+
+### Not a fit
+- Consumer chatbot products
+- Prompt playground-only workflows
+- Pure research experimentation stacks without governance requirements
+
 ## Best-Fit Use Cases
 
-Govagn is best suited for:
+GOVAGN is best suited for:
 
 - enterprise AI platform teams
 - architecture teams standardizing AI runtime controls
@@ -154,13 +201,30 @@ scripts/          probes, pilot validation, release, and GA gate scripts
 
 ## Quick Start
 
-### Local
-1. Start the stack with Docker Compose
-2. Apply migrations
-3. Sign in to the portal
-4. Register a provider key
-5. Send instrumented or proxied traffic
-6. Inspect traces, policies, prompts, evals, and costs
+### How to use GOVAGN locally
+1. Bootstrap the local stack.
+   Windows PowerShell:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap_local.ps1
+   ```
+   macOS/Linux:
+   ```bash
+   bash scripts/setup-local.sh
+   ```
+2. Open the platform URLs.
+   - Portal: `http://localhost:3000`
+   - Gateway: `http://localhost:8080`
+   - Collector OTLP HTTP: `http://localhost:4318`
+   - Swagger UI: `http://localhost:8080/docs/swagger`
+3. Sign in as local admin and verify core pages load (traces, policies, cost, prompts).
+4. Register at least one provider key for proxied runtime traffic.
+5. Send one instrumented or proxied request and confirm trace + cost + policy visibility.
+6. Run release validation scripts when you want staging-grade evidence.
+
+Alternative local start:
+```bash
+make dev
+```
 
 ### Production
 1. Deploy with Helm or production Compose
@@ -184,7 +248,7 @@ scripts/          probes, pilot validation, release, and GA gate scripts
 
 ## Supported Product Shape
 
-Govagn is strongest as:
+GOVAGN is strongest as:
 
 **AI runtime governance + observability + control plane**
 
@@ -231,7 +295,7 @@ Shell equivalents are available in the same [scripts/](scripts) directory for ma
 
 ## Maturity
 
-Govagn is a serious platform foundation intended for:
+GOVAGN is a serious platform foundation intended for:
 
 - internal platform evaluation
 - controlled pilots
@@ -246,4 +310,6 @@ Recommended positioning today:
 
 ## License
 
-Proprietary. All rights reserved.
+- Top-level repository license: see [LICENSE](LICENSE) (**proprietary**).
+- Platform repository (`api-gateway`, `collector`, `portal`, deployment assets): **Proprietary. All rights reserved.**
+- Python SDK package metadata (`agent-sdk/pyproject.toml`): **MIT**.
