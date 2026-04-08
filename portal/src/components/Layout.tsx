@@ -5,6 +5,12 @@ import {
   , Shield
   , FlaskConical
   , FileText
+  , GitMerge
+  , Lightbulb
+  , Brain
+  , TestTube
+  , ListTree
+  , AlertTriangle
 } from 'lucide-react'
 import { useAuth } from '../hooks/auth'
 
@@ -27,8 +33,10 @@ const NAV: NavItem[] = [
   { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard'    },
   { to: '/live',         icon: Radio,           label: 'Live Stream',  badge: 'LIVE' },
   { to: '/traces',       icon: Activity,        label: 'Traces'        },
+  { to: '/runs',         icon: ListTree,        label: 'Runs'          },
   { to: '/agents',       icon: Bot,             label: 'Agents'        },
   { to: '/cost',         icon: DollarSign,      label: 'Cost'          },
+  { to: '/analytics/errors', icon: AlertTriangle, label: 'Error Analytics' },
   { to: '/environments', icon: Server,          label: 'Environments'  },
   // Admin-only nav items — hidden from editors and viewers.
   { to: '/users',        icon: Users,          label: 'Users',      adminOnly: true },
@@ -37,7 +45,11 @@ const NAV: NavItem[] = [
   { to: '/prompts',      icon: FileText,       label: 'Prompts',    adminOnly: true },
   { to: '/evals',        icon: FlaskConical,   label: 'Evals',      adminOnly: true },
   { to: '/pricing',      icon: SlidersHorizontal, label: 'Pricing', adminOnly: true },
-  { to: '/decisions',    icon: ClipboardList,  label: 'Decisions', adminOnly: true },
+  { to: '/rollouts',        icon: GitMerge,   label: 'Rollouts',            adminOnly: true },
+  { to: '/recommendations',  icon: Lightbulb,  label: 'Recommendations',     adminOnly: true },
+  { to: '/memory',           icon: Brain,      label: 'Enterprise Memory',   adminOnly: true },
+  { to: '/policies/simulate',icon: TestTube,   label: 'Policy Simulation',   adminOnly: true },
+  { to: '/decisions',        icon: ClipboardList, label: 'Decisions',        adminOnly: true },
   { to: '/audit',        icon: ClipboardList,  label: 'Audit Log',  adminOnly: true },
 ]
 

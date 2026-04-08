@@ -1528,3 +1528,159 @@ export function useUpdateRecommendationStatus() {
     },
   })
 }
+
+// --- Run types & hooks ---
+export interface Run { id: string; trace_id: string; parent_run_id?: string; framework: string; agent_name: string; model: string; start_time: string; end_time?: string; status: string; total_tokens: number; total_cost_usd: number; metadata?: Record<string,string> }
+
+// ─── Run types & hooks ────────────────────────────────────────────────────────
+
+export interface Run {
+  id: string
+  trace_id: string
+  parent_run_id?: string
+  framework: string
+  agent_name: string
+  model: string
+  start_time: string
+  end_time?: string
+  status: string
+  total_tokens: number
+  total_cost_usd: number
+  metadata?: Record<string, string>
+}
+
+export function useRuns(params: { trace_id?: string; agent?: string; framework?: string; limit?: number; cursor?: string } = {}) {
+  const normalized = {
+    trace_id: params.trace_id ?? '',
+    agent: params.agent ?? '',
+    framework: params.framework ?? '',
+    limit: String(params.limit ?? 50),
+    cursor: params.cursor ?? '',
+  }
+  return useQuery<Page<Run>>({
+    queryKey: ['runs', normalized],
+    queryFn: () => apiFetch('/runs', normalized),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useRun(runId: string) {
+  return useQuery<Run>({
+    queryKey: ['run', runId],
+    queryFn: () => apiFetch(`/runs/${encodeURIComponent(runId)}`),
+    enabled: !!runId,
+  })
+}
+
+export function useRunChildren(runId: string) {
+  return useQuery<Run[]>({
+    queryKey: ['run-children', runId],
+    queryFn: () => apiFetch(`/runs/${encodeURIComponent(runId)}/children`),
+    enabled: !!runId,
+  })
+}
+
+export function usePostFeedback() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ runId, score, comment }: { runId: string; score?: number; comment?: string }) =>
+      apiMutate<void>(`/runs/${encodeURIComponent(runId)}/feedback`, 'POST', { score, comment }),
+    onSuccess: (_data, { runId }) => {
+      qc.invalidateQueries({ queryKey: ['run', runId] })
+      qc.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
+}
+
+// ─── Agent list & detail hooks ────────────────────────────────────────────────
+
+export interface Agent {
+  id: string
+  name: string
+  framework: string
+  first_seen: string
+  last_seen: string
+  run_count: number
+  total_cost_usd: number
+  p50_latency_ms: number
+  p95_latency_ms: number
+  p99_latency_ms: number
+  error_rate: number
+}
+
+export interface TopologyNode {
+  id: string
+  name: string
+  type: string
+  framework: string
+  span_count: number
+}
+
+export interface TopologyEdge {
+  from: string
+  to: string
+  edge_type: string
+  call_count: number
+}
+
+export interface TopologyGraph {
+  nodes: TopologyNode[]
+  edges: TopologyEdge[]
+}
+
+export function useAgents(limit = 50) {
+  return useQuery<Page<Agent>>({
+    queryKey: ['agents-list', limit],
+    queryFn: () => apiFetch('/agents', { limit: String(limit) }),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useAgent(agentId: string) {
+  return useQuery<Agent>({
+    queryKey: ['agent', agentId],
+    queryFn: () => apiFetch(`/agents/${encodeURIComponent(agentId)}`),
+    enabled: !!agentId,
+  })
+}
+
+export function useAgentRuns(agentId: string, limit = 50) {
+  return useQuery<Page<Run>>({
+    queryKey: ['agent-runs', agentId, limit],
+    queryFn: () => apiFetch(`/agents/${encodeURIComponent(agentId)}/runs`, { limit: String(limit) }),
+    enabled: !!agentId,
+    refetchInterval: 30_000,
+  })
+}
+
+export function useAgentTopology(agentId: string) {
+  return useQuery<TopologyGraph>({
+    queryKey: ['agent-topology', agentId],
+    queryFn: () => apiFetch(`/agents/${encodeURIComponent(agentId)}/topology`),
+    enabled: !!agentId,
+  })
+}
+
+// ─── Error analytics ──────────────────────────────────────────────────────────
+
+export interface ErrorReportRow {
+  error_class: string
+  framework: string
+  agent_name?: string
+  app_name?: string
+  environment?: string
+  provider?: string
+  model?: string
+  count: number
+  affected_traces: number
+  first_seen: string
+  last_seen: string
+}
+
+export function useErrorReport(since = '24h') {
+  return useQuery<ErrorReportRow[]>({
+    queryKey: ['error-report', since],
+    queryFn: () => apiFetch('/analytics/errors', { since }),
+    refetchInterval: 60_000,
+  })
+}

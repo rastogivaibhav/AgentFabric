@@ -7,6 +7,10 @@ import TraceDetail from './pages/TraceDetail'
 import TraceComparePage from './pages/TraceComparePage'
 import LiveStream from './pages/LiveStream'
 import AgentsPage from './pages/AgentsPage'
+import AgentDetailPage from './pages/AgentDetailPage'
+import RunsPage from './pages/RunsPage'
+import RunDetailPage from './pages/RunDetailPage'
+import ErrorAnalyticsPage from './pages/ErrorAnalyticsPage'
 import CostPage from './pages/CostPage'
 import EnvironmentsPage from './pages/EnvironmentsPage'
 import UsersPage from './pages/UsersPage'
@@ -19,6 +23,10 @@ import EvalsPage from './pages/EvalsPage'
 import RegressionPage from './pages/RegressionPage'
 import PromptsPage from './pages/PromptsPage'
 import PromptReleasePage from './pages/PromptReleasePage'
+import RolloutsPage from './pages/RolloutsPage'
+import PolicySimulationPage from './pages/PolicySimulationPage'
+import RecommendationsPage from './pages/RecommendationsPage'
+import MemoryPage from './pages/MemoryPage'
 import LoginPage from './pages/LoginPage'
 import { useAuth, isAuthEnabled, hasRole } from './hooks/auth'
 
@@ -79,6 +87,10 @@ export default function App() {
             <Route path="traces/:traceId" element={<TraceDetail />} />
             <Route path="live" element={<LiveStream />} />
             <Route path="agents" element={<AgentsPage />} />
+            <Route path="agents/:agentId" element={<AgentDetailPage />} />
+            <Route path="runs" element={<RunsPage />} />
+            <Route path="runs/:runId" element={<RunDetailPage />} />
+            <Route path="analytics/errors" element={<ErrorAnalyticsPage />} />
             <Route path="cost" element={<CostPage />} />
             <Route path="environments" element={<EnvironmentsPage />} />
             <Route path="users" element={<UsersPage />} />
@@ -91,6 +103,10 @@ export default function App() {
             <Route path="policies" element={<PoliciesPage />} />
             <Route path="evals" element={<EvalsPage />} />
             <Route path="evals/regressions" element={<RegressionPage />} />
+            <Route path="rollouts" element={<RolloutsPage />} />
+            <Route path="policies/simulate" element={<PolicySimulationPage />} />
+            <Route path="recommendations" element={<RecommendationsPage />} />
+            <Route path="memory" element={<MemoryPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
