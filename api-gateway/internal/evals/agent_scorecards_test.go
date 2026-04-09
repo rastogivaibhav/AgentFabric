@@ -50,6 +50,50 @@ func (f *fakeAgentScoreStore) ListAgentScorecardMetrics(_ context.Context, _ str
 	return filtered, nil
 }
 
+func (f *fakeAgentScoreStore) ListEvalDatasets(context.Context, string, int) ([]models.EvalDataset, error) {
+	return nil, nil
+}
+
+func (f *fakeAgentScoreStore) UpsertEvalDataset(context.Context, string, models.EvalDataset) (models.EvalDataset, error) {
+	return models.EvalDataset{}, nil
+}
+
+func (f *fakeAgentScoreStore) ListEvalDatasetItems(context.Context, string, []string, int) ([]models.EvalDatasetItem, error) {
+	return nil, nil
+}
+
+func (f *fakeAgentScoreStore) CreateEvalExecution(context.Context, string, models.EvalExecution) (models.EvalExecution, error) {
+	return models.EvalExecution{}, nil
+}
+
+func (f *fakeAgentScoreStore) UpdateEvalExecution(context.Context, string, models.EvalExecution) (models.EvalExecution, error) {
+	return models.EvalExecution{}, nil
+}
+
+func (f *fakeAgentScoreStore) InsertEvalExecutionItem(context.Context, string, models.EvalExecutionItem) (models.EvalExecutionItem, error) {
+	return models.EvalExecutionItem{}, nil
+}
+
+func (f *fakeAgentScoreStore) InsertEvalEvaluatorResults(context.Context, string, int64, int64, []models.EvalEvaluatorResult) error {
+	return nil
+}
+
+func (f *fakeAgentScoreStore) InsertEvalEvidenceLinks(context.Context, string, int64, int64, []models.EvalEvidenceLink) error {
+	return nil
+}
+
+func (f *fakeAgentScoreStore) ListEvalExecutions(context.Context, string, int) ([]models.EvalExecution, error) {
+	return nil, nil
+}
+
+func (f *fakeAgentScoreStore) GetEvalExecution(context.Context, string, int64) (models.EvalExecution, error) {
+	return models.EvalExecution{}, nil
+}
+
+func (f *fakeAgentScoreStore) DeleteEvalExecutionDetails(context.Context, string, int64) error {
+	return nil
+}
+
 func TestListAgentScorecards_ComputesOverallAndTrend(t *testing.T) {
 	svc := &Service{store: &fakeAgentScoreStore{
 		current: []models.AgentScorecardMetrics{

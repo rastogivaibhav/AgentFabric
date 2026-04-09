@@ -1,0 +1,377 @@
+schema_version: "1.0"
+pack:
+  id: "pack.gdpr.eu.v1"
+  name: "GDPR Core Enforcement Pack"
+  version: "1.0.0"
+  jurisdiction: ["EU", "EEA"]
+  owner: "compliance-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["regulatory", "gdpr", "privacy"]
+
+policies:
+  - id: "gdpr.lawful_basis.required"
+    title: "Lawful basis required before personal data processing"
+    applies_to:
+      actions: ["collect", "store", "transform", "share", "infer", "export"]
+      data_classes: ["personal_data", "special_category_data"]
+    conditions:
+      all:
+        - field_exists: "context.processing_purpose"
+        - field_exists: "context.data_subject_region"
+        - field_exists: "context.lawful_basis"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "lawful_basis_evidence"
+      - attach_metadata:
+          keys: ["processing_purpose", "lawful_basis", "retention_schedule_id"]
+    severity: "critical"
+
+  - id: "gdpr.special_category.explicit_control"
+    title: "Special category data requires elevated handling"
+    applies_to:
+      actions: ["collect", "store", "infer", "share"]
+      data_classes: ["special_category_data"]
+    conditions:
+      all:
+        - any:
+            - equals: { field: "context.lawful_basis", value: "explicit_consent" }
+            - equals: { field: "context.lawful_basis", value: "employment_social_security_law" }
+            - equals: { field: "context.lawful_basis", value: "vital_interests" }
+            - equals: { field: "context.lawful_basis", value: "medical_diagnosis_care" }
+        - equals: { field: "context.encryption_at_rest", value: true }
+        - equals: { field: "context.rbac_scope_validated", value: true }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    obligations:
+      - require_human_approval: "privacy_officer"
+      - write_audit: "special_category_access"
+    severity: "critical"
+
+  - id: "gdpr.purpose_limitation.block_secondary_use"
+    title: "Block incompatible secondary use"
+    applies_to:
+      actions: ["use", "transform", "share", "train_model"]
+      data_classes: ["personal_data", "customer_profile"]
+    conditions:
+      all:
+        - compatible_purpose:
+            original_field: "record.collection_purpose"
+            requested_field: "context.processing_purpose"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "high"
+
+  - id: "gdpr.data_minimization.limit_fields"
+    title: "Only minimum necessary fields may be processed"
+    applies_to:
+      actions: ["collect", "retrieve", "export", "prompt_inject_context"]
+      data_classes: ["personal_data", "customer_profile"]
+    conditions:
+      all:
+        - allowed_fields_subset:
+            requested_fields_ref: "context.requested_fields"
+            allowed_profile_ref: "policy_refs.min_fields_by_purpose"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - redact_nonrequired_fields: true
+    severity: "high"
+
+  - id: "gdpr.retention.enforce_schedule"
+    title: "Retention schedule must exist and not be exceeded"
+    applies_to:
+      actions: ["store", "retain", "restore", "reprocess"]
+      data_classes: ["personal_data", "special_category_data"]
+    conditions:
+      all:
+        - field_exists: "record.retention_schedule_id"
+        - not_expired:
+            field: "record.retention_expiry_at"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - schedule_deletion: "record.retention_expiry_at"
+    severity: "high"
+
+  - id: "gdpr.cross_border.transfer_gate"
+    title: "Cross-border transfer requires approved transfer mechanism"
+    applies_to:
+      actions: ["share", "export", "replicate", "remote_access"]
+      data_classes: ["personal_data", "special_category_data"]
+    conditions:
+      all:
+        - equals: { field: "context.destination_outside_eea", value: false }
+      any:
+        - equals: { field: "context.destination_outside_eea", value: false }
+        - field_in: { field: "context.transfer_mechanism", values: ["adequacy", "scc", "bcr", "derogation"] }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "cross_border_transfer_event"
+    severity: "critical"
+
+  - id: "gdpr.subject_rights.fulfill_or_route"
+    title: "Data subject rights requests must be routed and frozen from conflicting actions"
+    applies_to:
+      actions: ["delete", "export", "rectify", "restrict", "object"]
+      data_classes: ["personal_data", "customer_profile"]
+    conditions:
+      all:
+        - verified_identity: "context.requestor_identity"
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    obligations:
+      - create_case: "privacy_rights_queue"
+      - pause_nonessential_processing: true
+    severity: "high"
+
+  - id: "gdpr.breach.notification.trigger"
+    title: "Potential personal data breach must trigger incident workflow"
+    applies_to:
+      actions: ["detect_incident"]
+    conditions:
+      any:
+        - equals: { field: "context.personal_data_compromised", value: true }
+        - greater_than: { field: "context.records_exfiltrated_count", value: 0 }
+    decision:
+      if_false: "PERMIT"
+      if_true: "ESCALATE"
+    obligations:
+      - create_incident: "privacy-breach"
+      - preserve_forensics: true
+      - notify_team: "dpo"
+    severity: "critical"
+---
+schema_version: "1.0"
+pack:
+  id: "pack.hipaa.us.v1"
+  name: "HIPAA Privacy Security Breach Pack"
+  version: "1.0.0"
+  jurisdiction: ["US"]
+  owner: "privacy-and-security-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["regulatory", "hipaa", "healthcare"]
+
+policies:
+  - id: "hipaa.phi.minimum_necessary"
+    title: "Use and disclose only minimum necessary PHI"
+    applies_to:
+      actions: ["retrieve", "display", "share", "prompt_inject_context", "export"]
+      data_classes: ["health_data"]
+    conditions:
+      all:
+        - allowed_fields_subset:
+            requested_fields_ref: "context.requested_fields"
+            allowed_profile_ref: "policy_refs.minimum_necessary_fields"
+        - purpose_in:
+            field: "context.use_purpose"
+            values: ["treatment", "payment", "operations", "authorized_other"]
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "phi_access_event"
+    severity: "critical"
+
+  - id: "hipaa.epHI.access_control"
+    title: "ePHI access requires authenticated, authorized, attributable user"
+    applies_to:
+      actions: ["retrieve", "edit", "share", "delete"]
+      data_classes: ["health_data"]
+    conditions:
+      all:
+        - equals: { field: "context.user_authenticated", value: true }
+        - equals: { field: "context.mfa_present", value: true }
+        - equals: { field: "context.rbac_scope_validated", value: true }
+        - field_exists: "context.actor_id"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "attributable_access"
+    severity: "critical"
+
+  - id: "hipaa.transmission_security"
+    title: "ePHI must be protected in transmission"
+    applies_to:
+      actions: ["share", "export", "api_call", "message_send"]
+      data_classes: ["health_data"]
+    conditions:
+      all:
+        - equals: { field: "context.transport_encrypted", value: true }
+        - any:
+            - equals: { field: "context.destination_trust_level", value: "internal" }
+            - equals: { field: "context.baa_confirmed", value: true }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "hipaa.logging.integrity"
+    title: "PHI actions must be logged with integrity protections"
+    applies_to:
+      actions: ["retrieve", "edit", "share", "delete"]
+      data_classes: ["health_data"]
+    conditions:
+      all:
+        - equals: { field: "runtime.audit_enabled", value: true }
+        - equals: { field: "runtime.hash_chain_enabled", value: true }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "high"
+
+  - id: "hipaa.de_identification.before_secondary_use"
+    title: "Secondary use requires de-identification or explicit approval path"
+    applies_to:
+      actions: ["analytics", "train_model", "share", "research_use"]
+      data_classes: ["health_data"]
+    conditions:
+      any:
+        - equals: { field: "context.data_state", value: "de_identified" }
+        - equals: { field: "context.irb_or_privacy_approval", value: true }
+        - equals: { field: "context.patient_authorization", value: true }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "hipaa.breach.trigger"
+    title: "Potential breach of unsecured PHI triggers incident management"
+    applies_to:
+      actions: ["detect_incident"]
+    conditions:
+      all:
+        - equals: { field: "context.unsecured_phi_involved", value: true }
+    decision:
+      if_false: "PERMIT"
+      if_true: "ESCALATE"
+    obligations:
+      - create_incident: "hipaa-breach"
+      - preserve_forensics: true
+      - notify_team: "privacy-and-security-office"
+    severity: "critical"
+---
+schema_version: "1.0"
+pack:
+  id: "pack.eu_ai_act.v1"
+  name: "EU AI Act Runtime Governance Pack"
+  version: "1.0.0"
+  jurisdiction: ["EU"]
+  owner: "ai-governance-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["regulatory", "eu-ai-act", "ai-governance"]
+
+policies:
+  - id: "aiact.prohibited.usecases.block"
+    title: "Block prohibited AI practices"
+    applies_to:
+      actions: ["deploy_model", "invoke_model", "score_person", "infer_emotion", "biometric_categorization"]
+    conditions:
+      none:
+        - field_in:
+            field: "context.intended_use"
+            values:
+              - "subliminal_manipulation"
+              - "exploit_vulnerability"
+              - "social_scoring"
+              - "untargeted_facial_scraping"
+              - "emotion_inference_workplace"
+              - "emotion_inference_education"
+              - "biometric_categorization_sensitive_traits"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "ai_act_prohibited_use_check"
+    severity: "critical"
+
+  - id: "aiact.ai_literacy.required"
+    title: "Only trained operators may deploy or supervise AI systems"
+    applies_to:
+      actions: ["deploy_model", "approve_release", "override_guardrail", "review_incident"]
+    conditions:
+      all:
+        - equals: { field: "context.operator_ai_literacy_current", value: true }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "high"
+
+  - id: "aiact.transparency.chatbot_disclosure"
+    title: "AI interaction disclosure required where applicable"
+    applies_to:
+      actions: ["user_interaction_start"]
+    conditions:
+      any:
+        - equals: { field: "context.system_type", value: "chatbot" }
+        - equals: { field: "context.synthetic_content_generated", value: true }
+    decision:
+      if_false: "PERMIT"
+      if_true: "PERMIT"
+    obligations:
+      - require_notice: "You are interacting with an AI system."
+      - write_audit: "transparency_notice_shown"
+    severity: "moderate"
+
+  - id: "aiact.gpai.documentation.required"
+    title: "GPAI provider obligations require documentation package"
+    applies_to:
+      actions: ["release_model", "market_model", "publish_api"]
+    conditions:
+      all:
+        - equals: { field: "context.is_gpai_provider", value: true }
+        - field_exists: "artifacts.technical_documentation"
+        - field_exists: "artifacts.copyright_policy"
+        - field_exists: "artifacts.training_content_summary"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "aiact.gpai_systemic_risk.extra_controls"
+    title: "Systemic-risk GPAI requires additional safety controls"
+    applies_to:
+      actions: ["release_model", "market_model", "scale_deployment"]
+    conditions:
+      any:
+        - equals: { field: "context.gpai_systemic_risk", value: false }
+        - all:
+            - equals: { field: "context.gpai_systemic_risk", value: true }
+            - field_exists: "artifacts.risk_assessment"
+            - field_exists: "artifacts.incident_reporting_process"
+            - field_exists: "artifacts.cybersecurity_controls"
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "aiact.high_risk.predeployment_gate"
+    title: "High-risk AI requires conformity evidence before production"
+    applies_to:
+      actions: ["deploy_model", "enable_feature", "go_live"]
+    conditions:
+      any:
+        - equals: { field: "context.is_high_risk_ai", value: false }
+        - all:
+            - equals: { field: "context.is_high_risk_ai", value: true }
+            - field_exists: "artifacts.risk_management_file"
+            - field_exists: "artifacts.data_governance_record"
+            - field_exists: "artifacts.human_oversight_design"
+            - field_exists: "artifacts.logging_spec"
+            - field_exists: "artifacts.accuracy_robustness_metrics"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"

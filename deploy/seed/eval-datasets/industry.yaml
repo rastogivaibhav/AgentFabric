@@ -1,0 +1,51 @@
+schema_version: "1.0"
+dataset:
+  id: "retail.refund_decisions"
+  version: "v1"
+  ref: "retail.refund_decisions.v1"
+  name: "Retail Refund Decision Set"
+  type: "golden"
+  owner: "commerce-ops"
+  status: "approved"
+  source: "seed"
+  description: "Refund decisions with return-window and fraud signals"
+  tags: ["industry", "retail"]
+items:
+  - key: "retail-refund-001"
+    input:
+      order_state:
+        purchase_days_ago: 8
+      return_window: 30
+      fraud_score: 0.12
+      decision: "approve"
+      quoted_price: 49.99
+      catalog_price: 49.99
+      currency: "USD"
+      gold_relevance_labels: [1, 0, 0]
+      ranked_results: ["refund-policy", "shipping", "promotions"]
+      approval_required: false
+      cart_total: 49.99
+    expected:
+      gold_decision: "approve"
+    metadata:
+      domain: "retail"
+    labels: ["refund"]
+  - key: "retail-refund-002"
+    input:
+      order_state:
+        purchase_days_ago: 48
+      return_window: 30
+      fraud_score: 0.84
+      decision: "escalate"
+      quoted_price: 199.99
+      catalog_price: 199.99
+      currency: "USD"
+      gold_relevance_labels: [0, 1, 0]
+      ranked_results: ["refund-policy", "chargeback", "shipping"]
+      approval_required: true
+      cart_total: 199.99
+    expected:
+      gold_decision: "escalate"
+    metadata:
+      domain: "retail"
+    labels: ["refund", "fraud"]

@@ -223,9 +223,113 @@ type TraceEvalRun struct {
 }
 
 type TraceEvalRequest struct {
-	TraceID    string `json:"trace_id"`
-	ReleaseTag string `json:"release_tag,omitempty"`
-	EvalSuite  string `json:"eval_suite,omitempty"`
+	TraceID     string         `json:"trace_id,omitempty"`
+	TraceIDs    []string       `json:"trace_ids,omitempty"`
+	ReleaseTag  string         `json:"release_tag,omitempty"`
+	EvalSuite   string         `json:"eval_suite,omitempty"`
+	PackID      string         `json:"pack_id,omitempty"`
+	Mode        string         `json:"mode,omitempty"`
+	DatasetRefs []string       `json:"dataset_refs,omitempty"`
+	Attributes  map[string]any `json:"attributes,omitempty"`
+	SampleLimit int            `json:"sample_limit,omitempty"`
+}
+
+type EvalDataset struct {
+	ID              int64             `json:"id"`
+	DatasetID       string            `json:"dataset_id"`
+	Version         string            `json:"version"`
+	Ref             string            `json:"ref"`
+	Name            string            `json:"name"`
+	Type            string            `json:"type"`
+	Description     string            `json:"description,omitempty"`
+	Owner           string            `json:"owner,omitempty"`
+	Status          string            `json:"status,omitempty"`
+	Source          string            `json:"source,omitempty"`
+	Provenance      string            `json:"provenance,omitempty"`
+	RedactionStatus string            `json:"redaction_status,omitempty"`
+	ApprovalStatus  string            `json:"approval_status,omitempty"`
+	FreshnessDate   *time.Time        `json:"freshness_date,omitempty"`
+	Tags            []string          `json:"tags,omitempty"`
+	Metadata        map[string]any    `json:"metadata,omitempty"`
+	Items           []EvalDatasetItem `json:"items,omitempty"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
+}
+
+type EvalDatasetItem struct {
+	ID         int64          `json:"id"`
+	DatasetRef string         `json:"dataset_ref"`
+	ItemKey    string         `json:"item_key"`
+	Input      map[string]any `json:"input,omitempty"`
+	Expected   map[string]any `json:"expected,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+	Labels     []string       `json:"labels,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+}
+
+type EvalExecution struct {
+	ID                  int64                      `json:"id"`
+	PackID              string                     `json:"pack_id"`
+	Mode                string                     `json:"mode"`
+	Status              string                     `json:"status"`
+	ReleaseTag          string                     `json:"release_tag,omitempty"`
+	TraceIDs            []string                   `json:"trace_ids,omitempty"`
+	DatasetRefs         []string                   `json:"dataset_refs,omitempty"`
+	Attributes          map[string]any             `json:"attributes,omitempty"`
+	SampleLimit         int                        `json:"sample_limit,omitempty"`
+	OverallScore        float64                    `json:"overall_score"`
+	RiskLevel           string                     `json:"risk_level,omitempty"`
+	Summary             string                     `json:"summary,omitempty"`
+	PolicyEffectiveness PolicyEffectivenessSummary `json:"policy_effectiveness"`
+	RunID               int64                      `json:"run_id,omitempty"`
+	Items               []EvalExecutionItem        `json:"items,omitempty"`
+	CreatedAt           time.Time                  `json:"created_at"`
+	UpdatedAt           time.Time                  `json:"updated_at"`
+}
+
+type EvalExecutionItem struct {
+	ID               int64                 `json:"id"`
+	ExecutionID      int64                 `json:"execution_id"`
+	ItemRef          string                `json:"item_ref"`
+	ItemType         string                `json:"item_type"`
+	TraceID          string                `json:"trace_id,omitempty"`
+	DatasetRef       string                `json:"dataset_ref,omitempty"`
+	Status           string                `json:"status"`
+	OverallScore     float64               `json:"overall_score"`
+	RiskLevel        string                `json:"risk_level,omitempty"`
+	Summary          string                `json:"summary,omitempty"`
+	Evidence         map[string]any        `json:"evidence,omitempty"`
+	EvaluatorResults []EvalEvaluatorResult `json:"evaluator_results,omitempty"`
+	EvidenceLinks    []EvalEvidenceLink    `json:"evidence_links,omitempty"`
+	CreatedAt        time.Time             `json:"created_at"`
+}
+
+type EvalEvaluatorResult struct {
+	ID            int64          `json:"id"`
+	ExecutionID   int64          `json:"execution_id"`
+	ItemID        int64          `json:"item_id"`
+	EvaluatorID   string         `json:"evaluator_id"`
+	DimensionID   string         `json:"dimension_id,omitempty"`
+	EvaluatorType string         `json:"evaluator_type,omitempty"`
+	Method        string         `json:"method,omitempty"`
+	Score         float64        `json:"score"`
+	Severity      string         `json:"severity,omitempty"`
+	Status        string         `json:"status,omitempty"`
+	Summary       string         `json:"summary,omitempty"`
+	InputFields   []string       `json:"input_fields,omitempty"`
+	Details       map[string]any `json:"details,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
+}
+
+type EvalEvidenceLink struct {
+	ID          int64          `json:"id"`
+	ExecutionID int64          `json:"execution_id"`
+	ItemID      int64          `json:"item_id"`
+	LinkType    string         `json:"link_type"`
+	RefID       string         `json:"ref_id"`
+	Label       string         `json:"label,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
 }
 
 type RegressionCompareRequest struct {
@@ -616,16 +720,17 @@ type PolicyEvent struct {
 }
 
 type PolicyPreviewRequest struct {
-	TenantID        string `json:"tenant_id,omitempty"`
-	Provider        string `json:"provider"`
-	Model           string `json:"model"`
-	Environment     string `json:"environment,omitempty"`
-	EstimatedTokens int64  `json:"estimated_tokens,omitempty"`
-	Actor           string `json:"actor,omitempty"`
-	App             string `json:"app,omitempty"`
-	Session         string `json:"session,omitempty"`
-	RequestBody     string `json:"request_body,omitempty"`
-	ResponseBody    string `json:"response_body,omitempty"`
+	TenantID        string         `json:"tenant_id,omitempty"`
+	Provider        string         `json:"provider"`
+	Model           string         `json:"model"`
+	Environment     string         `json:"environment,omitempty"`
+	EstimatedTokens int64          `json:"estimated_tokens,omitempty"`
+	Actor           string         `json:"actor,omitempty"`
+	App             string         `json:"app,omitempty"`
+	Session         string         `json:"session,omitempty"`
+	RequestBody     string         `json:"request_body,omitempty"`
+	ResponseBody    string         `json:"response_body,omitempty"`
+	Attributes      map[string]any `json:"attributes,omitempty"`
 }
 
 type PolicyPreviewDecision struct {

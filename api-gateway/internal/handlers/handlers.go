@@ -42,9 +42,15 @@ type Handler struct {
 	jwtSecret      string
 	budgetEnforcer *budget.BudgetEnforcer
 	policyEngine   *policy.Engine
+	policyPackRoot string
+	evalPackRoot   string
 }
 
 func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, policyEngine *policy.Engine) *Handler {
+	return NewWithPackRoots(pg, redis, hub, logger, jwtSecret, budgetEnforcer, policyEngine, "", "")
+}
+
+func NewWithPackRoots(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, policyEngine *policy.Engine, policyPackRoot, evalPackRoot string) *Handler {
 	return &Handler{
 		pg:             pg,
 		redis:          redis,
@@ -53,6 +59,8 @@ func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger 
 		jwtSecret:      jwtSecret,
 		budgetEnforcer: budgetEnforcer,
 		policyEngine:   policyEngine,
+		policyPackRoot: strings.TrimSpace(policyPackRoot),
+		evalPackRoot:   strings.TrimSpace(evalPackRoot),
 	}
 }
 
@@ -86,6 +94,15 @@ func parseBoolOr(raw string, def bool) bool {
 	}
 }
 
+func parseInt64Or(raw string, def int64) int64 {
+	if trimmed := strings.TrimSpace(raw); trimmed != "" {
+		if value, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+			return value
+		}
+	}
+	return def
+}
+
 func tenantFromCtx(r *http.Request) string {
 	return middleware.TenantIDFromCtx(r.Context())
 }
@@ -107,6 +124,24 @@ func actorFromCtx(r *http.Request) string {
 
 func (h *Handler) managedRuntimeService() managedruntime.Service {
 	return managedruntime.NewService(h.pg)
+}
+
+func (h *Handler) evalService() *evals.Service {
+	return evals.NewServiceWithPackRoot(h.pg, h.resolvedEvalPackRoot())
+}
+
+func (h *Handler) resolvedPolicyPackRoot() string {
+	if strings.TrimSpace(h.policyPackRoot) != "" {
+		return strings.TrimSpace(h.policyPackRoot)
+	}
+	return "deploy/seed/policy-packs"
+}
+
+func (h *Handler) resolvedEvalPackRoot() string {
+	if strings.TrimSpace(h.evalPackRoot) != "" {
+		return strings.TrimSpace(h.evalPackRoot)
+	}
+	return "deploy/seed/eval-packs"
 }
 
 func (h *Handler) writeAdminAudit(r *http.Request, category, action, targetType, targetID, outcome string, details any) {
@@ -146,6 +181,13 @@ func jsonStringOrEmpty(value any) string {
 		return string(b)
 	}
 	return ""
+}
+
+func firstNonEmptyStringPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }
 
 func (h *Handler) writeControlHistory(r *http.Request, category, action, targetType, targetID, reason, outcome string, before, after any, evidenceRefs []string) {
@@ -500,7 +542,7 @@ func (h *Handler) DeleteTraceSavedView(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListEvalRuns(w http.ResponseWriter, r *http.Request) {
-	service := evals.NewService(h.pg)
+	service := h.evalService()
 	runs, err := service.ListRuns(r.Context(), tenantFromCtx(r), parseIntOr(r.URL.Query().Get("limit"), 20))
 	if err != nil {
 		h.logger.Error("list eval runs", zap.Error(err))
@@ -520,7 +562,7 @@ func (h *Handler) ScoreTraceEval(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid payload")
 		return
 	}
-	service := evals.NewService(h.pg)
+	service := h.evalService()
 	run, err := service.ScoreTrace(r.Context(), tenantFromCtx(r), req)
 	if err != nil {
 		h.logger.Error("score trace eval", zap.Error(err), zap.String("trace_id", req.TraceID))
@@ -541,13 +583,118 @@ func (h *Handler) ScoreTraceEval(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
+func (h *Handler) ExecuteEvalPack(w http.ResponseWriter, r *http.Request) {
+	var req models.TraceEvalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+	service := h.evalService()
+	execution, run, err := service.ExecutePack(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		h.logger.Error("execute eval pack", zap.Error(err), zap.String("pack_id", firstNonEmptyString(req.PackID, req.EvalSuite)))
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "eval subject not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "evals", "execute", "pack", execution.PackID, "success", map[string]any{
+		"execution_id":   execution.ID,
+		"eval_run_id":    run.ID,
+		"pack_id":        execution.PackID,
+		"overall_score":  execution.OverallScore,
+		"execution_mode": execution.Mode,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"execution": execution,
+		"run":       run,
+	})
+}
+
+func (h *Handler) ListEvalExecutions(w http.ResponseWriter, r *http.Request) {
+	service := h.evalService()
+	items, err := service.ListExecutions(r.Context(), tenantFromCtx(r), parseIntOr(r.URL.Query().Get("limit"), 20))
+	if err != nil {
+		h.logger.Error("list eval executions", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, models.Page[models.EvalExecution]{
+		Items:   items,
+		Total:   int64(len(items)),
+		HasMore: false,
+	})
+}
+
+func (h *Handler) GetEvalExecution(w http.ResponseWriter, r *http.Request) {
+	executionID := parseInt64Or(chi.URLParam(r, "executionId"), 0)
+	if executionID <= 0 {
+		writeError(w, http.StatusBadRequest, "execution id is required")
+		return
+	}
+	service := h.evalService()
+	item, err := service.GetExecution(r.Context(), tenantFromCtx(r), executionID)
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, "eval execution not found")
+			return
+		}
+		h.logger.Error("get eval execution", zap.Error(err), zap.Int64("execution_id", executionID))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) ListEvalDatasets(w http.ResponseWriter, r *http.Request) {
+	service := h.evalService()
+	items, err := service.ListDatasets(r.Context(), tenantFromCtx(r), parseIntOr(r.URL.Query().Get("limit"), 50))
+	if err != nil {
+		h.logger.Error("list eval datasets", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "query error")
+		return
+	}
+	writeJSON(w, http.StatusOK, models.Page[models.EvalDataset]{
+		Items:   items,
+		Total:   int64(len(items)),
+		HasMore: false,
+	})
+}
+
+func (h *Handler) UpsertEvalDataset(w http.ResponseWriter, r *http.Request) {
+	var dataset models.EvalDataset
+	if err := json.NewDecoder(r.Body).Decode(&dataset); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+	if strings.TrimSpace(dataset.DatasetID) == "" || strings.TrimSpace(dataset.Version) == "" {
+		writeError(w, http.StatusBadRequest, "dataset_id and version are required")
+		return
+	}
+	service := h.evalService()
+	saved, err := service.UpsertDataset(r.Context(), tenantFromCtx(r), dataset)
+	if err != nil {
+		h.logger.Error("upsert eval dataset", zap.Error(err), zap.String("dataset_id", dataset.DatasetID))
+		writeError(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	h.writeAdminAudit(r, "evals", "upsert_dataset", "dataset", saved.Ref, "success", map[string]any{
+		"dataset_id": saved.DatasetID,
+		"version":    saved.Version,
+		"item_count": len(saved.Items),
+	})
+	writeJSON(w, http.StatusOK, saved)
+}
+
 func (h *Handler) CompareEvalRegressions(w http.ResponseWriter, r *http.Request) {
 	var req models.RegressionCompareRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid payload")
 		return
 	}
-	service := evals.NewService(h.pg)
+	service := h.evalService()
 	report, err := service.CompareRelease(r.Context(), tenantFromCtx(r), req)
 	if err != nil {
 		h.logger.Error("compare eval regressions", zap.Error(err))
@@ -731,7 +878,7 @@ func (h *Handler) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	recommendationType := strings.TrimSpace(r.URL.Query().Get("type"))
 
-	svc := recommendations.NewService(h.pg, evals.NewService(h.pg))
+	svc := recommendations.NewService(h.pg, h.evalService())
 	page, err := svc.ListRecommendations(r.Context(), tenantFromCtx(r), since, limit, status, recommendationType)
 	if err != nil {
 		h.logger.Error("list recommendations", zap.Error(err))
@@ -756,7 +903,7 @@ func (h *Handler) UpdateRecommendationStatus(w http.ResponseWriter, r *http.Requ
 	if existing, err := h.pg.GetRecommendation(r.Context(), tenantFromCtx(r), recommendationID); err == nil {
 		before = existing
 	}
-	svc := recommendations.NewService(h.pg, evals.NewService(h.pg))
+	svc := recommendations.NewService(h.pg, h.evalService())
 	updated, err := svc.UpdateStatus(r.Context(), tenantFromCtx(r), recommendationID, req.Status)
 	if err != nil {
 		h.logger.Error("update recommendation status", zap.Error(err))
@@ -889,7 +1036,7 @@ func (h *Handler) ListAgentScorecards(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	limit := parseIntOr(r.URL.Query().Get("limit"), 25)
-	svc := evals.NewService(h.pg)
+	svc := h.evalService()
 	items, err := svc.ListAgentScorecards(r.Context(), tenantFromCtx(r), since, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -908,7 +1055,7 @@ func (h *Handler) GetAgentScorecard(w http.ResponseWriter, r *http.Request) {
 			since = d
 		}
 	}
-	svc := evals.NewService(h.pg)
+	svc := h.evalService()
 	card, err := svc.GetAgentScorecard(r.Context(), tenantFromCtx(r), chi.URLParam(r, "agentId"), since)
 	if err != nil {
 		if isNotFound(err) {
@@ -2268,6 +2415,164 @@ func (h *Handler) ListPolicyRules(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": rules, "count": len(rules)})
 }
 
+func (h *Handler) ListPolicyPacks(w http.ResponseWriter, r *http.Request) {
+	catalog, err := policy.LoadPackCatalog(h.resolvedPolicyPackRoot())
+	if err != nil {
+		h.logger.Error("list policy packs", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "policy pack catalog unavailable")
+		return
+	}
+	packs, err := policy.LoadPackDefinitions(h.resolvedPolicyPackRoot())
+	if err != nil {
+		h.logger.Error("load policy packs", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "policy pack load failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"catalog": catalog,
+		"items":   packs,
+		"count":   len(packs),
+	})
+}
+
+func (h *Handler) GetPolicyPack(w http.ResponseWriter, r *http.Request) {
+	packID := strings.TrimSpace(chi.URLParam(r, "packId"))
+	if packID == "" {
+		writeError(w, http.StatusBadRequest, "pack id is required")
+		return
+	}
+	item, err := policy.GetPackDefinition(h.resolvedPolicyPackRoot(), packID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "policy pack not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) ApplyPolicyPack(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PackIDs  []string `json:"pack_ids"`
+		TenantID string   `json:"tenant_id,omitempty"`
+		Enabled  *bool    `json:"enabled,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if len(req.PackIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "pack_ids is required")
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	var tenantID *string
+	if trimmed := strings.TrimSpace(req.TenantID); trimmed != "" {
+		tenantID = &trimmed
+	} else if trimmed := strings.TrimSpace(tenantFromCtx(r)); trimmed != "" {
+		tenantID = &trimmed
+	}
+	existing, err := h.pg.ListPolicyRules(r.Context())
+	if err != nil {
+		h.logger.Error("list existing policy rules", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "policy rule query failed")
+		return
+	}
+	existingByName := make(map[string]models.PolicyRule, len(existing))
+	for _, rule := range existing {
+		key := rule.Name + "|" + firstNonEmptyStringPtr(rule.TenantID)
+		existingByName[key] = rule
+	}
+	applied := []models.PolicyRule{}
+	for _, packID := range req.PackIDs {
+		pack, err := policy.GetPackDefinition(h.resolvedPolicyPackRoot(), packID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "policy pack not found: "+packID)
+			return
+		}
+		compiled, err := policy.CompilePackRules(pack, tenantID, enabled)
+		if err != nil {
+			h.logger.Error("compile policy pack", zap.Error(err), zap.String("pack_id", packID))
+			writeError(w, http.StatusInternalServerError, "policy pack compile failed")
+			return
+		}
+		for _, rule := range compiled {
+			key := rule.Name + "|" + firstNonEmptyStringPtr(rule.TenantID)
+			if prior, ok := existingByName[key]; ok {
+				rule.ID = prior.ID
+			}
+			saved, err := h.pg.UpsertPolicyRule(r.Context(), rule)
+			if err != nil {
+				h.logger.Error("upsert compiled policy rule", zap.Error(err), zap.String("rule", rule.Name))
+				writeError(w, http.StatusInternalServerError, "policy pack apply failed")
+				return
+			}
+			existingByName[key] = saved
+			applied = append(applied, saved)
+		}
+	}
+	if h.policyEngine != nil {
+		if err := h.policyEngine.LoadRules(r.Context(), h.pg); err != nil {
+			h.logger.Error("reload policy rules", zap.Error(err))
+			writeError(w, http.StatusInternalServerError, "policy reload failed")
+			return
+		}
+	}
+	h.writeAdminAudit(r, "policy", "apply_pack", "policy_pack", strings.Join(req.PackIDs, ","), "success", map[string]any{
+		"pack_ids": req.PackIDs,
+		"rules":    len(applied),
+		"enabled":  enabled,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": applied,
+		"count": len(applied),
+	})
+}
+
+func (h *Handler) ListEvalPacks(w http.ResponseWriter, r *http.Request) {
+	catalog, err := evals.LoadPackCatalog(h.resolvedEvalPackRoot())
+	if err != nil {
+		h.logger.Error("list eval packs", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "eval pack catalog unavailable")
+		return
+	}
+	packs, err := evals.LoadPackDefinitions(h.resolvedEvalPackRoot())
+	if err != nil {
+		h.logger.Error("load eval packs", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "eval pack load failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"catalog": catalog,
+		"items":   packs,
+		"count":   len(packs),
+	})
+}
+
+func (h *Handler) GetEvalPack(w http.ResponseWriter, r *http.Request) {
+	packID := strings.TrimSpace(chi.URLParam(r, "packId"))
+	if packID == "" {
+		writeError(w, http.StatusBadRequest, "pack id is required")
+		return
+	}
+	item, err := evals.GetPackDefinition(h.resolvedEvalPackRoot(), packID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "eval pack not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func (h *Handler) UpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
 	var rule models.PolicyRule
 	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
@@ -2424,6 +2729,7 @@ func (h *Handler) PreviewPolicyRule(w http.ResponseWriter, r *http.Request) {
 		Session:         strings.TrimSpace(req.Session),
 		RequestBody:     []byte(req.RequestBody),
 		ResponseBody:    []byte(req.ResponseBody),
+		Attributes:      req.Attributes,
 	})
 	resp := models.PolicyPreviewResponse{
 		Traffic:     previewPolicyDecision(traffic),

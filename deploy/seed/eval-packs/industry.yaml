@@ -1,0 +1,187 @@
+schema_version: "1.0"
+pack:
+  id: "evalpack.retail.commerce.v1"
+  name: "Retail Commerce Eval Pack"
+  version: "1.0.0"
+  owner: "commerce-quality"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["industry", "retail", "commerce"]
+
+dimensions:
+  - id: "price_integrity"
+    weight: 0.25
+  - id: "promotion_correctness"
+    weight: 0.20
+  - id: "refund_decision_quality"
+    weight: 0.25
+  - id: "recommendation_quality"
+    weight: 0.15
+  - id: "checkout_safety"
+    weight: 0.15
+
+evaluators:
+  - id: "retail.price_match_eval"
+    type: "source_of_truth_check"
+    dimension: "price_integrity"
+    input:
+      fields: ["quoted_price", "catalog_price", "currency"]
+    scoring:
+      method: "exact_match"
+      min_pass: 0.995
+
+  - id: "retail.promotion_rules_eval"
+    type: "rules_engine_match"
+    dimension: "promotion_correctness"
+    input:
+      fields: ["customer_profile", "cart_state", "promo_applied", "gold_promo_decision"]
+    scoring:
+      method: "decision_accuracy"
+      min_pass: 0.97
+
+  - id: "retail.refund_decision_eval"
+    type: "decision_trace_eval"
+    dimension: "refund_decision_quality"
+    input:
+      fields: ["order_state", "return_window", "fraud_score", "decision", "gold_decision"]
+    scoring:
+      method: "weighted_decision_accuracy"
+      min_pass: 0.95
+
+  - id: "retail.recommendation_relevance_eval"
+    type: "ranking_eval"
+    dimension: "recommendation_quality"
+    input:
+      fields: ["user_intent", "ranked_results", "gold_relevance_labels"]
+    scoring:
+      method: "ndcg_at_k"
+      min_pass: 0.80
+
+  - id: "retail.checkout_risk_eval"
+    type: "risk_gate_eval"
+    dimension: "checkout_safety"
+    input:
+      fields: ["cart_total", "approval_required", "decision"]
+    scoring:
+      method: "critical_decision_accuracy"
+      min_pass: 0.98
+---
+schema_version: "1.0"
+pack:
+  id: "evalpack.banking.kyc_aml.v1"
+  name: "Banking KYC AML Eval Pack"
+  version: "1.0.0"
+  owner: "financial-crime-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["industry", "banking", "kyc", "aml"]
+
+dimensions:
+  - id: "kyc_decision_accuracy"
+    weight: 0.25
+  - id: "aml_alert_sensitivity"
+    weight: 0.25
+  - id: "false_positive_control"
+    weight: 0.15
+  - id: "step_up_auth_quality"
+    weight: 0.20
+  - id: "advice_boundary_control"
+    weight: 0.15
+
+evaluators:
+  - id: "banking.kyc_eval"
+    type: "classification_eval"
+    dimension: "kyc_decision_accuracy"
+    input:
+      fields: ["kyc_case", "decision", "gold_decision"]
+    scoring:
+      method: "macro_f1"
+      min_pass: 0.95
+
+  - id: "banking.aml_sensitivity_eval"
+    type: "detection_eval"
+    dimension: "aml_alert_sensitivity"
+    input:
+      fields: ["transaction_trace", "alert_generated", "gold_alert_label"]
+    scoring:
+      method: "recall_priority"
+      min_pass: 0.97
+
+  - id: "banking.false_positive_eval"
+    type: "false_positive_rate_check"
+    dimension: "false_positive_control"
+    scoring:
+      method: "bounded_rate"
+      max_value: 0.08
+
+  - id: "banking.step_up_auth_eval"
+    type: "workflow_path_eval"
+    dimension: "step_up_auth_quality"
+    scoring:
+      method: "mandatory_path_check"
+      min_pass: 0.98
+
+  - id: "banking.advice_boundary_eval"
+    type: "boundary_violation_check"
+    dimension: "advice_boundary_control"
+    scoring:
+      method: "critical_violation_rate"
+      max_value: 0.005
+---
+schema_version: "1.0"
+pack:
+  id: "evalpack.insurance.claims.v1"
+  name: "Insurance Claims Eval Pack"
+  version: "1.0.0"
+  owner: "claims-quality"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["industry", "insurance", "claims"]
+
+dimensions:
+  - id: "coverage_decision_accuracy"
+    weight: 0.30
+  - id: "fraud_escalation_quality"
+    weight: 0.20
+  - id: "document_completeness_check"
+    weight: 0.15
+  - id: "explainability_quality"
+    weight: 0.20
+  - id: "settlement_safety"
+    weight: 0.15
+
+evaluators:
+  - id: "insurance.coverage_eval"
+    type: "decision_accuracy"
+    dimension: "coverage_decision_accuracy"
+    scoring:
+      method: "weighted_accuracy"
+      min_pass: 0.95
+
+  - id: "insurance.fraud_handoff_eval"
+    type: "escalation_classification"
+    dimension: "fraud_escalation_quality"
+    scoring:
+      method: "f1"
+      min_pass: 0.92
+
+  - id: "insurance.doc_check_eval"
+    type: "required_document_validation"
+    dimension: "document_completeness_check"
+    scoring:
+      method: "binary"
+      min_pass: 0.98
+
+  - id: "insurance.reason_code_eval"
+    type: "explanation_presence_and_alignment"
+    dimension: "explainability_quality"
+    scoring:
+      method: "hybrid_structural_and_judge"
+      min_pass: 0.90
+
+  - id: "insurance.settlement_risk_eval"
+    type: "critical_decision_accuracy"
+    dimension: "settlement_safety"
+    scoring:
+      method: "critical_accuracy"
+      min_pass: 0.98

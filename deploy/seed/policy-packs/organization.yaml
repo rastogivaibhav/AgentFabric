@@ -1,0 +1,152 @@
+schema_version: "1.0"
+pack:
+  id: "pack.org.company_core.v1"
+  name: "Company Core Governance Pack"
+  version: "1.0.0"
+  owner: "platform-governance"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["organization", "internal-policy"]
+
+policies:
+  - id: "org.data.no_external_genai_for_confidential"
+    title: "Confidential data may not be sent to non-approved external models"
+    applies_to:
+      actions: ["prompt_inject_context", "api_call"]
+      data_classes: ["confidential", "source_code", "roadmap", "customer_contract"]
+    conditions:
+      all:
+        - field_in:
+            field: "context.model_provider"
+            values: ["approved_internal_model", "approved_vpc_hosted_model"]
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "org.release.change_control"
+    title: "Production agent changes require approved change record"
+    applies_to:
+      actions: ["deploy_agent", "update_policy_pack", "enable_tool"]
+    conditions:
+      all:
+        - field_exists: "context.change_ticket"
+        - equals: { field: "context.change_approved", value: true }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "high"
+
+  - id: "org.exec_actions.dual_control"
+    title: "Destructive or sensitive actions require dual approval"
+    applies_to:
+      actions: ["delete_dataset", "mass_email_send", "bulk_refund", "disable_guardrail"]
+    conditions:
+      all:
+        - equals: { field: "context.first_approver_present", value: true }
+        - equals: { field: "context.second_approver_present", value: true }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+---
+schema_version: "1.0"
+pack:
+  id: "pack.org.risk_tolerance.v1"
+  name: "Enterprise Risk Tolerance Pack"
+  version: "1.0.0"
+  owner: "enterprise-risk-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["organization", "risk"]
+
+policies:
+  - id: "org.autonomy.by_risk"
+    title: "Autonomy level capped by risk tier"
+    applies_to:
+      actions: ["execute_plan", "tool_chain_run", "multi_step_autonomy"]
+    conditions:
+      any:
+        - all:
+            - equals: { field: "context.risk_tier", value: "low" }
+            - less_than_or_equal: { field: "context.max_autonomous_steps", value: 10 }
+        - all:
+            - equals: { field: "context.risk_tier", value: "moderate" }
+            - less_than_or_equal: { field: "context.max_autonomous_steps", value: 3 }
+        - all:
+            - equals: { field: "context.risk_tier", value: "high" }
+            - less_than_or_equal: { field: "context.max_autonomous_steps", value: 0 }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "org.low_confidence.requires_handoff"
+    title: "Low-confidence responses must hand off to human"
+    applies_to:
+      actions: ["respond_to_user", "issue_decision", "generate_advice"]
+    conditions:
+      all:
+        - greater_than_or_equal: { field: "context.confidence_score", value: 0.8 }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "high"
+
+  - id: "org.policy_unknown.fail_closed"
+    title: "Unknown policy state fails closed for sensitive workflows"
+    applies_to:
+      actions: ["*"]
+    conditions:
+      all:
+        - not_equals: { field: "runtime.policy_resolution_state", value: "unknown" }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+---
+schema_version: "1.0"
+pack:
+  id: "pack.org.workflow.v1"
+  name: "Internal Workflow Governance Pack"
+  version: "1.0.0"
+  owner: "operations-governance"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["organization", "workflow"]
+
+policies:
+  - id: "org.procurement.routing"
+    title: "Procurement requests above threshold route to finance"
+    applies_to:
+      actions: ["create_purchase_request", "approve_purchase"]
+    conditions:
+      any:
+        - less_than_or_equal: { field: "context.amount", value: 5000 }
+        - equals: { field: "context.finance_approval", value: true }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+
+  - id: "org.customer_complaint.mandatory_case"
+    title: "Customer complaints must create case before outbound reply"
+    applies_to:
+      actions: ["reply_to_customer"]
+    conditions:
+      all:
+        - field_exists: "context.case_id"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+
+  - id: "org.incident.comms_lock"
+    title: "During active incident, external statements restricted to incident command"
+    applies_to:
+      actions: ["post_public_message", "send_press_response"]
+    conditions:
+      any:
+        - equals: { field: "context.incident_active", value: false }
+        - equals: { field: "context.actor_role", value: "incident_commander" }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"

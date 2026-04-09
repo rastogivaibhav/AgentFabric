@@ -1,0 +1,49 @@
+schema_version: "1.0"
+pack:
+  id: "pack.gdpr.eu.v1"
+  name: "GDPR Core Enforcement Pack"
+  version: "1.0.0"
+  jurisdiction: ["EU", "EEA"]
+  owner: "compliance-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["regulatory", "privacy", "personal-data"]
+
+defaults:
+  conflict_resolution: "deny_wins"
+  on_unknown: "escalate"
+  evidence_mode: "required"
+  decision_ttl_seconds: 300
+
+definitions:
+  data_classes:
+    - personal_data
+    - special_category_data
+    - financial_data
+    - health_data
+    - customer_profile
+  risk_levels:
+    - low
+    - moderate
+    - high
+    - critical
+
+policies: []
+
+controls:
+  logging:
+    enabled: true
+    redact_fields: ["email", "phone", "national_id", "card_pan"]
+  audit:
+    hash_chain: true
+    record_inputs: false
+    record_outputs: true
+    record_tool_calls: true
+  human_review:
+    queue: "compliance-review"
+    sla_hours: 24
+
+approvals:
+  legal_owner: "dpo@company.example"
+  security_owner: "ciso@company.example"
+  engineering_owner: "platform@company.example"

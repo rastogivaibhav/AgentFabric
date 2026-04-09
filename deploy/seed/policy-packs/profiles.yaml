@@ -1,0 +1,25 @@
+deployment_profile:
+  name: "eu-retail-autonomous-support-prod"
+  packs:
+    - "pack.gdpr.eu.v1"
+    - "pack.eu_ai_act.v1"
+    - "pack.retail.commerce.v1"
+    - "pack.org.company_core.v1"
+    - "pack.org.risk_tolerance.v1"
+    - "pack.agent.tool_access.v1"
+    - "pack.agent.skill_permissions.v1"
+    - "pack.agent.multi_agent.v1"
+
+resolution:
+  precedence:
+    - "regulatory"
+    - "organization"
+    - "industry"
+    - "agent-capability"
+    - "user-preference"
+  strategy: "deny_wins"
+
+runtime:
+  enforce_mode: "hard"
+  advisory_mode_for: []
+  on_policy_engine_unavailable: "fail_closed"

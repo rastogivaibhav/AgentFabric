@@ -30,6 +30,7 @@ tags:
   - name: Users
   - name: Budgets
   - name: Pricing
+  - name: Evals
   - name: Keys
   - name: Proxy
   - name: Internal
@@ -1521,6 +1522,108 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/evals/datasets:
+    get:
+      tags: [Evals]
+      summary: List eval datasets
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Eval datasets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalDatasetPage'
+    put:
+      tags: [Evals]
+      summary: Create or update an eval dataset
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvalDataset'
+      responses:
+        '200':
+          description: Saved eval dataset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalDataset'
+
+  /api/v1/evals/executions:
+    get:
+      tags: [Evals]
+      summary: List eval executions
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Eval executions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalExecutionPage'
+
+  /api/v1/evals/executions/{executionId}:
+    get:
+      tags: [Evals]
+      summary: Get eval execution
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: executionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Eval execution detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalExecution'
+        '404':
+          description: Eval execution not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/evals/execute:
+    post:
+      tags: [Evals]
+      summary: Execute a GOVAGN-native eval pack
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TraceEvalRequest'
+      responses:
+        '200':
+          description: Eval execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalExecutionResponse'
+
   /proxy/{provider}/v1/{path}:
     post:
       tags: [Proxy]
@@ -2937,3 +3040,279 @@ components:
       properties:
         reason:
           type: string
+    TraceEvalRequest:
+      type: object
+      properties:
+        trace_id:
+          type: string
+        trace_ids:
+          type: array
+          items:
+            type: string
+        release_tag:
+          type: string
+        eval_suite:
+          type: string
+        pack_id:
+          type: string
+        mode:
+          type: string
+        dataset_refs:
+          type: array
+          items:
+            type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        sample_limit:
+          type: integer
+    TraceEvalScore:
+      type: object
+      properties:
+        metric:
+          type: string
+        score:
+          type: number
+          format: double
+        weight:
+          type: number
+          format: double
+        severity:
+          type: string
+        summary:
+          type: string
+    TraceEvalRun:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        trace_id:
+          type: string
+        prompt_id:
+          type: string
+        prompt_version:
+          type: integer
+        prompt_environment:
+          type: string
+        release_tag:
+          type: string
+        eval_suite:
+          type: string
+        overall_score:
+          type: number
+          format: double
+        risk_level:
+          type: string
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        scores:
+          type: array
+          items:
+            $ref: '#/components/schemas/TraceEvalScore'
+    EvalDatasetItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        dataset_ref:
+          type: string
+        item_key:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        expected:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+        labels:
+          type: array
+          items:
+            type: string
+    EvalDataset:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        dataset_id:
+          type: string
+        version:
+          type: string
+        ref:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        description:
+          type: string
+        owner:
+          type: string
+        status:
+          type: string
+        source:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvalDatasetItem'
+    EvalDatasetPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvalDataset'
+        total:
+          type: integer
+          format: int64
+        has_more:
+          type: boolean
+    EvalEvaluatorResult:
+      type: object
+      properties:
+        evaluator_id:
+          type: string
+        dimension_id:
+          type: string
+        evaluator_type:
+          type: string
+        method:
+          type: string
+        score:
+          type: number
+          format: double
+        severity:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        input_fields:
+          type: array
+          items:
+            type: string
+        details:
+          type: object
+          additionalProperties: true
+    EvalEvidenceLink:
+      type: object
+      properties:
+        link_type:
+          type: string
+        ref_id:
+          type: string
+        label:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    EvalExecutionItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        item_ref:
+          type: string
+        item_type:
+          type: string
+        trace_id:
+          type: string
+        dataset_ref:
+          type: string
+        status:
+          type: string
+        overall_score:
+          type: number
+          format: double
+        risk_level:
+          type: string
+        summary:
+          type: string
+        evidence:
+          type: object
+          additionalProperties: true
+        evaluator_results:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvalEvaluatorResult'
+        evidence_links:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvalEvidenceLink'
+    EvalExecution:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        pack_id:
+          type: string
+        mode:
+          type: string
+        status:
+          type: string
+        release_tag:
+          type: string
+        trace_ids:
+          type: array
+          items:
+            type: string
+        dataset_refs:
+          type: array
+          items:
+            type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        sample_limit:
+          type: integer
+        overall_score:
+          type: number
+          format: double
+        risk_level:
+          type: string
+        summary:
+          type: string
+        run_id:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvalExecutionItem'
+    EvalExecutionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvalExecution'
+        total:
+          type: integer
+          format: int64
+        has_more:
+          type: boolean
+    EvalExecutionResponse:
+      type: object
+      properties:
+        execution:
+          $ref: '#/components/schemas/EvalExecution'
+        run:
+          $ref: '#/components/schemas/TraceEvalRun'

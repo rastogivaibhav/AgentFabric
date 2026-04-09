@@ -1,0 +1,57 @@
+schema_version: "1.0"
+dataset:
+  id: "regulatory.gdpr.requests"
+  version: "v1"
+  ref: "regulatory.gdpr.requests.v1"
+  name: "GDPR Rights Requests Set"
+  type: "golden"
+  owner: "privacy-office"
+  status: "approved"
+  source: "seed"
+  description: "Representative GDPR rights request and transfer control cases"
+  tags: ["regulatory", "gdpr"]
+items:
+  - key: "gdpr-001"
+    input:
+      request_type: "delete"
+      identity_verified: true
+      workflow_trace:
+        - "verify_identity"
+        - "open_privacy_case"
+        - "pause_processing"
+      requested_fields:
+        - "email"
+      allowed_fields_for_purpose:
+        - "email"
+      original_purpose: "support"
+      new_purpose: "support"
+      destination_region: "EU"
+      transfer_mechanism: "adequacy"
+      decision: "permit"
+    expected:
+      gold_decision: "permit"
+    metadata:
+      regulation: "gdpr"
+    labels: ["gdpr", "rights"]
+  - key: "gdpr-002"
+    input:
+      request_type: "share"
+      identity_verified: true
+      workflow_trace:
+        - "verify_identity"
+        - "review_transfer"
+      requested_fields:
+        - "email"
+        - "phone"
+      allowed_fields_for_purpose:
+        - "email"
+      original_purpose: "support"
+      new_purpose: "marketing"
+      destination_region: "US"
+      transfer_mechanism: "none"
+      decision: "deny"
+    expected:
+      gold_decision: "deny"
+    metadata:
+      regulation: "gdpr"
+    labels: ["gdpr", "transfer"]

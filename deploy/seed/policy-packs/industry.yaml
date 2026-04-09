@@ -1,0 +1,226 @@
+schema_version: "1.0"
+pack:
+  id: "pack.retail.commerce.v1"
+  name: "Retail Pricing Promotions Refunds Pack"
+  version: "1.0.0"
+  owner: "commerce-operations"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["industry", "retail", "commerce"]
+
+policies:
+  - id: "retail.price.source_of_truth"
+    title: "Displayed or quoted price must match catalog source of truth"
+    applies_to:
+      actions: ["quote_price", "display_price", "checkout"]
+    conditions:
+      all:
+        - equals_ref:
+            left: "context.quoted_price"
+            right: "catalog.current_price"
+        - equals_ref:
+            left: "context.currency"
+            right: "catalog.currency"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "price_verification"
+    severity: "critical"
+
+  - id: "retail.promotion.eligibility"
+    title: "Promotions may only be applied if eligibility passes"
+    applies_to:
+      actions: ["apply_promotion", "checkout"]
+    conditions:
+      all:
+        - promotion_valid: "context.promotion_code"
+        - user_eligible: "context.customer_id"
+        - cart_eligible: "context.cart_id"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "high"
+
+  - id: "retail.refund.policy_enforcement"
+    title: "Refunds must match return policy and fraud checks"
+    applies_to:
+      actions: ["approve_refund", "issue_refund"]
+    conditions:
+      all:
+        - within_return_window: "order.purchase_date"
+        - order_exists: "order.order_id"
+        - payment_traceable: "order.payment_id"
+        - fraud_score_below: 0.7
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "refund_decision"
+    severity: "critical"
+
+  - id: "retail.cart.value.limit"
+    title: "Autonomous checkout above threshold requires human approval"
+    applies_to:
+      actions: ["checkout", "place_order"]
+    conditions:
+      all:
+        - less_than_or_equal: { field: "context.cart_total", value: 500 }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "high"
+
+  - id: "retail.recommendation.transparency"
+    title: "Sponsored or merchant-biased recommendations must be labeled"
+    applies_to:
+      actions: ["recommend_products", "rank_products"]
+    conditions:
+      any:
+        - equals: { field: "context.sponsored_influence", value: false }
+        - all:
+            - equals: { field: "context.sponsored_influence", value: true }
+            - equals: { field: "context.disclosure_shown", value: true }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "high"
+---
+schema_version: "1.0"
+pack:
+  id: "pack.banking.kyc_aml.v1"
+  name: "Banking KYC AML Pack"
+  version: "1.0.0"
+  owner: "financial-crime-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["industry", "banking", "kyc", "aml"]
+
+policies:
+  - id: "banking.kyc.identity_required"
+    title: "No account opening or material transaction without KYC completion"
+    applies_to:
+      actions: ["open_account", "increase_limit", "high_value_transfer"]
+    conditions:
+      all:
+        - equals: { field: "context.kyc_status", value: "passed" }
+        - equals: { field: "context.sanctions_screen_status", value: "clear" }
+        - equals: { field: "context.pep_review_status", value: "cleared_or_not_applicable" }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "banking.aml.velocity_monitor"
+    title: "Unusual transaction velocity triggers review"
+    applies_to:
+      actions: ["transfer_funds", "withdraw", "deposit"]
+    conditions:
+      all:
+        - less_than: { field: "context.velocity_risk_score", value: 0.8 }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    obligations:
+      - create_case: "aml-review"
+    severity: "critical"
+
+  - id: "banking.beneficiary_change.cooldown"
+    title: "New beneficiary high-value transfers require cooldown or step-up auth"
+    applies_to:
+      actions: ["transfer_funds"]
+    conditions:
+      any:
+        - equals: { field: "context.new_beneficiary", value: false }
+        - all:
+            - equals: { field: "context.new_beneficiary", value: true }
+            - less_than_or_equal: { field: "context.amount", value: 1000 }
+        - all:
+            - equals: { field: "context.new_beneficiary", value: true }
+            - equals: { field: "context.step_up_auth_passed", value: true }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "banking.advice.disclaimer_and_handoff"
+    title: "Personalised financial advice requires proper licensed workflow"
+    applies_to:
+      actions: ["generate_advice", "recommend_investment"]
+    conditions:
+      any:
+        - equals: { field: "context.advice_type", value: "general_information" }
+        - all:
+            - equals: { field: "context.advice_type", value: "personalised_advice" }
+            - equals: { field: "context.licensed_channel", value: true }
+            - equals: { field: "context.suitability_assessment_complete", value: true }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "critical"
+---
+schema_version: "1.0"
+pack:
+  id: "pack.insurance.claims.v1"
+  name: "Insurance Claims Validation Pack"
+  version: "1.0.0"
+  owner: "claims-operations"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["industry", "insurance", "claims"]
+
+policies:
+  - id: "insurance.claim.documentation_required"
+    title: "Claims require minimum supporting evidence"
+    applies_to:
+      actions: ["open_claim", "approve_claim", "reject_claim"]
+    conditions:
+      all:
+        - field_exists: "claim.policy_id"
+        - field_exists: "claim.loss_date"
+        - field_exists: "claim.loss_description"
+        - minimum_documents_present: ["proof_of_loss"]
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "high"
+
+  - id: "insurance.coverage.check"
+    title: "Claim decision must align to active policy coverage"
+    applies_to:
+      actions: ["approve_claim", "reject_claim"]
+    conditions:
+      all:
+        - policy_active: "claim.policy_id"
+        - peril_covered: "claim.loss_type"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "insurance.fraud.scoring"
+    title: "High fraud score blocks autonomous settlement"
+    applies_to:
+      actions: ["approve_claim", "issue_payment"]
+    conditions:
+      all:
+        - less_than: { field: "context.fraud_score", value: 0.75 }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    obligations:
+      - create_case: "siu-review"
+    severity: "critical"
+
+  - id: "insurance.explainability.required"
+    title: "Adverse claim decisions require reason codes"
+    applies_to:
+      actions: ["reject_claim", "reduce_settlement"]
+    conditions:
+      all:
+        - field_exists: "context.reason_codes"
+        - min_length: { field: "context.reason_codes", value: 1 }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "high"

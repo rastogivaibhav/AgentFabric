@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -8,6 +10,9 @@ import (
 type regoAdapter struct{}
 
 func (a *regoAdapter) Evaluate(rule compiledRule, input EvaluationInput) (Decision, bool) {
+	if strings.EqualFold(strings.TrimSpace(rule.normalized.RegoModule), NativePackRegoModule) {
+		return a.evaluateNativePack(rule, input)
+	}
 	module := strings.TrimSpace(rule.normalized.RegoModule)
 	if module == "" {
 		return Decision{}, false
@@ -48,6 +53,42 @@ func (a *regoAdapter) Evaluate(rule compiledRule, input EvaluationInput) (Decisi
 		Action:      rule.normalized.Action,
 		Reason:      decisionReason(rule.normalized, input),
 		Scope:       decisionScope(rule.normalized, input.Scope),
+		Explanation: explanation,
+	}, true
+}
+
+func (a *regoAdapter) evaluateNativePack(rule compiledRule, input EvaluationInput) (Decision, bool) {
+	if strings.TrimSpace(rule.normalized.SchemaJSON) == "" {
+		return Decision{}, false
+	}
+	var envelope NativePackRuleEnvelope
+	if err := json.Unmarshal([]byte(rule.normalized.SchemaJSON), &envelope); err != nil {
+		return Decision{}, false
+	}
+	result := evaluateNativePackEnvelope(envelope, input)
+	if !result.Matched {
+		return Decision{}, false
+	}
+	explanation := DecisionExplanation{
+		Engine:         "native-pack",
+		DecisionMode:   rule.decisionMode,
+		Version:        rule.normalized.Version,
+		RolloutPercent: rule.normalized.RolloutPercent,
+		EvaluationPath: []string{"native-pack", envelope.Pack.ID, envelope.Policy.ID},
+		RuleConditions: cloneConditions(rule.ruleConditions),
+		Explain:        result.Reason,
+	}
+	if len(result.Unsupported) > 0 {
+		explanation.Explain = explanation.Explain + "; unsupported operators: " + strings.Join(result.Unsupported, ", ")
+	}
+	return Decision{
+		Matched:    true,
+		Final:      true,
+		RuleID:     rule.normalized.ID,
+		PolicyName: rule.normalized.Name,
+		Action:     result.Action,
+		Reason:     result.Reason,
+		Scope:      decisionScope(rule.normalized, input.Scope),
 		Explanation: explanation,
 	}, true
 }
@@ -212,6 +253,9 @@ func lookupConditionValue(field string, input EvaluationInput) string {
 	case "response_body":
 		return string(input.ResponseBody)
 	default:
+		if value, ok := resolvePackPath(field, input.Attributes); ok {
+			return strings.TrimSpace(strings.Trim(fmt.Sprint(value), `"`))
+		}
 		if strings.HasPrefix(field, "header.") {
 			return input.RequestHeaders[strings.TrimPrefix(field, "header.")]
 		}

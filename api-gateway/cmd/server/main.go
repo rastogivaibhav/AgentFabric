@@ -44,6 +44,8 @@ func main() {
 	collectorAuthToken := strings.TrimSpace(os.Getenv("GV_GATEWAY_AUTH_TOKEN"))
 	rateLimitRPM := int64(parseIntEnv("GV_RATE_LIMIT_RPM", 1000))
 	openapiSpecPath := envOr("GV_OPENAPI_SPEC_PATH", "docs/openapi.yaml")
+	policyPackPath := envOr("GV_POLICY_PACKS_PATH", "deploy/seed/policy-packs")
+	evalPackPath := envOr("GV_EVAL_PACKS_PATH", "deploy/seed/eval-packs")
 	strictMode := strictConfigEnabled()
 
 	// TLS configuration — fail-secure: if GV_TLS_ENABLED=true the server will
@@ -171,7 +173,7 @@ func main() {
 	np := netproxy.New(netProxyCA, llmVault, budgetEnforcer, pgStore, policyEngine, hub, logger)
 
 	// Wire handlers
-	h := handlers.New(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer, policyEngine)
+	h := handlers.NewWithPackRoots(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer, policyEngine, policyPackPath, evalPackPath)
 
 	r := chi.NewRouter()
 
@@ -371,6 +373,13 @@ func main() {
 
 		r.Route("/evals", func(r chi.Router) {
 			r.With(middleware.RequireRole("admin")).Get("/", h.ListEvalRuns)
+			r.With(middleware.RequireRole("admin")).Get("/packs", h.ListEvalPacks)
+			r.With(middleware.RequireRole("admin")).Get("/packs/{packId}", h.GetEvalPack)
+			r.With(middleware.RequireRole("admin")).Get("/datasets", h.ListEvalDatasets)
+			r.With(middleware.RequireRole("admin")).Put("/datasets", h.UpsertEvalDataset)
+			r.With(middleware.RequireRole("admin")).Get("/executions", h.ListEvalExecutions)
+			r.With(middleware.RequireRole("admin")).Get("/executions/{executionId}", h.GetEvalExecution)
+			r.With(middleware.RequireRole("admin")).Post("/execute", h.ExecuteEvalPack)
 			r.With(middleware.RequireRole("admin")).Post("/score", h.ScoreTraceEval)
 			r.With(middleware.RequireRole("admin")).Post("/regressions", h.CompareEvalRegressions)
 		})
@@ -390,6 +399,9 @@ func main() {
 
 		r.Route("/policies", func(r chi.Router) {
 			r.With(middleware.RequireRole("admin")).Get("/", h.ListPolicyRules)
+			r.With(middleware.RequireRole("admin")).Get("/packs", h.ListPolicyPacks)
+			r.With(middleware.RequireRole("admin")).Get("/packs/{packId}", h.GetPolicyPack)
+			r.With(middleware.RequireRole("admin")).Post("/packs/apply", h.ApplyPolicyPack)
 			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertPolicyRule)
 			r.With(middleware.RequireRole("admin")).Post("/preview", h.PreviewPolicyRule)
 			r.With(middleware.RequireRole("admin")).Post("/simulate", h.SimulatePolicyRule)

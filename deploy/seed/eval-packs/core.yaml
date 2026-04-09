@@ -1,0 +1,148 @@
+schema_version: "1.0"
+pack:
+  id: "evalpack.llm.general_quality.v1"
+  name: "General LLM Quality Eval Pack"
+  version: "1.0.0"
+  owner: "ai-quality-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["core", "llm", "quality"]
+
+dimensions:
+  - id: "instruction_following"
+    weight: 0.20
+  - id: "accuracy"
+    weight: 0.25
+  - id: "groundedness"
+    weight: 0.20
+  - id: "completeness"
+    weight: 0.15
+  - id: "hallucination_resistance"
+    weight: 0.20
+
+evaluators:
+  - id: "llm.instruction_following"
+    type: "reference_rubric"
+    dimension: "instruction_following"
+    input:
+      fields: ["prompt", "response", "task_constraints"]
+    rubric:
+      - "Follows required format"
+      - "Addresses requested task"
+      - "Respects exclusions and constraints"
+    scoring:
+      method: "rubric_average"
+      min_pass: 0.90
+
+  - id: "llm.accuracy_against_gold"
+    type: "semantic_reference_match"
+    dimension: "accuracy"
+    input:
+      fields: ["response", "gold_answer"]
+    scoring:
+      method: "semantic_similarity"
+      min_pass: 0.85
+
+  - id: "llm.groundedness"
+    type: "grounding_check"
+    dimension: "groundedness"
+    input:
+      fields: ["response", "retrieved_context", "citations"]
+    scoring:
+      method: "claim_support_ratio"
+      min_pass: 0.90
+
+  - id: "llm.completeness"
+    type: "rubric_judge"
+    dimension: "completeness"
+    input:
+      fields: ["response", "task_requirements"]
+    scoring:
+      method: "judge_model"
+      min_pass: 0.80
+
+  - id: "llm.hallucination_resistance"
+    type: "adversarial_check"
+    dimension: "hallucination_resistance"
+    dataset_ref: "adversarial.unknown_facts.v1"
+    scoring:
+      method: "unsupported_claim_penalty"
+      max_failure_rate: 0.01
+
+gates:
+  release_gate:
+    min_overall_score: 0.87
+    max_critical_failures: 0
+---
+schema_version: "1.0"
+pack:
+  id: "evalpack.agent.runtime_quality.v1"
+  name: "Agent Runtime Quality Eval Pack"
+  version: "1.0.0"
+  owner: "ai-quality-office"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["core", "agent", "runtime"]
+
+dimensions:
+  - id: "task_success"
+    weight: 0.25
+  - id: "tool_correctness"
+    weight: 0.20
+  - id: "workflow_efficiency"
+    weight: 0.15
+  - id: "policy_awareness"
+    weight: 0.20
+  - id: "escalation_quality"
+    weight: 0.20
+
+evaluators:
+  - id: "agent.task_completion"
+    type: "task_outcome_match"
+    dimension: "task_success"
+    input:
+      fields: ["goal", "final_state", "expected_outcome"]
+    scoring:
+      method: "binary_or_partial_credit"
+      min_pass: 0.90
+
+  - id: "agent.tool_use_correctness"
+    type: "tool_trace_validation"
+    dimension: "tool_correctness"
+    input:
+      fields: ["tool_trace", "allowed_tools", "expected_tool_pattern"]
+    scoring:
+      method: "trace_alignment"
+      min_pass: 0.85
+
+  - id: "agent.workflow_efficiency"
+    type: "trace_cost_efficiency"
+    dimension: "workflow_efficiency"
+    input:
+      fields: ["step_count", "latency_ms", "token_usage", "expected_budget"]
+    scoring:
+      method: "budget_efficiency_score"
+      min_pass: 0.75
+
+  - id: "agent.policy_awareness"
+    type: "policy_interaction_check"
+    dimension: "policy_awareness"
+    input:
+      fields: ["policy_events", "action_trace"]
+    scoring:
+      method: "violation_penalty"
+      max_failure_rate: 0.005
+
+  - id: "agent.escalation_quality"
+    type: "handoff_decision_eval"
+    dimension: "escalation_quality"
+    input:
+      fields: ["confidence", "risk_level", "escalated", "gold_escalation_label"]
+    scoring:
+      method: "classification_f1"
+      min_pass: 0.85
+
+gates:
+  release_gate:
+    min_overall_score: 0.85
+    max_critical_failures: 0

@@ -1,0 +1,160 @@
+schema_version: "1.0"
+pack:
+  id: "pack.agent.tool_access.v1"
+  name: "Agent Tool Access Pack"
+  version: "1.0.0"
+  owner: "agent-platform"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["agent-capability", "tools"]
+
+policies:
+  - id: "agent.tools.allowlist"
+    title: "Agent may use only explicitly approved tools"
+    applies_to:
+      actions: ["tool_call"]
+    conditions:
+      all:
+        - tool_in_allowlist:
+            agent_ref: "context.agent_id"
+            tool_ref: "context.tool_name"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "agent.tools.network_egress_control"
+    title: "External network access restricted by tool class and destination"
+    applies_to:
+      actions: ["tool_call"]
+    conditions:
+      any:
+        - equals: { field: "context.tool_requires_network", value: false }
+        - destination_in_allowlist: "context.destination_host"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    severity: "critical"
+
+  - id: "agent.tools.write_actions.human_gate"
+    title: "Write-side tools require step-up approval in sensitive domains"
+    applies_to:
+      actions: ["tool_call"]
+    conditions:
+      any:
+        - equals: { field: "context.tool_mode", value: "read_only" }
+        - equals: { field: "context.human_approval_present", value: true }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    severity: "critical"
+---
+schema_version: "1.0"
+pack:
+  id: "pack.agent.skill_permissions.v1"
+  name: "Agent Skill Permissions Pack"
+  version: "1.0.0"
+  owner: "agent-platform"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["agent-capability", "skills"]
+
+policies:
+  - id: "agent.skill.tiering"
+    title: "Skill execution requires matching agent certification tier"
+    applies_to:
+      actions: ["execute_skill"]
+    conditions:
+      all:
+        - agent_tier_gte:
+            agent_field: "context.agent_tier"
+            required_field: "context.skill_required_tier"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+
+  - id: "agent.skill.prod_lock"
+    title: "Experimental skills blocked in production"
+    applies_to:
+      actions: ["execute_skill"]
+    conditions:
+      any:
+        - not_equals: { field: "runtime.environment", value: "production" }
+        - equals: { field: "context.skill_status", value: "approved" }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+
+  - id: "agent.skill.eval_freshness"
+    title: "Skills with stale evaluation cannot run autonomously"
+    applies_to:
+      actions: ["execute_skill"]
+    conditions:
+      all:
+        - within_days:
+            field: "context.last_eval_at"
+            value: 90
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+---
+schema_version: "1.0"
+pack:
+  id: "pack.agent.multi_agent.v1"
+  name: "Multi-Agent Coordination Pack"
+  version: "1.0.0"
+  owner: "agent-platform"
+  status: "approved"
+  effective_from: "2026-04-09"
+  tags: ["agent-capability", "multi-agent"]
+
+policies:
+  - id: "agent.delegation.boundary"
+    title: "Delegation only allowed to agents in trusted registry"
+    applies_to:
+      actions: ["delegate_task", "handoff_context"]
+    conditions:
+      all:
+        - agent_in_registry: "context.target_agent_id"
+        - same_or_higher_trust_zone:
+            source_field: "context.source_agent_zone"
+            target_field: "context.target_agent_zone"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+
+  - id: "agent.context.min_share"
+    title: "Share minimum required context across agents"
+    applies_to:
+      actions: ["handoff_context"]
+    conditions:
+      all:
+        - allowed_fields_subset:
+            requested_fields_ref: "context.shared_fields"
+            allowed_profile_ref: "policy_refs.cross_agent_min_fields"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+
+  - id: "agent.loop_prevention"
+    title: "Prevent recursive or runaway delegation loops"
+    applies_to:
+      actions: ["delegate_task"]
+    conditions:
+      all:
+        - less_than: { field: "context.delegation_depth", value: 5 }
+        - not_seen_in_path: "context.target_agent_id"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+
+  - id: "agent.final_decision.authority"
+    title: "Only designated authority agent may issue final binding decision"
+    applies_to:
+      actions: ["issue_final_decision"]
+    conditions:
+      all:
+        - equals: { field: "context.agent_role", value: "authority_agent" }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"

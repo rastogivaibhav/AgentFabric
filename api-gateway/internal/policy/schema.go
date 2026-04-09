@@ -22,6 +22,7 @@ type EvaluationInput struct {
 	Actor           string
 	App             string
 	Session         string
+	Attributes      map[string]any
 }
 
 type ConditionTrace = models.PolicyConditionTrace
@@ -59,6 +60,9 @@ func normalizeEvaluationInput(input EvaluationInput) EvaluationInput {
 	input.Session = strings.TrimSpace(input.Session)
 	if input.RequestHeaders == nil {
 		input.RequestHeaders = map[string]string{}
+	}
+	if input.Attributes == nil {
+		input.Attributes = map[string]any{}
 	}
 	normalizedHeaders := make(map[string]string, len(input.RequestHeaders))
 	for key, value := range input.RequestHeaders {
