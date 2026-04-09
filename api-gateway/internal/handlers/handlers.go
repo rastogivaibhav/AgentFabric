@@ -7,14 +7,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/govagn/api-gateway/internal/budget"
 	"github.com/govagn/api-gateway/internal/evals"
+	"github.com/govagn/api-gateway/internal/managedruntime"
 	"github.com/govagn/api-gateway/internal/memory"
 	"github.com/govagn/api-gateway/internal/middleware"
 	"github.com/govagn/api-gateway/internal/models"
@@ -27,7 +30,6 @@ import (
 	"github.com/govagn/api-gateway/internal/rollouts"
 	"github.com/govagn/api-gateway/internal/store"
 	"github.com/govagn/api-gateway/internal/ws"
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
@@ -101,6 +103,10 @@ func actorFromCtx(r *http.Request) string {
 	default:
 		return strings.TrimSpace(claims.Subject)
 	}
+}
+
+func (h *Handler) managedRuntimeService() managedruntime.Service {
+	return managedruntime.NewService(h.pg)
 }
 
 func (h *Handler) writeAdminAudit(r *http.Request, category, action, targetType, targetID, outcome string, details any) {
@@ -950,6 +956,318 @@ func (h *Handler) GetAgentTopology(w http.ResponseWriter, r *http.Request) {
 
 // ─── Runs ─────────────────────────────────────────────────────────────────────
 
+func (h *Handler) ListManagedAgents(w http.ResponseWriter, r *http.Request) {
+	page, err := h.managedRuntimeService().ListAgents(r.Context(), tenantFromCtx(r), parseIntOr(r.URL.Query().Get("limit"), 50))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetManagedAgent(w http.ResponseWriter, r *http.Request) {
+	item, err := h.managedRuntimeService().GetAgent(r.Context(), tenantFromCtx(r), chi.URLParam(r, "agentId"))
+	if err != nil {
+		if errors.Is(err, managedruntime.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "managed agent not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) UpsertManagedAgent(w http.ResponseWriter, r *http.Request) {
+	var req models.ManagedAgentUpsertRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	service := h.managedRuntimeService()
+	var before any
+	if id := strings.TrimSpace(req.ID); id != "" {
+		if existing, err := service.GetAgent(r.Context(), tenantFromCtx(r), id); err == nil {
+			before = existing
+		}
+	}
+	item, err := service.UpsertAgent(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	action := "create"
+	status := http.StatusCreated
+	if before != nil {
+		action = "update"
+		status = http.StatusOK
+	}
+	h.writeAdminAudit(r, "managed_agents", action, "managed_agent", item.ID, "success", item)
+	h.writeControlHistory(r, "managed_agents", action, "managed_agent", item.ID, item.Name, "success", before, item, []string{item.ID})
+	writeJSON(w, status, item)
+}
+
+func (h *Handler) ListManagedEnvironments(w http.ResponseWriter, r *http.Request) {
+	page, err := h.managedRuntimeService().ListEnvironments(r.Context(), tenantFromCtx(r), parseIntOr(r.URL.Query().Get("limit"), 50))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetManagedEnvironment(w http.ResponseWriter, r *http.Request) {
+	item, err := h.managedRuntimeService().GetEnvironment(r.Context(), tenantFromCtx(r), chi.URLParam(r, "environmentId"))
+	if err != nil {
+		if errors.Is(err, managedruntime.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "managed environment not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) UpsertManagedEnvironment(w http.ResponseWriter, r *http.Request) {
+	var req models.ManagedEnvironmentUpsertRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	service := h.managedRuntimeService()
+	var before any
+	if id := strings.TrimSpace(req.ID); id != "" {
+		if existing, err := service.GetEnvironment(r.Context(), tenantFromCtx(r), id); err == nil {
+			before = existing
+		}
+	}
+	item, err := service.UpsertEnvironment(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	action := "create"
+	status := http.StatusCreated
+	if before != nil {
+		action = "update"
+		status = http.StatusOK
+	}
+	h.writeAdminAudit(r, "managed_agents", action, "managed_environment", item.ID, "success", item)
+	h.writeControlHistory(r, "managed_agents", action, "managed_environment", item.ID, item.Name, "success", before, item, []string{item.ID})
+	writeJSON(w, status, item)
+}
+
+func (h *Handler) ListManagedSessions(w http.ResponseWriter, r *http.Request) {
+	page, err := h.managedRuntimeService().ListSessions(
+		r.Context(),
+		tenantFromCtx(r),
+		r.URL.Query().Get("agent_id"),
+		parseIntOr(r.URL.Query().Get("limit"), 50),
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetManagedSession(w http.ResponseWriter, r *http.Request) {
+	item, err := h.managedRuntimeService().GetSession(r.Context(), tenantFromCtx(r), chi.URLParam(r, "sessionId"))
+	if err != nil {
+		if errors.Is(err, managedruntime.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "managed session not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) CreateManagedSession(w http.ResponseWriter, r *http.Request) {
+	var req models.ManagedSessionCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	item, err := h.managedRuntimeService().CreateSession(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "managed_agents", "create", "managed_session", item.ID, "success", item)
+	h.writeControlHistory(r, "managed_agents", "create", "managed_session", item.ID, item.AgentID, "success", nil, item, []string{item.AgentID, item.ID})
+	writeJSON(w, http.StatusCreated, item)
+}
+
+func (h *Handler) ListManagedSessionEvents(w http.ResponseWriter, r *http.Request) {
+	page, err := h.managedRuntimeService().ListSessionEvents(
+		r.Context(),
+		tenantFromCtx(r),
+		chi.URLParam(r, "sessionId"),
+		parseIntOr(r.URL.Query().Get("limit"), 200),
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) CreateManagedSessionEvent(w http.ResponseWriter, r *http.Request) {
+	var req models.ManagedSessionEventCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	sessionID := chi.URLParam(r, "sessionId")
+	item, err := h.managedRuntimeService().CreateSessionEvent(r.Context(), tenantFromCtx(r), sessionID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "managed_agents", "append_event", "managed_session", sessionID, "success", item)
+	h.writeControlHistory(r, "managed_agents", "append_event", "managed_session", sessionID, item.Type, "success", nil, item, []string{sessionID, item.ID})
+	writeJSON(w, http.StatusCreated, item)
+}
+
+func (h *Handler) ListManagedSessionTasks(w http.ResponseWriter, r *http.Request) {
+	page, err := h.managedRuntimeService().ListSessionTasks(
+		r.Context(),
+		tenantFromCtx(r),
+		chi.URLParam(r, "sessionId"),
+		parseIntOr(r.URL.Query().Get("limit"), 100),
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) GetManagedTask(w http.ResponseWriter, r *http.Request) {
+	item, err := h.managedRuntimeService().GetTask(r.Context(), tenantFromCtx(r), chi.URLParam(r, "taskId"))
+	if err != nil {
+		if errors.Is(err, managedruntime.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "managed task not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) UpsertManagedTask(w http.ResponseWriter, r *http.Request) {
+	var req models.ManagedTaskUpsertRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	service := h.managedRuntimeService()
+	var before any
+	if id := strings.TrimSpace(req.ID); id != "" {
+		if existing, err := service.GetTask(r.Context(), tenantFromCtx(r), id); err == nil {
+			before = existing
+		}
+	}
+	item, err := service.UpsertTask(r.Context(), tenantFromCtx(r), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	action := "create"
+	status := http.StatusCreated
+	if before != nil {
+		action = "update"
+		status = http.StatusOK
+	}
+	h.writeAdminAudit(r, "managed_agents", action, "managed_task", item.ID, "success", item)
+	h.writeControlHistory(r, "managed_agents", action, "managed_task", item.ID, item.Status, "success", before, item, []string{item.SessionID, item.ID})
+	writeJSON(w, status, item)
+}
+
+func (h *Handler) ListManagedTaskArtifacts(w http.ResponseWriter, r *http.Request) {
+	page, err := h.managedRuntimeService().ListTaskArtifacts(
+		r.Context(),
+		tenantFromCtx(r),
+		chi.URLParam(r, "taskId"),
+		parseIntOr(r.URL.Query().Get("limit"), 100),
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) CreateManagedTaskArtifact(w http.ResponseWriter, r *http.Request) {
+	var req models.ManagedArtifactCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	taskID := chi.URLParam(r, "taskId")
+	item, err := h.managedRuntimeService().CreateArtifact(r.Context(), tenantFromCtx(r), taskID, req)
+	if err != nil {
+		if errors.Is(err, managedruntime.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "managed task not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeAdminAudit(r, "managed_agents", "create", "managed_artifact", item.ID, "success", item)
+	h.writeControlHistory(r, "managed_agents", "create", "managed_artifact", item.ID, item.Name, "success", nil, item, []string{taskID, item.ID})
+	writeJSON(w, http.StatusCreated, item)
+}
+
+func (h *Handler) ApproveManagedTask(w http.ResponseWriter, r *http.Request) {
+	h.decideManagedTask(w, r, true)
+}
+
+func (h *Handler) DenyManagedTask(w http.ResponseWriter, r *http.Request) {
+	h.decideManagedTask(w, r, false)
+}
+
+func (h *Handler) decideManagedTask(w http.ResponseWriter, r *http.Request, approve bool) {
+	var req models.ManagedTaskDecisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	taskID := chi.URLParam(r, "taskId")
+	service := h.managedRuntimeService()
+	var (
+		item models.ManagedTask
+		err  error
+	)
+	if approve {
+		item, err = service.ApproveTask(r.Context(), tenantFromCtx(r), taskID, actorFromCtx(r), req)
+	} else {
+		item, err = service.DenyTask(r.Context(), tenantFromCtx(r), taskID, actorFromCtx(r), req)
+	}
+	if err != nil {
+		if errors.Is(err, managedruntime.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "managed task not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	action := "approve"
+	if !approve {
+		action = "deny"
+	}
+	h.writeAdminAudit(r, "managed_agents", action, "managed_task", taskID, "success", map[string]any{
+		"task_id": taskID,
+		"reason":  req.Reason,
+	})
+	h.writeControlHistory(r, "managed_agents", action, "managed_task", taskID, req.Reason, "success", nil, item, nil)
+	writeJSON(w, http.StatusOK, item)
+}
+
 func (h *Handler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	page, err := h.pg.ListRuns(r.Context(), models.RunQuery{
 		TenantID:  tenantFromCtx(r),
@@ -1770,9 +2088,9 @@ func (h *Handler) repriceSpan(sp *models.Span) {
 	}
 
 	provider := strings.TrimSpace(sp.Attributes["gen_ai.system"])
-	
+
 	var match proxy.PricingMatch
-	
+
 	// FIX P0: Only reprice if the collector has not already computed the costs
 	if sp.CostUSD == 0 && sp.InputCostUSD == 0 && sp.OutputCostUSD == 0 && (sp.InputTokens > 0 || sp.OutputTokens > 0) {
 		var detailed pricing.Result

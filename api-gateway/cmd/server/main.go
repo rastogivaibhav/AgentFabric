@@ -11,6 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	chimid "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	migrate "github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres" // postgres driver for migrate
+	_ "github.com/golang-migrate/migrate/v4/source/file"       // file:// source driver
 	"github.com/govagn/api-gateway/internal/auth"
 	"github.com/govagn/api-gateway/internal/budget"
 	"github.com/govagn/api-gateway/internal/handlers"
@@ -22,12 +28,6 @@ import (
 	"github.com/govagn/api-gateway/internal/store"
 	"github.com/govagn/api-gateway/internal/vault"
 	"github.com/govagn/api-gateway/internal/ws"
-	"github.com/go-chi/chi/v5"
-	chimid "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
-	migrate "github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres" // postgres driver for migrate
-	_ "github.com/golang-migrate/migrate/v4/source/file"       // file:// source driver
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
@@ -283,6 +283,33 @@ func main() {
 			r.Get("/{runId}", h.GetRun)
 			r.Get("/{runId}/children", h.GetRunChildren)
 			r.Post("/{runId}/feedback", h.PostFeedback)
+		})
+
+		r.Route("/managed-agents", func(r chi.Router) {
+			r.Get("/", h.ListManagedAgents)
+			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertManagedAgent)
+			r.Get("/{agentId}", h.GetManagedAgent)
+		})
+		r.Route("/managed-environments", func(r chi.Router) {
+			r.Get("/", h.ListManagedEnvironments)
+			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertManagedEnvironment)
+			r.Get("/{environmentId}", h.GetManagedEnvironment)
+		})
+		r.Route("/managed-sessions", func(r chi.Router) {
+			r.Get("/", h.ListManagedSessions)
+			r.With(middleware.RequireRole("admin")).Post("/", h.CreateManagedSession)
+			r.Get("/{sessionId}", h.GetManagedSession)
+			r.Get("/{sessionId}/events", h.ListManagedSessionEvents)
+			r.With(middleware.RequireRole("admin")).Post("/{sessionId}/events", h.CreateManagedSessionEvent)
+			r.Get("/{sessionId}/tasks", h.ListManagedSessionTasks)
+		})
+		r.Route("/managed-tasks", func(r chi.Router) {
+			r.With(middleware.RequireRole("admin")).Put("/", h.UpsertManagedTask)
+			r.Get("/{taskId}", h.GetManagedTask)
+			r.Get("/{taskId}/artifacts", h.ListManagedTaskArtifacts)
+			r.With(middleware.RequireRole("admin")).Post("/{taskId}/artifacts", h.CreateManagedTaskArtifact)
+			r.With(middleware.RequireRole("admin")).Post("/{taskId}/approve", h.ApproveManagedTask)
+			r.With(middleware.RequireRole("admin")).Post("/{taskId}/deny", h.DenyManagedTask)
 		})
 
 		// Live stream (Wireshark-style WebSocket, single-process fan-out only)

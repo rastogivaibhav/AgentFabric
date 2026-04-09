@@ -381,6 +381,196 @@ export interface DecisionRecord {
   created_at: string
 }
 
+export interface ManagedRuntimeSource {
+  runtime_provider: string
+  runtime_product: string
+  beta_header?: string
+  state?: string
+}
+
+export interface ManagedAgent {
+  id: string
+  name: string
+  description?: string
+  model?: string
+  system_prompt?: string
+  runtime_provider: string
+  runtime_product: string
+  status: string
+  tool_types?: string[]
+  mcp_servers?: string[]
+  skills?: string[]
+  environment_ids?: string[]
+  metadata?: Record<string, string>
+  created_at: string
+  updated_at: string
+  last_session_at?: string
+  source: ManagedRuntimeSource
+}
+
+export interface ManagedEnvironment {
+  id: string
+  name: string
+  description?: string
+  runtime?: string
+  container_template?: string
+  network_access?: string
+  mounted_files?: string[]
+  packages?: string[]
+  status: string
+  metadata?: Record<string, string>
+  created_at: string
+  updated_at: string
+  source: ManagedRuntimeSource
+}
+
+export interface ManagedSession {
+  id: string
+  agent_id: string
+  environment_id?: string
+  status: string
+  current_task_id?: string
+  runtime_provider: string
+  runtime_product: string
+  persistent_filesystem: boolean
+  conversation_turns: number
+  event_count: number
+  metadata?: Record<string, string>
+  started_at: string
+  updated_at: string
+  last_event_at?: string
+  source: ManagedRuntimeSource
+}
+
+export interface ManagedSessionEvent {
+  id: string
+  session_id: string
+  type: string
+  role?: string
+  status?: string
+  sequence: number
+  summary?: string
+  data?: Record<string, unknown>
+  created_at: string
+}
+
+export interface ManagedTask {
+  id: string
+  session_id: string
+  parent_task_id?: string
+  status: string
+  input_summary?: string
+  output_summary?: string
+  interruption_reason?: string
+  server_tool_count: number
+  client_tool_count: number
+  total_cost_usd: number
+  total_tokens: number
+  metadata?: Record<string, string>
+  started_at: string
+  updated_at: string
+  completed_at?: string
+}
+
+export interface ManagedArtifact {
+  id: string
+  task_id: string
+  session_id?: string
+  name: string
+  kind: string
+  uri?: string
+  content_type?: string
+  status: string
+  size_bytes?: number
+  metadata?: Record<string, string>
+  created_at: string
+}
+
+export interface ManagedAgentUpsertRequest {
+  id?: string
+  name: string
+  description?: string
+  model?: string
+  system_prompt?: string
+  runtime_provider?: string
+  runtime_product?: string
+  status?: string
+  tool_types?: string[]
+  mcp_servers?: string[]
+  skills?: string[]
+  environment_ids?: string[]
+  metadata?: Record<string, string>
+  last_session_at?: string
+}
+
+export interface ManagedEnvironmentUpsertRequest {
+  id?: string
+  name: string
+  description?: string
+  runtime?: string
+  container_template?: string
+  network_access?: string
+  mounted_files?: string[]
+  packages?: string[]
+  status?: string
+  metadata?: Record<string, string>
+}
+
+export interface ManagedSessionCreateRequest {
+  id?: string
+  agent_id: string
+  environment_id?: string
+  status?: string
+  current_task_id?: string
+  runtime_provider?: string
+  runtime_product?: string
+  persistent_filesystem?: boolean
+  conversation_turns?: number
+  event_count?: number
+  metadata?: Record<string, string>
+  started_at?: string
+}
+
+export interface ManagedSessionEventCreateRequest {
+  id?: string
+  type: string
+  role?: string
+  status?: string
+  sequence?: number
+  summary?: string
+  data?: Record<string, unknown>
+  created_at?: string
+}
+
+export interface ManagedTaskUpsertRequest {
+  id?: string
+  session_id: string
+  parent_task_id?: string
+  status?: string
+  input_summary?: string
+  output_summary?: string
+  interruption_reason?: string
+  server_tool_count?: number
+  client_tool_count?: number
+  total_cost_usd?: number
+  total_tokens?: number
+  metadata?: Record<string, string>
+  started_at?: string
+  completed_at?: string
+}
+
+export interface ManagedArtifactCreateRequest {
+  id?: string
+  session_id?: string
+  name: string
+  kind: string
+  uri?: string
+  content_type?: string
+  status?: string
+  size_bytes?: number
+  metadata?: Record<string, string>
+}
+
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 export interface EnvironmentInfo {
@@ -1409,6 +1599,176 @@ export function useControlAudit(limit = 50) {
   })
 }
 
+export function useManagedAgents(limit = 50) {
+  return useQuery<Page<ManagedAgent>>({
+    queryKey: ['managed-agents', limit],
+    queryFn: () => apiFetch('/managed-agents', { limit: String(limit) }),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useManagedAgent(agentId: string) {
+  return useQuery<ManagedAgent>({
+    queryKey: ['managed-agent', agentId],
+    queryFn: () => apiFetch(`/managed-agents/${encodeURIComponent(agentId)}`),
+    enabled: !!agentId,
+  })
+}
+
+export function useManagedEnvironments(limit = 50) {
+  return useQuery<Page<ManagedEnvironment>>({
+    queryKey: ['managed-environments', limit],
+    queryFn: () => apiFetch('/managed-environments', { limit: String(limit) }),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useManagedEnvironment(environmentId: string) {
+  return useQuery<ManagedEnvironment>({
+    queryKey: ['managed-environment', environmentId],
+    queryFn: () => apiFetch(`/managed-environments/${encodeURIComponent(environmentId)}`),
+    enabled: !!environmentId,
+  })
+}
+
+export function useManagedSessions(params: { agent_id?: string; limit?: number } = {}) {
+  const normalized = {
+    agent_id: params.agent_id ?? '',
+    limit: String(params.limit ?? 50),
+  }
+  return useQuery<Page<ManagedSession>>({
+    queryKey: ['managed-sessions', normalized],
+    queryFn: () => apiFetch('/managed-sessions', normalized),
+    refetchInterval: 15_000,
+  })
+}
+
+export function useManagedSession(sessionId: string) {
+  return useQuery<ManagedSession>({
+    queryKey: ['managed-session', sessionId],
+    queryFn: () => apiFetch(`/managed-sessions/${encodeURIComponent(sessionId)}`),
+    enabled: !!sessionId,
+  })
+}
+
+export function useManagedSessionEvents(sessionId: string, limit = 200) {
+  return useQuery<Page<ManagedSessionEvent>>({
+    queryKey: ['managed-session-events', sessionId, limit],
+    queryFn: () => apiFetch(`/managed-sessions/${encodeURIComponent(sessionId)}/events`, { limit: String(limit) }),
+    enabled: !!sessionId,
+    refetchInterval: 10_000,
+  })
+}
+
+export function useManagedSessionTasks(sessionId: string, limit = 100) {
+  return useQuery<Page<ManagedTask>>({
+    queryKey: ['managed-session-tasks', sessionId, limit],
+    queryFn: () => apiFetch(`/managed-sessions/${encodeURIComponent(sessionId)}/tasks`, { limit: String(limit) }),
+    enabled: !!sessionId,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useManagedTask(taskId: string) {
+  return useQuery<ManagedTask>({
+    queryKey: ['managed-task', taskId],
+    queryFn: () => apiFetch(`/managed-tasks/${encodeURIComponent(taskId)}`),
+    enabled: !!taskId,
+  })
+}
+
+export function useManagedTaskArtifacts(taskId: string, limit = 100) {
+  return useQuery<Page<ManagedArtifact>>({
+    queryKey: ['managed-task-artifacts', taskId, limit],
+    queryFn: () => apiFetch(`/managed-tasks/${encodeURIComponent(taskId)}/artifacts`, { limit: String(limit) }),
+    enabled: !!taskId,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useUpsertManagedAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ManagedAgentUpsertRequest) => apiMutate<ManagedAgent>('/managed-agents', 'PUT', body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['managed-agents'] })
+      qc.invalidateQueries({ queryKey: ['managed-agent', data.id] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+    },
+  })
+}
+
+export function useUpsertManagedEnvironment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ManagedEnvironmentUpsertRequest) => apiMutate<ManagedEnvironment>('/managed-environments', 'PUT', body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['managed-environments'] })
+      qc.invalidateQueries({ queryKey: ['managed-environment', data.id] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+    },
+  })
+}
+
+export function useCreateManagedSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ManagedSessionCreateRequest) => apiMutate<ManagedSession>('/managed-sessions', 'POST', body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['managed-sessions'] })
+      qc.invalidateQueries({ queryKey: ['managed-session', data.id] })
+      qc.invalidateQueries({ queryKey: ['managed-agent', data.agent_id] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+    },
+  })
+}
+
+export function useCreateManagedSessionEvent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ sessionId, body }: { sessionId: string; body: ManagedSessionEventCreateRequest }) =>
+      apiMutate<ManagedSessionEvent>(`/managed-sessions/${encodeURIComponent(sessionId)}/events`, 'POST', body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['managed-session', data.session_id] })
+      qc.invalidateQueries({ queryKey: ['managed-session-events', data.session_id] })
+      qc.invalidateQueries({ queryKey: ['managed-sessions'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+    },
+  })
+}
+
+export function useUpsertManagedTask() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ManagedTaskUpsertRequest) => apiMutate<ManagedTask>('/managed-tasks', 'PUT', body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['managed-task', data.id] })
+      qc.invalidateQueries({ queryKey: ['managed-session', data.session_id] })
+      qc.invalidateQueries({ queryKey: ['managed-session-tasks', data.session_id] })
+      qc.invalidateQueries({ queryKey: ['runs'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+    },
+  })
+}
+
+export function useCreateManagedTaskArtifact() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, body }: { taskId: string; body: ManagedArtifactCreateRequest }) =>
+      apiMutate<ManagedArtifact>(`/managed-tasks/${encodeURIComponent(taskId)}/artifacts`, 'POST', body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['managed-task-artifacts', data.task_id] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+    },
+  })
+}
+
 export function useControlHistory(limit = 50, offset = 0, category = '', targetID = '') {
   return useQuery<Page<ControlHistoryEntry>>({
     queryKey: ['control-history', limit, offset, category, targetID],
@@ -1588,6 +1948,32 @@ export function usePostFeedback() {
     onSuccess: (_data, { runId }) => {
       qc.invalidateQueries({ queryKey: ['run', runId] })
       qc.invalidateQueries({ queryKey: ['runs'] })
+    },
+  })
+}
+
+export function useApproveManagedTask() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, reason }: { taskId: string; reason?: string }) =>
+      apiMutate<ManagedTask>(`/managed-tasks/${encodeURIComponent(taskId)}/approve`, 'POST', { reason }),
+    onSuccess: (_data, { taskId }) => {
+      qc.invalidateQueries({ queryKey: ['managed-task', taskId] })
+      qc.invalidateQueries({ queryKey: ['managed-session-tasks'] })
+      qc.invalidateQueries({ queryKey: ['managed-session-events'] })
+    },
+  })
+}
+
+export function useDenyManagedTask() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, reason }: { taskId: string; reason?: string }) =>
+      apiMutate<ManagedTask>(`/managed-tasks/${encodeURIComponent(taskId)}/deny`, 'POST', { reason }),
+    onSuccess: (_data, { taskId }) => {
+      qc.invalidateQueries({ queryKey: ['managed-task', taskId] })
+      qc.invalidateQueries({ queryKey: ['managed-session-tasks'] })
+      qc.invalidateQueries({ queryKey: ['managed-session-events'] })
     },
   })
 }

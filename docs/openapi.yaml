@@ -22,6 +22,7 @@ tags:
   - name: Auth
   - name: Traces
   - name: Agents
+  - name: Managed Agents
   - name: Runs
   - name: Analytics
   - name: Environments
@@ -466,6 +467,449 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TopologyGraph'
+
+  /api/v1/managed-agents:
+    get:
+      tags: [Managed Agents]
+      summary: List managed agents
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Managed agent page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentPage'
+    put:
+      tags: [Managed Agents]
+      summary: Create or update a managed agent
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentUpsertRequest'
+      responses:
+        '200':
+          description: Managed agent updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgent'
+        '201':
+          description: Managed agent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgent'
+
+  /api/v1/managed-agents/{agentId}:
+    get:
+      tags: [Managed Agents]
+      summary: Get managed agent
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/agentIdPath'
+      responses:
+        '200':
+          description: Managed agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgent'
+        '404':
+          description: Managed agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/managed-environments:
+    get:
+      tags: [Managed Agents]
+      summary: List managed environments
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Managed environment page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedEnvironmentPage'
+    put:
+      tags: [Managed Agents]
+      summary: Create or update a managed environment
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedEnvironmentUpsertRequest'
+      responses:
+        '200':
+          description: Managed environment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedEnvironment'
+        '201':
+          description: Managed environment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedEnvironment'
+
+  /api/v1/managed-environments/{environmentId}:
+    get:
+      tags: [Managed Agents]
+      summary: Get managed environment
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: environmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Managed environment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedEnvironment'
+        '404':
+          description: Managed environment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/managed-sessions:
+    get:
+      tags: [Managed Agents]
+      summary: List managed sessions
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Managed session page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedSessionPage'
+    post:
+      tags: [Managed Agents]
+      summary: Create a managed session
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedSessionCreateRequest'
+      responses:
+        '201':
+          description: Managed session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedSession'
+
+  /api/v1/managed-sessions/{sessionId}:
+    get:
+      tags: [Managed Agents]
+      summary: Get managed session
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Managed session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedSession'
+        '404':
+          description: Managed session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/managed-sessions/{sessionId}/events:
+    get:
+      tags: [Managed Agents]
+      summary: List managed session events
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Managed session event page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedSessionEventPage'
+    post:
+      tags: [Managed Agents]
+      summary: Append an event to a managed session
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedSessionEventCreateRequest'
+      responses:
+        '201':
+          description: Managed session event created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedSessionEvent'
+
+  /api/v1/managed-sessions/{sessionId}/tasks:
+    get:
+      tags: [Managed Agents]
+      summary: List managed session tasks
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Managed task page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedTaskPage'
+
+  /api/v1/managed-tasks:
+    put:
+      tags: [Managed Agents]
+      summary: Create or update a managed task
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedTaskUpsertRequest'
+      responses:
+        '200':
+          description: Managed task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedTask'
+        '201':
+          description: Managed task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedTask'
+
+  /api/v1/managed-tasks/{taskId}:
+    get:
+      tags: [Managed Agents]
+      summary: Get managed task
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Managed task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedTask'
+        '404':
+          description: Managed task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/managed-tasks/{taskId}/artifacts:
+    get:
+      tags: [Managed Agents]
+      summary: List managed task artifacts
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Managed artifact page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedArtifactPage'
+    post:
+      tags: [Managed Agents]
+      summary: Create a managed task artifact
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedArtifactCreateRequest'
+      responses:
+        '201':
+          description: Managed artifact created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedArtifact'
+        '404':
+          description: Managed task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/managed-tasks/{taskId}/approve:
+    post:
+      tags: [Managed Agents]
+      summary: Approve a managed task checkpoint
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedTaskDecisionRequest'
+      responses:
+        '200':
+          description: Managed task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedTask'
+        '404':
+          description: Managed task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/managed-tasks/{taskId}/deny:
+    post:
+      tags: [Managed Agents]
+      summary: Deny a managed task checkpoint
+      security:
+        - bearerAuth: []
+        - sessionCookie: []
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedTaskDecisionRequest'
+      responses:
+        '200':
+          description: Managed task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedTask'
+        '404':
+          description: Managed task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/runs:
     get:
@@ -1987,4 +2431,509 @@ components:
           type: string
           example: revoked
         virtual_key:
+          type: string
+    ManagedRuntimeSource:
+      type: object
+      properties:
+        runtime_provider:
+          type: string
+        runtime_product:
+          type: string
+        beta_header:
+          type: string
+        state:
+          type: string
+    ManagedAgent:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        model:
+          type: string
+        system_prompt:
+          type: string
+        runtime_provider:
+          type: string
+        runtime_product:
+          type: string
+        status:
+          type: string
+        tool_types:
+          type: array
+          items:
+            type: string
+        mcp_servers:
+          type: array
+          items:
+            type: string
+        skills:
+          type: array
+          items:
+            type: string
+        environment_ids:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_session_at:
+          type: string
+          format: date-time
+          nullable: true
+        source:
+          $ref: '#/components/schemas/ManagedRuntimeSource'
+    ManagedAgentPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedAgent'
+        total:
+          type: integer
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    ManagedEnvironment:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        runtime:
+          type: string
+        container_template:
+          type: string
+        network_access:
+          type: string
+        mounted_files:
+          type: array
+          items:
+            type: string
+        packages:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        source:
+          $ref: '#/components/schemas/ManagedRuntimeSource'
+    ManagedEnvironmentPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedEnvironment'
+        total:
+          type: integer
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    ManagedSession:
+      type: object
+      properties:
+        id:
+          type: string
+        agent_id:
+          type: string
+        environment_id:
+          type: string
+        status:
+          type: string
+        current_task_id:
+          type: string
+        runtime_provider:
+          type: string
+        runtime_product:
+          type: string
+        persistent_filesystem:
+          type: boolean
+        conversation_turns:
+          type: integer
+        event_count:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_event_at:
+          type: string
+          format: date-time
+          nullable: true
+        source:
+          $ref: '#/components/schemas/ManagedRuntimeSource'
+    ManagedSessionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedSession'
+        total:
+          type: integer
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    ManagedSessionEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        type:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        sequence:
+          type: integer
+          format: int64
+        summary:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ManagedSessionEventPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedSessionEvent'
+        total:
+          type: integer
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    ManagedTask:
+      type: object
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        parent_task_id:
+          type: string
+        status:
+          type: string
+        input_summary:
+          type: string
+        output_summary:
+          type: string
+        interruption_reason:
+          type: string
+        server_tool_count:
+          type: integer
+        client_tool_count:
+          type: integer
+        total_cost_usd:
+          type: number
+          format: double
+        total_tokens:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+    ManagedTaskPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedTask'
+        total:
+          type: integer
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    ManagedArtifact:
+      type: object
+      properties:
+        id:
+          type: string
+        task_id:
+          type: string
+        session_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        uri:
+          type: string
+        content_type:
+          type: string
+        status:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+    ManagedArtifactPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManagedArtifact'
+        total:
+          type: integer
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    ManagedAgentUpsertRequest:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        model:
+          type: string
+        system_prompt:
+          type: string
+        runtime_provider:
+          type: string
+        runtime_product:
+          type: string
+        status:
+          type: string
+        tool_types:
+          type: array
+          items:
+            type: string
+        mcp_servers:
+          type: array
+          items:
+            type: string
+        skills:
+          type: array
+          items:
+            type: string
+        environment_ids:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        last_session_at:
+          type: string
+          format: date-time
+    ManagedEnvironmentUpsertRequest:
+      type: object
+      required: [name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        runtime:
+          type: string
+        container_template:
+          type: string
+        network_access:
+          type: string
+        mounted_files:
+          type: array
+          items:
+            type: string
+        packages:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    ManagedSessionCreateRequest:
+      type: object
+      required: [agent_id]
+      properties:
+        id:
+          type: string
+        agent_id:
+          type: string
+        environment_id:
+          type: string
+        status:
+          type: string
+        current_task_id:
+          type: string
+        runtime_provider:
+          type: string
+        runtime_product:
+          type: string
+        persistent_filesystem:
+          type: boolean
+        conversation_turns:
+          type: integer
+        event_count:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        started_at:
+          type: string
+          format: date-time
+    ManagedSessionEventCreateRequest:
+      type: object
+      required: [type]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        sequence:
+          type: integer
+          format: int64
+        summary:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ManagedTaskUpsertRequest:
+      type: object
+      required: [session_id]
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        parent_task_id:
+          type: string
+        status:
+          type: string
+        input_summary:
+          type: string
+        output_summary:
+          type: string
+        interruption_reason:
+          type: string
+        server_tool_count:
+          type: integer
+        client_tool_count:
+          type: integer
+        total_cost_usd:
+          type: number
+          format: double
+        total_tokens:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+    ManagedArtifactCreateRequest:
+      type: object
+      required: [name, kind]
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        uri:
+          type: string
+        content_type:
+          type: string
+        status:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    ManagedTaskDecisionRequest:
+      type: object
+      properties:
+        reason:
           type: string
