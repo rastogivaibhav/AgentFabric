@@ -8,6 +8,12 @@ import sys, os, time, uuid, random, logging, base64, json, hmac, hashlib
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "agent-sdk"))
 
+# Avoid Windows console encoding crashes when status lines contain non-ASCII.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("af-test")
 
@@ -26,7 +32,7 @@ def make_jwt(secret: str, tenant: str) -> str:
     ).rstrip(b'=').decode()
     return f"{header}.{payload}.{sig}"
 
-JWT_SECRET      = os.environ.get("GV_JWT_SECRET", "dev-secret")
+JWT_SECRET      = os.environ.get("GV_JWT_SECRET", "dev-secret-change-in-prod")
 JWT_TENANT      = os.environ.get("GV_TEST_TENANT", "00000000-0000-0000-0000-000000000001")
 JWT_TOKEN       = make_jwt(secret=JWT_SECRET, tenant=JWT_TENANT)
 COLLECTOR_HTTP  = os.environ.get("GV_HTTP_ENDPOINT", "http://localhost:4318")

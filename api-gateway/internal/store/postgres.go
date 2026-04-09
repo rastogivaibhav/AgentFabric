@@ -627,6 +627,7 @@ func (s *PostgresStore) GetSpansForTraces(ctx context.Context, traceIDs []string
 
 func (s *PostgresStore) GetOverview(ctx context.Context, tenantID string, since time.Duration) (*models.OverviewStats, error) {
 	cutoff := time.Now().Add(-since).UnixNano()
+	cutoffTime := time.Unix(0, cutoff).UTC()
 	var stats models.OverviewStats
 
 	err := s.pool.QueryRow(ctx, fmt.Sprintf(`
@@ -647,6 +648,15 @@ func (s *PostgresStore) GetOverview(ctx context.Context, tenantID string, since 
 		&stats.TotalTraces, &stats.TotalCostUSD, &stats.TotalTokens,
 		&stats.ErrorRate, &stats.AvgLatencyMs, &stats.BlockedRequests, &stats.LLMCalls, &stats.ToolCalls,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(COUNT(DISTINCT agent_name), 0)
+		FROM runs
+		WHERE tenant_id = $1 AND start_time >= $2
+	`, tenantID, cutoffTime).Scan(&stats.ActiveAgents)
 	if err != nil {
 		return nil, err
 	}
