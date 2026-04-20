@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -142,6 +144,38 @@ func TestCA_LeafSignedByCA(t *testing.T) {
 	leaf := cfg.Certificates[0].Leaf
 	require.NotNil(t, leaf)
 	assert.NoError(t, leaf.CheckSignatureFrom(ca.cert), "leaf must be signed by the CA")
+}
+
+func TestCA_LoadOrCreateCA_PersistsAcrossReload(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "netproxy-ca.crt")
+	keyFile := filepath.Join(dir, "netproxy-ca.key")
+
+	ca1, err := LoadOrCreateCA(certFile, keyFile)
+	require.NoError(t, err)
+	require.FileExists(t, certFile)
+	require.FileExists(t, keyFile)
+
+	ca2, err := LoadOrCreateCA(certFile, keyFile)
+	require.NoError(t, err)
+	assert.Equal(t, string(ca1.CertPEM()), string(ca2.CertPEM()))
+}
+
+func TestCA_LoadCAFromFiles_MissingFileFails(t *testing.T) {
+	dir := t.TempDir()
+	_, err := LoadCAFromFiles(filepath.Join(dir, "missing.crt"), filepath.Join(dir, "missing.key"))
+	require.Error(t, err)
+}
+
+func TestCA_LoadOrCreateCA_RejectsPartialState(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "netproxy-ca.crt")
+	keyFile := filepath.Join(dir, "netproxy-ca.key")
+	require.NoError(t, os.WriteFile(certFile, []byte("dummy"), 0o644))
+
+	_, err := LoadOrCreateCA(certFile, keyFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "both exist or both be absent")
 }
 
 // ─── Provider / helper tests ──────────────────────────────────────────────────

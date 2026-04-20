@@ -15,12 +15,14 @@ Use it to answer:
 
 Recommended baseline:
 
-- 2+ `api-gateway` replicas
+- 1 `api-gateway` replica when `/api/v1/stream/live` is part of the supported operator workflow
 - 2+ `portal` replicas
 - 1+ `collector` replica, scaled horizontally for volume
 - managed PostgreSQL with PITR enabled
 - managed Redis with replication and failover
 - external ingress or load balancer
+
+If cross-replica live-stream fan-out is implemented and field-validated later, the gateway replica recommendation can be revisited. Until then, the supported default remains single-replica for complete live-stream delivery.
 
 ## Failure Domains
 
@@ -34,6 +36,7 @@ Important exception:
 
 - `/api/v1/stream/live` is not an HA-safe feature today; it uses an in-memory hub inside one `api-gateway` process
 - if operators require complete live event delivery, run a single `api-gateway` replica for that path or treat live stream as unsupported in the HA topology
+- Helm intentionally blocks `api.replicas > 1` unless `api.allowUnsupportedTopology=true` is set as an explicit override
 
 ## Kubernetes Controls
 
@@ -65,7 +68,10 @@ This keeps the control plane upgrade path predictable and auditable.
 
 ## Minimum Production Targets
 
-- no single replica for gateway or portal
+- no single replica for portal
+- gateway replica count must match the declared live-stream operating mode:
+  - single replica when live stream is in scope
+  - or a validated cross-replica fan-out design before claiming HA delivery for live stream
 - database backups tested
 - TLS termination defined
 - OIDC or password-login policy agreed
@@ -98,3 +104,4 @@ Use this guide with:
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
 - [REFERENCE_DEPLOYMENT.md](REFERENCE_DEPLOYMENT.md)
 - [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)
+- [runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md](runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md)

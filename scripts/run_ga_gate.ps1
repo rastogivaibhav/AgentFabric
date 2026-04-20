@@ -14,6 +14,8 @@ param(
   [switch]$PilotReferenceReady,
   [int]$OpenP0Count = -1,
   [int]$OpenP1Count = -1,
+  [string]$ProductionValidationReportPath = "",
+  [string]$NetProxyCaDrillReportPath = "",
   [switch]$CiGreen,
   [switch]$PackagingGreen,
   [switch]$OutputMarkdown,
@@ -22,6 +24,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$ProductionValidationReportPath = if ($ProductionValidationReportPath) { $ProductionValidationReportPath } elseif ($env:PRODUCTION_VALIDATION_REPORT_PATH) { $env:PRODUCTION_VALIDATION_REPORT_PATH } else { Join-Path $RepoRoot "production-deployment-validation.md" }
+$NetProxyCaDrillReportPath = if ($NetProxyCaDrillReportPath) { $NetProxyCaDrillReportPath } elseif ($env:NETPROXY_CA_DRILL_REPORT_PATH) { $env:NETPROXY_CA_DRILL_REPORT_PATH } else { Join-Path $RepoRoot "netproxy-ca-drill.md" }
 $SummaryLines = New-Object System.Collections.Generic.List[string]
 $Checks = New-Object System.Collections.Generic.List[object]
 
@@ -76,7 +80,8 @@ function Test-DocsAlignment {
     (Join-Path $RepoRoot "docs\RELEASE_BOUNDARIES.md"),
     (Join-Path $RepoRoot "docs\REFERENCE_DEPLOYMENT.md"),
     (Join-Path $RepoRoot "docs\PILOT_PLAYBOOK.md"),
-    (Join-Path $RepoRoot "docs\CUSTOMER_VALUE_SCORECARD.md")
+    (Join-Path $RepoRoot "docs\CUSTOMER_VALUE_SCORECARD.md"),
+    (Join-Path $RepoRoot "docs\runbooks\NETPROXY_CA_ROTATION_RUNBOOK.md")
   )
   foreach ($doc in $docsToCheck) {
     if (-not (Test-Path $doc)) {
@@ -94,6 +99,38 @@ function Test-DocsAlignment {
     if ($combined -match [regex]::Escape($stale)) {
       throw "docs still contain stale runtime reference '$stale'"
     }
+  }
+}
+
+function Test-ProductionValidationProof {
+  if (-not (Test-Path $ProductionValidationReportPath)) {
+    throw "production validation report not found at $ProductionValidationReportPath"
+  }
+  $content = [System.IO.File]::ReadAllText((Resolve-Path $ProductionValidationReportPath))
+  if ($content -notmatch [regex]::Escape("# Govagn Production Deployment Validation")) {
+    throw "production validation report is missing the expected title"
+  }
+  if ($content -notmatch [regex]::Escape("Validation result: PASS")) {
+    throw "production validation report does not show PASS"
+  }
+  if ($content -notmatch [regex]::Escape("Live stream topology:")) {
+    throw "production validation report is missing live stream topology evidence"
+  }
+  if ($content -notmatch "single-replica acknowledged|fan-out ready") {
+    throw "production validation report does not declare a supported live stream topology"
+  }
+}
+
+function Test-NetProxyCaDrillProof {
+  if (-not (Test-Path $NetProxyCaDrillReportPath)) {
+    throw "NetProxy CA drill report not found at $NetProxyCaDrillReportPath"
+  }
+  $content = [System.IO.File]::ReadAllText((Resolve-Path $NetProxyCaDrillReportPath))
+  if ($content -notmatch [regex]::Escape("# Govagn NetProxy CA Backup and Restore Drill")) {
+    throw "NetProxy CA drill report is missing the expected title"
+  }
+  if ($content -notmatch [regex]::Escape("Validation result: PASS")) {
+    throw "NetProxy CA drill report does not show PASS"
   }
 }
 
@@ -270,6 +307,9 @@ if ($OpenP0Count -lt 0 -or $OpenP1Count -lt 0) {
   $blockersClear = ($OpenP0Count -eq 0 -and $OpenP1Count -eq 0)
   Add-Check -Name "Release blockers declared" -Passed $blockersClear -Detail "P0=$OpenP0Count P1=$OpenP1Count"
 }
+
+Invoke-Required -Name "Production deployment validation report" -Action { Test-ProductionValidationProof }
+Invoke-Required -Name "NetProxy CA drill report" -Action { Test-NetProxyCaDrillProof }
 
 if ($RequirePilotProof -or (Get-EnvBool "GA_REQUIRE_PILOT_PROOF")) {
   $pilotCheck = Test-PilotEvidence

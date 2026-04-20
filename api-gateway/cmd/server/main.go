@@ -166,7 +166,9 @@ func main() {
 	// Listens on GV_NETPROXY_ADDR (:8443) and handles HTTP CONNECT tunnelling.
 	// Intercepts HTTPS to known LLM API domains; all other hosts pass through.
 	// Clients must set HTTP_PROXY=http://localhost:8443 and install the CA cert.
-	netProxyCA, err := netproxy.NewCA()
+	netProxyCACertFile := strings.TrimSpace(os.Getenv("GV_NETPROXY_CA_CERT_FILE"))
+	netProxyCAKeyFile := strings.TrimSpace(os.Getenv("GV_NETPROXY_CA_KEY_FILE"))
+	netProxyCA, err := loadNetProxyCA(netProxyCACertFile, netProxyCAKeyFile, strictMode, logger)
 	if err != nil {
 		logger.Fatal("netproxy CA init failed", zap.Error(err))
 	}
@@ -604,6 +606,9 @@ func validateProductionConfig(authDisabled bool, jwtSecrets []string, collectorA
 	if strings.TrimSpace(os.Getenv("GV_CORS_ORIGINS")) == "" {
 		return fmt.Errorf("GV_CORS_ORIGINS must be set explicitly in production")
 	}
+	if strings.TrimSpace(os.Getenv("GV_NETPROXY_CA_CERT_FILE")) == "" || strings.TrimSpace(os.Getenv("GV_NETPROXY_CA_KEY_FILE")) == "" {
+		return fmt.Errorf("GV_NETPROXY_CA_CERT_FILE and GV_NETPROXY_CA_KEY_FILE must be set in production so the NetProxy CA survives restarts")
+	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("GV_TLS_ENABLED")), "true") {
 		if strings.TrimSpace(os.Getenv("GV_TLS_CERT_FILE")) == "" || strings.TrimSpace(os.Getenv("GV_TLS_KEY_FILE")) == "" {
 			return fmt.Errorf("GV_TLS_ENABLED=true requires GV_TLS_CERT_FILE and GV_TLS_KEY_FILE in production")
@@ -649,6 +654,20 @@ func strictConfigEnabled() bool {
 		return true
 	}
 	return strings.EqualFold(os.Getenv("GV_ENV"), "production")
+}
+
+func loadNetProxyCA(certFile, keyFile string, strict bool, logger *zap.Logger) (*netproxy.CA, error) {
+	switch {
+	case strict:
+		logger.Info("loading persisted netproxy CA", zap.String("cert_file", certFile), zap.String("key_file", keyFile))
+		return netproxy.LoadCAFromFiles(certFile, keyFile)
+	case certFile != "" || keyFile != "":
+		logger.Info("loading or creating restart-stable dev netproxy CA", zap.String("cert_file", certFile), zap.String("key_file", keyFile))
+		return netproxy.LoadOrCreateCA(certFile, keyFile)
+	default:
+		logger.Warn("GV_NETPROXY_CA_CERT_FILE/GV_NETPROXY_CA_KEY_FILE not set — generating ephemeral netproxy CA (dev mode only)")
+		return netproxy.NewCA()
+	}
 }
 
 func serveOpenAPISpec(specPath string) http.HandlerFunc {

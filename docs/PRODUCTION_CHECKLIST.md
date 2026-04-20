@@ -28,6 +28,7 @@ Use this checklist before every production deployment and before declaring the p
 - [ ] `DATABASE_URL` points to the production PostgreSQL instance
 - [ ] `REDIS_URL` points to the production Redis instance
 - [ ] `GV_CORS_ORIGINS` is restricted to the deployed portal origin or origins
+- [ ] `GV_NETPROXY_CA_CERT_FILE` and `GV_NETPROXY_CA_KEY_FILE` point at the persisted production CA files
 - [ ] If `GV_TLS_ENABLED=true`, both `GV_TLS_CERT_FILE` and `GV_TLS_KEY_FILE` are present
 - [ ] If `GV_SSO_REQUIRED=true`, OIDC settings are complete:
   - `GV_OIDC_ISSUER`
@@ -86,10 +87,14 @@ Use this checklist before every production deployment and before declaring the p
   - `scripts/probe_proxy_path.ps1`
   - `scripts/probe-proxy-path.sh`
 - [ ] `scripts/run_release_candidate_validation.ps1` or `scripts/run-release-candidate-validation.sh` passes against the candidate deployment with admin credentials
+- [ ] `scripts/run_production_deployment_validation.ps1` or `scripts/run-production-deployment-validation.sh` passes against the candidate deployment and writes a release report
 - [ ] If governance is part of the go-live bar, release-candidate validation is run with governance scenarios enabled and a real proxy virtual key
 - [ ] Backup path passes for the release window:
   - `scripts/backup_postgres.ps1`
   - `scripts/backup-postgres.sh`
+- [ ] NetProxy CA backup and restore drill passes for the release window:
+  - `scripts/exercise_netproxy_ca_backup_restore.ps1`
+  - `scripts/exercise-netproxy-ca-backup-restore.sh`
 
 ## 6. Runtime Smoke
 
@@ -151,6 +156,8 @@ Only declare GA when all of the following are true:
 - [ ] no open P0 or P1 release blockers remain
 - [ ] latest successful backup is no older than 24 hours
 - [ ] restore drill has been executed in the current release cycle
+- [ ] NetProxy CA backup and restore drill report shows `Validation result: PASS`
+- [ ] production deployment validation report shows `Validation result: PASS`
 
 ## 10. Final GA Gate
 
@@ -170,6 +177,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_ga_gate.ps1 `
   -AdminUser <admin-user> `
   -AdminPassword <admin-password> `
   -ProxyVirtualKey <af-vk-key> `
+  -ProductionValidationReportPath .\production-deployment-validation.md `
+  -NetProxyCaDrillReportPath .\netproxy-ca-drill.md `
   -CiGreen `
   -OpenP0Count 0 `
   -OpenP1Count 0
@@ -184,6 +193,8 @@ COLLECTOR_URL=http://<collector-host>:4318 \
 ADMIN_USER=<admin-user> \
 ADMIN_PASSWORD=<admin-password> \
 PROXY_VIRTUAL_KEY=<af-vk-key> \
+PRODUCTION_VALIDATION_REPORT_PATH=./production-deployment-validation.md \
+NETPROXY_CA_DRILL_REPORT_PATH=./netproxy-ca-drill.md \
 GA_CI_GREEN=true \
 OPEN_P0_COUNT=0 \
 OPEN_P1_COUNT=0 \
@@ -211,6 +222,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_release_candidate_validat
   -AdminPassword <admin-password> `
   -RunGovernanceScenarios `
   -ProxyVirtualKey <af-vk-key>
+
+powershell -ExecutionPolicy Bypass -File .\scripts\run_production_deployment_validation.ps1 `
+  -BaseUrl http://<gateway-host>:8080 `
+  -CollectorUrl http://<collector-host>:4318 `
+  -AdminUser <admin-user> `
+  -AdminPassword <admin-password> `
+  -ProxyVirtualKey <af-vk-key> `
+  -DatabaseUrl "postgres://user:pass@host:5432/govagn?sslmode=require" `
+  -NetProxyCaCertFile C:\secure\govagn\netproxy-ca.crt `
+  -NetProxyCaKeyFile C:\secure\govagn\netproxy-ca.key `
+  -LiveStreamSingleReplica
 ```
 
 ### macOS / Linux
@@ -231,6 +253,17 @@ ADMIN_PASSWORD=<admin-password> \
 RUN_GOVERNANCE_SCENARIOS=true \
 PROXY_VIRTUAL_KEY=<af-vk-key> \
 bash scripts/run-release-candidate-validation.sh
+
+BASE_URL=http://<gateway-host>:8080 \
+COLLECTOR_URL=http://<collector-host>:4318 \
+ADMIN_USER=<admin-user> \
+ADMIN_PASSWORD=<admin-password> \
+PROXY_VIRTUAL_KEY=<af-vk-key> \
+DATABASE_URL="postgres://user:pass@host:5432/govagn?sslmode=require" \
+NETPROXY_CA_CERT_FILE=/secure/govagn/netproxy-ca.crt \
+NETPROXY_CA_KEY_FILE=/secure/govagn/netproxy-ca.key \
+LIVE_STREAM_SINGLE_REPLICA=true \
+bash scripts/run-production-deployment-validation.sh
 ```
 
 ## Related Documents
@@ -241,3 +274,4 @@ Use this checklist with:
 - [SETUP_AND_ONBOARDING.md](SETUP_AND_ONBOARDING.md)
 - [RELEASE_BOUNDARIES.md](RELEASE_BOUNDARIES.md)
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
+- [runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md](runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md)

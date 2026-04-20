@@ -3,13 +3,14 @@
 // and optionally substitutes virtual keys with real keys from the vault.
 //
 // Clients configure their HTTP_PROXY / HTTPS_PROXY env vars to point at
-// http://localhost:8443.  The proxy handles HTTP CONNECT tunnelling; for
+// http://localhost:8443. The proxy handles HTTP CONNECT tunnelling; for
 // known LLM hosts it terminates TLS with a locally-generated certificate
-// (signed by the per-process CA below) and inspects the plaintext request.
+// (signed by the CA below) and inspects the plaintext request.
 // All other hosts are forwarded transparently without inspection.
 package netproxy
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -17,26 +18,29 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
 
-// CA is an in-memory certificate authority used to sign per-host leaf certs
-// for HTTPS interception.  It is generated fresh on every process start.
-// Users must install the CA cert into their OS trust store once using
-// GET /api/v1/netproxy/ca.crt + scripts/install-ca-cert.sh.
+// CA signs per-host leaf certs for HTTPS interception.
+// In production this CA should be loaded from persisted PEM files so the
+// installed client trust root survives restarts.
 type CA struct {
 	cert    *x509.Certificate
 	key     *ecdsa.PrivateKey
-	certPEM []byte // PEM-encoded CA cert for the /ca.crt endpoint
+	certPEM []byte
 
 	mu    sync.Mutex
-	cache map[string]*tls.Certificate // hostname → signed leaf cert
+	cache map[string]*tls.Certificate // hostname -> signed leaf cert
 }
 
-// NewCA generates a fresh ECDSA P-256 CA keypair and a self-signed certificate.
+// NewCA generates a fresh ECDSA P-256 CA keypair and self-signed certificate.
+// This is appropriate for dev and tests. Production should prefer LoadCAFromFiles.
 func NewCA() (*CA, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -65,14 +69,69 @@ func NewCA() (*CA, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	cert, err := x509.ParseCertificate(certDER)
 	if err != nil {
 		return nil, err
 	}
-
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 
+	return newCAFromMaterial(cert, key, certPEM)
+}
+
+// LoadCAFromFiles loads a persisted CA cert/key pair from PEM files.
+func LoadCAFromFiles(certFile, keyFile string) (*CA, error) {
+	certPEM, err := os.ReadFile(certFile)
+	if err != nil {
+		return nil, fmt.Errorf("read netproxy CA cert: %w", err)
+	}
+	keyPEM, err := os.ReadFile(keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("read netproxy CA key: %w", err)
+	}
+
+	cert, err := parseCertificatePEM(certPEM)
+	if err != nil {
+		return nil, err
+	}
+	key, err := parsePrivateKeyPEM(keyPEM)
+	if err != nil {
+		return nil, err
+	}
+
+	return newCAFromMaterial(cert, key, certPEM)
+}
+
+// LoadOrCreateCA loads a persisted CA when the files exist, otherwise creates
+// one and writes it to disk. This keeps local dev restarts stable without
+// requiring operators to pre-provision a CA.
+func LoadOrCreateCA(certFile, keyFile string) (*CA, error) {
+	if certFile == "" || keyFile == "" {
+		return nil, fmt.Errorf("both netproxy CA file paths are required")
+	}
+
+	certExists := fileExists(certFile)
+	keyExists := fileExists(keyFile)
+	if certExists != keyExists {
+		return nil, fmt.Errorf("netproxy CA files must both exist or both be absent")
+	}
+	if certExists {
+		return LoadCAFromFiles(certFile, keyFile)
+	}
+
+	ca, err := NewCA()
+	if err != nil {
+		return nil, err
+	}
+	if err := writeCAFiles(certFile, keyFile, ca.certPEM, ca.keyPEM()); err != nil {
+		return nil, err
+	}
+	return ca, nil
+}
+
+func newCAFromMaterial(cert *x509.Certificate, key *ecdsa.PrivateKey, certPEM []byte) (*CA, error) {
+	if cert == nil || key == nil {
+		return nil, fmt.Errorf("certificate and key are required")
+	}
 	return &CA{
 		cert:    cert,
 		key:     key,
@@ -82,14 +141,18 @@ func NewCA() (*CA, error) {
 }
 
 // CertPEM returns the CA certificate in PEM format.
-// Write this directly to a .crt file and add it to your OS trust store.
-// Safe for concurrent use.
 func (ca *CA) CertPEM() []byte { return ca.certPEM }
 
-// TLSConfigFor returns a *tls.Config that presents a dynamically-generated
-// leaf certificate for hostname, signed by this CA.  Leaf certs are cached
-// indefinitely for the lifetime of the process.
-// Safe for concurrent use.
+func (ca *CA) keyPEM() []byte {
+	keyDER, err := x509.MarshalECPrivateKey(ca.key)
+	if err != nil {
+		return nil
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+}
+
+// TLSConfigFor returns a TLS config that presents a per-host leaf certificate
+// signed by this CA. Leaf certs are cached for the lifetime of the process.
 func (ca *CA) TLSConfigFor(hostname string) (*tls.Config, error) {
 	ca.mu.Lock()
 	defer ca.mu.Unlock()
@@ -131,7 +194,6 @@ func (ca *CA) leafForHost(hostname string) (*tls.Certificate, error) {
 		KeyUsage:    x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
-	// IP addresses require IPAddresses SAN; hostnames use DNSNames SAN.
 	if ip := net.ParseIP(hostname); ip != nil {
 		template.IPAddresses = []net.IP{ip}
 	} else {
@@ -143,7 +205,6 @@ func (ca *CA) leafForHost(hostname string) (*tls.Certificate, error) {
 		return nil, err
 	}
 
-	// Build tls.Certificate from DER + key (avoids PEM round-trip).
 	tlsCert := &tls.Certificate{
 		Certificate: [][]byte{certDER},
 		PrivateKey:  leafKey,
@@ -157,3 +218,72 @@ func (ca *CA) leafForHost(hostname string) (*tls.Certificate, error) {
 	ca.cache[hostname] = tlsCert
 	return tlsCert, nil
 }
+
+func parseCertificatePEM(certPEM []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("invalid netproxy CA certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse netproxy CA certificate: %w", err)
+	}
+	return cert, nil
+}
+
+func parsePrivateKeyPEM(keyPEM []byte) (*ecdsa.PrivateKey, error) {
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		return nil, fmt.Errorf("invalid netproxy CA private key PEM")
+	}
+
+	switch block.Type {
+	case "EC PRIVATE KEY":
+		key, err := x509.ParseECPrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse netproxy CA EC private key: %w", err)
+		}
+		return key, nil
+	case "PRIVATE KEY":
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse netproxy CA PKCS8 private key: %w", err)
+		}
+		ecdsaKey, ok := key.(*ecdsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("netproxy CA private key must be ECDSA, got %T", key)
+		}
+		return ecdsaKey, nil
+	default:
+		return nil, fmt.Errorf("unsupported netproxy CA private key type %q", block.Type)
+	}
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func writeCAFiles(certFile, keyFile string, certPEM, keyPEM []byte) error {
+	if len(certPEM) == 0 || len(keyPEM) == 0 {
+		return fmt.Errorf("netproxy CA material is empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(certFile), 0o755); err != nil {
+		return fmt.Errorf("create netproxy CA cert dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(keyFile), 0o755); err != nil {
+		return fmt.Errorf("create netproxy CA key dir: %w", err)
+	}
+	if err := os.WriteFile(certFile, certPEM, 0o644); err != nil {
+		return fmt.Errorf("write netproxy CA cert: %w", err)
+	}
+	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
+		return fmt.Errorf("write netproxy CA key: %w", err)
+	}
+	return nil
+}
+
+var _ crypto.Signer = (*ecdsa.PrivateKey)(nil)

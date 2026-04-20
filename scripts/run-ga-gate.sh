@@ -18,6 +18,8 @@ OPEN_P0_COUNT="${OPEN_P0_COUNT:--1}"
 OPEN_P1_COUNT="${OPEN_P1_COUNT:--1}"
 OUTPUT_PATH="${OUTPUT_PATH:-}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PRODUCTION_VALIDATION_REPORT_PATH="${PRODUCTION_VALIDATION_REPORT_PATH:-${REPO_ROOT}/production-deployment-validation.md}"
+NETPROXY_CA_DRILL_REPORT_PATH="${NETPROXY_CA_DRILL_REPORT_PATH:-${REPO_ROOT}/netproxy-ca-drill.md}"
 
 declare -a CHECKS=()
 declare -a SUMMARY=()
@@ -46,14 +48,16 @@ docs_alignment() {
   local reference="${REPO_ROOT}/docs/REFERENCE_DEPLOYMENT.md"
   local playbook="${REPO_ROOT}/docs/PILOT_PLAYBOOK.md"
   local scorecard="${REPO_ROOT}/docs/CUSTOMER_VALUE_SCORECARD.md"
+  local netproxy_runbook="${REPO_ROOT}/docs/runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md"
   [[ -f "${readme}" ]] || { echo "missing ${readme}" >&2; return 1; }
   [[ -f "${checklist}" ]] || { echo "missing ${checklist}" >&2; return 1; }
   [[ -f "${boundaries}" ]] || { echo "missing ${boundaries}" >&2; return 1; }
   [[ -f "${reference}" ]] || { echo "missing ${reference}" >&2; return 1; }
   [[ -f "${playbook}" ]] || { echo "missing ${playbook}" >&2; return 1; }
   [[ -f "${scorecard}" ]] || { echo "missing ${scorecard}" >&2; return 1; }
+  [[ -f "${netproxy_runbook}" ]] || { echo "missing ${netproxy_runbook}" >&2; return 1; }
   local combined
-  combined="$(cat "${readme}" "${checklist}" "${boundaries}" "${reference}" "${playbook}" "${scorecard}")"
+  combined="$(cat "${readme}" "${checklist}" "${boundaries}" "${reference}" "${playbook}" "${scorecard}" "${netproxy_runbook}")"
   for provider in openai anthropic google; do
     echo "${combined}" | grep -qi "${provider}" || { echo "missing provider ${provider} in docs" >&2; return 1; }
   done
@@ -63,6 +67,27 @@ docs_alignment() {
       return 1
     fi
   done
+}
+
+production_validation_proof() {
+  [[ -f "${PRODUCTION_VALIDATION_REPORT_PATH}" ]] || { echo "production validation report not found at ${PRODUCTION_VALIDATION_REPORT_PATH}" >&2; return 1; }
+  local content
+  content="$(cat "${PRODUCTION_VALIDATION_REPORT_PATH}")"
+  echo "${content}" | grep -q '^# Govagn Production Deployment Validation' || { echo "production validation report is missing the expected title" >&2; return 1; }
+  echo "${content}" | grep -q 'Validation result: PASS' || { echo "production validation report does not show PASS" >&2; return 1; }
+  echo "${content}" | grep -q 'Live stream topology:' || { echo "production validation report is missing live stream topology evidence" >&2; return 1; }
+  if ! echo "${content}" | grep -Eq 'single-replica acknowledged|fan-out ready'; then
+    echo "production validation report does not declare a supported live stream topology" >&2
+    return 1
+  fi
+}
+
+netproxy_ca_drill_proof() {
+  [[ -f "${NETPROXY_CA_DRILL_REPORT_PATH}" ]] || { echo "NetProxy CA drill report not found at ${NETPROXY_CA_DRILL_REPORT_PATH}" >&2; return 1; }
+  local content
+  content="$(cat "${NETPROXY_CA_DRILL_REPORT_PATH}")"
+  echo "${content}" | grep -q '^# Govagn NetProxy CA Backup and Restore Drill' || { echo "NetProxy CA drill report is missing the expected title" >&2; return 1; }
+  echo "${content}" | grep -q 'Validation result: PASS' || { echo "NetProxy CA drill report does not show PASS" >&2; return 1; }
 }
 
 pilot_proof() {
@@ -217,6 +242,9 @@ if [[ "${OPEN_P0_COUNT}" =~ ^[0-9]+$ && "${OPEN_P1_COUNT}" =~ ^[0-9]+$ ]]; then
 else
   add_check "Release blockers declared" "false" "OPEN_P0_COUNT and OPEN_P1_COUNT must be provided in GA mode"
 fi
+
+invoke_required "Production deployment validation report" production_validation_proof
+invoke_required "NetProxy CA drill report" netproxy_ca_drill_proof
 
 if [[ "${REQUIRE_PILOT_PROOF}" =~ ^(true|1|yes)$ ]]; then
   if pilot_proof >/dev/null 2>&1; then

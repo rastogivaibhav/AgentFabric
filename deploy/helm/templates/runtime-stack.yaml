@@ -7,8 +7,18 @@
 {{- $oidcClientSecretKey := $oidcValues.clientSecretKey | default "" | trim }}
 {{- $oidcRedirectURI := $oidcValues.redirectUri | default "" | trim }}
 {{- $oidcLogoutURL := $oidcValues.logoutUrl | default "" | trim }}
+{{- $apiValues := .Values.api | default dict }}
+{{- $apiReplicas := $apiValues.replicas | default 1 | int }}
+{{- $allowUnsupportedTopology := $apiValues.allowUnsupportedTopology | default false }}
+{{- $netproxyValues := .Values.api.netproxyCA | default dict }}
+{{- $netproxyMountPath := $netproxyValues.mountPath | default "/var/run/govagn/netproxy" | trimSuffix "/" }}
+{{- $netproxyCertKey := $netproxyValues.certKey | default "netproxy-ca-crt" | trim }}
+{{- $netproxyKeyKey := $netproxyValues.keyKey | default "netproxy-ca-key" | trim }}
 {{- if and $passwordLoginDisabled (not $ssoRequired) (eq $oidcIssuer "") }}
 {{- fail "auth.passwordLoginDisabled=true requires auth.ssoRequired=true or auth.oidc.issuer to configure OIDC SSO" }}
+{{- end }}
+{{- if and (gt $apiReplicas 1) (not $allowUnsupportedTopology) }}
+{{- fail "api.replicas > 1 is unsupported while /api/v1/stream/live uses a process-local hub; keep api.replicas=1 or explicitly set api.allowUnsupportedTopology=true only if live-stream fan-out has been addressed for your deployment" }}
 {{- end }}
 {{- if .Values.collector.enabled }}
 apiVersion: v1
@@ -178,6 +188,10 @@ spec:
                   key: vault-key
             - name: GV_CORS_ORIGINS
               value: {{ join "," .Values.api.cors.allowedOrigins | quote }}
+            - name: GV_NETPROXY_CA_CERT_FILE
+              value: {{ printf "%s/ca.crt" $netproxyMountPath | quote }}
+            - name: GV_NETPROXY_CA_KEY_FILE
+              value: {{ printf "%s/ca.key" $netproxyMountPath | quote }}
             {{- if or $ssoRequired $oidcIssuer }}
             - name: GV_OIDC_ISSUER
               value: {{ required "auth.ssoRequired=true requires auth.oidc.issuer" $oidcIssuer | quote }}
@@ -201,6 +215,10 @@ spec:
             - name: GV_OIDC_LOGOUT_URL
               value: {{ $oidcLogoutURL | quote }}
             {{- end }}
+          volumeMounts:
+            - name: netproxy-ca
+              mountPath: {{ $netproxyMountPath | quote }}
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /readyz
@@ -215,6 +233,15 @@ spec:
             periodSeconds: 20
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
+      volumes:
+        - name: netproxy-ca
+          secret:
+            secretName: {{ .Values.secrets.name }}
+            items:
+              - key: {{ $netproxyCertKey | quote }}
+                path: ca.crt
+              - key: {{ $netproxyKeyKey | quote }}
+                path: ca.key
 ---
 apiVersion: v1
 kind: Service

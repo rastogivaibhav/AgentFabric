@@ -90,6 +90,9 @@ For broader external positioning, add:
 - Linux CI or a less restricted environment should remain the authoritative release gate for full Go execution.
 - Local bootstrap uses demo-friendly defaults and seeded pricing and policy rules. Production must override secrets and auth settings.
 - `/api/v1/stream/live` still uses a process-local hub. Do not describe multi-replica gateway deployments as complete-delivery live-stream HA.
+- production release evidence must include an explicit live-stream topology declaration:
+  - single-replica gateway acknowledged
+  - or cross-replica fan-out validated and ready
 - Central rollout coverage depends on onboarding:
   - SDK-instrumented applications are covered
   - OTLP-producing services are covered
@@ -124,7 +127,9 @@ Do not ship unless the release candidate also has:
 - stack health and readiness checks against a real candidate environment
 - proxy-path proof against the candidate environment
 - release-candidate validation against the candidate environment
+- production deployment validation report against the candidate environment
 - governance scenarios against the candidate environment
+- NetProxy CA backup and restore drill report for the release cycle
 - backup and restore evidence reviewed for the release window
 - docs, provider scope, and release claims match code
 - no open P0 or P1 blockers remain

@@ -72,11 +72,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.19.0"
           cache: npm
           cache-dependency-path: portal/package-lock.json
       - name: Install
         run: npm ci
+      - name: Audit
+        run: npm run audit
+      - name: Lint
+        run: npm run lint
       - name: Tests
         run: npm test -- --run
       - name: Build
@@ -92,7 +96,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.19.0"
           cache: npm
           cache-dependency-path: portal/package-lock.json
       - name: Install
@@ -159,6 +163,10 @@ jobs:
           test -f scripts/bootstrap_local.ps1
           test -f scripts/seed-demo-data.sh
           test -f scripts/seed-demo-data.ps1
+          test -f scripts/exercise-netproxy-ca-backup-restore.sh
+          test -f scripts/exercise_netproxy_ca_backup_restore.ps1
+          test -f scripts/run-production-deployment-validation.sh
+          test -f scripts/run_production_deployment_validation.ps1
           test -f scripts/run-release-candidate-validation.sh
           test -f scripts/run_release_candidate_validation.ps1
           test -f scripts/run-ga-gate.sh

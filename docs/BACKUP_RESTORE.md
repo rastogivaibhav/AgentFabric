@@ -62,6 +62,9 @@ Retain secure recovery access for:
 
 Do not store these in plaintext runbooks or casual shared folders.
 
+### NetProxy CA
+Treat the persisted NetProxy CA cert and key as protected recovery artifacts. They are required to preserve trust for intercepted traffic across gateway restarts and disaster recovery.
+
 ## Local or VM Backup
 
 ### Windows
@@ -147,6 +150,7 @@ A production-ready backup posture includes:
 - at least one tested restore in the current release cycle
 - documented ownership of backup and restore operations
 - evidence attached to the production or release review
+- NetProxy CA backup and restore drill completed in the current release cycle
 
 ## Related Documents
 
@@ -155,3 +159,4 @@ Use this runbook with:
 - [HA_GUIDE.md](HA_GUIDE.md)
 - [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)
 - [REFERENCE_DEPLOYMENT.md](REFERENCE_DEPLOYMENT.md)
+- [runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md](runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md)

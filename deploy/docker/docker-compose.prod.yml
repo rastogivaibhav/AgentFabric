@@ -26,6 +26,7 @@
 #   GV_JWT_SECRETS         — comma-separated list for zero-downtime key rotation
 #   GV_OIDC_ISSUER         — enable enterprise SSO
 #   GV_TLS_ENABLED=true    — terminate TLS at the service layer (vs. load balancer)
+#   GV_NETPROXY_CA_CERT_PATH / GV_NETPROXY_CA_KEY_PATH — persisted NetProxy CA files mounted into the container
 #
 # Generate all required secrets:
 #   openssl rand -base64 32   # for GV_JWT_SECRET and GV_ADMIN_PASSWORD
@@ -76,6 +77,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set for production}
       REDIS_URL: ${REDIS_URL:?REDIS_URL must be set for production}
       GV_CORS_ORIGINS: ${GV_CORS_ORIGINS:?GV_CORS_ORIGINS must be set for production}
+      GV_NETPROXY_CA_CERT_FILE: "/run/govagn/netproxy-ca.crt"
+      GV_NETPROXY_CA_KEY_FILE: "/run/govagn/netproxy-ca.key"
       GV_TLS_ENABLED: "${GV_TLS_ENABLED:-false}"
       # If GV_TLS_ENABLED=true, mount cert/key files and set GV_TLS_CERT_FILE + GV_TLS_KEY_FILE too.
       GV_LOG_LEVEL: "info"                  # Do not run debug logging in production
@@ -88,6 +91,9 @@ services:
       # GV_OIDC_LOGOUT_URL:    "${GV_OIDC_LOGOUT_URL:-}"  # optional provider logout redirect
       GV_PASSWORD_LOGIN_DISABLED: "${GV_PASSWORD_LOGIN_DISABLED:-false}"
       GV_SSO_REQUIRED: "${GV_SSO_REQUIRED:-false}"
+    volumes:
+      - ${GV_NETPROXY_CA_CERT_PATH:?GV_NETPROXY_CA_CERT_PATH must point to a persisted netproxy CA cert}:/run/govagn/netproxy-ca.crt:ro
+      - ${GV_NETPROXY_CA_KEY_PATH:?GV_NETPROXY_CA_KEY_PATH must point to a persisted netproxy CA key}:/run/govagn/netproxy-ca.key:ro
     restart: always
   # ─── Portal: production build pointing at the live API ─────────────────────
   portal:
@@ -120,4 +126,4 @@ services:
       - ./backups:/backups
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      pg_dump "$DATABASE_URL" --format="${BACKUP_FORMAT}" --file="/backups/govagn-$$(date -u +%Y%m%dT%H%M%SZ).dump"
+      pg_dump "$${DATABASE_URL}" --format="$${BACKUP_FORMAT}" --file="/backups/govagn-$$(date -u +%Y%m%dT%H%M%SZ).dump"

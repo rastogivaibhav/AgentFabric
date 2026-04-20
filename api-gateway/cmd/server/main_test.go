@@ -43,6 +43,17 @@ func freePort(t *testing.T) int {
 // nopLogger returns a no-op zap logger suitable for tests.
 func nopLogger() *zap.Logger { return zap.NewNop() }
 
+func setStrictProductionEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("GV_ENV", "production")
+	t.Setenv("GV_STRICT_CONFIG", "")
+	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
+	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
+	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
+	t.Setenv("GV_NETPROXY_CA_CERT_FILE", "/persisted/netproxy-ca.crt")
+	t.Setenv("GV_NETPROXY_CA_KEY_FILE", "/persisted/netproxy-ca.key")
+}
+
 // ─── serve() ──────────────────────────────────────────────────────────────────
 
 // TestServe_TLSDisabled verifies that with TLS off the server starts as plain
@@ -184,11 +195,7 @@ func TestValidateProductionConfig_StrictDisabled(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RejectsUnsafeDefaults(t *testing.T) {
-	t.Setenv("GV_ENV", "production")
-	t.Setenv("GV_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
-	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
+	setStrictProductionEnv(t)
 
 	err := validateProductionConfig(true, []string{"dev-secret-change-in-production"}, "", "admin", "")
 	if err == nil {
@@ -197,11 +204,7 @@ func TestValidateProductionConfig_RejectsUnsafeDefaults(t *testing.T) {
 }
 
 func TestValidateProductionConfig_AcceptsSafeValues(t *testing.T) {
-	t.Setenv("GV_ENV", "production")
-	t.Setenv("GV_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
-	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
+	setStrictProductionEnv(t)
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
 	if err != nil {
@@ -210,11 +213,8 @@ func TestValidateProductionConfig_AcceptsSafeValues(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RequiresDatabaseURL(t *testing.T) {
-	t.Setenv("GV_ENV", "production")
-	t.Setenv("GV_STRICT_CONFIG", "")
+	setStrictProductionEnv(t)
 	t.Setenv("DATABASE_URL", "")
-	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
 	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
@@ -223,11 +223,8 @@ func TestValidateProductionConfig_RequiresDatabaseURL(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RequiresRedisURL(t *testing.T) {
-	t.Setenv("GV_ENV", "production")
-	t.Setenv("GV_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
+	setStrictProductionEnv(t)
 	t.Setenv("REDIS_URL", "")
-	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
 	if err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
@@ -236,10 +233,7 @@ func TestValidateProductionConfig_RequiresRedisURL(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RequiresCORSOrigins(t *testing.T) {
-	t.Setenv("GV_ENV", "production")
-	t.Setenv("GV_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
-	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
+	setStrictProductionEnv(t)
 	t.Setenv("GV_CORS_ORIGINS", "")
 
 	err := validateProductionConfig(false, []string{"super-secret"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
@@ -249,11 +243,7 @@ func TestValidateProductionConfig_RequiresCORSOrigins(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RequiresTLSFilesWhenEnabled(t *testing.T) {
-	t.Setenv("GV_ENV", "production")
-	t.Setenv("GV_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
-	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
+	setStrictProductionEnv(t)
 	t.Setenv("GV_TLS_ENABLED", "true")
 	t.Setenv("GV_TLS_CERT_FILE", "")
 	t.Setenv("GV_TLS_KEY_FILE", "")
@@ -265,11 +255,7 @@ func TestValidateProductionConfig_RequiresTLSFilesWhenEnabled(t *testing.T) {
 }
 
 func TestValidateProductionConfig_RejectsKnownDevelopmentSecretSentinel(t *testing.T) {
-	t.Setenv("GV_ENV", "production")
-	t.Setenv("GV_STRICT_CONFIG", "")
-	t.Setenv("DATABASE_URL", "postgres://prod.example/govagn?sslmode=require")
-	t.Setenv("REDIS_URL", "redis://prod-redis:6379")
-	t.Setenv("GV_CORS_ORIGINS", "https://app.govagn.io")
+	setStrictProductionEnv(t)
 
 	err := validateProductionConfig(false, []string{"dev-secret-change-in-prod"}, "shared-collector-token", "strong-password", strings.Repeat("a", 64))
 	if err == nil || !strings.Contains(err.Error(), "GV_JWT_SECRET/GV_JWT_SECRETS") {

@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { Zap, Shield, Lock, AlertCircle } from 'lucide-react'
 import { useAuth, isAuthEnabled } from '../hooks/auth'
 
-const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 const SSO_ENABLED = import.meta.env.VITE_SSO_ENABLED === 'true'
 
 export default function LoginPage() {

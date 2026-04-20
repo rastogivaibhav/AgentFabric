@@ -56,6 +56,8 @@ Required production inputs:
 - `DATABASE_URL`
 - `REDIS_URL`
 - `GV_CORS_ORIGINS`
+- `GV_NETPROXY_CA_CERT_FILE`
+- `GV_NETPROXY_CA_KEY_FILE`
 - `GV_ENV=production` or `GV_STRICT_CONFIG=true` on both gateway and collector
 - `GV_AUTH_REQUIRE_AUTH=true` on the collector
 
@@ -92,6 +94,7 @@ Production deployments should include:
 - Helm network isolation from [../deploy/helm/templates/networkpolicies.yaml](../deploy/helm/templates/networkpolicies.yaml)
 - scheduled PostgreSQL backups from [../deploy/helm/templates/backup-cronjob.yaml](../deploy/helm/templates/backup-cronjob.yaml)
 - documented backup and restore procedure in [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
+- documented NetProxy CA rotation and recovery procedure in [runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md](runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md)
 - HA review in [HA_GUIDE.md](HA_GUIDE.md)
 - enterprise auth rollout in [SSO_RBAC_PLAN.md](SSO_RBAC_PLAN.md)
 
@@ -140,9 +143,11 @@ Candidate-environment release proof still requires:
 - stack-health probe
 - proxy-path proof
 - release candidate validation script
+- production deployment validation report
 - governance scenarios when governance is part of the go-live bar
 - backup script dry run
 - restore command rehearsal for the latest dump
+- NetProxy CA backup and restore drill
 
 If the release changes `agent-sdk`, framework patching, or provider-compatibility claims, require the latest green `sdk-integration.yml` workflow as release evidence too.
 
@@ -166,6 +171,8 @@ Treat the following outputs as release artifacts for every candidate deployment:
 - proxy-path probe output
 - release candidate validation output
 - latest backup job output
+- production deployment validation report
+- NetProxy CA drill report
 
 ## Recommended Companion Docs
 
@@ -175,3 +182,4 @@ Use this document with:
 - [INSTALL_SINGLE_TENANT.md](INSTALL_SINGLE_TENANT.md)
 - [INSTALL_MULTI_TENANT.md](INSTALL_MULTI_TENANT.md)
 - [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)
+- [runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md](runbooks/NETPROXY_CA_ROTATION_RUNBOOK.md)

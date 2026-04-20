@@ -25,9 +25,14 @@ api:
   image:
     repository: ghcr.io/govagn/api-gateway
     tag: "1.0.0"
-  # Horizontal API scaling is supported for the REST control plane, but
-  # /api/v1/stream/live uses a process-local hub and is not replica-safe.
-  replicas: 2
+  # /api/v1/stream/live is backed by a process-local hub today, so the
+  # supported default topology stays single-replica until cross-replica fan-out lands.
+  replicas: 1
+  allowUnsupportedTopology: false
+  netproxyCA:
+    mountPath: /var/run/govagn/netproxy
+    certKey: netproxy-ca-crt
+    keyKey: netproxy-ca-key
   service:
     port: 8080
   cors:
