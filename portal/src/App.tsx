@@ -11,6 +11,7 @@ import AgentDetailPage from './pages/AgentDetailPage'
 import RunsPage from './pages/RunsPage'
 import RunDetailPage from './pages/RunDetailPage'
 import Analytics from './pages/Analytics'
+import Governance from './pages/Governance'
 import ErrorAnalyticsPage from './pages/ErrorAnalyticsPage'
 import CostPage from './pages/CostPage'
 import EnvironmentsPage from './pages/EnvironmentsPage'
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="environments" element={<EnvironmentsPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="audit" element={<AuditPage />} />
+            <Route path="governance" element={<Governance />} />
             <Route path="decisions" element={<DecisionsPage />} />
             <Route path="keys" element={<ApiKeysPage />} />
             <Route path="pricing" element={<PricingRulesPage />} />

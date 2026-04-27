@@ -43,6 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'PROTECT',
     color: 'var(--protect, #FF453A)',
     items: [
+      { to: '/governance', icon: AlertTriangle, label: 'Governance' },
       { to: '/policies', icon: Shield, label: 'Policies' },
       { to: '/decisions', icon: ClipboardList, label: 'Decisions' },
       { to: '/policies/simulate', icon: TestTube, label: 'Policy Simulation' },
@@ -126,7 +127,7 @@ function NavGroupSection({
   // Original admin only items: users, keys, policies, prompts, evals, pricing, rollouts, recommendations, memory, policies/simulate, decisions, audit.
   // So PROTECT, CONTROL, SPEND, SHIP, PROVE are heavily admin.
   // We need to filter items in the group based on whether they were admin only.
-  const adminOnlyPaths = ['/users', '/keys', '/policies', '/prompts', '/evals', '/pricing', '/rollouts', '/recommendations', '/memory', '/policies/simulate', '/decisions', '/audit']
+  const adminOnlyPaths = ['/users', '/keys', '/policies', '/prompts', '/evals', '/pricing', '/rollouts', '/recommendations', '/memory', '/policies/simulate', '/decisions', '/audit', '/governance']
   
   const visibleItems = group.items.filter(item => {
     if (!isAdmin && adminOnlyPaths.includes(item.to)) return false

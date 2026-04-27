@@ -2070,3 +2070,55 @@ export function useErrorReport(since = '24h') {
     refetchInterval: 60_000,
   })
 }
+
+// ─── Governance ──────────────────────────────────────────────────────────────
+
+export interface GovernanceAlert {
+  span_id: string
+  trace_id: string
+  risk_score: number
+  risk_category: string
+  framework: string
+  timestamp: string
+  summary?: string
+  action_required?: boolean
+}
+
+export interface GovernanceSummary {
+  total_events: number
+  high_risk_count: number
+  categories: Record<string, number>
+  trend: string
+}
+
+export function useGovernanceAlerts() {
+  const qc = useQueryClient()
+  return useQuery<GovernanceAlert[]>({
+    queryKey: ['governance-alerts'],
+    queryFn: () => apiFetch('/governance/alerts'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useGovernanceSummary() {
+  return useQuery<GovernanceSummary>({
+    queryKey: ['governance-summary'],
+    queryFn: () => apiFetch('/governance/summary'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useApproveGovernanceDecision() {
+  const qc = useQueryClient()
+  return useMutation<
+    { success: boolean },
+    Error,
+    { span_id: string; decision: 'approved' | 'rejected' }
+  >({
+    mutationFn: (req) => apiFetch('/governance/approve', req, 'POST'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['governance-alerts'] })
+      qc.invalidateQueries({ queryKey: ['governance-summary'] })
+    },
+  })
+}
