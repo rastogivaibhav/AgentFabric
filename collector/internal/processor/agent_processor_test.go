@@ -188,6 +188,30 @@ func TestDetectFramework_SpanNameFallbackLangGraph(t *testing.T) {
 	assertEqual(t, string(FrameworkLangGraph), string(fw), "span name containing langgraph should detect LangGraph")
 }
 
+func TestDetectFramework_CodexBySessionID(t *testing.T) {
+	attrs := map[string]string{
+		"codex.session.id": "sess_abc123",
+	}
+	fw := detectFramework(attrs, "")
+	assertEqual(t, string(FrameworkCodex), string(fw), "codex.session.id should detect Codex")
+}
+
+func TestDetectFramework_CodexByRunID(t *testing.T) {
+	attrs := map[string]string{
+		"codex.run.id": "run_xyz789",
+	}
+	fw := detectFramework(attrs, "")
+	assertEqual(t, string(FrameworkCodex), string(fw), "codex.run.id should detect Codex")
+}
+
+func TestDetectFramework_ClaudeCodeBySessionID(t *testing.T) {
+	attrs := map[string]string{
+		"claude_code.session_id": "claud_sess_abc",
+	}
+	fw := detectFramework(attrs, "")
+	assertEqual(t, string(FrameworkClaudeCode), string(fw), "claude_code.session_id should detect Claude Code")
+}
+
 func TestDetectFramework_Unknown(t *testing.T) {
 	fw := detectFramework(map[string]string{}, "some-random-span")
 	assertEqual(t, string(FrameworkUnknown), string(fw), "unrecognised span should return unknown")

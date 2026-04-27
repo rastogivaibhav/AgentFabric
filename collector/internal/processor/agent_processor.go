@@ -50,6 +50,8 @@ const (
 	FrameworkGoogleADK    Framework = "google_adk"
 	FrameworkOpenAIAgents Framework = "openai_agents"
 	FrameworkClaudeAgents Framework = "claude_agents"
+	FrameworkCodex        Framework = "codex"
+	FrameworkClaudeCode   Framework = "claude_code"
 	FrameworkUnknown      Framework = "unknown"
 )
 
@@ -88,6 +90,12 @@ const (
 	sdkCacheReadTokens  = "gen_ai.usage.cache_read_tokens"
 	sdkCacheWriteTokens = "gen_ai.usage.cache_write_tokens"
 	sdkReasoningTokens  = "gen_ai.usage.reasoning_tokens"
+
+	// Codex and Claude Code SDK keys
+	sdkCodexSessionID      = "codex.session.id"
+	sdkCodexModel          = "codex.model"
+	sdkClaudeCodeSessionID = "claude_code.session_id"
+	sdkClaudeCodeModel     = "claude_code.model"
 )
 
 // Model pricing table (USD per 1M tokens) — update via config/price feed
@@ -397,6 +405,10 @@ func detectFramework(attrs map[string]string, spanName string) Framework {
 		key string
 		fw  Framework
 	}{
+		{sdkCodexSessionID, FrameworkCodex},
+		{"codex.run.id", FrameworkCodex},
+		{sdkClaudeCodeSessionID, FrameworkClaudeCode},
+		{"claude_code.run.id", FrameworkClaudeCode},
 		{sdkCrewRole, FrameworkCrewAI},
 		{"crewai.crew.id", FrameworkCrewAI},
 		{sdkLangNode, FrameworkLangGraph},

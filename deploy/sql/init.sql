@@ -26,7 +26,7 @@ CREATE TABLE agent_runs (
     trace_id        VARCHAR(32) NOT NULL,
     framework       VARCHAR(32) NOT NULL CHECK (framework IN (
                         'crewai', 'langgraph', 'google_adk',
-                        'openai_agents', 'claude_agents', 'unknown')),
+                        'openai_agents', 'claude_agents', 'codex', 'claude_code', 'unknown')),
     agent_name      TEXT        NOT NULL DEFAULT '',
     agent_role      TEXT        NOT NULL DEFAULT '',
     model           TEXT        NOT NULL DEFAULT '',
