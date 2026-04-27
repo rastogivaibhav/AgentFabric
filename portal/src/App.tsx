@@ -10,6 +10,7 @@ import AgentsPage from './pages/AgentsPage'
 import AgentDetailPage from './pages/AgentDetailPage'
 import RunsPage from './pages/RunsPage'
 import RunDetailPage from './pages/RunDetailPage'
+import Analytics from './pages/Analytics'
 import ErrorAnalyticsPage from './pages/ErrorAnalyticsPage'
 import CostPage from './pages/CostPage'
 import EnvironmentsPage from './pages/EnvironmentsPage'
@@ -90,6 +91,7 @@ export default function App() {
             <Route path="agents/:agentId" element={<AgentDetailPage />} />
             <Route path="runs" element={<RunsPage />} />
             <Route path="runs/:runId" element={<RunDetailPage />} />
+            <Route path="analytics" element={<Analytics />} />
             <Route path="analytics/errors" element={<ErrorAnalyticsPage />} />
             <Route path="cost" element={<CostPage />} />
             <Route path="environments" element={<EnvironmentsPage />} />

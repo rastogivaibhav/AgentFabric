@@ -3,7 +3,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Activity, Radio,
   Bot, DollarSign, Server, Zap, LogOut, User, Users, ClipboardList, KeyRound, SlidersHorizontal,
-  Shield, FlaskConical, FileText, GitMerge, Lightbulb, Brain, TestTube, ListTree, AlertTriangle, ChevronRight, Settings
+  Shield, FlaskConical, FileText, GitMerge, Lightbulb, Brain, TestTube, ListTree, AlertTriangle, ChevronRight, Settings, BarChart3
 } from 'lucide-react'
 import { useAuth, isAuthEnabled } from '../hooks/auth'
 
@@ -75,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/traces', icon: Activity, label: 'Traces' },
       { to: '/runs', icon: ListTree, label: 'Runs' },
       { to: '/agents', icon: Bot, label: 'Agents' },
+      { to: '/analytics', icon: BarChart3, label: 'Analytics' },
       { to: '/analytics/errors', icon: AlertTriangle, label: 'Error Analytics' },
     ]
   },
