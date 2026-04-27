@@ -1,6 +1,6 @@
 # Govagn — Local development stack
-# Removed: Kafka, Zookeeper, legacy core service, ClickHouse (unused in production data path)
-# Data path: Agent SDK → Collector → api-gateway → PostgreSQL + Redis → Portal
+# Data path: Agent SDK → Collector → Kafka → api-gateway → PostgreSQL + Redis → Portal
+# Includes: Kafka for durable event buffer, Prometheus + Grafana for observability
 #
 # Usage: docker-compose up -d
 
@@ -45,6 +45,43 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_SYNC_LIMIT: 2
+      ZOOKEEPER_INIT_LIMIT: 5
+    ports:
+      - "2181:2181"
+    networks: [gv-net]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "2181"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      zookeeper: {condition: service_healthy}
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_LOG_CLEANUP_POLICY: delete
+      KAFKA_LOG_RETENTION_HOURS: 168
+    ports:
+      - "9092:9092"
+    networks: [gv-net]
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions.sh", "--bootstrap-server=localhost:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # ─── Govagn Services ────────────────────────────────────────────────────
 
   api-gateway:
@@ -68,6 +105,10 @@ services:
       GV_MIGRATIONS_PATH: "/migrations"
       GV_BUDGET_ENABLED: "${GV_BUDGET_ENABLED:-true}"
       GV_VAULT_KEY: "${GV_VAULT_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
+      GV_KAFKA_BROKERS: "kafka:9092"
+      GV_KAFKA_TOPIC: "spans"
+      GV_KAFKA_GROUP_ID: "api-gateway-consumer"
+      GV_KAFKA_ENABLED: "${GV_KAFKA_ENABLED:-true}"
     volumes:
       - ./deploy/certs:/certs:ro
       - ./deploy/migrations:/migrations:ro
@@ -78,6 +119,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
       interval: 10s
@@ -104,6 +146,9 @@ services:
       GV_TLS_CA_FILE:   "/certs/ca.crt"
       GV_DEBUG: "true"
       GV_PROCESSOR_WORKERS: "4"
+      GV_KAFKA_BROKERS: "kafka:9092"
+      GV_KAFKA_TOPIC: "spans"
+      GV_KAFKA_ENABLED: "${GV_KAFKA_ENABLED:-true}"
     volumes:
       - ./deploy/certs:/certs:ro
     ports:
@@ -112,6 +157,8 @@ services:
     networks: [gv-net]
     depends_on:
       api-gateway:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/healthcheck"]
