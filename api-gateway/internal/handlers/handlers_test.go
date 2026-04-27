@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/govagn/api-gateway/internal/governance"
 	"github.com/govagn/api-gateway/internal/models"
+	"go.uber.org/zap"
 )
 
 // ─── buildTrace ──────────────────────────────────────────────────────────────
@@ -289,6 +291,70 @@ func TestParseIntOr_DefaultOnInvalid(t *testing.T) {
 	result := parseIntOr("not-a-number", 42)
 	if result != 42 {
 		t.Errorf("invalid string should return default 42, got %d", result)
+	}
+}
+
+// ─── Risk Scoring ────────────────────────────────────────────────────────────
+
+func TestScoreSpanRisk_DefaultScore(t *testing.T) {
+	logger := zap.NewNop()
+	riskEngine := governance.NewRiskEngine()
+	h := &Handler{riskEngine: riskEngine, logger: logger}
+
+	span := models.Span{
+		ID:    "span-001",
+		Name:  "safe_operation",
+		Attributes: map[string]string{
+			"event.type": "normal_call",
+		},
+	}
+
+	h.scoreSpanRisk(&span)
+
+	if span.RiskScore != 0 {
+		t.Errorf("safe span should have risk_score=0, got %d", span.RiskScore)
+	}
+	if span.RiskCategory != "none" {
+		t.Errorf("safe span should have risk_category='none', got %q", span.RiskCategory)
+	}
+}
+
+func TestScoreSpanRisk_HighTokenUsage(t *testing.T) {
+	logger := zap.NewNop()
+	riskEngine := governance.NewRiskEngine()
+	h := &Handler{riskEngine: riskEngine, logger: logger}
+
+	span := models.Span{
+		ID:           "span-002",
+		Name:         "high_tokens",
+		InputTokens:  150000,
+		OutputTokens: 60000,
+		Attributes:   make(map[string]string),
+	}
+
+	h.scoreSpanRisk(&span)
+
+	if span.RiskScore == 0 {
+		t.Errorf("high token usage should have non-zero risk_score, got %d", span.RiskScore)
+	}
+	if span.RiskCategory != "high_token_usage" {
+		t.Errorf("high token usage should trigger high_token_usage category, got %q", span.RiskCategory)
+	}
+}
+
+func TestScoreSpanRisk_NilHandler(t *testing.T) {
+	span := models.Span{
+		ID:    "span-003",
+		Name:  "test",
+		Attributes: map[string]string{},
+	}
+
+	// Should not panic when handler is nil
+	h := &Handler{riskEngine: nil}
+	h.scoreSpanRisk(&span)
+
+	if span.RiskScore != 0 {
+		t.Errorf("span should be unchanged when riskEngine is nil, got risk_score=%d", span.RiskScore)
 	}
 }
 

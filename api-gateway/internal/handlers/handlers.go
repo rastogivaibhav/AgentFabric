@@ -17,10 +17,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/govagn/api-gateway/internal/budget"
 	"github.com/govagn/api-gateway/internal/evals"
+	"github.com/govagn/api-gateway/internal/governance"
 	"github.com/govagn/api-gateway/internal/managedruntime"
 	"github.com/govagn/api-gateway/internal/memory"
 	"github.com/govagn/api-gateway/internal/middleware"
 	"github.com/govagn/api-gateway/internal/models"
+	"github.com/govagn/api-gateway/internal/normalization"
 	"github.com/govagn/api-gateway/internal/observability"
 	"github.com/govagn/api-gateway/internal/policy"
 	"github.com/govagn/api-gateway/internal/pricing"
@@ -42,15 +44,16 @@ type Handler struct {
 	jwtSecret      string
 	budgetEnforcer *budget.BudgetEnforcer
 	policyEngine   *policy.Engine
+	riskEngine     *governance.RiskEngine
 	policyPackRoot string
 	evalPackRoot   string
 }
 
-func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, policyEngine *policy.Engine) *Handler {
-	return NewWithPackRoots(pg, redis, hub, logger, jwtSecret, budgetEnforcer, policyEngine, "", "")
+func New(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, policyEngine *policy.Engine, riskEngine *governance.RiskEngine) *Handler {
+	return NewWithPackRoots(pg, redis, hub, logger, jwtSecret, budgetEnforcer, policyEngine, riskEngine, "", "")
 }
 
-func NewWithPackRoots(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, policyEngine *policy.Engine, policyPackRoot, evalPackRoot string) *Handler {
+func NewWithPackRoots(pg *store.PostgresStore, redis *store.RedisClient, hub *ws.Hub, logger *zap.Logger, jwtSecret string, budgetEnforcer *budget.BudgetEnforcer, policyEngine *policy.Engine, riskEngine *governance.RiskEngine, policyPackRoot, evalPackRoot string) *Handler {
 	return &Handler{
 		pg:             pg,
 		redis:          redis,
@@ -59,6 +62,7 @@ func NewWithPackRoots(pg *store.PostgresStore, redis *store.RedisClient, hub *ws
 		jwtSecret:      jwtSecret,
 		budgetEnforcer: budgetEnforcer,
 		policyEngine:   policyEngine,
+		riskEngine:     riskEngine,
 		policyPackRoot: strings.TrimSpace(policyPackRoot),
 		evalPackRoot:   strings.TrimSpace(evalPackRoot),
 	}
@@ -329,6 +333,7 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 			req.Spans[i].ReceivedAt = time.Now()
 		}
 		h.repriceSpan(&req.Spans[i])
+		h.scoreSpanRisk(&req.Spans[i])
 	}
 
 	// Budget enforcement — check before writing to DB.
@@ -2290,6 +2295,42 @@ func (h *Handler) repriceSpan(sp *models.Span) {
 		sp.Attributes["af.pricing.cache_write_per_million"] = strconv.FormatFloat(match.CacheWritePerMillion, 'f', 4, 64)
 		sp.Attributes["af.pricing.reasoning_per_million"] = strconv.FormatFloat(match.ReasoningPerMillion, 'f', 4, 64)
 	}
+}
+
+// scoreSpanRisk evaluates governance risk for a span and populates risk fields.
+// Converts span to CanonicalEvent format for risk engine evaluation.
+func (h *Handler) scoreSpanRisk(sp *models.Span) {
+	if h.riskEngine == nil || sp == nil {
+		return
+	}
+
+	// Convert span to CanonicalEvent for risk evaluation
+	ev := &normalization.CanonicalEvent{
+		ID:            sp.ID,
+		EventTime:     sp.ReceivedAt,
+		SourceProduct: sp.Framework,
+		InputTokens:   sp.InputTokens,
+		OutputTokens:  sp.OutputTokens,
+		Severity:      "info",
+	}
+
+	// Extract relevant fields from attributes
+	if sp.Attributes != nil {
+		ev.Command = sp.Attributes["tool.command"]
+		ev.FilePath = sp.Attributes["tool.file_path"]
+		ev.ToolName = sp.Attributes["tool.name"]
+		ev.RepoName = sp.Attributes["git.repository"]
+		ev.EventType = sp.Attributes["event.type"]
+		ev.Action = sp.Attributes["event.action"]
+		if status := sp.Attributes["event.category"]; status != "" {
+			ev.EventCategory = status
+		}
+	}
+
+	// Evaluate risk using the risk engine
+	score, category := h.riskEngine.Score(ev)
+	sp.RiskScore = score
+	sp.RiskCategory = category
 }
 
 func (h *Handler) ListPricingRules(w http.ResponseWriter, r *http.Request) {

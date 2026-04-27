@@ -56,6 +56,8 @@ type Span struct {
 	PricingRuleID         int64             `json:"pricing_rule_id,omitempty" db:"-"`
 	PricingScope          string            `json:"pricing_scope,omitempty" db:"-"`
 	PricingModelPattern   string            `json:"pricing_model_pattern,omitempty" db:"-"`
+	RiskScore             int               `json:"risk_score,omitempty" db:"risk_score"`
+	RiskCategory          string            `json:"risk_category,omitempty" db:"risk_category"`
 	TenantID              string            `json:"-" db:"tenant_id"`
 	ReceivedAt            time.Time         `json:"received_at" db:"received_at"`
 }

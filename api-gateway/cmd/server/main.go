@@ -19,6 +19,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"       // file:// source driver
 	"github.com/govagn/api-gateway/internal/auth"
 	"github.com/govagn/api-gateway/internal/budget"
+	"github.com/govagn/api-gateway/internal/governance"
 	"github.com/govagn/api-gateway/internal/handlers"
 	"github.com/govagn/api-gateway/internal/middleware"
 	"github.com/govagn/api-gateway/internal/netproxy"
@@ -174,8 +175,11 @@ func main() {
 	}
 	np := netproxy.New(netProxyCA, llmVault, budgetEnforcer, pgStore, policyEngine, hub, logger)
 
+	// Risk scoring engine for governance
+	riskEngine := governance.NewRiskEngine()
+
 	// Wire handlers
-	h := handlers.NewWithPackRoots(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer, policyEngine, policyPackPath, evalPackPath)
+	h := handlers.NewWithPackRoots(pgStore, redisClient, hub, logger, jwtSecret, budgetEnforcer, policyEngine, riskEngine, policyPackPath, evalPackPath)
 
 	r := chi.NewRouter()
 

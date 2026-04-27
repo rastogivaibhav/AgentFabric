@@ -89,6 +89,7 @@ func (s *PostgresStore) BulkInsertSpans(ctx context.Context, spans []models.Span
 			attrsJSON, eventsJSON,
 			sp.InputTokens, sp.OutputTokens, sp.CacheReadTokens, sp.CacheWriteTokens, sp.ReasoningTokens,
 			sp.CostUSD, sp.InputCostUSD, sp.OutputCostUSD, sp.CacheReadCostUSD, sp.CacheWriteCostUSD, sp.ReasoningCostUSD,
+			sp.RiskScore, sp.RiskCategory,
 			sp.TenantID,
 		})
 	}
@@ -102,6 +103,7 @@ func (s *PostgresStore) BulkInsertSpans(ctx context.Context, spans []models.Span
 			"attributes", "events",
 			"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens",
 			"cost_usd", "input_cost_usd", "output_cost_usd", "cache_read_cost_usd", "cache_write_cost_usd", "reasoning_cost_usd",
+			"risk_score", "risk_category",
 			"tenant_id",
 		},
 		pgx.CopyFromRows(rows),

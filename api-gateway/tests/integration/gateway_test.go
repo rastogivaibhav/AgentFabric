@@ -43,6 +43,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/govagn/api-gateway/internal/auth"
+	"github.com/govagn/api-gateway/internal/governance"
 	"github.com/govagn/api-gateway/internal/handlers"
 	"github.com/govagn/api-gateway/internal/middleware"
 	"github.com/govagn/api-gateway/internal/store"
@@ -113,7 +114,8 @@ func newTestServer(t *testing.T) *testServer {
 	}
 	oidcHandler := auth.NewOIDCHandler(oidcCfg, pg, logger)
 
-	h := handlers.New(pg, rc, hub, logger, testJWTSecret)
+	riskEngine := governance.NewRiskEngine()
+	h := handlers.New(pg, rc, hub, logger, testJWTSecret, nil, nil, riskEngine)
 
 	rlCfg := middleware.RateLimitConfig{
 		RequestsPerMinute: 100_000, // generous — tests must not be rate-limited
