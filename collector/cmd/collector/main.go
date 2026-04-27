@@ -93,6 +93,16 @@ func main() {
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/v1/traces", receiver.NewHTTPOTLPHandler(spanProcessor, jwtValidator, logger))
 	httpMux.Handle("/metrics", promhttp.Handler())
+
+	// Multi-source receivers
+	vscodeReceiver := receiver.NewVSCodeExtensionReceiver()
+	webhookReceiver := receiver.NewWebhookReceiver()
+	directAPIReceiver := receiver.NewDirectAPIReceiver()
+
+	httpMux.HandleFunc("/api/v1/telemetry/vscode", receiver.VSCodeExtensionHandler(vscodeReceiver))
+	httpMux.HandleFunc("/api/v1/telemetry/webhook", receiver.WebhookHandler(webhookReceiver))
+	httpMux.HandleFunc("/api/v1/telemetry/events", receiver.DirectAPIHandler(directAPIReceiver))
+
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
