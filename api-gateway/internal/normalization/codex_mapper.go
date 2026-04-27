@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+// CodexMapper implements EventMapper for Codex events
+type CodexMapper struct{}
+
+// Map converts an EnrichedSpan from Codex framework to CanonicalEvent
+func (m *CodexMapper) Map(event interface{}) (*CanonicalEvent, error) {
+	span, ok := event.(*EnrichedSpan)
+	if !ok {
+		return nil, fmt.Errorf("expected *EnrichedSpan, got %T", event)
+	}
+	return MapCodexEvent(span)
+}
+
+// Accepts checks if this mapper handles the given vendor/product
+func (m *CodexMapper) Accepts(sourceVendor, sourceProduct string) bool {
+	return sourceVendor == "codex"
+}
+
 // MapCodexEvent converts an EnrichedSpan from Codex framework to CanonicalEvent
 func MapCodexEvent(span *EnrichedSpan) (*CanonicalEvent, error) {
 	if span.Framework != "codex" {
@@ -21,7 +38,11 @@ func MapCodexEvent(span *EnrichedSpan) (*CanonicalEvent, error) {
 	event := &CanonicalEvent{
 		EventTime:      time.Unix(0, int64(span.StartTimeNs)),
 		SourceTool:     "codex",
+		SourceVendor:   "codex",
+		SourceProduct:  "codex-cli",
+		SourceChannel:  "otlp",
 		EventType:      eventType,
+		EventCategory:  deriveEventCategoryCodex(eventType),
 		UserID:         span.Attributes["af.user.id"],
 		UserEmail:      span.Attributes["af.user.email"],
 		SessionID:      span.Attributes["codex.session.id"],
@@ -33,6 +54,8 @@ func MapCodexEvent(span *EnrichedSpan) (*CanonicalEvent, error) {
 		Command:        span.Attributes["codex.tool.command"],
 		Severity:       deriveSeverityCodex(span.StatusCode, span.Attributes),
 		PromptRedacted: true,
+		Redacted:       true,
+		Payload:        convertAttributesToPayload(span.Attributes),
 		RawEvent:       span,
 	}
 
@@ -140,4 +163,27 @@ func parseIntAttr(s string) int64 {
 	var v int64
 	fmt.Sscan(s, &v)
 	return v
+}
+
+func deriveEventCategoryCodex(eventType string) string {
+	switch {
+	case strings.Contains(eventType, "session"):
+		return "session"
+	case strings.Contains(eventType, "model"):
+		return "model_call"
+	case strings.Contains(eventType, "tool"):
+		return "tool_call"
+	case strings.Contains(eventType, "approval"):
+		return "approval"
+	default:
+		return "unknown"
+	}
+}
+
+func convertAttributesToPayload(attrs map[string]string) map[string]interface{} {
+	payload := make(map[string]interface{})
+	for k, v := range attrs {
+		payload[k] = v
+	}
+	return payload
 }

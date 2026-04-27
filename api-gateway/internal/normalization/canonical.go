@@ -6,31 +6,47 @@ import (
 
 // CanonicalEvent represents a vendor-neutral AI tool event
 type CanonicalEvent struct {
-	EventTime       time.Time
-	SourceTool      string // codex, claude_code, crewai, etc.
-	EventType       string // session.started, tool.call.completed, etc.
-	Severity        string // info, warning, error, critical
-	UserID          string
-	UserEmail       string
-	OrgID           string
-	TeamID          string
-	SessionID       string
-	TraceID         string
-	SpanID          string
-	RepoURL         string
-	RepoName        string
-	GitBranch       string
-	GitCommit       string
-	ModelName       string
-	Provider        string // openai, anthropic, google
-	ToolName        string
-	Command         string
-	CommandHash     string
-	FilePath        string
-	RiskScore       int
-	RequiresReview  bool
-	PromptRedacted  bool
-	RawEvent        interface{} // raw span data for storage
+	ID                 string
+	EventTime          time.Time
+	SourceTool         string // codex, claude_code, crewai, etc. (legacy, use SourceVendor)
+	SourceVendor       string // codex, cursor, vscode, anthropic, cowork
+	SourceProduct      string // codex-cli, cursor-editor, github-copilot, claude-api
+	SourceChannel      string // otlp, extension, api, webhook
+	EventType          string // session.started, tool.call.completed, etc.
+	EventCategory      string // session, model_call, tool_call, approval
+	Action             string // code_generation_accepted, refactor, etc.
+	Severity           string // info, warning, error, critical
+	UserID             string
+	UserEmail          string
+	OrgID              string
+	TeamID             string
+	SessionID          string
+	TraceID            string
+	SpanID             string
+	RepoURL            string
+	RepoName           string
+	GitBranch          string
+	GitCommit          string
+	ModelName          string
+	Provider           string // openai, anthropic, google
+	ToolName           string
+	Command            string
+	CommandHash        string
+	FilePath           string
+	Success            bool
+	LatencyMs          int64
+	InputTokens        int64
+	OutputTokens       int64
+	CacheReadTokens    int64
+	CacheWriteTokens   int64
+	EstimatedCost      float64
+	RiskScore          int
+	RiskCategory       string // unsafe_command, secret_exposure, prod_edit
+	RequiresReview     bool
+	PromptRedacted     bool
+	Payload            map[string]interface{}
+	Redacted           bool
+	RawEvent           interface{} // raw span data for storage
 }
 
 // EnrichedSpan mirrors collector's EnrichedSpan for use in api-gateway

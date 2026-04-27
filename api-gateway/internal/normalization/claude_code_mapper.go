@@ -7,6 +7,23 @@ import (
 	"time"
 )
 
+// ClaudeCodeMapper implements EventMapper for Claude Code events
+type ClaudeCodeMapper struct{}
+
+// Map converts an EnrichedSpan from Claude Code to CanonicalEvent
+func (m *ClaudeCodeMapper) Map(event interface{}) (*CanonicalEvent, error) {
+	span, ok := event.(*EnrichedSpan)
+	if !ok {
+		return nil, fmt.Errorf("expected *EnrichedSpan, got %T", event)
+	}
+	return MapClaudeCodeEvent(span)
+}
+
+// Accepts checks if this mapper handles the given vendor/product
+func (m *ClaudeCodeMapper) Accepts(sourceVendor, sourceProduct string) bool {
+	return sourceVendor == "claude_code"
+}
+
 // MapClaudeCodeEvent converts an EnrichedSpan from Claude Code to CanonicalEvent
 func MapClaudeCodeEvent(span *EnrichedSpan) (*CanonicalEvent, error) {
 	if span.Framework != "claude_code" {
@@ -18,7 +35,11 @@ func MapClaudeCodeEvent(span *EnrichedSpan) (*CanonicalEvent, error) {
 	event := &CanonicalEvent{
 		EventTime:      time.Unix(0, int64(span.StartTimeNs)),
 		SourceTool:     "claude_code",
+		SourceVendor:   "claude_code",
+		SourceProduct:  "claude-code",
+		SourceChannel:  "otlp",
 		EventType:      eventType,
+		EventCategory:  deriveEventCategoryClaudeCode(eventType),
 		UserID:         span.Attributes["af.user.id"],
 		UserEmail:      span.Attributes["af.user.email"],
 		SessionID:      span.Attributes["claude_code.session_id"],
@@ -30,6 +51,10 @@ func MapClaudeCodeEvent(span *EnrichedSpan) (*CanonicalEvent, error) {
 		Command:        span.Attributes["claude_code.tool_command"],
 		Severity:       "info",
 		PromptRedacted: true, // Claude Code redacts by default
+		Redacted:       true,
+		InputTokens:    span.InputTokens,
+		OutputTokens:   span.OutputTokens,
+		Payload:        convertAttributesToPayload(span.Attributes),
 		RawEvent:       span,
 	}
 
@@ -70,6 +95,25 @@ func deriveEventTypeClaudeCode(spanName string, attrs map[string]string) string 
 		return "error.detected"
 	default:
 		return "event.unknown"
+	}
+}
+
+func deriveEventCategoryClaudeCode(eventType string) string {
+	switch {
+	case strings.Contains(eventType, "session"):
+		return "session"
+	case strings.Contains(eventType, "model"):
+		return "model_call"
+	case strings.Contains(eventType, "tool"):
+		return "tool_call"
+	case strings.Contains(eventType, "token"):
+		return "token_usage"
+	case strings.Contains(eventType, "cost"):
+		return "cost"
+	case strings.Contains(eventType, "approval"):
+		return "approval"
+	default:
+		return "unknown"
 	}
 }
 
