@@ -141,9 +141,10 @@ services:
       GV_AUTH_REQUIRE_AUTH: "false"
       GV_JWT_SECRET: "dev-secret-change-in-prod"
       GV_TLS_ENABLED: "${GV_TLS_ENABLED:-false}"
-      GV_TLS_CERT_FILE: "/certs/server.crt"
-      GV_TLS_KEY_FILE:  "/certs/server.key"
-      GV_TLS_CA_FILE:   "/certs/ca.crt"
+      GV_TLS_CERT_FILE: "/tls/collector-server.crt"
+      GV_TLS_KEY_FILE:  "/tls/collector-server.key"
+      GV_TLS_CLIENT_CA: "/tls/ca.crt"
+      GV_TLS_MUTUAL_TLS: "${GV_TLS_MUTUAL_TLS:-false}"
       GV_DEBUG: "true"
       GV_PROCESSOR_WORKERS: "4"
       GV_KAFKA_BROKERS: "kafka:9092"
@@ -151,6 +152,7 @@ services:
       GV_KAFKA_ENABLED: "${GV_KAFKA_ENABLED:-true}"
     volumes:
       - ./deploy/certs:/certs:ro
+      - ./deploy/tls:/tls:ro
     ports:
       - "4317:4317"
       - "4318:4318"

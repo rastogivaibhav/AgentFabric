@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -73,11 +76,14 @@ func main() {
 	}
 
 	if cfg.TLS.Enabled {
-		tlsCreds, err := credentials.NewServerTLSFromFile(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+		tlsCreds, err := newServerTLSCredentials(cfg.TLS, logger)
 		if err != nil {
-			logger.Fatal("failed to load TLS creds", zap.Error(err))
+			logger.Fatal("failed to load TLS credentials", zap.Error(err))
 		}
 		grpcOpts = append(grpcOpts, grpc.Creds(tlsCreds))
+		if cfg.TLS.MutualTLS {
+			logger.Info("mTLS enabled: requiring client certificate verification")
+		}
 	}
 
 	grpcServer := grpc.NewServer(grpcOpts...)
@@ -232,4 +238,44 @@ func collectorReady(w http.ResponseWriter, r *http.Request, cfg *config.Config) 
 	checks["gateway_readyz"] = map[string]any{"status": "ok", "url": url}
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// newServerTLSCredentials creates gRPC server TLS credentials with optional mTLS
+func newServerTLSCredentials(tlsCfg config.Config, logger *zap.Logger) (credentials.TransportCredentials, error) {
+	// Load server certificate and key
+	serverCert, err := tls.LoadX509KeyPair(tlsCfg.CertFile, tlsCfg.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load server cert: %w", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+	}
+
+	// If mTLS enabled, require client certificates
+	if tlsCfg.MutualTLS {
+		if tlsCfg.ClientCA == "" {
+			return nil, fmt.Errorf("mTLS enabled but client_ca not specified")
+		}
+
+		clientCABytes, err := ioutil.ReadFile(tlsCfg.ClientCA)
+		if err != nil {
+			return nil, fmt.Errorf("read client CA: %w", err)
+		}
+
+		clientCAPool := x509.NewCertPool()
+		if !clientCAPool.AppendCertsFromPEM(clientCABytes) {
+			return nil, fmt.Errorf("parse client CA certificates")
+		}
+
+		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+		tlsConfig.ClientCAs = clientCAPool
+
+		logger.Info("mTLS configured",
+			zap.String("client_ca", tlsCfg.ClientCA),
+			zap.String("server_cert", tlsCfg.CertFile),
+		)
+	}
+
+	return credentials.NewTLS(tlsConfig), nil
 }

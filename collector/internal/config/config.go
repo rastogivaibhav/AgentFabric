@@ -21,10 +21,12 @@ type Config struct {
 	} `mapstructure:"http"`
 
 	TLS struct {
-		Enabled  bool   `mapstructure:"enabled"`
-		CertFile string `mapstructure:"cert_file"`
-		KeyFile  string `mapstructure:"key_file"`
-		CAFile   string `mapstructure:"ca_file"`
+		Enabled    bool   `mapstructure:"enabled"`
+		CertFile   string `mapstructure:"cert_file"`
+		KeyFile    string `mapstructure:"key_file"`
+		CAFile     string `mapstructure:"ca_file"`
+		ClientCA   string `mapstructure:"client_ca"` // CA to verify client certificates (mTLS)
+		MutualTLS  bool   `mapstructure:"mutual_tls"` // Require client certificate verification
 	} `mapstructure:"tls"`
 
 	Auth struct {

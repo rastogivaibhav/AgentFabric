@@ -256,7 +256,8 @@
       "mcp__plugin_playwright_playwright__browser_take_screenshot",
       "Bash(curl -s http://localhost:8080/api/v1/netproxy/ca.crt)",
       "Bash(curl -s --proxy http://localhost:8443 --cacert /tmp/af-ca.crt https://api.openai.com/v1/models -H \"Authorization: Bearer sk-test-fake-key\" -w \"\\\\nHTTP_STATUS:%{http_code}\")",
-      "Bash(curl --version)"
+      "Bash(curl --version)",
+      "Bash(git add *)"
     ]
   }
 }
