@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -67,7 +69,7 @@ type Client struct {
 }
 
 // Hub manages all WebSocket clients and fan-out inside a single process.
-// It does not coordinate across api-gateway replicas.
+// It coordinates across api-gateway replicas via Redis pub/sub.
 type Hub struct {
 	mu         sync.RWMutex
 	clients    map[string]map[*Client]struct{} // tenantID -> clients
@@ -75,6 +77,8 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan *broadcastMsg
+	redis      *RedisPubSub // Redis pub/sub for cross-replica broadcasts
+	replicaID  string        // Unique identifier for this replica
 }
 
 type broadcastMsg struct {
@@ -82,21 +86,42 @@ type broadcastMsg struct {
 	data     []byte
 }
 
-func NewHub(logger *zap.Logger) *Hub {
+func NewHub(logger *zap.Logger, redisClient *redis.Client) *Hub {
+	replicaID := fmt.Sprintf("replica-%d", time.Now().UnixNano())
+
+	var redisPubSub *RedisPubSub
+	if redisClient != nil {
+		redisPubSub = NewRedisPubSub(redisClient, logger)
+	}
+
 	return &Hub{
 		clients:    make(map[string]map[*Client]struct{}),
 		logger:     logger,
 		register:   make(chan *Client, 64),
 		unregister: make(chan *Client, 64),
 		broadcast:  make(chan *broadcastMsg, 4096),
+		redis:      redisPubSub,
+		replicaID:  replicaID,
 	}
 }
 
 func (h *Hub) Run(ctx context.Context) {
+	// Subscribe to Redis broadcasts from other replicas
+	var redisCh <-chan *BroadcastEvent
+	if h.redis != nil {
+		var err error
+		redisCh, err = h.redis.SubscribeToAllTenants(ctx)
+		if err != nil {
+			h.logger.Warn("failed to subscribe to redis broadcasts", zap.Error(err))
+			redisCh = nil
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+
 		case c := <-h.register:
 			h.mu.Lock()
 			if h.clients[c.tenantID] == nil {
@@ -115,6 +140,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Unlock()
 
 		case msg := <-h.broadcast:
+			// 1. Distribute to local clients
 			h.mu.RLock()
 			tenantClients := h.clients[msg.tenantID]
 			h.mu.RUnlock()
@@ -126,6 +152,59 @@ func (h *Hub) Run(ctx context.Context) {
 					h.unregister <- c
 				}
 			}
+
+			// 2. Publish to Redis for other replicas
+			if h.redis != nil {
+				err := h.redis.PublishBroadcast(ctx, msg.tenantID, msg.data, h.replicaID)
+				if err != nil {
+					h.logger.Warn(
+						"failed to publish to redis",
+						zap.Error(err),
+						zap.String("tenant", msg.tenantID),
+					)
+					// Continue despite error; local delivery succeeded
+				}
+			}
+
+		case event := <-redisCh:
+			if event == nil {
+				// Redis channel closed, try to resubscribe
+				if h.redis != nil {
+					var err error
+					redisCh, err = h.redis.SubscribeToAllTenants(ctx)
+					if err != nil {
+						h.logger.Warn("failed to resubscribe to redis", zap.Error(err))
+						redisCh = nil
+					}
+				}
+				continue
+			}
+
+			// Skip if this is from our own replica (deduplication)
+			if event.Source == h.replicaID {
+				continue
+			}
+
+			// Distribute to local clients of this tenant
+			h.mu.RLock()
+			tenantClients := h.clients[event.TenantID]
+			h.mu.RUnlock()
+
+			for c := range tenantClients {
+				select {
+				case c.send <- event.Data:
+				default:
+					// Client too slow — disconnect
+					h.unregister <- c
+				}
+			}
+
+			h.logger.Debug(
+				"distributed redis broadcast to local clients",
+				zap.String("tenant", event.TenantID),
+				zap.String("source", event.Source),
+				zap.Int("clients", len(tenantClients)),
+			)
 		}
 	}
 }

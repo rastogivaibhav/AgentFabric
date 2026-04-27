@@ -108,10 +108,9 @@ func main() {
 		logger.Fatal("redis init failed", zap.Error(err))
 	}
 
-	// WebSocket hub for live streaming.
-	// This hub is process-local today, so complete /api/v1/stream/live delivery
-	// is only supported with a single api-gateway replica.
-	hub := ws.NewHub(logger)
+	// WebSocket hub for live streaming with cross-replica coordination via Redis.
+	// Multiple replicas coordinate via Redis pub/sub for consistent message delivery.
+	hub := ws.NewHub(logger, redisClient)
 	go hub.Run(context.Background())
 
 	// OIDC handler (P0-4: enterprise SSO + S4: password login + GA: multi-secret rotation)
