@@ -825,3 +825,19 @@ type LiveEvent struct {
 	TenantID  string      `json:"-"`
 	Data      interface{} `json:"data"`
 }
+
+// ─── Secret Rotation ─────────────────────────────────────────────────────────
+
+type SecretRotationRecord struct {
+	ID                  int64      `json:"id" db:"id"`
+	KeyID               string     `json:"key_id" db:"key_id"`
+	OldKeyHash          string     `json:"old_key_hash" db:"old_key_hash"`
+	NewKeyHash          string     `json:"new_key_hash" db:"new_key_hash"`
+	ItemsRotated        int64      `json:"items_rotated" db:"items_rotated"`
+	Status              string     `json:"status" db:"status"` // pending, in_progress, success, partial, failed
+	EncryptedByUser     string     `json:"encrypted_by_user" db:"encrypted_by_user"`
+	ErrorMessage        string     `json:"error_message,omitempty" db:"error_message"`
+	DurationSeconds     int        `json:"duration_seconds,omitempty" db:"rotation_duration_seconds"`
+	CreatedAt           time.Time  `json:"created_at" db:"created_at"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty" db:"completed_at"`
+}
