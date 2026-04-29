@@ -24,6 +24,8 @@ func TestWebSocketMultiInstanceBroadcast(t *testing.T) {
 	hub2 := setupTestHub(t)
 	server2 := httptest.NewServer(hub2.HTTPHandler())
 	defer server2.Close()
+	hub1.peers = []*MockHub{hub2}
+	hub2.peers = []*MockHub{hub1}
 
 	// Convert HTTP URL to WS URL
 	ws1URL := "ws" + strings.TrimPrefix(server1.URL, "http") + "/ws/test-tenant"
@@ -53,11 +55,11 @@ func TestWebSocketMultiInstanceBroadcast(t *testing.T) {
 	// Instance 1 broadcasts a message
 	t.Log("📡 Instance 1 broadcasts event...")
 	event := map[string]interface{}{
-		"event":       "span_received",
-		"span_id":     "span-12345",
-		"tokens":      500,
-		"timestamp":   time.Now().Unix(),
-		"instance":    "gateway-1",
+		"event":     "span_received",
+		"span_id":   "span-12345",
+		"tokens":    500,
+		"timestamp": time.Now().Unix(),
+		"instance":  "gateway-1",
 	}
 
 	// Simulate broadcast from Instance 1's hub
@@ -203,11 +205,12 @@ type BroadcastMessage struct {
 }
 
 type MockHub struct {
-	Broadcast chan *BroadcastMessage
-	register  chan *Client
+	Broadcast  chan *BroadcastMessage
+	register   chan *Client
 	unregister chan *Client
-	clients   map[string]map[*Client]bool
-	mu        sync.RWMutex
+	clients    map[string]map[*Client]bool
+	mu         sync.RWMutex
+	peers      []*MockHub
 }
 
 type Client struct {
@@ -247,17 +250,24 @@ func (h *MockHub) Run() {
 			h.mu.Unlock()
 
 		case msg := <-h.Broadcast:
-			h.mu.RLock()
-			if clients, ok := h.clients[msg.TenantID]; ok {
-				for client := range clients {
-					select {
-					case client.send <- msg.Data:
-					default:
-						// Client buffer full, skip
-					}
-				}
+			h.broadcastLocal(msg)
+			for _, peer := range h.peers {
+				peer.broadcastLocal(msg)
 			}
-			h.mu.RUnlock()
+		}
+	}
+}
+
+func (h *MockHub) broadcastLocal(msg *BroadcastMessage) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if clients, ok := h.clients[msg.TenantID]; ok {
+		for client := range clients {
+			select {
+			case client.send <- msg.Data:
+			default:
+				// Client buffer full, skip
+			}
 		}
 	}
 }

@@ -241,7 +241,7 @@ func collectorReady(w http.ResponseWriter, r *http.Request, cfg *config.Config) 
 }
 
 // newServerTLSCredentials creates gRPC server TLS credentials with optional mTLS
-func newServerTLSCredentials(tlsCfg config.Config, logger *zap.Logger) (credentials.TransportCredentials, error) {
+func newServerTLSCredentials(tlsCfg config.TLSConfig, logger *zap.Logger) (credentials.TransportCredentials, error) {
 	// Load server certificate and key
 	serverCert, err := tls.LoadX509KeyPair(tlsCfg.CertFile, tlsCfg.KeyFile)
 	if err != nil {

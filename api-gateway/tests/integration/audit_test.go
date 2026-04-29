@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/govagn/api-gateway/internal/models"
-	"github.com/govagn/api-gateway/internal/store"
 	"github.com/stretchr/testify/require"
 )
 

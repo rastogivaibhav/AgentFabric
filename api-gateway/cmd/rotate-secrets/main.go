@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/hex"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -65,7 +64,7 @@ func main() {
 		logger.Fatal("DATABASE_URL environment variable not set")
 	}
 
-	db, err := store.NewPostgresStore(dbURL)
+	db, err := store.NewPostgresStore(dbURL, logger)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}

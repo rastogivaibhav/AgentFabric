@@ -2115,7 +2115,7 @@ export function useApproveGovernanceDecision() {
     Error,
     { span_id: string; decision: 'approved' | 'rejected' }
   >({
-    mutationFn: (req) => apiFetch('/governance/approve', req, 'POST'),
+    mutationFn: (req) => apiMutate('/governance/approve', 'POST', req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['governance-alerts'] })
       qc.invalidateQueries({ queryKey: ['governance-summary'] })

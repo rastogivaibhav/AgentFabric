@@ -212,12 +212,13 @@ func initializeDefaultRules() []*RiskRule {
 // matchesSecretPattern checks if a string contains common secret patterns
 func matchesSecretPattern(s string) bool {
 	patterns := []string{
-		`AKIA[0-9A-Z]{16}`,                              // AWS access key
-		`sk-(?:proj-)?[a-zA-Z0-9-]{48,}`,               // OpenAI/Anthropic key
-		`ghp_[A-Za-z0-9_]{36,255}`,                     // GitHub personal access token
-		`sk-ant-[a-zA-Z0-9_]{36,}`,                     // Anthropic key
+		`AKIA[0-9A-Z]{16}`,                                    // AWS access key
+		`sk-proj-[a-zA-Z0-9_-]{12,}`,                          // OpenAI project key
+		`sk-[a-zA-Z0-9_-]{24,}`,                               // OpenAI-style key
+		`ghp_[A-Za-z0-9_]{30,255}`,                            // GitHub personal access token
+		`sk-ant-[a-zA-Z0-9_-]{24,}`,                           // Anthropic key
 		`(?i)(?:postgres|mysql|mongodb|redis)://[^:]+:[^@]+@`, // Database URLs
-		`-----BEGIN (?:RSA |OPENSSH )?PRIVATE KEY-----`, // Private keys
+		`-----BEGIN (?:RSA |OPENSSH )?PRIVATE KEY-----`,       // Private keys
 		`(?i)(password|passwd|secret|api_key|token|access_key|secret_key)\s*=\s*\S+`, // .env style
 	}
 

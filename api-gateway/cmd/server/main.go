@@ -110,7 +110,7 @@ func main() {
 
 	// WebSocket hub for live streaming with cross-replica coordination via Redis.
 	// Multiple replicas coordinate via Redis pub/sub for consistent message delivery.
-	hub := ws.NewHub(logger, redisClient)
+	hub := ws.NewHub(logger, redisClient.RawClient())
 	go hub.Run(context.Background())
 
 	// OIDC handler (P0-4: enterprise SSO + S4: password login + GA: multi-secret rotation)

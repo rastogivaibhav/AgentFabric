@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -171,7 +170,6 @@ func TestHubWithRedisScaling(t *testing.T) {
 
 		// Broadcast locally
 		testEvent := map[string]string{"event": "test", "data": "hello"}
-		body, _ := json.Marshal(testEvent)
 		hub.Broadcast("test-tenant", testEvent)
 
 		// Give time for Redis publish

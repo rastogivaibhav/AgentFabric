@@ -24,6 +24,7 @@ import logging
 import os
 import time
 import uuid
+from contextvars import ContextVar
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -93,6 +94,10 @@ class Attrs:
 
 _tracer: Optional[trace.Tracer] = None
 _initialized = False
+_google_adk_runner_context: ContextVar[Any] = ContextVar(
+    "govagn_google_adk_runner_context",
+    default=None,
+)
 
 
 def instrument(
@@ -536,6 +541,7 @@ def _patch_google_adk():
                     Attrs.GEN_AI_SYSTEM:       "google_adk",
                 },
             ) as span:
+                runner_token = _google_adk_runner_context.set(trace.set_span_in_context(span))
                 try:
                     async for event in original_run_async(
                         self,
@@ -551,6 +557,8 @@ def _patch_google_adk():
                     span.set_status(Status(StatusCode.ERROR, str(e)))
                     span.record_exception(e)
                     raise
+                finally:
+                    _google_adk_runner_context.reset(runner_token)
 
         Runner.run_async = traced_run_async
 
@@ -564,9 +572,11 @@ def _patch_google_adk():
         async def traced_agent_run_async(self, invocation_context):
             tracer = get_tracer()
             agent_name = getattr(self, "name", "unknown")
+            parent_context = _google_adk_runner_context.get()
             with tracer.start_as_current_span(
                 f"google_adk.agent.{agent_name}",
                 kind=SpanKind.INTERNAL,
+                context=parent_context,
                 attributes={
                     Attrs.GOOGLE_ADK_AGENT: agent_name,
                     Attrs.AGENT_NAME:        agent_name,

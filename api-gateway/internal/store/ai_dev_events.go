@@ -6,10 +6,22 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/govagn/api-gateway/internal/normalization"
 	"github.com/google/uuid"
+	"github.com/govagn/api-gateway/internal/normalization"
 	"github.com/jackc/pgx/v5"
 )
+
+func prepareCanonicalEventForStorage(event *normalization.CanonicalEvent) {
+	if event == nil {
+		return
+	}
+	if event.ID == "" {
+		event.ID = uuid.New().String()
+	}
+	if event.EventTime.IsZero() {
+		event.EventTime = time.Now()
+	}
+}
 
 // StoreCanonicalEvent persists a canonical event to the ai_dev_events table
 func (ps *PostgresStore) StoreCanonicalEvent(ctx context.Context, event *normalization.CanonicalEvent) error {
@@ -17,15 +29,7 @@ func (ps *PostgresStore) StoreCanonicalEvent(ctx context.Context, event *normali
 		return fmt.Errorf("event cannot be nil")
 	}
 
-	// Generate ID if not set
-	if event.ID == "" {
-		event.ID = uuid.New().String()
-	}
-
-	// Set event time if not set
-	if event.EventTime.IsZero() {
-		event.EventTime = time.Now()
-	}
+	prepareCanonicalEventForStorage(event)
 
 	// Marshal payload to JSON
 	var payloadJSON []byte
@@ -247,17 +251,17 @@ func (ps *PostgresStore) ListCanonicalEvents(ctx context.Context, filter *EventF
 
 // EventFilter provides query filters for canonical events
 type EventFilter struct {
-	SourceVendor    string
-	EventType       string
-	UserEmail       string
-	SessionID       string
-	RiskScoreMin    int
-	RiskScoreMax    int
-	RequiresReview  *bool
-	StartTime       time.Time
-	EndTime         time.Time
-	Limit           int64
-	Offset          int64
+	SourceVendor   string
+	EventType      string
+	UserEmail      string
+	SessionID      string
+	RiskScoreMin   int
+	RiskScoreMax   int
+	RequiresReview *bool
+	StartTime      time.Time
+	EndTime        time.Time
+	Limit          int64
+	Offset         int64
 }
 
 // buildWhereClause constructs a WHERE clause from filter parameters

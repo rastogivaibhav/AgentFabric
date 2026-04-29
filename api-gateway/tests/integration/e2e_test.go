@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,7 +13,16 @@ import (
 	"github.com/govagn/api-gateway/internal/handlers"
 	"github.com/govagn/api-gateway/internal/models"
 	"github.com/govagn/api-gateway/internal/store"
+	"go.uber.org/zap"
 )
+
+type ingestRequest struct {
+	Spans []models.Span `json:"spans"`
+}
+
+func newTestHandler(db *store.PostgresStore) *handlers.Handler {
+	return handlers.New(db, nil, nil, zap.NewNop(), "test-secret", nil, nil, governance.NewRiskEngine())
+}
 
 // TestIngestToRetrievalLifecycle: Span ingest → repricing → risk scoring → DB → query
 func TestIngestToRetrievalLifecycle(t *testing.T) {
@@ -26,21 +34,20 @@ func TestIngestToRetrievalLifecycle(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	riskEngine := governance.NewRiskEngine()
-	h := handlers.New(db, nil, riskEngine)
+	h := newTestHandler(db)
 
 	// 2. Ingest: POST /v1/ingest with sample spans
-	ingestReq := models.IngestRequest{
+	ingestReq := ingestRequest{
 		Spans: []models.Span{
 			{
-				TraceID:       "trace-123",
-				SpanID:        "span-456",
-				Framework:     "anthropic-api",
-				InputTokens:   100,
-				OutputTokens:  50,
-				ModelName:     "claude-3-sonnet",
-				ReceivedAt:    time.Now(),
-				Attributes:    map[string]string{"event.type": "completion"},
+				TraceID:      "trace-123",
+				ID:           "span-456",
+				Framework:    "anthropic-api",
+				InputTokens:  100,
+				OutputTokens: 50,
+				Model:        "claude-3-sonnet",
+				ReceivedAt:   time.Now(),
+				Attributes:   map[string]string{"event.type": "completion"},
 			},
 		},
 	}
@@ -92,11 +99,11 @@ func TestCostCalculation(t *testing.T) {
 	}
 
 	testCases := []struct {
-		model        string
-		input        int
-		output       int
-		minCost      float64
-		maxCost      float64
+		model   string
+		input   int
+		output  int
+		minCost float64
+		maxCost float64
 	}{
 		// Approximate ranges (actual pricing may vary)
 		{"claude-3-opus", 100, 50, 0.001, 0.002},
@@ -107,19 +114,19 @@ func TestCostCalculation(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	for _, tc := range testCases {
 		t.Run(tc.model, func(t *testing.T) {
-			ingestReq := models.IngestRequest{
+			ingestReq := ingestRequest{
 				Spans: []models.Span{
 					{
 						TraceID:      fmt.Sprintf("trace-%s", tc.model),
-						SpanID:       fmt.Sprintf("span-%s", tc.model),
+						ID:           fmt.Sprintf("span-%s", tc.model),
 						Framework:    "anthropic-api",
-						InputTokens:  tc.input,
-						OutputTokens: tc.output,
-						ModelName:    tc.model,
+						InputTokens:  int64(tc.input),
+						OutputTokens: int64(tc.output),
+						Model:        tc.model,
 						ReceivedAt:   time.Now(),
 						Attributes:   map[string]string{},
 					},
@@ -147,26 +154,26 @@ func TestEventNormalization(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	attributes := map[string]string{
-		"event.type":   "completion",
-		"event.action": "api_call",
-		"tool.name":    "claude",
+		"event.type":     "completion",
+		"event.action":   "api_call",
+		"tool.name":      "claude",
 		"git.repository": "myrepo",
 	}
 
-	ingestReq := models.IngestRequest{
+	ingestReq := ingestRequest{
 		Spans: []models.Span{
 			{
-				TraceID:       "trace-norm",
-				SpanID:        "span-norm",
-				Framework:     "anthropic-api",
-				InputTokens:   50,
-				OutputTokens:  25,
-				ModelName:     "claude-3-haiku",
-				ReceivedAt:    time.Now(),
-				Attributes:    attributes,
+				TraceID:      "trace-norm",
+				ID:           "span-norm",
+				Framework:    "anthropic-api",
+				InputTokens:  50,
+				OutputTokens: 25,
+				Model:        "claude-3-haiku",
+				ReceivedAt:   time.Now(),
+				Attributes:   attributes,
 			},
 		},
 	}
@@ -193,7 +200,7 @@ func TestErrorHandling(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	t.Run("MalformedJSON", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/v1/ingest", bytes.NewReader([]byte("invalid json")))
@@ -208,15 +215,15 @@ func TestErrorHandling(t *testing.T) {
 	})
 
 	t.Run("MissingAuth", func(t *testing.T) {
-		ingestReq := models.IngestRequest{
+		ingestReq := ingestRequest{
 			Spans: []models.Span{
 				{
 					TraceID:      "trace-auth",
-					SpanID:       "span-auth",
+					ID:           "span-auth",
 					Framework:    "anthropic-api",
 					InputTokens:  10,
 					OutputTokens: 5,
-					ModelName:    "claude-3-haiku",
+					Model:        "claude-3-haiku",
 					ReceivedAt:   time.Now(),
 					Attributes:   map[string]string{},
 				},
@@ -243,20 +250,20 @@ func TestHighTokenUsageDetection(t *testing.T) {
 
 	db := setupTestDB(t)
 	defer db.Close()
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	// Create span with high token count (>100k input or >60k output)
-	ingestReq := models.IngestRequest{
+	ingestReq := ingestRequest{
 		Spans: []models.Span{
 			{
-				TraceID:       "trace-high-tokens",
-				SpanID:        "span-high-tokens",
-				Framework:     "anthropic-api",
-				InputTokens:   150000,  // High input
-				OutputTokens:  70000,   // High output
-				ModelName:     "claude-3-opus",
-				ReceivedAt:    time.Now(),
-				Attributes:    map[string]string{"event.type": "long_context"},
+				TraceID:      "trace-high-tokens",
+				ID:           "span-high-tokens",
+				Framework:    "anthropic-api",
+				InputTokens:  150000, // High input
+				OutputTokens: 70000,  // High output
+				Model:        "claude-3-opus",
+				ReceivedAt:   time.Now(),
+				Attributes:   map[string]string{"event.type": "long_context"},
 			},
 		},
 	}
@@ -293,9 +300,6 @@ func TestHighTokenUsageDetection(t *testing.T) {
 func setupTestDB(t *testing.T) *store.PostgresStore {
 	// This would use test fixtures or Docker postgres
 	// Placeholder for actual implementation
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	// Connect to test database (e.g., POSTGRES_TEST_URL env var)
 	// db := store.NewPostgresStore(...)
 

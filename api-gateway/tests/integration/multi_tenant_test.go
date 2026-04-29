@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/govagn/api-gateway/internal/governance"
-	"github.com/govagn/api-gateway/internal/handlers"
 	"github.com/govagn/api-gateway/internal/models"
 )
 
@@ -25,21 +23,21 @@ func TestTenantDataBoundaries(t *testing.T) {
 	}
 	defer db.Close()
 
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	tenantA := "tenant-a"
 	tenantB := "tenant-b"
 
 	// 1. Tenant A ingests span with trace-id=trace-A
-	ingestReqA := models.IngestRequest{
+	ingestReqA := ingestRequest{
 		Spans: []models.Span{
 			{
 				TraceID:      "trace-A",
-				SpanID:       "span-A1",
+				ID:           "span-A1",
 				Framework:    "anthropic-api",
 				InputTokens:  100,
 				OutputTokens: 50,
-				ModelName:    "claude-3-sonnet",
+				Model:        "claude-3-sonnet",
 				ReceivedAt:   time.Now(),
 				Attributes:   map[string]string{"owner": "alice"},
 			},
@@ -98,7 +96,7 @@ func TestTenantRBACEnforcement(t *testing.T) {
 	}
 	defer db.Close()
 
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	tenantID := "test-tenant-rbac"
 
@@ -115,7 +113,7 @@ func TestTenantRBACEnforcement(t *testing.T) {
 		req.Header.Set("X-Tenant-ID", tenantID)
 		req.Header.Set("X-User-Role", "admin")
 		w := httptest.NewRecorder()
-		h.CreateGovernancePolicy(w, req)
+		h.UpsertPolicyRule(w, req)
 
 		if w.Code == http.StatusOK || w.Code == http.StatusCreated {
 			t.Log("✓ Admin can create policies")
@@ -137,7 +135,7 @@ func TestTenantRBACEnforcement(t *testing.T) {
 		req.Header.Set("X-Tenant-ID", tenantID)
 		req.Header.Set("X-User-Role", "viewer")
 		w := httptest.NewRecorder()
-		h.CreateGovernancePolicy(w, req)
+		h.UpsertPolicyRule(w, req)
 
 		if w.Code == http.StatusForbidden {
 			t.Log("✓ Viewer correctly blocked from modifying policies")
@@ -159,7 +157,7 @@ func TestTenantPoliciesIsolation(t *testing.T) {
 	}
 	defer db.Close()
 
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	tenantA := "tenant-a-policies"
 	tenantB := "tenant-b-policies"
@@ -176,7 +174,7 @@ func TestTenantPoliciesIsolation(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", tenantA)
 	req.Header.Set("X-User-Role", "admin")
 	w := httptest.NewRecorder()
-	h.CreateGovernancePolicy(w, req)
+	h.UpsertPolicyRule(w, req)
 
 	// 2. Tenant B lists policies → should be empty (not see Tenant A's)
 	queryReqB := httptest.NewRequest("GET", "/v1/governance/policies", nil)
@@ -184,7 +182,7 @@ func TestTenantPoliciesIsolation(t *testing.T) {
 	queryReqB.Header.Set("X-Tenant-ID", tenantB)
 	queryReqB.Header.Set("X-User-Role", "admin")
 	queryWB := httptest.NewRecorder()
-	h.ListGovernancePolicies(queryWB, queryReqB)
+	h.ListPolicyRules(queryWB, queryReqB)
 
 	if queryWB.Code == http.StatusOK {
 		var policies []map[string]interface{}
@@ -209,18 +207,18 @@ func TestCrosstenantQueryPrevention(t *testing.T) {
 	}
 	defer db.Close()
 
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	// 1. Tenant A ingests a span
-	ingestReq := models.IngestRequest{
+	ingestReq := ingestRequest{
 		Spans: []models.Span{
 			{
 				TraceID:      "secret-trace",
-				SpanID:       "secret-span",
+				ID:           "secret-span",
 				Framework:    "anthropic-api",
 				InputTokens:  100,
 				OutputTokens: 50,
-				ModelName:    "claude-3-sonnet",
+				Model:        "claude-3-sonnet",
 				ReceivedAt:   time.Now(),
 				Attributes:   map[string]string{"secret": "sensitive-data"},
 			},

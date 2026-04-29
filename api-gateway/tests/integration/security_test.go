@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/govagn/api-gateway/internal/governance"
-	"github.com/govagn/api-gateway/internal/handlers"
 	"github.com/govagn/api-gateway/internal/models"
 )
 
@@ -26,7 +24,7 @@ func TestSecretDetectionInIngest(t *testing.T) {
 	}
 	defer db.Close()
 
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	secretCases := []struct {
 		name       string
@@ -67,15 +65,15 @@ func TestSecretDetectionInIngest(t *testing.T) {
 
 	for _, tc := range secretCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ingestReq := models.IngestRequest{
+			ingestReq := ingestRequest{
 				Spans: []models.Span{
 					{
 						TraceID:      "trace-secret-" + strings.ToLower(tc.name),
-						SpanID:       "span-secret-" + strings.ToLower(tc.name),
+						ID:           "span-secret-" + strings.ToLower(tc.name),
 						Framework:    "anthropic-api",
 						InputTokens:  50,
 						OutputTokens: 25,
-						ModelName:    "claude-3-haiku",
+						Model:        "claude-3-haiku",
 						ReceivedAt:   time.Now(),
 						Attributes:   tc.attributes,
 					},
@@ -133,13 +131,13 @@ func TestUnauthorizedAccess(t *testing.T) {
 	}
 	defer db.Close()
 
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	testCases := []struct {
-		name          string
-		authHeader    string
-		expectStatus  int
-		tenantID      string
+		name         string
+		authHeader   string
+		expectStatus int
+		tenantID     string
 	}{
 		{
 			name:         "NoAuthHeader",
@@ -169,15 +167,15 @@ func TestUnauthorizedAccess(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ingestReq := models.IngestRequest{
+			ingestReq := ingestRequest{
 				Spans: []models.Span{
 					{
 						TraceID:      "trace-auth-" + tc.name,
-						SpanID:       "span-auth-" + tc.name,
+						ID:           "span-auth-" + tc.name,
 						Framework:    "anthropic-api",
 						InputTokens:  10,
 						OutputTokens: 5,
-						ModelName:    "claude-3-haiku",
+						Model:        "claude-3-haiku",
 						ReceivedAt:   time.Now(),
 						Attributes:   map[string]string{},
 					},
@@ -216,7 +214,7 @@ func TestPIIScrubbing(t *testing.T) {
 	}
 	defer db.Close()
 
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	piiCases := []struct {
 		name       string
@@ -252,15 +250,15 @@ func TestPIIScrubbing(t *testing.T) {
 
 	for _, tc := range piiCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ingestReq := models.IngestRequest{
+			ingestReq := ingestRequest{
 				Spans: []models.Span{
 					{
 						TraceID:      "trace-pii-" + tc.name,
-						SpanID:       "span-pii-" + tc.name,
+						ID:           "span-pii-" + tc.name,
 						Framework:    "anthropic-api",
 						InputTokens:  30,
 						OutputTokens: 15,
-						ModelName:    "claude-3-haiku",
+						Model:        "claude-3-haiku",
 						ReceivedAt:   time.Now(),
 						Attributes:   tc.attributes,
 					},
@@ -316,46 +314,46 @@ func TestDangerousCommandDetection(t *testing.T) {
 	}
 	defer db.Close()
 
-	h := handlers.New(db, nil, governance.NewRiskEngine())
+	h := newTestHandler(db)
 
 	commandCases := []struct {
-		name           string
-		command        string
+		name            string
+		command         string
 		expectDangerous bool
 	}{
 		{
-			name:           "RmRf",
-			command:        "rm -rf /",
+			name:            "RmRf",
+			command:         "rm -rf /",
 			expectDangerous: true,
 		},
 		{
-			name:           "SudoCommand",
-			command:        "sudo ./deploy.sh",
+			name:            "SudoCommand",
+			command:         "sudo ./deploy.sh",
 			expectDangerous: true,
 		},
 		{
-			name:           "SafeLsCommand",
-			command:        "ls -la",
+			name:            "SafeLsCommand",
+			command:         "ls -la",
 			expectDangerous: false,
 		},
 		{
-			name:           "EchoSafeMessage",
-			command:        "echo 'Hello, world!'",
+			name:            "EchoSafeMessage",
+			command:         "echo 'Hello, world!'",
 			expectDangerous: false,
 		},
 	}
 
 	for _, tc := range commandCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ingestReq := models.IngestRequest{
+			ingestReq := ingestRequest{
 				Spans: []models.Span{
 					{
 						TraceID:      "trace-cmd-" + tc.name,
-						SpanID:       "span-cmd-" + tc.name,
+						ID:           "span-cmd-" + tc.name,
 						Framework:    "claude-agents",
 						InputTokens:  40,
 						OutputTokens: 20,
-						ModelName:    "claude-3-haiku",
+						Model:        "claude-3-haiku",
 						ReceivedAt:   time.Now(),
 						Attributes: map[string]string{
 							"tool.command": tc.command,

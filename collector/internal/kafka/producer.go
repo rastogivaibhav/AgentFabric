@@ -20,16 +20,16 @@ type Producer struct {
 
 // SpanMessage represents a span for Kafka serialization
 type SpanMessage struct {
-	TraceID       string            `json:"trace_id"`
-	SpanID        string            `json:"span_id"`
-	Framework     string            `json:"framework"`
-	InputTokens   int               `json:"input_tokens"`
-	OutputTokens  int               `json:"output_tokens"`
-	ModelName     string            `json:"model_name"`
-	Attributes    map[string]string `json:"attributes"`
-	ReceivedAt    time.Time         `json:"received_at"`
-	Cost          float64           `json:"cost,omitempty"`
-	CostCurrency  string            `json:"cost_currency,omitempty"`
+	TraceID      string            `json:"trace_id"`
+	SpanID       string            `json:"span_id"`
+	Framework    string            `json:"framework"`
+	InputTokens  int               `json:"input_tokens"`
+	OutputTokens int               `json:"output_tokens"`
+	ModelName    string            `json:"model_name"`
+	Attributes   map[string]string `json:"attributes"`
+	ReceivedAt   time.Time         `json:"received_at"`
+	Cost         float64           `json:"cost,omitempty"`
+	CostCurrency string            `json:"cost_currency,omitempty"`
 }
 
 // NewProducer creates a new Kafka producer for spans
@@ -46,7 +46,7 @@ func NewProducer(brokers []string, topic string, logger *zap.Logger) (*Producer,
 		WriteBackoffMin:        100 * time.Millisecond,
 		WriteBackoffMax:        1 * time.Second,
 		// Async writes with batch and compression
-		CompressionCodec: kafka.Snappy,
+		Compression: kafka.Snappy,
 	}
 
 	return &Producer{

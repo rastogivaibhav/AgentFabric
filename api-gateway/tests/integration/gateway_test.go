@@ -100,7 +100,7 @@ func newTestServer(t *testing.T) *testServer {
 	}
 	t.Cleanup(func() { rc.Close() })
 
-	hub := ws.NewHub(logger)
+	hub := ws.NewHub(logger, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	go hub.Run(ctx)
 	t.Cleanup(cancel)
@@ -151,6 +151,7 @@ func newTestServer(t *testing.T) *testServer {
 		r.Get("/api/v1/cost", h.GetCostReport)
 		r.Post("/api/v1/runs/{runID}/feedback", h.PostFeedback)
 		r.Get("/api/v1/audit", h.ListAudit)
+		r.Get("/api/v1/ws", h.LiveStream)
 	})
 
 	ts := &testServer{pg: pg, redis: rc, r: r}

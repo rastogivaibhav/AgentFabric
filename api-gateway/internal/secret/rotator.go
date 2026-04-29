@@ -11,6 +11,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/govagn/api-gateway/internal/models"
 	"github.com/govagn/api-gateway/internal/store"
 	"go.uber.org/zap"
 )
@@ -31,14 +32,14 @@ func NewRotator(db *store.PostgresStore, logger *zap.Logger) *Rotator {
 
 // RotationResult tracks the outcome of a rotation operation.
 type RotationResult struct {
-	KeyID                string
-	OldKeyHash           string
-	NewKeyHash           string
-	ItemsRotated         int64
-	Status               string // success, partial, failed
-	ErrorMessage         string
-	DurationSeconds      int
-	EncryptedByUser      string
+	KeyID           string
+	OldKeyHash      string
+	NewKeyHash      string
+	ItemsRotated    int64
+	Status          string // success, partial, failed
+	ErrorMessage    string
+	DurationSeconds int
+	EncryptedByUser string
 }
 
 // RotateMasterKey rotates the master encryption key used for sensitive data.
@@ -72,14 +73,14 @@ func (r *Rotator) RotateMasterKey(ctx context.Context, oldKey, newKey []byte, en
 	// For the POC, we're logging the operation and recording it in the audit table
 
 	// 3. Log rotation in secret_rotation_log
-	err := r.db.RecordSecretRotation(ctx, &store.SecretRotationRecord{
-		KeyID:               "master",
-		OldKeyHash:          result.OldKeyHash,
-		NewKeyHash:          result.NewKeyHash,
-		ItemsRotated:        itemsCount,
-		Status:              "success",
-		EncryptedByUser:     encryptedByUser,
-		DurationSeconds:     int(time.Since(start).Seconds()),
+	err := r.db.RecordSecretRotation(ctx, &models.SecretRotationRecord{
+		KeyID:           "master",
+		OldKeyHash:      result.OldKeyHash,
+		NewKeyHash:      result.NewKeyHash,
+		ItemsRotated:    itemsCount,
+		Status:          "success",
+		EncryptedByUser: encryptedByUser,
+		DurationSeconds: int(time.Since(start).Seconds()),
 	})
 
 	if err != nil {

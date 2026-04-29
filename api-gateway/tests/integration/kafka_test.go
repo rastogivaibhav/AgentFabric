@@ -11,6 +11,28 @@ import (
 	"go.uber.org/zap"
 )
 
+func requireWritableKafka(t *testing.T, brokers []string, logger *zap.Logger) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	producer, err := kafka.NewProducer(brokers, "test-healthcheck", logger)
+	if err != nil {
+		t.Skipf("Kafka not available: %v", err)
+	}
+	defer producer.Close()
+
+	err = producer.ProduceSpan(ctx, &kafka.SpanMessage{
+		TraceID:    "trace-healthcheck",
+		SpanID:     "span-healthcheck",
+		ReceivedAt: time.Now(),
+	})
+	if err != nil {
+		t.Skipf("Kafka is not writable from this host: %v", err)
+	}
+}
+
 // TestKafkaProducerConsumer: Verify producer writes and consumer reads
 func TestKafkaProducerConsumer(t *testing.T) {
 	if testing.Short() {
@@ -21,6 +43,8 @@ func TestKafkaProducerConsumer(t *testing.T) {
 	brokers := []string{"localhost:9092"}
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
+
+	requireWritableKafka(t, brokers, logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -67,6 +91,9 @@ func TestKafkaProducerConsumer(t *testing.T) {
 	})
 
 	t.Run("ProduceAndConsumeRoundtrip", func(t *testing.T) {
+		roundCtx, roundCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer roundCancel()
+
 		producer, err := kafka.NewProducer(brokers, "test-roundtrip", logger)
 		if err != nil {
 			t.Skipf("Kafka not available: %v", err)
@@ -115,12 +142,12 @@ func TestKafkaProducerConsumer(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			count := 0
-			consumer.Start(ctx, func(ctx context.Context, span *kafka.SpanMessage) error {
+			consumer.Start(roundCtx, func(ctx context.Context, span *kafka.SpanMessage) error {
 				received <- span
 				count++
 				if count >= numSpans {
 					// Exit early after consuming required number
-					cancel()
+					roundCancel()
 				}
 				return nil
 			})
@@ -144,7 +171,7 @@ func TestKafkaProducerConsumer(t *testing.T) {
 			case <-timeout.C:
 				t.Logf("Warning: Timeout after consuming %d/%d spans", consumed, numSpans)
 				return
-			case <-ctx.Done():
+			case <-roundCtx.Done():
 				if consumed >= numSpans {
 					t.Logf("✓ Consumed %d spans (context cancelled)", consumed)
 					return

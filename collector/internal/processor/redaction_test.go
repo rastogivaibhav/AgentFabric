@@ -112,10 +112,10 @@ func TestShouldRedactAttribute_RedactsSensitiveKeys(t *testing.T) {
 
 func TestRedactAttributes_RemovesSensitiveKeys(t *testing.T) {
 	attrs := map[string]string{
-		"user.prompt":       "Deploy prod with secret key",
-		"command":           "echo hello",
-		"tool.arguments":    "password=secret123",
-		"file.content":      "private data",
+		"user.prompt":    "Deploy prod with secret key",
+		"command":        "echo hello",
+		"tool.arguments": "password=secret123",
+		"file.content":   "private data",
 	}
 
 	config := DefaultRedactionConfig()
@@ -174,10 +174,10 @@ func TestRedactAttributes_WithNilInput(t *testing.T) {
 
 func TestExtractAndRedact_RemovesSensitiveData(t *testing.T) {
 	data := map[string]string{
-		"prompt":      "secret prompt",
-		"command":     "pytest tests/",
+		"prompt":       "secret prompt",
+		"command":      "pytest tests/",
 		"file.content": "private code",
-		"model":       "claude-opus",
+		"model":        "claude-opus",
 	}
 
 	result, redacted := ExtractAndRedact(data, false)
@@ -212,13 +212,40 @@ func TestExtractAndRedact_AllowsPromptsIfEnabled(t *testing.T) {
 	}
 }
 
+func TestFirewallAdversarialPayloadIsRedactedBeforeGateway(t *testing.T) {
+	data := map[string]string{
+		"prompt":          "Summarize this customer incident",
+		"cursor.response": "Here is the leaked answer with sk-proj-abcdefghijklmnop",
+		"vscode.response": "Use ghp_123456789012345678901234567890123456",
+		"tool.command":    "deploy --token=AKIA1234567890ABCDEF",
+		"model":           "claude-3-5-sonnet",
+	}
+
+	result, redacted := ExtractAndRedact(data, false)
+
+	if !redacted {
+		t.Fatal("expected adversarial payload to be redacted")
+	}
+	for _, key := range []string{"prompt", "cursor.response", "vscode.response"} {
+		if _, exists := result[key]; exists {
+			t.Fatalf("%s should be removed before gateway ingest", key)
+		}
+	}
+	if strings.Contains(result["tool.command"], "AKIA") || strings.Contains(result["tool.command"], "sk-proj") || strings.Contains(result["tool.command"], "ghp_") {
+		t.Fatalf("tool.command still contains a secret: %q", result["tool.command"])
+	}
+	if result["model"] != "claude-3-5-sonnet" {
+		t.Fatalf("safe metadata should survive redaction, got %q", result["model"])
+	}
+}
+
 func TestRedactAttributes_CursorToolChain(t *testing.T) {
 	attrs := map[string]string{
-		"source":           "cursor",
-		"event_type":       "suggestion.accepted",
-		"suggestion.text":  "# TODO: use AKIA1234567890ABCDEF",
-		"file_path":        "/app/main.py",
-		"cursor.response":  "Full internal response with secrets",
+		"source":          "cursor",
+		"event_type":      "suggestion.accepted",
+		"suggestion.text": "# TODO: use AKIA1234567890ABCDEF",
+		"file_path":       "/app/main.py",
+		"cursor.response": "Full internal response with secrets",
 	}
 
 	config := DefaultRedactionConfig()

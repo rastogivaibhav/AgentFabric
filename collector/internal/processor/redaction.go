@@ -7,7 +7,7 @@ import (
 
 // RedactionConfig defines redaction behavior
 type RedactionConfig struct {
-	EnablePromptLogging bool // If false, prompts are always redacted
+	EnablePromptLogging   bool // If false, prompts are always redacted
 	EnableSecretDetection bool
 }
 
@@ -45,46 +45,48 @@ var redactionPatterns = []*regexp.Regexp{
 // SensitiveKeys defines JSONB keys and attribute names that should never be stored
 var sensitiveKeys = map[string]bool{
 	// User prompts and inputs
-	"user.prompt":               true,
-	"prompt":                    true,
-	"user_prompt":               true,
-	"input_prompt":              true,
-	"message":                   true,
-	"user_message":              true,
-	"user_input":                true,
-	"query":                     true,
+	"user.prompt":  true,
+	"prompt":       true,
+	"user_prompt":  true,
+	"input_prompt": true,
+	"message":      true,
+	"user_message": true,
+	"user_input":   true,
+	"query":        true,
 	// Tool arguments
-	"tool.arguments":            true,
-	"arguments":                 true,
-	"args":                      true,
-	"tool_args":                 true,
-	"tool_arguments":            true,
+	"tool.arguments": true,
+	"arguments":      true,
+	"args":           true,
+	"tool_args":      true,
+	"tool_arguments": true,
 	// Request/response bodies
-	"request.body":              true,
-	"response.body":             true,
-	"request_body":              true,
-	"response_body":             true,
-	"body":                      true,
+	"request.body":  true,
+	"response.body": true,
+	"request_body":  true,
+	"response_body": true,
+	"body":          true,
 	// File contents
-	"file.content":              true,
-	"file_content":              true,
-	"code_content":              true,
-	"file_contents":             true,
-	"content":                   true,
+	"file.content":  true,
+	"file_content":  true,
+	"code_content":  true,
+	"file_contents": true,
+	"content":       true,
 	// Full commands (containing potential secrets)
-	"command.full":              true,
-	"full_command":              true,
+	"command.full": true,
+	"full_command": true,
 	// IDE-specific fields
-	"cursor.full_response":      true,
-	"cursor_response":           true,
-	"vscode.full_response":      true,
-	"vscode_response":           true,
-	"copilot.full_response":     true,
+	"cursor.full_response":  true,
+	"cursor.response":       true,
+	"cursor_response":       true,
+	"vscode.full_response":  true,
+	"vscode.response":       true,
+	"vscode_response":       true,
+	"copilot.full_response": true,
 	// Cowork-specific
-	"cowork.instructions":       true,
-	"cowork.system_prompt":      true,
-	"instructions":              true,
-	"system_prompt":             true,
+	"cowork.instructions":  true,
+	"cowork.system_prompt": true,
+	"instructions":         true,
+	"system_prompt":        true,
 }
 
 // ExtractAndRedact removes and masks sensitive data from attributes/payloads

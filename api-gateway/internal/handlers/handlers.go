@@ -291,6 +291,30 @@ type ingestRequest struct {
 	Spans []models.Span `json:"spans"`
 }
 
+const (
+	firewallReviewThreshold = 70
+	firewallBlockThreshold  = 90
+)
+
+type ingestDecision struct {
+	DecisionID   string `json:"decision_id"`
+	TraceID      string `json:"trace_id"`
+	SpanID       string `json:"span_id"`
+	Result       string `json:"result"`
+	Reason       string `json:"reason"`
+	RiskScore    int    `json:"risk_score"`
+	RiskCategory string `json:"risk_category"`
+	ActionTaken  string `json:"action_taken"`
+}
+
+type ingestResponse struct {
+	Status         string           `json:"status"`
+	Accepted       int              `json:"accepted"`
+	Blocked        int              `json:"blocked"`
+	ReviewRequired bool             `json:"review_required"`
+	Decisions      []ingestDecision `json:"decisions"`
+}
+
 func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	const maxBody = 32 << 20 // 32 MiB
 	// Fast path: reject immediately if Content-Length is known and too large.
@@ -338,6 +362,18 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 
 	// Budget enforcement — check before writing to DB.
 	// Fail open: if the enforcer errors, we still allow the ingest.
+	decisions, blocked := h.evaluateFirewallDecisions(r.Context(), tenantID, req.Spans)
+	if blocked > 0 {
+		writeJSON(w, http.StatusForbidden, ingestResponse{
+			Status:         "blocked",
+			Accepted:       0,
+			Blocked:        blocked,
+			ReviewRequired: true,
+			Decisions:      decisions,
+		})
+		return
+	}
+
 	if h.budgetEnforcer != nil {
 		totalTokens, totalCost := sumSpanUsage(req.Spans)
 		allowed, err := h.budgetEnforcer.CheckAndRecord(r.Context(), tenantID, totalTokens, totalCost)
@@ -372,16 +408,31 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Broadcast to WebSocket clients
-	for _, sp := range req.Spans {
-		h.hub.Broadcast(tenantID, &models.LiveEvent{
-			Type:      "span",
-			Timestamp: time.Now().UnixMilli(),
-			TenantID:  tenantID,
-			Data:      sp,
-		})
+	if h.hub != nil {
+		for _, sp := range req.Spans {
+			h.hub.Broadcast(tenantID, &models.LiveEvent{
+				Type:      "span",
+				Timestamp: time.Now().UnixMilli(),
+				TenantID:  tenantID,
+				Data:      sp,
+			})
+		}
 	}
 
-	w.WriteHeader(http.StatusOK)
+	reviewRequired := false
+	for _, decision := range decisions {
+		if decision.Result == "review" {
+			reviewRequired = true
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, ingestResponse{
+		Status:         "accepted",
+		Accepted:       len(req.Spans),
+		Blocked:        0,
+		ReviewRequired: reviewRequired,
+		Decisions:      decisions,
+	})
 }
 
 // ─── Traces ──────────────────────────────────────────────────────────────────
@@ -2331,6 +2382,93 @@ func (h *Handler) scoreSpanRisk(sp *models.Span) {
 	score, category := h.riskEngine.Score(ev)
 	sp.RiskScore = score
 	sp.RiskCategory = category
+}
+
+func (h *Handler) evaluateFirewallDecisions(ctx context.Context, tenantID string, spans []models.Span) ([]ingestDecision, int) {
+	decisions := make([]ingestDecision, 0, len(spans))
+	blocked := 0
+	for i := range spans {
+		decision := h.firewallDecisionForSpan(tenantID, &spans[i])
+		if decision.Result == "deny" {
+			blocked++
+		}
+		decisions = append(decisions, decision)
+
+		if spans[i].Attributes == nil {
+			spans[i].Attributes = map[string]string{}
+		}
+		spans[i].Attributes["af.firewall.decision_id"] = decision.DecisionID
+		spans[i].Attributes["af.firewall.result"] = decision.Result
+		spans[i].Attributes["af.firewall.action_taken"] = decision.ActionTaken
+
+		if h.pg != nil {
+			if err := h.pg.CreatePolicyAuditEntry(ctx, models.PolicyDecisionAudit{
+				DecisionID:  decision.DecisionID,
+				TenantID:    tenantID,
+				TraceID:     spans[i].TraceID,
+				SpanID:      spans[i].ID,
+				PolicyName:  "ingest_firewall",
+				Result:      decision.Result,
+				Reason:      decision.Reason,
+				EvaluatedAt: time.Now(),
+				Framework:   spans[i].Framework,
+				Model:       spans[i].Model,
+				Environment: spans[i].Environment,
+			}); err != nil {
+				h.logger.Warn("firewall audit write failed", zap.Error(err), zap.String("span_id", spans[i].ID))
+			}
+		}
+
+		if h.hub != nil {
+			h.hub.Broadcast(tenantID, &models.LiveEvent{
+				Type:      "policy",
+				Timestamp: time.Now().UnixMilli(),
+				TenantID:  tenantID,
+				Data: models.PolicyEvent{
+					DecisionID: decision.DecisionID,
+					TraceID:    spans[i].TraceID,
+					SpanID:     spans[i].ID,
+					PolicyName: "ingest_firewall",
+					Result:     decision.Result,
+					Reason:     decision.Reason,
+					TenantID:   tenantID,
+					Provider:   spans[i].Provider,
+					Model:      spans[i].Model,
+					Matched:    []string{decision.RiskCategory},
+				},
+			})
+		}
+	}
+	return decisions, blocked
+}
+
+func (h *Handler) firewallDecisionForSpan(tenantID string, sp *models.Span) ingestDecision {
+	if sp == nil {
+		return ingestDecision{}
+	}
+	result := "approved"
+	actionTaken := "allow_ingest"
+	reason := "risk score below firewall threshold"
+	switch {
+	case sp.RiskScore >= firewallBlockThreshold:
+		result = "deny"
+		actionTaken = "reject_ingest_span"
+		reason = fmt.Sprintf("risk category %s scored %d and met block threshold %d", sp.RiskCategory, sp.RiskScore, firewallBlockThreshold)
+	case sp.RiskScore >= firewallReviewThreshold:
+		result = "review"
+		actionTaken = "require_governance_review"
+		reason = fmt.Sprintf("risk category %s scored %d and met review threshold %d", sp.RiskCategory, sp.RiskScore, firewallReviewThreshold)
+	}
+	return ingestDecision{
+		DecisionID:   fmt.Sprintf("fw-%s-%d", strings.TrimSpace(sp.ID), time.Now().UnixNano()),
+		TraceID:      sp.TraceID,
+		SpanID:       sp.ID,
+		Result:       result,
+		Reason:       reason,
+		RiskScore:    sp.RiskScore,
+		RiskCategory: sp.RiskCategory,
+		ActionTaken:  actionTaken,
+	}
 }
 
 func (h *Handler) ListPricingRules(w http.ResponseWriter, r *http.Request) {

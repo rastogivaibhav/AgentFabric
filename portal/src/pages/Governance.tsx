@@ -14,7 +14,7 @@ interface RiskAlert {
   risk_category: string
   framework: string
   timestamp: string
-  summary: string
+  summary?: string
   action_required?: boolean
 }
 

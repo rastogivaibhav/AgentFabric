@@ -100,6 +100,8 @@ func TestCanonicalEvent_CanBeStored(t *testing.T) {
 		},
 	}
 
+	prepareCanonicalEventForStorage(event)
+
 	if event.ID == "" {
 		t.Errorf("event.ID should not be empty for storage")
 	}
@@ -110,13 +112,13 @@ func TestCanonicalEvent_CanBeStored(t *testing.T) {
 
 func TestCanonicalEvent_StoreAndRetrieve(t *testing.T) {
 	event := &normalization.CanonicalEvent{
-		SourceVendor:  "cursor",
-		SourceProduct: "cursor-editor",
-		SourceChannel: "extension",
-		EventType:     "suggestion.accepted",
-		EventCategory: "tool_call",
-		UserEmail:     "user@example.com",
-		RiskScore:     25,
+		SourceVendor:   "cursor",
+		SourceProduct:  "cursor-editor",
+		SourceChannel:  "extension",
+		EventType:      "suggestion.accepted",
+		EventCategory:  "tool_call",
+		UserEmail:      "user@example.com",
+		RiskScore:      25,
 		RequiresReview: false,
 		Payload: map[string]interface{}{
 			"suggestion_length": 42,

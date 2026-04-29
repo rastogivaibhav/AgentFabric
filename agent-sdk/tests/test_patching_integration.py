@@ -26,7 +26,6 @@ import pytest
 os.environ.setdefault("OPENAI_API_KEY", "sk-integration-test-placeholder")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-integration-test-placeholder")
 
-from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -43,8 +42,9 @@ def _setup_govagn_tracer():
 
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(_mem_exporter))
-    trace.set_tracer_provider(provider)
-    govagn._tracer = trace.get_tracer("govagn", "1.0.0")
+    # Bind Govagn directly to the test provider instead of replacing the
+    # process-global provider, which OpenTelemetry allows only once per process.
+    govagn._tracer = provider.get_tracer("govagn", "1.0.0")
     govagn._initialized = True
 
 
