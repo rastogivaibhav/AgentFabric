@@ -31,7 +31,7 @@ func (s *PostgresStore) RecordSecretRotation(ctx context.Context, record *models
 	var id int64
 	var createdAt time.Time
 
-	err := s.db.QueryRowContext(ctx, query,
+	err := s.pool.QueryRow(ctx, query,
 		record.KeyID,
 		record.OldKeyHash,
 		record.NewKeyHash,
@@ -81,7 +81,7 @@ func (s *PostgresStore) GetSecretRotationHistory(ctx context.Context, limit int)
 		LIMIT $1
 	`
 
-	rows, err := s.db.QueryContext(ctx, query, limit)
+	rows, err := s.pool.Query(ctx, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query rotation history: %w", err)
 	}
@@ -140,7 +140,7 @@ func (s *PostgresStore) GetLastSecretRotation(ctx context.Context) (*models.Secr
 
 	var record models.SecretRotationRecord
 
-	err := s.db.QueryRowContext(ctx, query).Scan(
+	err := s.pool.QueryRow(ctx, query).Scan(
 		&record.ID,
 		&record.KeyID,
 		&record.OldKeyHash,
