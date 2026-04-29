@@ -179,7 +179,7 @@ func TestRateLimit_EmptyTenantID_UsesDefault(t *testing.T) {
 }
 
 func TestRateLimit_KeyIncludesWindowMinute(t *testing.T) {
-	// Key format: rl:{tenantID}:{windowMinute}
+	// Key format: rl:tenant:{tenantID}:{windowMinute} and rl:user:{tenantID}:{userID}:{windowMinute}
 	// This ensures different minutes have independent counters
 	store := newMockStore()
 	cfg := RateLimitConfig{RequestsPerMinute: 1, KeyPrefix: "rl"}
@@ -187,11 +187,17 @@ func TestRateLimit_KeyIncludesWindowMinute(t *testing.T) {
 	// First request
 	RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(httptest.NewRecorder(), requestWithTenant("tenant-g"))
 
-	// Verify the key has been stored with the expected prefix
+	// Verify the keys have been stored with the expected format
 	windowMinute := time.Now().Truncate(time.Minute).Unix()
-	expectedKey := fmt.Sprintf("rl:tenant-g:%d", windowMinute)
-	if _, exists := store.counts[expectedKey]; !exists {
-		t.Errorf("expected key %q in store, got keys: %v", expectedKey, store.counts)
+	expectedTenantKey := fmt.Sprintf("rl:tenant:tenant-g:%d", windowMinute)
+	expectedUserKey := fmt.Sprintf("rl:user:tenant-g:anonymous:%d", windowMinute)
+
+	if _, exists := store.counts[expectedTenantKey]; !exists {
+		t.Errorf("expected tenant key %q in store, got keys: %v", expectedTenantKey, store.counts)
+	}
+
+	if _, exists := store.counts[expectedUserKey]; !exists {
+		t.Errorf("expected user key %q in store, got keys: %v", expectedUserKey, store.counts)
 	}
 }
 
@@ -230,5 +236,174 @@ func TestRateLimit_Concurrent_NoPanic(t *testing.T) {
 	// Wait for goroutines (simple spin; sufficient for unit test)
 	for wg.Load() > 0 {
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// ─── Per-User Rate Limiting Tests ─────────────────────────────────────────────
+
+func requestWithTenantAndClaims(tenantID, userID string) *http.Request {
+	req := httptest.NewRequest("GET", "/api/v1/traces", nil)
+	ctx := context.WithValue(req.Context(), tenantIDKey, tenantID)
+	claims := &Claims{
+		TenantID: tenantID,
+		Email:    userID + "@example.com",
+		Name:     "Test User",
+		Role:     "viewer",
+	}
+	claims.Subject = userID
+	ctx = context.WithValue(ctx, claimsKey, claims)
+	return req.WithContext(ctx)
+}
+
+func TestRateLimit_PerUser_IsolatesUserCounters(t *testing.T) {
+	// Different users should have independent per-user counters
+	store := newMockStore()
+	cfg := DefaultRateLimitConfig()
+	cfg.RequestsPerMinute = 100
+	cfg.RequestsPerUserPerMinute = 5
+
+	// User A: 5 requests (at limit)
+	for i := 0; i < 5; i++ {
+		rr := httptest.NewRecorder()
+		RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, requestWithTenantAndClaims("tenant-1", "user-a"))
+		if rr.Code != http.StatusOK {
+			t.Errorf("user-a request %d: expected 200, got %d", i, rr.Code)
+		}
+	}
+
+	// User A: 6th request (exceeds limit)
+	rr := httptest.NewRecorder()
+	RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, requestWithTenantAndClaims("tenant-1", "user-a"))
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("user-a 6th request: expected 429, got %d", rr.Code)
+	}
+
+	// User B: Should still have quota
+	rr = httptest.NewRecorder()
+	RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, requestWithTenantAndClaims("tenant-1", "user-b"))
+	if rr.Code != http.StatusOK {
+		t.Errorf("user-b 1st request: expected 200, got %d", rr.Code)
+	}
+}
+
+func TestRateLimit_PerUser_PerTenant(t *testing.T) {
+	// Users in different tenants should have independent limits
+	store := newMockStore()
+	cfg := DefaultRateLimitConfig()
+	cfg.RequestsPerMinute = 100
+	cfg.RequestsPerUserPerMinute = 3
+
+	// User X in Tenant A: 3 requests
+	for i := 0; i < 3; i++ {
+		rr := httptest.NewRecorder()
+		RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, requestWithTenantAndClaims("tenant-a", "user-x"))
+		if rr.Code != http.StatusOK {
+			t.Errorf("tenant-a/user-x request %d: expected 200, got %d", i, rr.Code)
+		}
+	}
+
+	// User X in Tenant A: 4th request (exceeds limit)
+	rr := httptest.NewRecorder()
+	RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, requestWithTenantAndClaims("tenant-a", "user-x"))
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("tenant-a/user-x 4th request: expected 429, got %d", rr.Code)
+	}
+
+	// User X in Tenant B: Should still have quota (independent tenant)
+	rr = httptest.NewRecorder()
+	RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, requestWithTenantAndClaims("tenant-b", "user-x"))
+	if rr.Code != http.StatusOK {
+		t.Errorf("tenant-b/user-x 1st request: expected 200, got %d", rr.Code)
+	}
+}
+
+func TestRateLimit_PerEndpoint_IngestLimited(t *testing.T) {
+	// /v1/ingest endpoint should have separate per-endpoint limit
+	store := newMockStore()
+	cfg := DefaultRateLimitConfig()
+	cfg.RequestsPerMinute = 1000
+	cfg.RequestsPerUserPerMinute = 1000
+	cfg.RequestsPerEndpointPerUserPerMinute = 3
+
+	userID := "user-ingest-test"
+	tenantID := "tenant-ingest"
+
+	// Create requests for /v1/ingest endpoint
+	ingestRequest := func() *http.Request {
+		req := httptest.NewRequest("POST", "/v1/ingest", nil)
+		ctx := context.WithValue(req.Context(), tenantIDKey, tenantID)
+		claims := &Claims{
+			TenantID: tenantID,
+			Email:    userID + "@example.com",
+			Name:     "Test User",
+			Role:     "editor",
+		}
+		claims.Subject = userID
+		ctx = context.WithValue(ctx, claimsKey, claims)
+		return req.WithContext(ctx)
+	}
+
+	// First 3 requests should pass
+	for i := 0; i < 3; i++ {
+		rr := httptest.NewRecorder()
+		RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, ingestRequest())
+		if rr.Code != http.StatusOK {
+			t.Errorf("ingest request %d: expected 200, got %d", i, rr.Code)
+		}
+	}
+
+	// 4th request should exceed per-endpoint limit
+	rr := httptest.NewRecorder()
+	RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, ingestRequest())
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("ingest request 4: expected 429, got %d", rr.Code)
+	}
+
+	// Other endpoints should not be affected
+	otherRequest := httptest.NewRequest("GET", "/api/v1/traces", nil)
+	ctx := context.WithValue(otherRequest.Context(), tenantIDKey, tenantID)
+	claims := &Claims{
+		TenantID: tenantID,
+		Email:    userID + "@example.com",
+		Name:     "Test User",
+		Role:     "editor",
+	}
+	claims.Subject = userID
+	ctx = context.WithValue(ctx, claimsKey, claims)
+	otherRequest = otherRequest.WithContext(ctx)
+
+	rr = httptest.NewRecorder()
+	RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, otherRequest)
+	if rr.Code != http.StatusOK {
+		t.Errorf("/traces endpoint should not be affected by /ingest limit, got %d", rr.Code)
+	}
+}
+
+func TestRateLimit_Headers_IndicateLimitType(t *testing.T) {
+	// When different limits are exceeded, headers should indicate which limit was hit
+	store := newMockStore()
+	cfg := DefaultRateLimitConfig()
+	cfg.RequestsPerMinute = 2
+	cfg.RequestsPerUserPerMinute = 10
+
+	userID := "user-header-test"
+	tenantID := "tenant-header"
+
+	// Exhaust tenant limit
+	for i := 0; i < 3; i++ {
+		RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(httptest.NewRecorder(), requestWithTenantAndClaims(tenantID, userID))
+	}
+
+	// Next request should fail on tenant limit and indicate that in headers
+	rr := httptest.NewRecorder()
+	RateLimit(store, cfg)(http.HandlerFunc(okHandler)).ServeHTTP(rr, requestWithTenantAndClaims(tenantID, userID))
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rr.Code)
+	}
+
+	limitType := rr.Header().Get("X-RateLimit-Type")
+	if limitType != "tenant" && limitType != "user" && limitType != "endpoint" {
+		t.Errorf("expected X-RateLimit-Type header to indicate limit type, got %q", limitType)
 	}
 }
