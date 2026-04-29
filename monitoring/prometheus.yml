@@ -11,16 +11,40 @@ alerting:
         - targets: ['alertmanager:9093']
 
 scrape_configs:
-  - job_name: 'govagn-collector'
+  # Collector metrics
+  - job_name: 'collector'
     static_configs:
-      - targets: ['collector:4318']
+      - targets: ['collector:9090']
     metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
 
-  - job_name: 'govagn-api-gateway'
+  # API Gateway metrics
+  - job_name: 'api-gateway'
     static_configs:
       - targets: ['api-gateway:8080']
     metrics_path: /metrics
+    scrape_interval: 15s
 
+  # PostgreSQL metrics (via postgres_exporter on :9187)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: /metrics
+
+  # Redis metrics (via redis_exporter on :9121)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: /metrics
+
+  # Kafka metrics (via jmx_exporter if enabled)
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka:9999']
+    metrics_path: /metrics
+
+  # Prometheus self-monitoring
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
