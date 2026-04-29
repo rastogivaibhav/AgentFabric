@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/govagn/api-gateway/internal/models"
+	"go.uber.org/zap"
 )
 
 // TestRecordSecretRotation verifies rotation logging works correctly.
@@ -225,7 +226,10 @@ func setupTestDB(t *testing.T) *PostgresStore {
 		t.Skip("No database URL provided")
 	}
 
-	db, err := NewPostgresStore(dbURL)
+	logger, _ := zap.NewProduction()
+	defer logger.Sync()
+
+	db, err := NewPostgresStore(dbURL, logger)
 	if err != nil {
 		t.Fatalf("Failed to connect to database: %v", err)
 	}
