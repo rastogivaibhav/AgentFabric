@@ -46,6 +46,7 @@ def _setup_govagn_tracer():
     # process-global provider, which OpenTelemetry allows only once per process.
     govagn._tracer = provider.get_tracer("govagn", "1.0.0")
     govagn._initialized = True
+    yield
 
 
 @pytest.fixture(autouse=True)

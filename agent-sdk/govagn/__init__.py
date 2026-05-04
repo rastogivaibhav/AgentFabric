@@ -135,6 +135,8 @@ def instrument(
     headers = {}
     if api_key:
         headers["x-af-api-key"] = api_key
+        # Compatibility: collector OTLP auth expects Authorization Bearer.
+        headers["authorization"] = f"Bearer {api_key}"
 
     exporter = OTLPSpanExporter(
         endpoint=endpoint,
@@ -296,6 +298,7 @@ def _try_instrument_langgraph():
 def _patch_langgraph(langgraph):
     try:
         import asyncio
+        import inspect
         from langgraph.graph import StateGraph
 
         # ── Node-level tracing ────────────────────────────────────────────────
@@ -306,7 +309,7 @@ def _patch_langgraph(langgraph):
 
         def _wrap_node(node_name: str, fn):
             """Return a traced wrapper for a node function (sync or async)."""
-            if asyncio.iscoroutinefunction(fn):
+            if inspect.iscoroutinefunction(fn):
                 @functools.wraps(fn)
                 async def traced_async_node(state, *args, **kw):
                     tracer = get_tracer()
