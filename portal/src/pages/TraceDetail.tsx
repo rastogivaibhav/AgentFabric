@@ -21,10 +21,13 @@ function fmtDuration(ns: number) {
 
 function buildSpanTree(spans: Span[]) {
   const byId: Record<string, Span & { children?: Span[] }> = {}
-  for (const span of spans) byId[span.id] = { ...span, children: [] }
+  for (const span of spans) {
+    if (span.id) byId[span.id] = { ...span, children: [] }
+  }
   const roots: (Span & { children?: Span[] })[] = []
   for (const span of spans) {
-    const parentId = span.parent_id ?? span.attributes?.parent_span_id
+    if (!span.id || !byId[span.id]) continue
+    const parentId = span.parent_id ?? span.parent_span_id ?? span.attributes?.parent_span_id
     if (parentId && byId[parentId]) { byId[parentId].children!.push(byId[span.id]) }
     else { roots.push(byId[span.id]) }
   }
@@ -40,6 +43,19 @@ function flattenTree(nodes: (Span & { children?: Span[] })[], depth = 0): { span
   return result
 }
 
+function normalizeSpan(span: Span): Span {
+  return {
+    ...span,
+    id: span.id ?? span.span_id ?? '',
+    parent_id: span.parent_id ?? span.parent_span_id,
+    attributes: span.attributes ?? {},
+    duration_ns: span.duration_ns ?? 0,
+    start_time_ns: span.start_time_ns ?? 0,
+    status_code: span.status_code ?? 0,
+    framework: span.framework ?? 'unknown',
+  }
+}
+
 export default function TraceDetail() {
   const { traceId } = useParams<{ traceId: string }>()
   const { data: trace, isLoading } = useTrace(traceId!)
@@ -47,16 +63,18 @@ export default function TraceDetail() {
   const [tab, setTab] = useState<'waterfall' | 'spans' | 'graph'>('waterfall')
   const [selected, setSelected] = useState<Span | null>(null)
 
-  if (isLoading) return <div style={{ padding: 32, color: 'var(--text-tertiary)' }}>Loading trace...</div>
-  if (!trace) return <div style={{ padding: 32, color: 'var(--protect)' }}>Trace not found</div>
-
-  const spans = trace.spans ?? []
-  const policyEvents = trace.policy_events ?? []
+  const spans = useMemo(() => (trace?.spans ?? []).map(normalizeSpan).filter(span => span.id), [trace?.spans])
+  const policyEvents = trace?.policy_events ?? []
   const decisionRecords = decisionsData?.items ?? []
   const tree = buildSpanTree(spans)
   const flatSpans = flattenTree(tree)
+  const selectedPolicyEvents = useMemo(() => (selected ? policyEvents.filter(event => event.span_id === selected.id) : []), [policyEvents, selected])
+
+  if (isLoading) return <div style={{ padding: 32, color: 'var(--text-tertiary)' }}>Loading trace...</div>
+  if (!trace) return <div style={{ padding: 32, color: 'var(--protect)' }}>Trace not found</div>
+
   const timeline = trace.timeline ?? {
-    trace_id: trace.id, start_time: trace.start_time, duration_ns: trace.duration_ns,
+    trace_id: trace.id, start_time: trace.start_time, duration_ns: trace.duration_ns ?? 0,
     items: flatSpans.map(({ span, depth }) => ({
       span_id: span.id, parent_span_id: span.parent_id, name: span.name, step_type: span.step_type,
       provider: span.provider, model: span.model, app_name: span.app_name, environment: span.environment,
@@ -70,9 +88,6 @@ export default function TraceDetail() {
     })),
     highlights: trace.insights?.workflow_summary ?? [],
   }
-
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const selectedPolicyEvents = useMemo(() => (selected ? policyEvents.filter(event => event.span_id === selected.id) : []), [policyEvents, selected])
 
   return (
     <div style={{ padding: 24, display: 'flex', gap: 16, height: '100%', overflow: 'hidden' }}>

@@ -27,7 +27,7 @@ func signedToken(t *testing.T, secret string, claims jwtlib.MapClaims) string {
 // ─── JWTValidator ─────────────────────────────────────────────────────────────
 
 func TestValidateToken_Valid(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	tok := signedToken(t, testSecret, jwtlib.MapClaims{
 		"sub": "collector",
 		"exp": jwtlib.NewNumericDate(time.Now().Add(5 * time.Minute)),
@@ -38,7 +38,7 @@ func TestValidateToken_Valid(t *testing.T) {
 }
 
 func TestValidateToken_WrongSecret(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	tok := signedToken(t, "different-secret-32-bytes-aaaaa!", jwtlib.MapClaims{
 		"sub": "collector",
 		"exp": jwtlib.NewNumericDate(time.Now().Add(5 * time.Minute)),
@@ -49,7 +49,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 }
 
 func TestValidateToken_Expired(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	tok := signedToken(t, testSecret, jwtlib.MapClaims{
 		"sub": "collector",
 		"exp": jwtlib.NewNumericDate(time.Now().Add(-1 * time.Minute)), // already expired
@@ -60,7 +60,7 @@ func TestValidateToken_Expired(t *testing.T) {
 }
 
 func TestValidateToken_Malformed(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	if err := v.ValidateToken("not.a.jwt"); err == nil {
 		t.Error("malformed token should be rejected")
 	}
@@ -68,14 +68,14 @@ func TestValidateToken_Malformed(t *testing.T) {
 
 func TestValidateToken_EmptySecret_AllowsAll(t *testing.T) {
 	// Empty secret = auth disabled; all tokens pass.
-	v := NewJWTValidator("")
+	v := NewJWTValidator("", false)
 	if err := v.ValidateToken("literally-anything"); err != nil {
 		t.Errorf("empty-secret validator should pass all tokens, got: %v", err)
 	}
 }
 
 func TestValidateHTTP_ValidBearerHeader(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	tok := signedToken(t, testSecret, jwtlib.MapClaims{
 		"sub": "collector",
 		"exp": jwtlib.NewNumericDate(time.Now().Add(5 * time.Minute)),
@@ -88,7 +88,7 @@ func TestValidateHTTP_ValidBearerHeader(t *testing.T) {
 }
 
 func TestValidateHTTP_MissingHeader(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	if err := v.ValidateHTTP(req); err == nil {
 		t.Error("missing Authorization header should be rejected")
@@ -96,7 +96,7 @@ func TestValidateHTTP_MissingHeader(t *testing.T) {
 }
 
 func TestValidateHTTP_MalformedHeader(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req.Header.Set("Authorization", "Token abc123") // not "Bearer"
 	if err := v.ValidateHTTP(req); err == nil {
@@ -105,7 +105,7 @@ func TestValidateHTTP_MalformedHeader(t *testing.T) {
 }
 
 func TestValidateHTTP_BearerCaseInsensitive(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	tok := signedToken(t, testSecret, jwtlib.MapClaims{
 		"sub": "collector",
 		"exp": jwtlib.NewNumericDate(time.Now().Add(5 * time.Minute)),
@@ -118,7 +118,7 @@ func TestValidateHTTP_BearerCaseInsensitive(t *testing.T) {
 }
 
 func TestValidateHTTP_EmptyBearerTokenRejected(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req.Header.Set("Authorization", "Bearer ")
 	if err := v.ValidateHTTP(req); err == nil {
@@ -127,7 +127,7 @@ func TestValidateHTTP_EmptyBearerTokenRejected(t *testing.T) {
 }
 
 func TestGRPCTokenValidator_BearerCaseInsensitive(t *testing.T) {
-	v := NewJWTValidator(testSecret)
+	v := NewJWTValidator(testSecret, true)
 	tok := signedToken(t, testSecret, jwtlib.MapClaims{
 		"sub": "collector",
 		"exp": jwtlib.NewNumericDate(time.Now().Add(5 * time.Minute)),

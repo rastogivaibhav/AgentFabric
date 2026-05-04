@@ -64,8 +64,10 @@ export type OutcomeStatus = 'ok' | 'blocked' | 'error' | 'degraded'
 
 export interface Span {
   id: string
+  span_id?: string
   trace_id: string
   parent_id?: string
+  parent_span_id?: string
   run_id: string
   name: string
   framework: string
@@ -574,9 +576,11 @@ export interface ManagedArtifactCreateRequest {
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 export interface EnvironmentInfo {
+  id?: string
   name: string
+  description?: string
   status: string
-  span_count: number
+  span_count?: number
 }
 
 function isTruthyOutcomeAttr(value?: string) {
@@ -2091,6 +2095,41 @@ export interface GovernanceSummary {
   trend: string
 }
 
+export interface ConnectivityAdapterStatus {
+  id: string
+  name: string
+  status: 'connected' | 'probed' | 'stale' | 'disconnected' | string
+  signal_source?: 'live' | 'probe' | string
+  last_seen?: string
+  framework?: string
+  detected_trace_id?: string
+  detected_root_span?: string
+  sample_prompt?: string
+  sample_response?: string
+  connection_guidance?: string
+}
+
+export interface ConnectivityInstallProfile {
+  id: string
+  name: string
+  description: string
+  env: Record<string, string>
+}
+
+export interface ConnectivityStatusResponse {
+  generated_at: string
+  adapters: ConnectivityAdapterStatus[]
+  install_profiles: ConnectivityInstallProfile[]
+  startup_installer: Record<string, string>
+}
+
+export interface ConnectivityProbeResponse {
+  status: string
+  adapter: string
+  trace_id: string
+  span_id: string
+}
+
 export function useGovernanceAlerts() {
   const qc = useQueryClient()
   return useQuery<GovernanceAlert[]>({
@@ -2105,6 +2144,26 @@ export function useGovernanceSummary() {
     queryKey: ['governance-summary'],
     queryFn: () => apiFetch('/governance/summary'),
     refetchInterval: 30_000,
+  })
+}
+
+export function useConnectivityStatus() {
+  return useQuery<ConnectivityStatusResponse>({
+    queryKey: ['connectivity-status'],
+    queryFn: () => apiFetch('/connectivity'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useProbeConnectivity() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (adapter: string) => apiMutate<ConnectivityProbeResponse>('/connectivity/probe', 'POST', { adapter }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['connectivity-status'] })
+      qc.invalidateQueries({ queryKey: ['traces'] })
+      qc.invalidateQueries({ queryKey: ['framework-stats'] })
+    },
   })
 }
 

@@ -59,7 +59,7 @@ func main() {
 	// Build processing pipeline
 	spanExporter := exporter.NewHTTPExporter(cfg.Gateway.Endpoint, cfg.Gateway.AuthToken, logger)
 	spanProcessor := processor.NewAgentProcessor(cfg, logger, spanExporter)
-	jwtValidator := auth.NewJWTValidator(cfg.Auth.JWTSecret)
+	jwtValidator := auth.NewJWTValidator(cfg.Auth.JWTSecret, cfg.Auth.RequireAuth)
 
 	// --- gRPC OTLP Receiver (mTLS enforced) ---
 	grpcOpts := []grpc.ServerOption{
@@ -104,6 +104,9 @@ func main() {
 	vscodeReceiver := receiver.NewVSCodeExtensionReceiver()
 	webhookReceiver := receiver.NewWebhookReceiver()
 	directAPIReceiver := receiver.NewDirectAPIReceiver()
+	vscodeReceiver.SetSubmitter(spanProcessor)
+	webhookReceiver.SetSubmitter(spanProcessor)
+	directAPIReceiver.SetSubmitter(spanProcessor)
 
 	httpMux.HandleFunc("/api/v1/telemetry/vscode", receiver.VSCodeExtensionHandler(vscodeReceiver))
 	httpMux.HandleFunc("/api/v1/telemetry/webhook", receiver.WebhookHandler(webhookReceiver))

@@ -3,7 +3,9 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/govagn/api-gateway/internal/budget"
 	"github.com/govagn/api-gateway/internal/evals"
 	"github.com/govagn/api-gateway/internal/governance"
@@ -35,6 +38,57 @@ import (
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
+
+type connectivityAdapterStatus struct {
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	Status             string    `json:"status"`
+	SignalSource       string    `json:"signal_source,omitempty"`
+	LastSeen           time.Time `json:"last_seen,omitempty"`
+	Framework          string    `json:"framework,omitempty"`
+	DetectedTraceID    string    `json:"detected_trace_id,omitempty"`
+	DetectedRootSpan   string    `json:"detected_root_span,omitempty"`
+	SamplePrompt       string    `json:"sample_prompt,omitempty"`
+	SampleResponse     string    `json:"sample_response,omitempty"`
+	ConnectionGuidance string    `json:"connection_guidance,omitempty"`
+}
+
+type connectivityInstallProfile struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Env         map[string]string `json:"env"`
+}
+
+type connectivityStatusResponse struct {
+	GeneratedAt      time.Time                    `json:"generated_at"`
+	Adapters         []connectivityAdapterStatus  `json:"adapters"`
+	InstallProfiles  []connectivityInstallProfile `json:"install_profiles"`
+	StartupInstaller map[string]string            `json:"startup_installer"`
+}
+
+type connectivityProbeRequest struct {
+	Adapter string `json:"adapter"`
+}
+
+type connectivityProbeResponse struct {
+	Status  string `json:"status"`
+	Adapter string `json:"adapter"`
+	TraceID string `json:"trace_id"`
+	SpanID  string `json:"span_id"`
+}
+
+type collectorInfo struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	EndpointGRPC string    `json:"endpoint_grpc"`
+	EndpointHTTP string    `json:"endpoint_http"`
+	Status       string    `json:"status"`
+	Version      string    `json:"version"`
+	LastChecked  time.Time `json:"last_checked"`
+}
+
+const connectivityFreshWindow = 6 * time.Hour
 
 type Handler struct {
 	pg             *store.PostgresStore
@@ -1596,6 +1650,41 @@ func (h *Handler) ListEnvironments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, envs)
 }
 
+func (h *Handler) ListCollectors(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	status := "unreachable"
+	if collectorHealthOK(r.Context()) {
+		status = "healthy"
+	}
+
+	writeJSON(w, http.StatusOK, []collectorInfo{
+		{
+			ID:           "grpc",
+			Name:         "gRPC OTLP Receiver",
+			EndpointGRPC: "localhost:4317",
+			Status:       status,
+			Version:      "v1",
+			LastChecked:  now,
+		},
+		{
+			ID:           "http",
+			Name:         "HTTP OTLP Receiver",
+			EndpointHTTP: "localhost:4318",
+			Status:       status,
+			Version:      "v1",
+			LastChecked:  now,
+		},
+		{
+			ID:           "gateway",
+			Name:         "API Gateway",
+			EndpointHTTP: "localhost:8080",
+			Status:       "healthy",
+			Version:      "v1",
+			LastChecked:  now,
+		},
+	})
+}
+
 func (h *Handler) ListDecisions(w http.ResponseWriter, r *http.Request) {
 	page, err := h.pg.ListDecisionRecords(r.Context(), models.DecisionQuery{
 		TenantID: tenantFromCtx(r),
@@ -2367,7 +2456,7 @@ func (h *Handler) scoreSpanRisk(sp *models.Span) {
 
 	// Extract relevant fields from attributes
 	if sp.Attributes != nil {
-		ev.Command = sp.Attributes["tool.command"]
+		ev.Command = firstNonEmptyString(sp.Attributes["tool.command"], sp.Attributes["command"], sp.Attributes["shell.command"])
 		ev.FilePath = sp.Attributes["tool.file_path"]
 		ev.ToolName = sp.Attributes["tool.name"]
 		ev.RepoName = sp.Attributes["git.repository"]
@@ -2375,6 +2464,10 @@ func (h *Handler) scoreSpanRisk(sp *models.Span) {
 		ev.Action = sp.Attributes["event.action"]
 		if status := sp.Attributes["event.category"]; status != "" {
 			ev.EventCategory = status
+		}
+		ev.Payload = make(map[string]interface{}, len(sp.Attributes))
+		for key, value := range sp.Attributes {
+			ev.Payload[key] = value
 		}
 	}
 
@@ -2460,7 +2553,7 @@ func (h *Handler) firewallDecisionForSpan(tenantID string, sp *models.Span) inge
 		reason = fmt.Sprintf("risk category %s scored %d and met review threshold %d", sp.RiskCategory, sp.RiskScore, firewallReviewThreshold)
 	}
 	return ingestDecision{
-		DecisionID:   fmt.Sprintf("fw-%s-%d", strings.TrimSpace(sp.ID), time.Now().UnixNano()),
+		DecisionID:   uuid.NewString(),
 		TraceID:      sp.TraceID,
 		SpanID:       sp.ID,
 		Result:       result,
@@ -3060,4 +3153,386 @@ func sumSpanUsage(spans []models.Span) (tokens int64, costUSD float64) {
 		costUSD += sp.CostUSD
 	}
 	return
+}
+
+func (h *Handler) GetConnectivityStatus(w http.ResponseWriter, r *http.Request) {
+	tenantID := tenantFromCtx(r)
+	now := time.Now().UTC()
+
+	adapters := map[string]*connectivityAdapterStatus{
+		"codex": {
+			ID:                 "codex",
+			Name:               "Codex",
+			Status:             "disconnected",
+			ConnectionGuidance: "Set OPENAI_BASE_URL to Govagn gateway and emit OTLP spans.",
+		},
+		"claude_code": {
+			ID:                 "claude_code",
+			Name:               "Claude Code",
+			Status:             "disconnected",
+			ConnectionGuidance: "Set ANTHROPIC_BASE_URL to Govagn gateway and emit OTLP spans.",
+		},
+		"antigravity": {
+			ID:                 "antigravity",
+			Name:               "Antigravity",
+			Status:             "disconnected",
+			ConnectionGuidance: "Configure Antigravity to use Govagn proxy + OTLP endpoint.",
+		},
+		"vscode": {
+			ID:                 "vscode",
+			Name:               "VSCode",
+			Status:             "disconnected",
+			ConnectionGuidance: "Configure VSCode extension telemetry webhook or OTLP through Govagn.",
+		},
+	}
+
+	for _, adapterID := range []string{"codex", "claude_code", "antigravity", "vscode"} {
+		target, ok := adapters[adapterID]
+		if !ok {
+			continue
+		}
+		trace, found, err := h.latestConnectivityTrace(r.Context(), tenantID, adapterID)
+		if err != nil {
+			h.logger.Error("connectivity status: latest trace lookup failed", zap.String("adapter", adapterID), zap.Error(err))
+			writeError(w, http.StatusInternalServerError, "query error")
+			return
+		}
+		if !found {
+			continue
+		}
+		isProbe := strings.Contains(strings.ToLower(strings.TrimSpace(trace.RootSpanName)), "connectivity_probe")
+		target.LastSeen = trace.StartTime.UTC()
+		target.Framework = trace.Framework
+		target.DetectedTraceID = trace.ID
+		target.DetectedRootSpan = trace.RootSpanName
+		if isProbe {
+			target.SignalSource = "probe"
+		} else {
+			target.SignalSource = "live"
+		}
+
+		spans, spanErr := h.pg.GetTraceSpans(r.Context(), trace.ID, tenantID)
+		if spanErr == nil && len(spans) > 0 {
+			prompt, response := extractPromptResponse(spans[0].Attributes)
+			target.SamplePrompt = prompt
+			target.SampleResponse = response
+		}
+	}
+
+	items := make([]connectivityAdapterStatus, 0, len(adapters))
+	for _, key := range []string{"codex", "claude_code", "antigravity", "vscode"} {
+		item := adapters[key]
+		if !item.LastSeen.IsZero() {
+			if item.SignalSource == "probe" && now.Sub(item.LastSeen) <= connectivityFreshWindow {
+				item.Status = "probed"
+			} else if now.Sub(item.LastSeen) <= connectivityFreshWindow {
+				item.Status = "connected"
+			} else {
+				item.Status = "stale"
+			}
+		}
+		items = append(items, *item)
+	}
+
+	resp := connectivityStatusResponse{
+		GeneratedAt: now,
+		Adapters:    items,
+		InstallProfiles: []connectivityInstallProfile{
+			{
+				ID:          "codex",
+				Name:        "Codex Profile",
+				Description: "Routes Codex model calls through Govagn and sets OTLP destination.",
+				Env: map[string]string{
+					"OPENAI_BASE_URL":             "http://localhost:8080/proxy/openai",
+					"OPENAI_API_KEY":              "<YOUR_VIRTUAL_KEY_OR_PROVIDER_KEY>",
+					"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318/v1/traces",
+				},
+			},
+			{
+				ID:          "claude_code",
+				Name:        "Claude Code Profile",
+				Description: "Routes Claude Code traffic through Govagn and sets OTLP destination.",
+				Env: map[string]string{
+					"ANTHROPIC_BASE_URL":          "http://localhost:8080/proxy/anthropic",
+					"ANTHROPIC_API_KEY":           "<YOUR_VIRTUAL_KEY_OR_PROVIDER_KEY>",
+					"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318/v1/traces",
+				},
+			},
+			{
+				ID:          "antigravity",
+				Name:        "Antigravity Profile",
+				Description: "Routes Antigravity traffic via Govagn OpenAI-compatible proxy and OTLP.",
+				Env: map[string]string{
+					"OPENAI_BASE_URL":             "http://localhost:8080/proxy/openai",
+					"OPENAI_API_KEY":              "<YOUR_VIRTUAL_KEY_OR_PROVIDER_KEY>",
+					"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318/v1/traces",
+				},
+			},
+			{
+				ID:          "vscode",
+				Name:        "VSCode Profile",
+				Description: "Uses Govagn telemetry webhook and OTLP endpoint for extension/runtime events.",
+				Env: map[string]string{
+					"GV_VSCODE_TELEMETRY_URL":     "http://localhost:4318/api/v1/telemetry/vscode",
+					"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318/v1/traces",
+				},
+			},
+		},
+		StartupInstaller: map[string]string{
+			"windows": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-govagn-autostart.ps1",
+			"linux":   "bash ./scripts/install-govagn-autostart.sh",
+			"macos":   "bash ./scripts/install-govagn-autostart.sh",
+		},
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) ProbeConnectivity(w http.ResponseWriter, r *http.Request) {
+	var req connectivityProbeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	adapter := strings.ToLower(strings.TrimSpace(req.Adapter))
+	if adapter == "" {
+		writeError(w, http.StatusBadRequest, "adapter is required")
+		return
+	}
+
+	probe, err := buildConnectivityProbe(adapter)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	tenantID := tenantFromCtx(r)
+	if tenantID == "" {
+		tenantID = middleware.DefaultTenantID
+	}
+	probe.TenantID = tenantID
+	probe.ReceivedAt = time.Now().UTC()
+	h.repriceSpan(&probe)
+	h.scoreSpanRisk(&probe)
+
+	if err := h.pg.BulkInsertSpans(r.Context(), []models.Span{probe}); err != nil {
+		h.logger.Error("connectivity probe insert failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "storage error")
+		return
+	}
+
+	if h.hub != nil {
+		h.hub.Broadcast(tenantID, &models.LiveEvent{
+			Type:      "span",
+			Timestamp: time.Now().UnixMilli(),
+			TenantID:  tenantID,
+			Data:      probe,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, connectivityProbeResponse{
+		Status:  "accepted",
+		Adapter: adapter,
+		TraceID: probe.TraceID,
+		SpanID:  probe.ID,
+	})
+}
+
+func adapterIDFromTrace(trace models.Trace) string {
+	root := strings.ToLower(strings.TrimSpace(trace.RootSpanName))
+	framework := strings.ToLower(strings.TrimSpace(trace.Framework))
+
+	switch {
+	case framework == "codex" ||
+		strings.Contains(root, "codex"):
+		return "codex"
+	case framework == "claude_code" ||
+		framework == "claude" ||
+		framework == "anthropic" ||
+		strings.Contains(root, "claude_code") ||
+		strings.Contains(root, "claude"):
+		return "claude_code"
+	case strings.Contains(root, "vscode") ||
+		strings.Contains(root, "vstudio") ||
+		strings.Contains(root, "cursor"):
+		return "vscode"
+	case framework == "google_adk" ||
+		framework == "adk" ||
+		strings.Contains(root, "antigravity"):
+		return "antigravity"
+	default:
+		return ""
+	}
+}
+
+func extractPromptResponse(attrs map[string]string) (string, string) {
+	if attrs == nil {
+		return "", ""
+	}
+	prompt := firstNonEmptyString(
+		attrs["af.preview.prompt"],
+		attrs["gen_ai.prompt"],
+		attrs["prompt"],
+		attrs["input"],
+	)
+	response := firstNonEmptyString(
+		attrs["af.preview.response"],
+		attrs["gen_ai.response"],
+		attrs["response"],
+		attrs["output"],
+		attrs["result"],
+	)
+	return prompt, response
+}
+
+func buildConnectivityProbe(adapter string) (models.Span, error) {
+	now := time.Now().UTC()
+	traceID := randomHex(16)
+	spanID := randomHex(8)
+	if traceID == "" || spanID == "" {
+		return models.Span{}, fmt.Errorf("failed to generate ids")
+	}
+	attrs := map[string]string{
+		"source":          adapter,
+		"event_type":      "connectivity.probe",
+		"af.agent.name":   adapter,
+		"af.probe.manual": "true",
+	}
+	name := adapter + ".connectivity_probe"
+	framework := "unknown"
+	switch adapter {
+	case "codex":
+		framework = "codex"
+		attrs["codex.session.id"] = "probe-session-codex"
+		attrs["gen_ai.request.model"] = "gpt-5.5"
+		attrs["gen_ai.prompt"] = "Probe Codex connectivity through Govagn."
+		attrs["gen_ai.response"] = "Codex connectivity probe accepted."
+	case "claude_code":
+		framework = "claude_code"
+		attrs["claude_code.session_id"] = "probe-session-claude"
+		attrs["gen_ai.request.model"] = "claude-sonnet-4"
+		attrs["gen_ai.prompt"] = "Probe Claude Code connectivity through Govagn."
+		attrs["gen_ai.response"] = "Claude Code connectivity probe accepted."
+	case "antigravity":
+		framework = "google_adk"
+		attrs["google.adk.session.id"] = "probe-session-antigravity"
+		attrs["gen_ai.request.model"] = "gemini-1.5-pro"
+		attrs["gen_ai.prompt"] = "Probe Antigravity connectivity through Govagn."
+		attrs["gen_ai.response"] = "Antigravity connectivity probe accepted."
+	case "vscode":
+		framework = "openai_agents"
+		attrs["af.app.name"] = "vstudio"
+		attrs["gen_ai.request.model"] = "gpt-4.1-mini"
+		attrs["gen_ai.prompt"] = "Probe VSCode connectivity through Govagn."
+		attrs["gen_ai.response"] = "VSCode connectivity probe accepted."
+	default:
+		return models.Span{}, fmt.Errorf("unsupported adapter: %s", adapter)
+	}
+	return models.Span{
+		ID:          spanID,
+		TraceID:     traceID,
+		RunID:       randomHex(16),
+		Name:        name,
+		Framework:   framework,
+		StartTimeNs: now.UnixNano(),
+		DurationNs:  int64(time.Millisecond),
+		StatusCode:  1,
+		Attributes:  attrs,
+	}, nil
+}
+
+func randomHex(nBytes int) string {
+	buf := make([]byte, nBytes)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(buf)
+}
+
+func (h *Handler) latestConnectivityTrace(ctx context.Context, tenantID, adapterID string) (models.Trace, bool, error) {
+	frameworks := connectivityFrameworkCandidates(adapterID)
+	var best models.Trace
+	found := false
+
+	for _, framework := range frameworks {
+		page, err := h.pg.ListTraces(ctx, models.TraceQuery{
+			TenantID:  tenantID,
+			Framework: framework,
+			Limit:     1,
+		})
+		if err != nil {
+			return models.Trace{}, false, err
+		}
+		if len(page.Items) == 0 {
+			continue
+		}
+		trace := page.Items[0]
+		if adapterIDFromTrace(trace) != adapterID {
+			continue
+		}
+		if !found || trace.StartTime.After(best.StartTime) {
+			best = trace
+			found = true
+		}
+	}
+
+	if found {
+		return best, true, nil
+	}
+
+	// Fallback for unknown framework variants: sample latest traces and match by root span.
+	page, err := h.pg.ListTraces(ctx, models.TraceQuery{
+		TenantID: tenantID,
+		Limit:    50,
+	})
+	if err != nil {
+		return models.Trace{}, false, err
+	}
+	for _, trace := range page.Items {
+		if adapterIDFromTrace(trace) != adapterID {
+			continue
+		}
+		if !found || trace.StartTime.After(best.StartTime) {
+			best = trace
+			found = true
+		}
+	}
+	return best, found, nil
+}
+
+func connectivityFrameworkCandidates(adapterID string) []string {
+	switch adapterID {
+	case "codex":
+		return []string{"codex", "openai_agents"}
+	case "claude_code":
+		return []string{"claude_code", "claude", "anthropic"}
+	case "antigravity":
+		return []string{"google_adk", "adk"}
+	case "vscode":
+		return []string{"openai_agents", "cursor", "vscode"}
+	default:
+		return nil
+	}
+}
+
+func collectorHealthOK(parent context.Context) bool {
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	for _, url := range []string{"http://collector:4318/healthz", "http://localhost:4318/healthz"} {
+		ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			cancel()
+			continue
+		}
+		resp, err := client.Do(req)
+		cancel()
+		if err != nil {
+			continue
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return true
+		}
+	}
+	return false
 }

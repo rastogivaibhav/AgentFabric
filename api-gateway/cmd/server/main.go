@@ -328,6 +328,12 @@ func main() {
 		r.Get("/analytics/cost", h.GetCostReport)
 		r.Get("/analytics/cost/spikes", h.GetCostSpikes)
 		r.Get("/analytics/errors", h.GetErrorReport)
+		r.Get("/connectivity", h.GetConnectivityStatus)
+		r.With(middleware.RequireRole("admin")).Post("/connectivity/probe", h.ProbeConnectivity)
+		r.Get("/collectors", h.ListCollectors)
+		r.Get("/governance/alerts", h.ListGovernanceAlerts)
+		r.Get("/governance/summary", h.GetGovernanceSummary)
+		r.With(middleware.RequireRole("admin")).Post("/governance/approve", h.ApproveGovernanceDecision)
 
 		// Environments
 		r.Get("/environments", h.ListEnvironments)

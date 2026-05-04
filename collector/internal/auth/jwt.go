@@ -15,16 +15,23 @@ import (
 )
 
 type JWTValidator struct {
-	secret []byte
+	secret      []byte
+	requireAuth bool
 }
 
-func NewJWTValidator(secret string) *JWTValidator {
-	return &JWTValidator{secret: []byte(secret)}
+func NewJWTValidator(secret string, requireAuth bool) *JWTValidator {
+	return &JWTValidator{
+		secret:      []byte(secret),
+		requireAuth: requireAuth,
+	}
 }
 
 func (v *JWTValidator) ValidateToken(tokenStr string) error {
-	if v.secret == nil || len(v.secret) == 0 {
+	if !v.requireAuth {
 		return nil // auth disabled
+	}
+	if v.secret == nil || len(v.secret) == 0 {
+		return jwt.ErrTokenMalformed
 	}
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -39,10 +46,14 @@ func (v *JWTValidator) ValidateToken(tokenStr string) error {
 }
 
 func (v *JWTValidator) ValidateHTTP(r *http.Request) error {
-	if v.secret == nil || len(v.secret) == 0 {
+	if !v.requireAuth {
 		return nil
 	}
 	token := bearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		// Backward compatibility for clients that still send x-af-api-key.
+		token = strings.TrimSpace(r.Header.Get("x-af-api-key"))
+	}
 	if token == "" {
 		return jwt.ErrTokenNotValidYet
 	}
@@ -52,17 +63,26 @@ func (v *JWTValidator) ValidateHTTP(r *http.Request) error {
 // GRPCTokenValidator returns an interceptor that validates the Authorization header.
 func GRPCTokenValidator(v *JWTValidator) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if !v.requireAuth {
+			return handler(ctx, req)
+		}
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
 			return nil, status.Error(codes.Unauthenticated, "missing metadata")
 		}
 		auths := md.Get("authorization")
-		if len(auths) == 0 {
-			return nil, status.Error(codes.Unauthenticated, "missing authorization header")
+		token := ""
+		if len(auths) > 0 {
+			token = bearerToken(auths[0])
 		}
-		token := bearerToken(auths[0])
 		if token == "" {
-			return nil, status.Error(codes.Unauthenticated, "invalid auth format")
+			apiKeys := md.Get("x-af-api-key")
+			if len(apiKeys) > 0 {
+				token = strings.TrimSpace(apiKeys[0])
+			}
+		}
+		if token == "" {
+			return nil, status.Error(codes.Unauthenticated, "missing authorization header")
 		}
 		if err := v.ValidateToken(token); err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid token")

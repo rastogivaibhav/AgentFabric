@@ -71,9 +71,15 @@ export default function EnvironmentsPage() {
   const { data: rawEnvs, isLoading: envsLoading } = useEnvironments()
   const { data: collectorsData, isLoading: collectorsLoading, isError: collectorsError } = useCollectors()
 
-  const envs: EnvironmentInfo[] = (rawEnvs ?? []).map(e =>
-    typeof e === 'string' ? { name: e, status: 'active', span_count: 0 } : e as EnvironmentInfo
-  )
+  const envs: EnvironmentInfo[] = (rawEnvs ?? []).map(e => {
+    if (typeof e === 'string') return { name: e, status: 'active', span_count: 0 }
+    return {
+      ...e,
+      name: e.name || e.id || 'unnamed',
+      status: e.status || 'active',
+      span_count: e.span_count ?? 0,
+    }
+  })
   const collectors: CollectorInfo[] = (collectorsData && collectorsData.length > 0) ? collectorsData : STATIC_COLLECTORS
   const usedFallback = !collectorsLoading && (collectorsError || !collectorsData || collectorsData.length === 0)
 
@@ -127,20 +133,23 @@ curl -X POST http://localhost:4318/v1/traces \\
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {envsLoading && <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Loading…</div>}
           {envs.map(env => {
-            const color = ENV_COLORS[env.name] ?? 'var(--text-tertiary)'
+            const envName = env.name || 'unnamed'
+            const color = ENV_COLORS[envName.toLowerCase()] ?? 'var(--text-tertiary)'
+            const spanCount = env.span_count ?? 0
             return (
-              <div key={env.name} style={{ background: 'var(--layer-0)', border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`, borderLeft: `3px solid ${color}`, borderRadius: 10, padding: 20 }}>
+              <div key={env.id || envName} style={{ background: 'var(--layer-0)', border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`, borderLeft: `3px solid ${color}`, borderRadius: 10, padding: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 8px ${color}` }} />
                   <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                    {env.name.charAt(0).toUpperCase() + env.name.slice(1)}
+                    {envName.charAt(0).toUpperCase() + envName.slice(1)}
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'grid', gap: 6 }}>
-                  <div>Spans: <span style={{ color: 'var(--text-secondary)' }}>{env.span_count.toLocaleString()}</span></div>
+                  <div>Spans: <span style={{ color: 'var(--text-secondary)' }}>{spanCount.toLocaleString()}</span></div>
                   <div>Status: <span style={{ color: env.status === 'active' ? 'var(--spend)' : 'var(--text-tertiary)' }}>{env.status}</span></div>
-                  <div>Auth: <span style={{ color: env.name === 'production' ? 'var(--protect)' : 'var(--spend)' }}>
-                    {env.name === 'production' ? 'mTLS enabled' : 'dev mode'}
+                  {env.description && <div>Target: <span style={{ color: 'var(--text-secondary)' }}>{env.description}</span></div>}
+                  <div>Auth: <span style={{ color: envName.toLowerCase() === 'production' ? 'var(--protect)' : 'var(--spend)' }}>
+                    {envName.toLowerCase() === 'production' ? 'mTLS enabled' : 'dev mode'}
                   </span></div>
                 </div>
               </div>

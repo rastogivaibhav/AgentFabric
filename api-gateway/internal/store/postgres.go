@@ -1043,6 +1043,10 @@ func (s *PostgresStore) CreatePolicyAuditEntry(ctx context.Context, entry models
 
 func normalizeAuditResult(result string) string {
 	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "approved", "approve", "allow_ingest":
+		return "allow"
+	case "review", "require_review", "warn":
+		return "warn"
 	case "redact":
 		return "sanitize"
 	case "block":

@@ -1,9 +1,9 @@
-import { useState } from 'react'
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Activity, Radio,
   Bot, DollarSign, Server, Zap, LogOut, User, Users, ClipboardList, KeyRound, SlidersHorizontal,
-  Shield, FlaskConical, FileText, GitMerge, Lightbulb, Brain, TestTube, ListTree, AlertTriangle, ChevronRight, Settings, BarChart3
+  Shield, FlaskConical, FileText, GitMerge, Lightbulb, Brain, TestTube, ListTree, AlertTriangle, ChevronRight, Settings, BarChart3, Link2
 } from 'lucide-react'
 import { useAuth, isAuthEnabled } from '../hooks/auth'
 
@@ -77,6 +77,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/runs', icon: ListTree, label: 'Runs' },
       { to: '/agents', icon: Bot, label: 'Agents' },
       { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+      { to: '/connectivity', icon: Link2, label: 'Connectivity' },
       { to: '/analytics/errors', icon: AlertTriangle, label: 'Error Analytics' },
     ]
   },
@@ -213,6 +214,13 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const isAdmin = user?.role === 'admin' || !isAuthEnabled()
   const location = useLocation()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (location.hash === '#') {
+      navigate(`${location.pathname}${location.search}`, { replace: true })
+    }
+  }, [location.hash, location.pathname, location.search, navigate])
   
   // Default to expanded for Overview, and whatever group is currently active
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {

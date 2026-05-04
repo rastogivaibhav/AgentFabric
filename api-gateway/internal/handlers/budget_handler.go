@@ -28,7 +28,14 @@ func (h *Handler) GetBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if b == nil {
-		writeError(w, http.StatusNotFound, "no budget set for tenant")
+		writeJSON(w, http.StatusOK, &budget.Budget{
+			TenantID:       tenantID,
+			MonthlyTokens:  0,
+			MonthlyCostUSD: 0,
+			AlertThreshold: 0.80,
+			HardLimit:      false,
+			ResetDay:       1,
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, b)

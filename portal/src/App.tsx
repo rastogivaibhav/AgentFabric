@@ -30,6 +30,7 @@ import PolicySimulationPage from './pages/PolicySimulationPage'
 import RecommendationsPage from './pages/RecommendationsPage'
 import MemoryPage from './pages/MemoryPage'
 import LoginPage from './pages/LoginPage'
+import ConnectivityPage from './pages/ConnectivityPage'
 import { useAuth, isAuthEnabled, hasRole } from './hooks/auth'
 
 const qc = new QueryClient({
@@ -93,6 +94,7 @@ export default function App() {
             <Route path="runs" element={<RunsPage />} />
             <Route path="runs/:runId" element={<RunDetailPage />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="connectivity" element={<ConnectivityPage />} />
             <Route path="analytics/errors" element={<ErrorAnalyticsPage />} />
             <Route path="cost" element={<CostPage />} />
             <Route path="environments" element={<EnvironmentsPage />} />

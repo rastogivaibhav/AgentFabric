@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS kafka_offsets (
     group_id VARCHAR(255) NOT NULL,
     topic VARCHAR(255) NOT NULL,
     partition INT NOT NULL,
-    offset BIGINT NOT NULL,
+    consumer_offset BIGINT NOT NULL,
     committed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- Unique constraint: one entry per consumer group + topic + partition
@@ -29,9 +29,9 @@ SELECT
     group_id,
     topic,
     COUNT(DISTINCT partition) as partitions_tracked,
-    MIN(offset) as min_offset,
-    MAX(offset) as max_offset,
-    AVG(offset) as avg_offset,
+    MIN(consumer_offset) as min_offset,
+    MAX(consumer_offset) as max_offset,
+    AVG(consumer_offset) as avg_offset,
     MAX(committed_at) as last_commit_time,
     EXTRACT(EPOCH FROM (NOW() - MAX(committed_at)))::INT as seconds_since_commit
 FROM kafka_offsets

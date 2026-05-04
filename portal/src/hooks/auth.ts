@@ -19,6 +19,13 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
+const DEV_USER: AuthUser = {
+  sub: 'dev-admin',
+  email: 'dev@govagn.local',
+  name: 'Govagn Dev Admin',
+  role: 'admin',
+}
+
 export interface AuthUser {
   sub: string
   email: string
@@ -98,6 +105,10 @@ export function useAuth(): AuthState & {
   // Fetch identity from the server using the HttpOnly cookie.
   // GET /auth/me validates the cookie server-side and returns user claims + exp.
   const fetchUser = useCallback(async () => {
+    if (!isAuthEnabled()) {
+      setState({ user: DEV_USER, isAuthenticated: true, isLoading: false, error: null })
+      return
+    }
     try {
       const res = await fetch(`${BASE}/auth/me`, {
         credentials: 'include', // browser sends af_token HttpOnly cookie automatically
