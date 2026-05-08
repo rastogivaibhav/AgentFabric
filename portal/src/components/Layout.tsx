@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Activity, Radio,
   Bot, DollarSign, Server, Zap, LogOut, User, Users, ClipboardList, KeyRound, SlidersHorizontal,
-  Shield, FlaskConical, FileText, GitMerge, Lightbulb, Brain, TestTube, ListTree, AlertTriangle, ChevronRight, Settings, BarChart3
+  Shield, FlaskConical, FileText, GitMerge, Lightbulb, Brain, TestTube, ListTree, AlertTriangle, ChevronRight, Settings, BarChart3, ClipboardCheck
 } from 'lucide-react'
 import { useAuth, isAuthEnabled } from '../hooks/auth'
 
@@ -85,6 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'SHIP',
     color: 'var(--ship, #BF5AF2)',
     items: [
+      { to: '/release-control', icon: ClipboardCheck, label: 'Release Control' },
       { to: '/prompts', icon: FileText, label: 'Prompts' },
       { to: '/evals', icon: FlaskConical, label: 'Evals' },
     ]
@@ -127,7 +128,7 @@ function NavGroupSection({
   // Original admin only items: users, keys, policies, prompts, evals, pricing, rollouts, recommendations, memory, policies/simulate, decisions, audit.
   // So PROTECT, CONTROL, SPEND, SHIP, PROVE are heavily admin.
   // We need to filter items in the group based on whether they were admin only.
-  const adminOnlyPaths = ['/users', '/keys', '/policies', '/prompts', '/evals', '/pricing', '/rollouts', '/recommendations', '/memory', '/policies/simulate', '/decisions', '/audit', '/governance']
+  const adminOnlyPaths = ['/users', '/keys', '/policies', '/prompts', '/evals', '/release-control', '/pricing', '/rollouts', '/recommendations', '/memory', '/policies/simulate', '/decisions', '/audit', '/governance']
   
   const visibleItems = group.items.filter(item => {
     if (!isAdmin && adminOnlyPaths.includes(item.to)) return false
@@ -213,6 +214,14 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const isAdmin = user?.role === 'admin' || !isAuthEnabled()
   const location = useLocation()
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1024 : window.innerWidth)
+  const hideSidebar = viewportWidth < 760
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   
   // Default to expanded for Overview, and whatever group is currently active
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
@@ -239,7 +248,7 @@ export default function Layout() {
         background: 'rgba(10, 10, 10, 0.8)', 
         backdropFilter: 'blur(20px)',
         borderRight: '1px solid var(--layer-border)', 
-        display: 'flex', 
+        display: hideSidebar ? 'none' : 'flex', 
         flexDirection: 'column', 
         flexShrink: 0 
       }}>

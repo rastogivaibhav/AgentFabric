@@ -13,6 +13,13 @@ type RedisClient struct {
 	client *redis.Client
 }
 
+func (r *RedisClient) Client() *redis.Client {
+	if r == nil {
+		return nil
+	}
+	return r.client
+}
+
 func NewRedisClient(addr string) (*RedisClient, error) {
 	opts, err := redis.ParseURL(addr)
 	if err != nil {

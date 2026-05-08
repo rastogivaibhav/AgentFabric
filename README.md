@@ -1,6 +1,6 @@
 # GOVAGN
 
-> **Observe, govern, and control production AI traffic.**
+> **Governed release control for production AI agents.**
 
 [![GitHub stars](https://img.shields.io/github/stars/govagn/govagn?style=social)](https://github.com/govagn/govagn)
 [![Platform License](https://img.shields.io/badge/platform-proprietary-black)](./LICENSE)
@@ -11,8 +11,8 @@
 [![OpenAPI](https://img.shields.io/badge/API-OpenAPI-6BA539)](./docs/openapi.yaml)
 [![Deployment](https://img.shields.io/badge/deployment-self--hosted-2ea44f)](./docker-compose.yml)
 
-**GOVAGN is a self-hosted control plane for LLM apps and agent systems.**  
-Route model traffic through it, instrument your agents, and get **traces, costs, guardrails, prompt history, and audit evidence** in one place.
+**GOVAGN is a self-hosted release control plane for regulated LLM apps and agent systems.**  
+Use it to approve, enforce, monitor, and prove AI changes before they reach production: **prompt releases, eval gates, policy packs, rollout controls, traces, costs, and audit evidence** in one place.
 
 **Best for:** platform teams, AI infra teams, security teams, and enterprises running AI in production.
 
@@ -20,11 +20,12 @@ Route model traffic through it, instrument your agents, and get **traces, costs,
 
 ## What Is GOVAGN?
 
-GOVAGN gives teams one operational layer for AI workloads:
+GOVAGN gives teams one governed release path for AI workloads:
 
-- **observe** every run, trace, and handoff
-- **govern** what traffic is allowed
-- **control** prompts, budgets, policies, and rollout decisions
+- **approve** prompt, model, and policy changes with eval evidence
+- **enforce** runtime policy, DLP, budget, and provider controls
+- **roll out** AI changes with canaries and rollback criteria
+- **prove** what happened with trace-linked audit evidence
 
 It is strongest when AI has already moved beyond demos and into environments where people need answers to questions like:
 
@@ -32,7 +33,7 @@ It is strongest when AI has already moved beyond demos and into environments whe
 - Which prompt or model version caused it?
 - Why did it cost this much?
 - Should this request or agent action have been allowed?
-- What evidence do we have for the release or incident review?
+- What evidence do we have for the release, audit, or incident review?
 
 # ✨ Why This Exists
 

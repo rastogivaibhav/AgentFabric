@@ -26,6 +26,7 @@ import RegressionPage from './pages/RegressionPage'
 import PromptsPage from './pages/PromptsPage'
 import PromptReleasePage from './pages/PromptReleasePage'
 import RolloutsPage from './pages/RolloutsPage'
+import ReleaseControlPage from './pages/ReleaseControlPage'
 import PolicySimulationPage from './pages/PolicySimulationPage'
 import RecommendationsPage from './pages/RecommendationsPage'
 import MemoryPage from './pages/MemoryPage'
@@ -107,6 +108,7 @@ export default function App() {
             <Route path="policies" element={<PoliciesPage />} />
             <Route path="evals" element={<EvalsPage />} />
             <Route path="evals/regressions" element={<RegressionPage />} />
+            <Route path="release-control" element={<ReleaseControlPage />} />
             <Route path="rollouts" element={<RolloutsPage />} />
             <Route path="policies/simulate" element={<PolicySimulationPage />} />
             <Route path="recommendations" element={<RecommendationsPage />} />

@@ -1,0 +1,89 @@
+services:
+  - type: web
+    name: govagn-gateway
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./deploy/render/api-gateway.Dockerfile
+    dockerContext: .
+    healthCheckPath: /readyz
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: LISTEN_ADDR
+        value: ":10000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: govagn-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: govagn-redis
+          property: connectionString
+      - key: GV_ENV
+        value: render
+      - key: GV_AUTH_DISABLED
+        value: false
+      - key: GV_ADMIN_USER
+        value: admin
+      - key: GV_ADMIN_PASSWORD
+        sync: false
+      - key: GV_JWT_SECRET
+        generateValue: true
+      - key: GV_GATEWAY_AUTH_TOKEN
+        generateValue: true
+      - key: GV_VAULT_KEY
+        sync: false
+      - key: GV_CORS_ORIGINS
+        value: https://govagn-portal.onrender.com
+      - key: GV_TLS_ENABLED
+        value: false
+      - key: GV_KAFKA_ENABLED
+        value: false
+      - key: GV_MIGRATE_ON_STARTUP
+        value: true
+      - key: GV_MIGRATIONS_PATH
+        value: /app/deploy/migrations
+      - key: GV_POLICY_PACKS_PATH
+        value: /app/deploy/seed/policy-packs
+      - key: GV_EVAL_PACKS_PATH
+        value: /app/deploy/seed/eval-packs
+      - key: GV_EVAL_DATASETS_PATH
+        value: /app/deploy/seed/eval-datasets
+      - key: GV_OPENAPI_SPEC_PATH
+        value: /app/docs/openapi.yaml
+
+  - type: web
+    name: govagn-portal
+    runtime: static
+    plan: free
+    rootDir: portal
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://govagn-gateway.onrender.com
+      - key: VITE_AUTH_DISABLED
+        value: false
+      - key: VITE_SHOW_DEFAULT_CREDS
+        value: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  - type: keyvalue
+    name: govagn-redis
+    plan: starter
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+
+databases:
+  - name: govagn-db
+    databaseName: govagn
+    user: govagn
+    region: oregon
+    plan: basic-256mb
+    postgresMajorVersion: "16"

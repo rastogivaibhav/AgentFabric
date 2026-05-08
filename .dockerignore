@@ -1,0 +1,13 @@
+**
+
+!api-gateway/
+!api-gateway/**
+
+!deploy/
+!deploy/migrations/
+!deploy/migrations/**
+!deploy/seed/
+!deploy/seed/**
+
+!docs/
+!docs/openapi.yaml

@@ -17,7 +17,9 @@ af-core/target/
 # Node / portal
 portal/node_modules/
 portal/dist/
+portal/govagn-vite-*.log
 *.tsbuildinfo
+output/release-control-guided-demo*.png
 
 # Python
 __pycache__/

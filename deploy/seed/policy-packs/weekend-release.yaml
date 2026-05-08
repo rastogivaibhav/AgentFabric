@@ -1,0 +1,116 @@
+schema_version: "1.0"
+pack:
+  id: "pack.regulated_support.release.v1"
+  name: "Regulated Support Release Policy Pack"
+  version: "1.0.0"
+  jurisdiction: ["US", "EU"]
+  owner: "ai-platform-governance"
+  status: "approved"
+  effective_from: "2026-05-10"
+  tags: ["release-control", "support", "regulated"]
+
+defaults:
+  conflict_resolution: "deny_wins"
+  on_unknown: "escalate"
+  evidence_mode: "required"
+  decision_ttl_seconds: 300
+
+definitions:
+  data_classes:
+    - personal_data
+    - customer_profile
+    - account_secret
+    - refund_decision
+  risk_levels:
+    - low
+    - moderate
+    - high
+    - critical
+
+policies:
+  - id: "support.prompt_release.must_have_gate"
+    title: "Production support prompts require a passed release gate"
+    applies_to:
+      actions: ["promote_prompt", "activate_rollout", "deploy_agent"]
+      data_classes: ["customer_profile", "refund_decision"]
+    conditions:
+      all:
+        - field_exists: "context.release_tag"
+        - field_exists: "context.eval_execution_id"
+        - greater_than_or_equal: { field: "context.eval_score", value: 0.85 }
+        - equals: { field: "context.evidence_bundle_created", value: true }
+    decision:
+      if_false: "ESCALATE"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "support_release_gate"
+      - attach_metadata:
+          keys: ["release_tag", "eval_execution_id", "evidence_bundle_id"]
+    severity: "high"
+
+  - id: "support.personal_data.redact_before_model"
+    title: "Personal data must be redacted before model calls when not required"
+    applies_to:
+      actions: ["api_call", "prompt_inject_context", "respond_to_customer"]
+      data_classes: ["personal_data", "customer_profile"]
+    conditions:
+      all:
+        - equals: { field: "context.personal_data_minimized", value: true }
+        - equals: { field: "context.redaction_policy_enabled", value: true }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - redact_nonrequired_fields: true
+      - write_audit: "pii_minimization_check"
+    severity: "critical"
+
+  - id: "support.refund_write_actions.require_human_approval"
+    title: "Refund write actions require human approval"
+    applies_to:
+      actions: ["issue_refund", "change_account_credit", "override_policy"]
+      data_classes: ["refund_decision", "customer_profile"]
+    conditions:
+      all:
+        - equals: { field: "context.human_approval_present", value: true }
+        - field_exists: "context.case_id"
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "refund_approval_check"
+    severity: "critical"
+
+  - id: "support.prompt_injection.fail_closed"
+    title: "Prompt injection attempts fail closed"
+    applies_to:
+      actions: ["api_call", "tool_call", "respond_to_customer"]
+      data_classes: ["customer_profile", "account_secret"]
+    conditions:
+      all:
+        - equals: { field: "context.prompt_injection_detected", value: false }
+    decision:
+      if_false: "DENY"
+      if_true: "PERMIT"
+    obligations:
+      - write_audit: "prompt_injection_gate"
+      - require_human_approval: "security_review"
+    severity: "critical"
+
+controls:
+  logging:
+    enabled: true
+    redact_fields: ["email", "phone", "account_id", "card_pan"]
+  audit:
+    hash_chain: true
+    record_inputs: false
+    record_outputs: true
+    record_tool_calls: true
+  human_review:
+    queue: "support-risk-review"
+    sla_hours: 4
+
+approvals:
+  product_owner: "support-ops@example.com"
+  security_owner: "security@example.com"
+  platform_owner: "ai-platform@example.com"

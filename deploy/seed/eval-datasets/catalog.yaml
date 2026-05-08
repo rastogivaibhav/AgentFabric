@@ -19,3 +19,6 @@ catalog:
     - ref: "retail.refund_decisions.v1"
       file: "industry.yaml"
       category: "industry"
+    - ref: "regulated_support.release.v1"
+      file: "weekend-release.yaml"
+      category: "release-control"
