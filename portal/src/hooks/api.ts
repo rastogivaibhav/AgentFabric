@@ -1168,9 +1168,15 @@ export interface TraceEvalRun {
 }
 
 export interface TraceEvalRequest {
-  trace_id: string
+  trace_id?: string
+  trace_ids?: string[]
   release_tag?: string
   eval_suite?: string
+  pack_id?: string
+  mode?: string
+  dataset_refs?: string[]
+  attributes?: Record<string, unknown>
+  sample_limit?: number
 }
 
 export interface RegressionCompareRequest {
@@ -1202,6 +1208,44 @@ export interface RegressionReport {
   highlights?: string[]
   metrics?: RegressionMetricDelta[]
   generated_at: string
+}
+
+export interface EvalExecutionItem {
+  id: number
+  execution_id: number
+  item_ref: string
+  item_type: string
+  trace_id?: string
+  dataset_ref?: string
+  status: string
+  overall_score: number
+  risk_level?: string
+  summary?: string
+}
+
+export interface EvalExecution {
+  id: number
+  pack_id: string
+  mode: string
+  status: string
+  release_tag?: string
+  trace_ids?: string[]
+  dataset_refs?: string[]
+  attributes?: Record<string, unknown>
+  sample_limit?: number
+  overall_score: number
+  risk_level?: string
+  summary?: string
+  policy_effectiveness: PolicyEffectivenessSummary
+  run_id?: number
+  items?: EvalExecutionItem[]
+  created_at: string
+  updated_at: string
+}
+
+export interface EvalExecutionResponse {
+  execution: EvalExecution
+  run: TraceEvalRun
 }
 
 export interface PromptReleaseEvalSummary {
@@ -1582,6 +1626,28 @@ export function useScoreTraceEval() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['eval-runs'] })
     },
+  })
+}
+
+export function useExecuteEvalPack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: TraceEvalRequest) => apiMutate<EvalExecutionResponse>('/evals/execute', 'POST', req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['eval-runs'] })
+      qc.invalidateQueries({ queryKey: ['eval-executions'] })
+      qc.invalidateQueries({ queryKey: ['prompts'] })
+      qc.invalidateQueries({ queryKey: ['control-audit'] })
+      qc.invalidateQueries({ queryKey: ['control-history'] })
+    },
+  })
+}
+
+export function useEvalExecutions(limit = 20) {
+  return useQuery<Page<EvalExecution>>({
+    queryKey: ['eval-executions', limit],
+    queryFn: () => apiFetch('/evals/executions', { limit: String(limit) }),
+    retry: false,
   })
 }
 
