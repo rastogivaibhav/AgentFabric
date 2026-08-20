@@ -6,4 +6,4 @@ Frozen prompt SHA-256: `833cac63e7c55f5fe227d6b269dd517e37fb664b0c6d722370275165
 
 Gold labels are not present on this branch and are not available to the executor.
 
-Execution attempt: chunked frozen prompt transfer.
+Resume trigger: missing frozen transfer chunk `02` restored; rerun exact contract unchanged.
