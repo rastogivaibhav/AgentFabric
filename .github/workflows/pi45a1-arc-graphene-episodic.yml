@@ -1,0 +1,150 @@
+name: PI4.5A.1 ARC GrapheneDB episodic memory
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'pi45_a1/**'
+
+permissions:
+  contents: read
+
+jobs:
+  episodic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout execution-only PR
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify frozen A1 payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat pi45_a1/payload.part.00 pi45_a1/payload.part.01 pi45_a1/payload.part.02 > /tmp/pi45a1_payload.tgz.b64
+          test "$(wc -c < /tmp/pi45a1_payload.tgz.b64)" -eq 15112
+          echo '6e23baa3a1c6b9855c1cdfd38f6ce367d95b524ee59a97be7113be08555b0fc7  /tmp/pi45a1_payload.tgz.b64' | sha256sum -c -
+          base64 -d /tmp/pi45a1_payload.tgz.b64 > /tmp/pi45a1_payload.tgz
+          echo '0e10bc6e81feab2071d1e75b1dc398656e666801ae0a608edf747b25af5857d6  /tmp/pi45a1_payload.tgz' | sha256sum -c -
+          mkdir -p /tmp/pi45a1
+          tar -xzf /tmp/pi45a1_payload.tgz -C /tmp/pi45a1
+          cd /tmp/pi45a1
+          echo '63f205b3dbbad0d580dc8a262edbf8dd432c3ce6df173e0f888ac2188eeb78d1  arc_a1_graphene_episodic.py' | sha256sum -c -
+          echo '0c517b8c25b118bb85924ca5446f7b6cdb16b895c464e928a45ca532b3f5db8b  pi45_graphene_memory.cpp' | sha256sum -c -
+          echo '1fe625d28b1edda6a034bb442d50de8a901f8579fea658d8b073928239e0da54  CMakeLists.txt' | sha256sum -c -
+          echo '66a24a5b1632a386c6a6f5a5ce91bdda207149ebab8389535bb5c00110b38a86  test_arc_a1_graphene_episodic.py' | sha256sum -c -
+          python3 -m py_compile arc_a1_graphene_episodic.py
+          ! grep -q 'causal_search(' arc_a1_graphene_episodic.py
+          ! grep -q 'lattice_neighbors(' arc_a1_graphene_episodic.py
+          ! grep -q 'FiberBundle' arc_a1_graphene_episodic.py
+
+      - name: Install ARC toolkit and build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build curl git python3.12 python3.12-venv
+          python3.12 -m venv /tmp/pi45venv
+          /tmp/pi45venv/bin/pip install --upgrade pip
+          /tmp/pi45venv/bin/pip install 'arc-agi==0.9.9' pytest
+          /tmp/pi45venv/bin/python - <<'PY'
+          import importlib.metadata
+          assert importlib.metadata.version('arc-agi') == '0.9.9'
+          print('arc_agi_version=0.9.9')
+          PY
+          cd /tmp/pi45a1 && /tmp/pi45venv/bin/pytest -q test_arc_a1_graphene_episodic.py
+
+      - name: Build pinned GrapheneDB episodic helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/rastogivaibhav/graphenedb_v1.git /tmp/graphenedb
+          git -C /tmp/graphenedb checkout 9dfe3681c315008377710a0731eab78ebba798a9
+          test "$(git -C /tmp/graphenedb rev-parse HEAD)" = '9dfe3681c315008377710a0731eab78ebba798a9'
+          cmake -S /tmp/pi45a1 -B /tmp/pi45a1/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRAPHENEDB_SOURCE_DIR=/tmp/graphenedb
+          cmake --build /tmp/pi45a1/build --target pi45_graphene_memory -j 2
+          test -x /tmp/pi45a1/build/pi45_graphene_memory
+          printf '%s\n' '9dfe3681c315008377710a0731eab78ebba798a9' > /tmp/graphenedb_commit.txt
+
+      - name: Build pinned llama.cpp
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/ggerganov/llama.cpp.git /tmp/llama.cpp
+          git -C /tmp/llama.cpp checkout 9ee9fc04c136ef2ae729bfc60d18961b23c13ddf
+          test "$(git -C /tmp/llama.cpp rev-parse HEAD)" = '9ee9fc04c136ef2ae729bfc60d18961b23c13ddf'
+          cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF
+          cmake --build /tmp/llama.cpp/build --target llama-server -j 2
+
+      - name: Download and verify frozen Qwen
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL=/tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf
+          curl -fL --retry 5 --retry-delay 3 --connect-timeout 30 \
+            'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true' \
+            -o "$MODEL"
+          echo '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf' | sha256sum -c -
+          sha256sum "$MODEL" > /tmp/model_SHA256SUMS.txt
+
+      - name: Run frozen A1 public pilot
+        shell: bash
+        env:
+          MODEL_ALIAS: pi45a1-qwen25-15b
+          ARC_GAMES: ls20,ft09,bp35
+          MAX_ACTIONS: '40'
+          MEMORY_WINDOW: '6'
+          OUT_DIR: results/pi45a1
+          GRAPHENE_HELPER: /tmp/pi45a1/build/pi45_graphene_memory
+        run: |
+          set -euo pipefail
+          mkdir -p results/pi45a1
+          cp /tmp/model_SHA256SUMS.txt results/pi45a1/model_SHA256SUMS.txt
+          cp /tmp/graphenedb_commit.txt results/pi45a1/graphenedb_commit.txt
+          git -C /tmp/llama.cpp rev-parse HEAD > results/pi45a1/llama_cpp_commit.txt
+          /tmp/llama.cpp/build/bin/llama-server \
+            -m /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf \
+            -c 4096 --host 127.0.0.1 --port 9090 --alias pi45a1-qwen25-15b \
+            > results/pi45a1/llama_server.log 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:9090/health >/dev/null 2>&1; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = 1
+          /tmp/pi45venv/bin/python /tmp/pi45a1/arc_a1_graphene_episodic.py \
+            --games "$ARC_GAMES" --max-actions "$MAX_ACTIONS" --memory-window "$MEMORY_WINDOW" \
+            --graphene-helper "$GRAPHENE_HELPER" --out "$OUT_DIR"
+          test -f results/pi45a1/summary.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('results/pi45a1/summary.json'))
+          assert x['graphenedb_enabled'] is True
+          assert x['graphenedb_mode']=='episodic_nodes_vector_search_only'
+          assert x['persistent_world_model'] is False
+          assert x['causal_edges_enabled'] is False
+          assert x['hex_fiber_reasoning_enabled'] is False
+          assert x['epistemic_gate_enabled'] is False
+          assert x['model_sha256']=='6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e'
+          for g in x['games']:
+              st=g.get('graphenedb_stats') or {}
+              assert st.get('valid') is True, (g.get('game_id'), st)
+              assert st.get('edges') == 0, (g.get('game_id'), st)
+          print('pi45a1_episodic_contract=PASS')
+          print(json.dumps(x['aggregate'], indent=2))
+          PY
+
+      - name: Hash evidence
+        shell: bash
+        run: |
+          find results/pi45a1 -type f -print0 | sort -z | xargs -0 sha256sum > results/pi45a1/SHA256SUMS.txt
+
+      - name: Upload A1 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi45a1-arc-graphenedb-episodic-evidence
+          path: results/pi45a1
+          if-no-files-found: error
+          retention-days: 7
