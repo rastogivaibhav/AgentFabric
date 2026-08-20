@@ -68,17 +68,32 @@ jobs:
           cd /tmp/pi45a1
           /tmp/pi45venv/bin/pytest -q test_arc_a1_graphene_episodic.py
 
-      - name: Build pinned GrapheneDB episodic helper
+      - name: Verify and build pinned GrapheneDB episodic helper
         shell: bash
         run: |
           set -euo pipefail
-          git clone https://github.com/rastogivaibhav/graphenedb_v1.git /tmp/graphenedb
-          git -C /tmp/graphenedb checkout 9dfe3681c315008377710a0731eab78ebba798a9
-          test "$(git -C /tmp/graphenedb rev-parse HEAD)" = '9dfe3681c315008377710a0731eab78ebba798a9'
-          cmake -S /tmp/pi45a1 -B /tmp/pi45a1/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRAPHENEDB_SOURCE_DIR=/tmp/graphenedb
+          GDB="$GITHUB_WORKSPACE/pi45_a1/graphenedb_snapshot"
+          MANIFEST="$GDB/SOURCE_MANIFEST.txt"
+          test -f "$MANIFEST"
+          grep -qx 'pinned_commit=9dfe3681c315008377710a0731eab78ebba798a9' "$MANIFEST"
+          grep -qx 'source_mode=vendored-byte-identical-core' "$MANIFEST"
+          while read -r rel expected; do
+            case "$rel" in
+              include/*|src/*)
+                actual="$(git hash-object "$GDB/$rel")"
+                test "$actual" = "$expected" || {
+                  echo "GrapheneDB source identity mismatch: $rel expected=$expected actual=$actual" >&2
+                  exit 1
+                }
+                ;;
+            esac
+          done < "$MANIFEST"
+          cmake -S /tmp/pi45a1 -B /tmp/pi45a1/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRAPHENEDB_SOURCE_DIR="$GDB"
           cmake --build /tmp/pi45a1/build --target pi45_graphene_memory -j 2
           test -x /tmp/pi45a1/build/pi45_graphene_memory
           printf '%s\n' '9dfe3681c315008377710a0731eab78ebba798a9' > /tmp/graphenedb_commit.txt
+          printf '%s\n' 'vendored-byte-identical-core' > /tmp/graphenedb_source_mode.txt
+          sha256sum "$MANIFEST" > /tmp/graphenedb_source_manifest_SHA256SUMS.txt
 
       - name: Build pinned llama.cpp
         shell: bash
@@ -115,6 +130,9 @@ jobs:
           mkdir -p "$OUT_DIR"
           cp /tmp/model_SHA256SUMS.txt "$OUT_DIR/model_SHA256SUMS.txt"
           cp /tmp/graphenedb_commit.txt "$OUT_DIR/graphenedb_commit.txt"
+          cp /tmp/graphenedb_source_mode.txt "$OUT_DIR/graphenedb_source_mode.txt"
+          cp /tmp/graphenedb_source_manifest_SHA256SUMS.txt "$OUT_DIR/graphenedb_source_manifest_SHA256SUMS.txt"
+          cp pi45_a1/graphenedb_snapshot/SOURCE_MANIFEST.txt "$OUT_DIR/graphenedb_SOURCE_MANIFEST.txt"
           git -C /tmp/llama.cpp rev-parse HEAD > "$OUT_DIR/llama_cpp_commit.txt"
           printf '%s\n' "game=${ARC_GAMES}" "max_actions=${MAX_ACTIONS}" "memory_window=${MEMORY_WINDOW}" "graphenedb_mode=episodic_nodes_vector_search_only" > "$OUT_DIR/treatment_contract.txt"
           /tmp/llama.cpp/build/bin/llama-server \

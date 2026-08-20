@@ -1,0 +1,18 @@
+GrapheneDB A1 frozen source provenance
+======================================
+pinned_commit=9dfe3681c315008377710a0731eab78ebba798a9
+source_mode=vendored-byte-identical-core
+
+The files below are byte-identical Git blobs from the pinned private GrapheneDB commit.
+The execution workflow verifies each with `git hash-object` before building.
+The local CMakeLists.txt is an execution-only build wrapper and is not claimed as GrapheneDB source.
+
+include/graphene/db.hpp b7df21ed998bb1d95ae355cbd821fa53dfbe4f07
+include/graphene/types.hpp 185ba14204b4eb4939c1c71a7610973fefc0913a
+include/graphene/vector_index.hpp d83fd5f110dc5489c8688aad1bfc1f8376c80135
+include/graphene/faiss_index.hpp 6d7489d4e3799597617b56f664e25e285bfaeff1
+include/graphene/kdtree_index.hpp 599283c176da49ca6083e8a3b3a0099216952a73
+include/graphene/lattice_placement.hpp 1b2e3027a185c26a35e13230bc6e0b5c1aec9c64
+include/graphene/platform.hpp bc99cb0997c1b962f9d6cf5d827aaf88d65aecd9
+src/db.cpp 11ec1f3f230a6ad3aebb240ec56f3e7faabed454
+src/platform_posix.cpp ab07b7c53cf2e193130ec579035a54c75f0d1e47
