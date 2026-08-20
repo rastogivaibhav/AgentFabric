@@ -5,14 +5,22 @@ on:
     branches: [master]
     paths:
       - 'pi45_a1/**'
+      - 'pi45_arc/**'
+      - '.github/workflows/pi45a1-arc-graphene-episodic-v2.yml'
 
 permissions:
   contents: read
 
 jobs:
   episodic:
+    name: episodic-${{ matrix.game }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [ls20, ft09, bp35]
+
     steps:
       - name: Checkout execution-only PR
         uses: actions/checkout@v4
@@ -55,10 +63,7 @@ jobs:
           sudo mkdir -p /mnt/data/pi45a1 /mnt/data/pi45a0
           sudo chown -R "$USER":"$USER" /mnt/data/pi45a1 /mnt/data/pi45a0
           cp /tmp/pi45a1/arc_a1_graphene_episodic.py /mnt/data/pi45a1/arc_a1_graphene_episodic.py
-          curl -fL --retry 5 \
-            'https://raw.githubusercontent.com/rastogivaibhav/AgentFabric/pi45a0-arc-control-20260820/pi45_arc/arc_a0_baseline.py.gz.b64' \
-            -o /tmp/arc_a0_baseline.py.gz.b64
-          base64 -d /tmp/arc_a0_baseline.py.gz.b64 | gzip -d > /mnt/data/pi45a0/arc_a0_baseline.py
+          base64 -d pi45_arc/arc_a0_baseline.py.gz.b64 | gzip -d > /mnt/data/pi45a0/arc_a0_baseline.py
           echo '8c251f9bd3241aa1bdaac988ce462b08ab570fb7bcb89ee21c168dc7cf728e62  /mnt/data/pi45a0/arc_a0_baseline.py' | sha256sum -c -
           cd /tmp/pi45a1
           /tmp/pi45venv/bin/pytest -q test_arc_a1_graphene_episodic.py
@@ -96,25 +101,26 @@ jobs:
           echo '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf' | sha256sum -c -
           sha256sum "$MODEL" > /tmp/model_SHA256SUMS.txt
 
-      - name: Run frozen A1 public pilot
+      - name: Run frozen A1 game
         shell: bash
         env:
           MODEL_ALIAS: pi45a1-qwen25-15b
-          ARC_GAMES: ls20,ft09,bp35
+          ARC_GAMES: ${{ matrix.game }}
           MAX_ACTIONS: '40'
           MEMORY_WINDOW: '6'
-          OUT_DIR: results/pi45a1
+          OUT_DIR: results/pi45a1/${{ matrix.game }}
           GRAPHENE_HELPER: /tmp/pi45a1/build/pi45_graphene_memory
         run: |
           set -euo pipefail
-          mkdir -p results/pi45a1
-          cp /tmp/model_SHA256SUMS.txt results/pi45a1/model_SHA256SUMS.txt
-          cp /tmp/graphenedb_commit.txt results/pi45a1/graphenedb_commit.txt
-          git -C /tmp/llama.cpp rev-parse HEAD > results/pi45a1/llama_cpp_commit.txt
+          mkdir -p "$OUT_DIR"
+          cp /tmp/model_SHA256SUMS.txt "$OUT_DIR/model_SHA256SUMS.txt"
+          cp /tmp/graphenedb_commit.txt "$OUT_DIR/graphenedb_commit.txt"
+          git -C /tmp/llama.cpp rev-parse HEAD > "$OUT_DIR/llama_cpp_commit.txt"
+          printf '%s\n' "game=${ARC_GAMES}" "max_actions=${MAX_ACTIONS}" "memory_window=${MEMORY_WINDOW}" "graphenedb_mode=episodic_nodes_vector_search_only" > "$OUT_DIR/treatment_contract.txt"
           /tmp/llama.cpp/build/bin/llama-server \
             -m /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf \
             -c 4096 --host 127.0.0.1 --port 9090 --alias pi45a1-qwen25-15b \
-            > results/pi45a1/llama_server.log 2>&1 &
+            > "$OUT_DIR/llama_server.log" 2>&1 &
           PID=$!
           trap 'kill "$PID" 2>/dev/null || true' EXIT
           ready=0
@@ -126,10 +132,10 @@ jobs:
           /tmp/pi45venv/bin/python /tmp/pi45a1/arc_a1_graphene_episodic.py \
             --games "$ARC_GAMES" --max-actions "$MAX_ACTIONS" --memory-window "$MEMORY_WINDOW" \
             --graphene-helper "$GRAPHENE_HELPER" --out "$OUT_DIR"
-          test -f results/pi45a1/summary.json
-          python3 - <<'PY'
-          import json
-          x=json.load(open('results/pi45a1/summary.json'))
+          test -f "$OUT_DIR/summary.json"
+          OUT_DIR="$OUT_DIR" python3 - <<'PY'
+          import json, os
+          x=json.load(open(os.path.join(os.environ['OUT_DIR'], 'summary.json')))
           assert x['graphenedb_enabled'] is True
           assert x['graphenedb_mode']=='episodic_nodes_vector_search_only'
           assert x['persistent_world_model'] is False
@@ -145,15 +151,22 @@ jobs:
           print(json.dumps(x['aggregate'], indent=2))
           PY
 
-      - name: Hash evidence
+      - name: Hash available evidence
+        if: always()
         shell: bash
+        env:
+          OUT_DIR: results/pi45a1/${{ matrix.game }}
         run: |
-          find results/pi45a1 -type f -print0 | sort -z | xargs -0 sha256sum > results/pi45a1/SHA256SUMS.txt
+          set -u
+          mkdir -p "$OUT_DIR"
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+          printf '%s\n' "job_status=${{ job.status }}" "game=${{ matrix.game }}" > "$OUT_DIR/job_status.txt"
 
-      - name: Upload A1 evidence
+      - name: Upload A1 game evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pi45a1-arc-graphenedb-episodic-evidence
-          path: results/pi45a1
+          name: pi45a1-arc-graphenedb-${{ matrix.game }}-evidence
+          path: results/pi45a1/${{ matrix.game }}
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
