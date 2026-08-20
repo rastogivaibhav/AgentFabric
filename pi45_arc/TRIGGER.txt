@@ -1,1 +1,1 @@
-PI4.5A.0 synchronize trigger; control payload unchanged.
+PI4.5A.0 synchronize trigger 2; control payload unchanged.
