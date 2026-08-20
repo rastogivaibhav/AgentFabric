@@ -1,0 +1,114 @@
+name: PI4.5A.0 ARC control baseline
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'pi45_arc/**'
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout execution-only PR
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify A0 control
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d pi45_arc/arc_a0_baseline.py.gz.b64 | gzip -d > pi45_arc/arc_a0_baseline.py
+          echo '8c251f9bd3241aa1bdaac988ce462b08ab570fb7bcb89ee21c168dc7cf728e62  pi45_arc/arc_a0_baseline.py' | sha256sum -c -
+          ! grep -qi 'import graphenedb' pi45_arc/arc_a0_baseline.py
+          ! grep -qi 'from graphenedb' pi45_arc/arc_a0_baseline.py
+          python3 -m py_compile pi45_arc/arc_a0_baseline.py
+
+      - name: Install ARC toolkit and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build curl git python3.12 python3.12-venv
+          python3.12 -m venv /tmp/pi45venv
+          /tmp/pi45venv/bin/pip install --upgrade pip
+          /tmp/pi45venv/bin/pip install 'arc-agi==0.9.9'
+          /tmp/pi45venv/bin/python - <<'PY'
+          import importlib.metadata
+          assert importlib.metadata.version('arc-agi') == '0.9.9'
+          print('arc_agi_version=0.9.9')
+          PY
+
+      - name: Build pinned llama.cpp
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/ggerganov/llama.cpp.git /tmp/llama.cpp
+          git -C /tmp/llama.cpp checkout 9ee9fc04c136ef2ae729bfc60d18961b23c13ddf
+          test "$(git -C /tmp/llama.cpp rev-parse HEAD)" = '9ee9fc04c136ef2ae729bfc60d18961b23c13ddf'
+          cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF
+          cmake --build /tmp/llama.cpp/build --target llama-server -j 2
+
+      - name: Download and verify frozen Qwen
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL=/tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf
+          curl -fL --retry 5 --retry-delay 3 --connect-timeout 30 \
+            'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true' \
+            -o "$MODEL"
+          echo '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf' | sha256sum -c -
+          sha256sum "$MODEL" > /tmp/model_SHA256SUMS.txt
+
+      - name: Run frozen A0 public pilot
+        shell: bash
+        env:
+          MODEL_ALIAS: pi45a0-qwen25-15b
+          ARC_GAMES: ls20,ft09,bp35
+          MAX_ACTIONS: '40'
+          MEMORY_WINDOW: '6'
+          OUT_DIR: results/pi45a0
+        run: |
+          set -euo pipefail
+          mkdir -p results/pi45a0
+          cp /tmp/model_SHA256SUMS.txt results/pi45a0/model_SHA256SUMS.txt
+          git -C /tmp/llama.cpp rev-parse HEAD > results/pi45a0/llama_cpp_commit.txt
+          /tmp/llama.cpp/build/bin/llama-server \
+            -m /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf \
+            -c 4096 --host 127.0.0.1 --port 9090 --alias pi45a0-qwen25-15b \
+            > results/pi45a0/llama_server.log 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:9090/health >/dev/null 2>&1; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = 1
+          /tmp/pi45venv/bin/python pi45_arc/arc_a0_baseline.py \
+            --games "$ARC_GAMES" --max-actions "$MAX_ACTIONS" --memory-window "$MEMORY_WINDOW" --out "$OUT_DIR"
+          test -f results/pi45a0/summary.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('results/pi45a0/summary.json'))
+          assert x['graphenedb_enabled'] is False
+          assert x['persistent_world_model'] is False
+          assert x['model_sha256']=='6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e'
+          print('pi45a0_control_contract=PASS')
+          print(json.dumps(x['aggregate'], indent=2))
+          PY
+
+      - name: Hash evidence
+        shell: bash
+        run: |
+          find results/pi45a0 -type f -print0 | sort -z | xargs -0 sha256sum > results/pi45a0/SHA256SUMS.txt
+
+      - name: Upload A0 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi45a0-arc-control-evidence
+          path: results/pi45a0
+          if-no-files-found: error
+          retention-days: 7
