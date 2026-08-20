@@ -1,4 +1,4 @@
-name: PI4.5A.1 ARC GrapheneDB episodic memory v2
+name: PI4.5A.1.1 ARC GrapheneDB episodic memory clean-run
 
 on:
   pull_request:
@@ -116,13 +116,14 @@ jobs:
           echo '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf' | sha256sum -c -
           sha256sum "$MODEL" > /tmp/model_SHA256SUMS.txt
 
-      - name: Run frozen A1 game
+      - name: Run frozen A1.1 game
         shell: bash
         env:
           MODEL_ALIAS: pi45a1-qwen25-15b
           ARC_GAMES: ${{ matrix.game }}
           MAX_ACTIONS: '40'
           MEMORY_WINDOW: '6'
+          CONTEXT_SIZE: '8192'
           OUT_DIR: results/pi45a1/${{ matrix.game }}
           GRAPHENE_HELPER: /tmp/pi45a1/build/pi45_graphene_memory
         run: |
@@ -134,10 +135,10 @@ jobs:
           cp /tmp/graphenedb_source_manifest_SHA256SUMS.txt "$OUT_DIR/graphenedb_source_manifest_SHA256SUMS.txt"
           cp pi45_a1/graphenedb_snapshot/SOURCE_MANIFEST.txt "$OUT_DIR/graphenedb_SOURCE_MANIFEST.txt"
           git -C /tmp/llama.cpp rev-parse HEAD > "$OUT_DIR/llama_cpp_commit.txt"
-          printf '%s\n' "game=${ARC_GAMES}" "max_actions=${MAX_ACTIONS}" "memory_window=${MEMORY_WINDOW}" "graphenedb_mode=episodic_nodes_vector_search_only" > "$OUT_DIR/treatment_contract.txt"
+          printf '%s\n' "game=${ARC_GAMES}" "max_actions=${MAX_ACTIONS}" "memory_window=${MEMORY_WINDOW}" "context_size=${CONTEXT_SIZE}" "graphenedb_mode=episodic_nodes_vector_search_only" "a11_validity_gate=llm_errors_zero" > "$OUT_DIR/treatment_contract.txt"
           /tmp/llama.cpp/build/bin/llama-server \
             -m /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf \
-            -c 4096 --host 127.0.0.1 --port 9090 --alias pi45a1-qwen25-15b \
+            -c "$CONTEXT_SIZE" --host 127.0.0.1 --port 9090 --alias pi45a1-qwen25-15b \
             > "$OUT_DIR/llama_server.log" 2>&1 &
           PID=$!
           trap 'kill "$PID" 2>/dev/null || true' EXIT
@@ -165,7 +166,9 @@ jobs:
               st=g.get('graphenedb_stats') or {}
               assert st.get('valid') is True, (g.get('game_id'), st)
               assert st.get('edges') == 0, (g.get('game_id'), st)
-          print('pi45a1_episodic_contract=PASS')
+              inst=g.get('instrumentation') or {}
+              assert inst.get('llm_errors', 0) == 0, (g.get('game_id'), inst)
+          print('pi45a11_clean_episodic_contract=PASS')
           print(json.dumps(x['aggregate'], indent=2))
           PY
 
@@ -180,11 +183,11 @@ jobs:
           find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
           printf '%s\n' "job_status=${{ job.status }}" "game=${{ matrix.game }}" > "$OUT_DIR/job_status.txt"
 
-      - name: Upload A1 game evidence
+      - name: Upload A1.1 game evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pi45a1-arc-graphenedb-${{ matrix.game }}-evidence
+          name: pi45a11-arc-graphenedb-${{ matrix.game }}-evidence
           path: results/pi45a1/${{ matrix.game }}
           if-no-files-found: error
           retention-days: 14
