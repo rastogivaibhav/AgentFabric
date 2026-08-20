@@ -1,0 +1,119 @@
+name: PI4.3 Qwen2.5-1.5B frozen model run
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'pi42_executor/**'
+
+permissions:
+  contents: read
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout execution-only PR
+        uses: actions/checkout@v4
+
+      - name: Fetch and verify label-free frozen executor assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pi42_executor
+          : > /tmp/prompts.xz.b64
+          for i in 00 01 02 03 04; do
+            curl -fL --retry 5 "https://raw.githubusercontent.com/rastogivaibhav/agentdrama/pi42b-exact-executor-20260820/pi42_executor/prompts.xz.part.${i}" -o "/tmp/prompts.${i}"
+            cat "/tmp/prompts.${i}" >> /tmp/prompts.xz.b64
+          done
+          test "$(wc -c < /tmp/prompts.xz.b64)" -eq 26076
+          curl -fL --retry 5 'https://raw.githubusercontent.com/rastogivaibhav/agentdrama/pi42b-exact-executor-20260820/pi42_executor/pi42_run_fixed_model.py' -o pi42_executor/pi42_run_fixed_model.py
+          base64 -d /tmp/prompts.xz.b64 | xz -d > prompts.jsonl
+          echo '833cac63e7c55f5fe227d6b269dd517e37fb664b0c6d7223702751657a003eb9  prompts.jsonl' | sha256sum -c -
+          test "$(wc -l < prompts.jsonl)" -eq 121
+          test ! -e labels.jsonl
+          test ! -e pi42_executor/labels.jsonl
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build curl git python3
+
+      - name: Build pinned llama.cpp
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/ggerganov/llama.cpp.git /tmp/llama.cpp
+          git -C /tmp/llama.cpp checkout 9ee9fc04c136ef2ae729bfc60d18961b23c13ddf
+          test "$(git -C /tmp/llama.cpp rev-parse HEAD)" = '9ee9fc04c136ef2ae729bfc60d18961b23c13ddf'
+          cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF
+          cmake --build /tmp/llama.cpp/build --target llama-server -j 2
+          test -x /tmp/llama.cpp/build/bin/llama-server
+
+      - name: Download and verify frozen Qwen2.5-1.5B GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL=/tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf
+          curl -fL --retry 5 --retry-delay 3 --connect-timeout 30 \
+            'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true' \
+            -o "$MODEL"
+          echo '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf' | sha256sum -c -
+          ls -lh "$MODEL"
+
+      - name: Run 484 frozen calls
+        shell: bash
+        env:
+          MODEL: /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf
+          LLAMA_DIR: /tmp/llama.cpp
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          sha256sum "$MODEL" > results/model_SHA256SUMS.txt
+          git -C "$LLAMA_DIR" rev-parse HEAD > results/llama_cpp_commit.txt
+          printf '%s\n' 'Qwen/Qwen2.5-1.5B-Instruct-GGUF' > results/model_id.txt
+          "$LLAMA_DIR/build/bin/llama-server" -m "$MODEL" -c 4096 --host 127.0.0.1 --port 9090 --alias pi42-smollm2-360m-instruct-q4km > results/llama_server.log 2>&1 &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:9090/health >/dev/null 2>&1; then ready=1; break; fi
+            sleep 1
+          done
+          if [[ "$ready" != 1 ]]; then cat results/llama_server.log; exit 1; fi
+          python3 pi42_executor/pi42_run_fixed_model.py prompts.jsonl results/predictions.jsonl
+          python3 - results/executor_summary.json <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          assert x['rows']==121 and x['calls']==484
+          assert x['temperature']==0 and x['seed']==4242 and x['max_tokens']==8
+          assert x['gold_labels_available_to_executor'] is False
+          print('pi43_executor_contract=PASS')
+          PY
+
+      - name: Verify output isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(wc -l < results/predictions.jsonl)" -eq 121
+          test ! -e labels.jsonl
+          test ! -e pi42_executor/labels.jsonl
+          sha256sum results/predictions.jsonl > results/predictions_SHA256SUMS.txt
+          cat results/executor_summary.json
+
+      - name: Upload label-free predictions
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi43-qwen15b-exact-frozen-predictions
+          path: |
+            results/predictions.jsonl
+            results/executor_summary.json
+            results/model_SHA256SUMS.txt
+            results/model_id.txt
+            results/llama_cpp_commit.txt
+            results/predictions_SHA256SUMS.txt
+            results/llama_server.log
+          if-no-files-found: error
+          retention-days: 7
