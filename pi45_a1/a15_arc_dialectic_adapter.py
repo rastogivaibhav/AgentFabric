@@ -92,6 +92,8 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
             hid, "Hypothesis", status, str(hyp["statement"]), "Hypothetical", turn,
             {"prediction": hyp["prediction"]},
         ))
+        # Semantic support relation. It remains Inferred because observing a
+        # grid fact does not itself make the hypothesis true.
         for oid in hyp["support_observation_ids"]:
             relations.append({
                 "from": str(oid), "to": hid, "role": "Supports",
@@ -164,6 +166,16 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
 
 
 def outcome_to_native_request(outcome: dict[str, Any], evaluator_game_id: str | None = None) -> dict[str, Any]:
+    """Materialize an observed experiment result and its belief effects.
+
+    Two edge directions are intentional:
+      * outcome -> hypothesis is the semantic epistemic update used by ModelWorld;
+      * hypothesis -> outcome is the causal-graph projection used by Graphene's
+        reverse expansion to construct a root-to-observed-evidence FiberPath.
+
+    Both are Observed only after an environment transition has actually been
+    measured and the strict outcome classifier has assigned the verdict.
+    """
     turn = int(outcome["turn"])
     oid = f"turn-{turn}-outcome"
     node = _node(
@@ -184,13 +196,23 @@ def outcome_to_native_request(outcome: dict[str, Any], evaluator_game_id: str | 
         "origin": "Observed", "confidence": 1.0,
     }]
     for hid in outcome["supports_hypothesis_ids"]:
+        hid = str(hid)
         relations.append({
-            "from": oid, "to": str(hid), "role": "Supports",
+            "from": oid, "to": hid, "role": "Supports",
+            "origin": "Observed", "confidence": 0.80,
+        })
+        relations.append({
+            "from": hid, "to": oid, "role": "Supports",
             "origin": "Observed", "confidence": 0.80,
         })
     for hid in outcome["contradicts_hypothesis_ids"]:
+        hid = str(hid)
         relations.append({
-            "from": oid, "to": str(hid), "role": "Contradicts",
+            "from": oid, "to": hid, "role": "Contradicts",
+            "origin": "Observed", "confidence": 0.80,
+        })
+        relations.append({
+            "from": hid, "to": oid, "role": "Contradicts",
             "origin": "Observed", "confidence": 0.80,
         })
     return {
@@ -225,10 +247,9 @@ def invoke_native(helper: str, request: dict[str, Any], db_path: str) -> dict[st
         raise NativeRuntimeError(f"native helper receipt missing {missing}")
     if not all(bool(receipt[k]) for k in required_receipt):
         raise NativeRuntimeError(f"native GrapheneDB reasoning gate incomplete: {receipt}")
-    if request.get("operation") == "ingest_and_reason":
-        for field in ["reopened_hypothesis_ids", "challenged_claims", "native_falsification_questions"]:
-            if field not in response:
-                raise NativeRuntimeError(f"native controller response missing {field}")
+    for field in ["reopened_hypothesis_ids", "challenged_claims", "native_falsification_questions"]:
+        if field not in response:
+            raise NativeRuntimeError(f"native controller response missing {field}")
     return response
 
 
