@@ -15,12 +15,11 @@ You do NOT know the objective or action semantics. Do not invent target-specific
 Your perceptual evidence is limited to the observable grid, opaque legal actions, and prior outcomes derived from observable grid changes.
 Separate observations from hypotheses. Preserve at least two competing hypotheses.
 Candidate goals must emerge from those hypotheses and current evidence; never use 'win the game' as a goal.
-Choose one provisional hypothesis and goal only for the next experiment, not as truth.
-Oppose the provisional hypothesis with a falsification question and preserve at least one alternative when possible.
+Provide falsification questions that could challenge the current hypothesis set, but DO NOT choose a provisional convergence, challenged hypothesis, or reopen set. The native GrapheneDB/HypoKosh controller owns those decisions.
 Every action is an experiment chosen to discriminate hypotheses or reduce important uncertainty.
 Treat each turn as a new epistemic revision. Use prior GOVERNED_CONTEXT as evidence/history, but create fresh turn-scoped IDs for this turn: tTURN-o..., tTURN-h..., and tTURN-g.... Do not mutate an older ModelWorld node by reusing its ID.
 Follow the supplied opaque action-affordance parameter schema exactly. Do not infer semantic meaning from it.
-Return JSON only. The external GrapheneDB runtime owns convergence, epistemic promotion, opposition/reopening, Lyapunov stability and model-world state."""
+Return JSON only. The external GrapheneDB runtime owns convergence, epistemic promotion, opposition targeting/reopening, Lyapunov stability and model-world state."""
 
 
 def _reject_evaluator_metadata(value: Any, where: str) -> None:
@@ -70,23 +69,21 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
             {"id": g1, "statement": "evidence-seeking/progress goal", "implied_by_hypothesis_ids": [h1, h2],
              "evidence_observation_ids": [obs_id], "status": "active"}
         ],
-        "provisional_hypothesis_id": h1,
-        "provisional_goal_id": g1,
-        "opposition": {"challenged_hypothesis_id": h1, "falsification_questions": ["..."], "reopen_hypothesis_ids": [h2]},
+        "opposition": {"falsification_questions": ["..."]},
         "experiment": {"tests_hypothesis_ids": [h1, h2], "information_goal": "...", "predicted_observation": "...",
                        "action": "EXACT_AVAILABLE_ACTION", "action_params": {}},
         "residual_uncertainty": ["..."],
     }
     prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
     prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
-    prompt += f"\nConstraints: IDs created this turn MUST start with t{turn}-o, t{turn}-h, or t{turn}-g as appropriate. 1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. Every candidate goal MUST include both implied_by_hypothesis_ids and evidence_observation_ids. Use only listed actions. JSON only."
+    prompt += f"\nConstraints: IDs created this turn MUST start with t{turn}-o, t{turn}-h, or t{turn}-g as appropriate. 1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. Every candidate goal MUST include both implied_by_hypothesis_ids and evidence_observation_ids. Do NOT output provisional_hypothesis_id, provisional_goal_id, challenged_hypothesis_id, or reopen_hypothesis_ids. Use only listed actions. JSON only."
     if len(prompt) > max_chars:
         compact = dict(context)
         compact["recent_outcomes"] = compact["recent_outcomes"][-1:]
         compact["governed_context"] = _compact_governed(compact["governed_context"])
         prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(compact, sort_keys=True, separators=(",", ":"))
         prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
-        prompt += f"\nConstraints: use t{turn}-scoped IDs; 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; each goal must include hypothesis and observation links; use only listed actions; JSON only."
+        prompt += f"\nConstraints: use t{turn}-scoped IDs; 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; each goal must include hypothesis and observation links; native controller owns convergence/opposition/reopening; use only listed actions; JSON only."
     if len(prompt) > max_chars:
         raise ValueError(f"A1.5 proposal prompt exceeds dedicated budget: {len(prompt)} > {max_chars}")
     return prompt
@@ -95,12 +92,7 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
 def build_proposal_repair_prompt(*, original_prompt: str, invalid_output: str,
                                  validation_error: str, turn: int,
                                  available_actions: list[str], max_chars: int = 10000) -> str:
-    """Build one bounded proposal repair request without adding world evidence.
-
-    The deterministic validator remains authoritative. The model receives only
-    its original clean request, its rejected output, the validator error, the
-    current turn number, and the already-exposed opaque action identifiers.
-    """
+    """Build one bounded proposal repair request without adding world evidence."""
     if any(not str(a).startswith("ACTION") for a in available_actions):
         raise ValueError("proposal repair actions must remain opaque ACTIONn identifiers")
     payload = {
@@ -114,6 +106,7 @@ Repair that SAME proposal using ONLY the evidence in ORIGINAL PROPOSAL REQUEST.
 Do not add hidden semantics, score, level, terminal state, game identity, or new observations.
 Preserve at least two competing hypotheses and one evidence-linked candidate goal.
 Every candidate goal MUST contain `implied_by_hypothesis_ids` and `evidence_observation_ids`, referencing IDs present in this turn's proposal.
+Provide one to three falsification questions, but do NOT output provisional_hypothesis_id, provisional_goal_id, challenged_hypothesis_id, or reopen_hypothesis_ids; those are native-controller-owned decisions.
 Preserve turn-scoped IDs beginning with t{turn}-o, t{turn}-h, and t{turn}-g.
 Use only the listed opaque actions and the supplied parameter schema.
 Do not treat any hypothesis or goal as truth. Return one corrected JSON object only."""
@@ -125,8 +118,11 @@ Do not treat any hypothesis or goal as truth. Return one corrected JSON object o
 
 
 def _compact_governed(value: dict[str, Any]) -> dict[str, Any]:
-    keys = ["status", "primary_hypothesis_id", "candidate_goal_ids", "reopen_hypothesis_ids",
-            "residual_uncertainty", "escape_required", "lyapunov_goal_reached", "model_world_nodes"]
+    keys = [
+        "status", "primary_hypothesis_id", "candidate_goal_ids", "reopened_hypothesis_ids",
+        "challenged_claims", "native_falsification_questions", "residual_uncertainty",
+        "escape_required", "lyapunov_goal_reached", "model_world_nodes",
+    ]
     out = {k: value[k] for k in keys if k in value}
     if isinstance(out.get("model_world_nodes"), list):
         out["model_world_nodes"] = out["model_world_nodes"][-8:]
