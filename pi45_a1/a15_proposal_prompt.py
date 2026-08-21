@@ -79,16 +79,48 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
     }
     prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
     prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
-    prompt += f"\nConstraints: IDs created this turn MUST start with t{turn}-o, t{turn}-h, or t{turn}-g as appropriate. 1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. Use only listed actions. JSON only."
+    prompt += f"\nConstraints: IDs created this turn MUST start with t{turn}-o, t{turn}-h, or t{turn}-g as appropriate. 1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. Every candidate goal MUST include both implied_by_hypothesis_ids and evidence_observation_ids. Use only listed actions. JSON only."
     if len(prompt) > max_chars:
         compact = dict(context)
         compact["recent_outcomes"] = compact["recent_outcomes"][-1:]
         compact["governed_context"] = _compact_governed(compact["governed_context"])
         prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(compact, sort_keys=True, separators=(",", ":"))
         prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
-        prompt += f"\nConstraints: use t{turn}-scoped IDs; 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; use only listed actions; JSON only."
+        prompt += f"\nConstraints: use t{turn}-scoped IDs; 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; each goal must include hypothesis and observation links; use only listed actions; JSON only."
     if len(prompt) > max_chars:
         raise ValueError(f"A1.5 proposal prompt exceeds dedicated budget: {len(prompt)} > {max_chars}")
+    return prompt
+
+
+def build_proposal_repair_prompt(*, original_prompt: str, invalid_output: str,
+                                 validation_error: str, turn: int,
+                                 available_actions: list[str], max_chars: int = 10000) -> str:
+    """Build one bounded proposal repair request without adding world evidence.
+
+    The deterministic validator remains authoritative. The model receives only
+    its original clean request, its rejected output, the validator error, the
+    current turn number, and the already-exposed opaque action identifiers.
+    """
+    if any(not str(a).startswith("ACTION") for a in available_actions):
+        raise ValueError("proposal repair actions must remain opaque ACTIONn identifiers")
+    payload = {
+        "turn": int(turn),
+        "validation_error": str(validation_error)[:800],
+        "available_actions": [str(a) for a in available_actions],
+        "rejected_output": str(invalid_output)[:4200],
+    }
+    rules = f"""Your previous proposal JSON for turn {turn} was rejected by the deterministic epistemic contract.
+Repair that SAME proposal using ONLY the evidence in ORIGINAL PROPOSAL REQUEST.
+Do not add hidden semantics, score, level, terminal state, game identity, or new observations.
+Preserve at least two competing hypotheses and one evidence-linked candidate goal.
+Every candidate goal MUST contain `implied_by_hypothesis_ids` and `evidence_observation_ids`, referencing IDs present in this turn's proposal.
+Preserve turn-scoped IDs beginning with t{turn}-o, t{turn}-h, and t{turn}-g.
+Use only the listed opaque actions and the supplied parameter schema.
+Do not treat any hypothesis or goal as truth. Return one corrected JSON object only."""
+    prompt = rules + "\n\nORIGINAL PROPOSAL REQUEST:\n" + original_prompt
+    prompt += "\n\nREPAIR CONTEXT:\n" + json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    if len(prompt) > max_chars:
+        raise ValueError(f"A1.5 proposal repair prompt exceeds dedicated budget: {len(prompt)} > {max_chars}")
     return prompt
 
 
