@@ -2,49 +2,49 @@
   "turn": 0,
   "observations": [
     {
-      "id": "o0-state",
-      "statement": "The initial state contains visible spatial structure whose semantics are unknown.",
-      "evidence_ref": "arc:turn:0:state"
+      "id": "t0-o-state",
+      "statement": "The initial grid contains visible spatial structure whose semantics are unknown.",
+      "evidence_ref": "grid:turn:0"
     }
   ],
   "hypotheses": [
     {
-      "id": "h0-interactable",
+      "id": "t0-h-interactable",
       "statement": "At least one visible element may respond to an available action.",
-      "support_observation_ids": ["o0-state"],
-      "prediction": "A suitable action will produce a persistent observable change.",
+      "support_observation_ids": ["t0-o-state"],
+      "prediction": "A suitable action will produce a persistent observable grid change.",
       "status": "active"
     },
     {
-      "id": "h0-inert",
+      "id": "t0-h-inert",
       "statement": "The currently salient visible element may not respond in the present context.",
-      "support_observation_ids": ["o0-state"],
-      "prediction": "Probing it will leave the observable state unchanged.",
+      "support_observation_ids": ["t0-o-state"],
+      "prediction": "Probing it will leave the observable grid unchanged.",
       "status": "proposed"
     }
   ],
   "candidate_goals": [
     {
-      "id": "g0-discover-rule",
-      "statement": "Identify one reproducible interaction rule that distinguishes controllable from non-controllable state.",
-      "implied_by_hypothesis_ids": ["h0-interactable", "h0-inert"],
-      "evidence_observation_ids": ["o0-state"],
+      "id": "t0-g-discover-rule",
+      "statement": "Identify one reproducible interaction rule that distinguishes controllable from non-controllable visible state.",
+      "implied_by_hypothesis_ids": ["t0-h-interactable", "t0-h-inert"],
+      "evidence_observation_ids": ["t0-o-state"],
       "status": "active"
     }
   ],
-  "provisional_hypothesis_id": "h0-interactable",
-  "provisional_goal_id": "g0-discover-rule",
+  "provisional_hypothesis_id": "t0-h-interactable",
+  "provisional_goal_id": "t0-g-discover-rule",
   "opposition": {
-    "challenged_hypothesis_id": "h0-interactable",
+    "challenged_hypothesis_id": "t0-h-interactable",
     "falsification_questions": [
-      "What result would show that the salient element is inert rather than controllable?"
+      "What observable grid result would show that the salient element is inert rather than controllable?"
     ],
-    "reopen_hypothesis_ids": ["h0-inert"]
+    "reopen_hypothesis_ids": ["t0-h-inert"]
   },
   "experiment": {
-    "tests_hypothesis_ids": ["h0-interactable", "h0-inert"],
+    "tests_hypothesis_ids": ["t0-h-interactable", "t0-h-inert"],
     "information_goal": "Discriminate between responsive and inert interpretations.",
-    "predicted_observation": "The state either changes persistently or remains invariant.",
+    "predicted_observation": "The grid either changes persistently or remains invariant.",
     "action": "ACTION1",
     "action_params": {}
   },
