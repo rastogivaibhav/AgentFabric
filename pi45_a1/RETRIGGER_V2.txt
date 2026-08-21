@@ -1,0 +1,1 @@
+PI4.5A.1 scientific payload unchanged; rerun after CI-only absolute path repair.
