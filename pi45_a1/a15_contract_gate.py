@@ -22,6 +22,16 @@ _TEMPLATE_TEXT = {
     "exact_available_action",
 }
 
+_NON_EVIDENCE_PHRASES = {
+    "previous proposal was rejected",
+    "proposal was rejected",
+    "validation error",
+    "deterministic epistemic contract",
+    "output contract",
+    "repair context",
+    "repair instruction",
+}
+
 
 def load_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -39,8 +49,12 @@ def _require_concrete_text(value: Any, where: str) -> str:
     text = value.strip()
     if not text:
         raise ContractError(f"{where}: must not be empty")
-    if text.lower() in _TEMPLATE_TEXT:
+    lower = text.lower()
+    if lower in _TEMPLATE_TEXT:
         raise ContractError(f"{where}: copied/template semantic text is forbidden")
+    leaked = sorted(fragment for fragment in _NON_EVIDENCE_PHRASES if fragment in lower)
+    if leaked:
+        raise ContractError(f"{where}: validator/contract feedback is not world evidence: {leaked}")
     return text
 
 
@@ -132,6 +146,21 @@ def _require_turn_scoped(ids: set[str], prefix: str, where: str) -> None:
         raise ContractError(f"{where}: ids must be turn-scoped with prefix {prefix!r}; got {bad}")
 
 
+def _validate_evidence_ref(kind: str, evidence_ref: str, where: str) -> None:
+    required_prefix = {
+        "grid": "grid:",
+        "transition": "transition:",
+        "affordance": "affordance:",
+        "memory": "memory:",
+    }.get(kind)
+    if required_prefix is None:
+        raise ContractError(f"{where}: unsupported evidence_kind {kind!r}")
+    if not evidence_ref.startswith(required_prefix):
+        raise ContractError(
+            f"{where}: evidence_ref {evidence_ref!r} does not match evidence_kind {kind!r}"
+        )
+
+
 def validate_turn(
     proposal: dict[str, Any],
     contract: dict[str, Any],
@@ -154,17 +183,25 @@ def validate_turn(
         raise ContractError("turn_proposal: candidate-goal count outside contract")
 
     obj_specs = spec["objects"]
+    observation_kind_by_id: dict[str, str] = {}
     for idx, item in enumerate(observations):
         require_keys(item, obj_specs["observation"]["required"], f"observations[{idx}]")
         _require_concrete_text(item["statement"], f"observations[{idx}].statement")
-        _require_concrete_text(item["evidence_ref"], f"observations[{idx}].evidence_ref")
+        evidence_ref = _require_concrete_text(item["evidence_ref"], f"observations[{idx}].evidence_ref")
+        kind = str(item["evidence_kind"])
+        if kind not in set(map(str, obj_specs["observation"]["allowed_evidence_kind"])):
+            raise ContractError(f"observations[{idx}]: invalid evidence_kind {kind!r}")
+        _validate_evidence_ref(kind, evidence_ref, f"observations[{idx}]")
+        observation_kind_by_id[str(item["id"])] = kind
 
     hypothesis_statements: list[str] = []
     for idx, item in enumerate(hypotheses):
         require_keys(item, obj_specs["hypothesis"]["required"], f"hypotheses[{idx}]")
         if item["status"] not in obj_specs["hypothesis"]["allowed_status"]:
             raise ContractError(f"hypotheses[{idx}]: invalid status {item['status']}")
-        hypothesis_statements.append(_require_concrete_text(item["statement"], f"hypotheses[{idx}].statement").lower())
+        hypothesis_statements.append(
+            _require_concrete_text(item["statement"], f"hypotheses[{idx}].statement").lower()
+        )
         _require_concrete_text(item["prediction"], f"hypotheses[{idx}].prediction")
     if len(hypothesis_statements) != len(set(hypothesis_statements)):
         raise ContractError("hypotheses: competing hypotheses must have distinct statements")
@@ -184,21 +221,37 @@ def validate_turn(
     _require_turn_scoped(hypothesis_ids, f"t{turn}-h", "hypotheses")
     _require_turn_scoped(goal_ids, f"t{turn}-g", "candidate_goals")
 
+    hypothesis_basis_required = list(obj_specs["hypothesis"].get("basis_item_required") or [])
+    hypothesis_basis_min = int(limits.get("hypothesis_basis_min", 1))
+    required_world_kinds = set(map(str, obj_specs["hypothesis"].get("required_world_evidence_kind") or []))
     for idx, hypothesis in enumerate(hypotheses):
-        support = set(map(str, hypothesis["support_observation_ids"]))
-        if not support or not support.issubset(observation_ids):
-            raise ContractError(f"hypotheses[{idx}]: must reference known observation evidence")
+        basis = hypothesis.get("basis")
+        if not isinstance(basis, list) or len(basis) < hypothesis_basis_min:
+            raise ContractError(f"hypotheses[{idx}]: must contain at least one explicit observation basis")
+        linked_kinds: set[str] = set()
+        for basis_idx, link in enumerate(basis):
+            if not isinstance(link, dict):
+                raise ContractError(f"hypotheses[{idx}].basis[{basis_idx}]: must be an object")
+            require_keys(link, hypothesis_basis_required, f"hypotheses[{idx}].basis[{basis_idx}]")
+            observation_id = str(link["observation_id"])
+            if observation_id not in observation_ids:
+                raise ContractError(f"hypotheses[{idx}].basis[{basis_idx}]: unknown observation")
+            linked_kinds.add(observation_kind_by_id[observation_id])
+        if required_world_kinds and not (linked_kinds & required_world_kinds):
+            raise ContractError(
+                f"hypotheses[{idx}]: causal/world hypothesis must be grounded in grid or transition evidence"
+            )
 
-    basis_required = list(obj_specs["candidate_goal"].get("basis_item_required") or [])
-    basis_min = int(limits.get("goal_basis_min", 1))
+    goal_basis_required = list(obj_specs["candidate_goal"].get("basis_item_required") or [])
+    goal_basis_min = int(limits.get("goal_basis_min", 1))
     for idx, goal in enumerate(goals):
         basis = goal.get("basis")
-        if not isinstance(basis, list) or len(basis) < basis_min:
+        if not isinstance(basis, list) or len(basis) < goal_basis_min:
             raise ContractError(f"candidate_goals[{idx}]: must contain at least one explicit basis pair")
         for basis_idx, link in enumerate(basis):
             if not isinstance(link, dict):
                 raise ContractError(f"candidate_goals[{idx}].basis[{basis_idx}]: must be an object")
-            require_keys(link, basis_required, f"candidate_goals[{idx}].basis[{basis_idx}]")
+            require_keys(link, goal_basis_required, f"candidate_goals[{idx}].basis[{basis_idx}]")
             hypothesis_id = str(link["hypothesis_id"])
             observation_id = str(link["observation_id"])
             if hypothesis_id not in hypothesis_ids:
@@ -264,19 +317,34 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
     proposal = {
         "turn": 0,
         "observations": [
-            {"id": "t0-o1", "statement": "A 2x2 region of value 1 is visible near the upper-left quadrant.", "evidence_ref": "grid:0"}
+            {
+                "id": "t0-o1",
+                "statement": "A 2x2 region of value 1 is visible near the upper-left quadrant.",
+                "evidence_ref": "grid:0",
+                "evidence_kind": "grid"
+            },
+            {
+                "id": "t0-o2",
+                "statement": "ACTION1 is currently available as an opaque affordance.",
+                "evidence_ref": "affordance:0:ACTION1",
+                "evidence_kind": "affordance"
+            }
         ],
         "hypotheses": [
             {
-                "id": "t0-h1", "statement": "The 2x2 region may respond to one opaque action.",
-                "support_observation_ids": ["t0-o1"],
-                "prediction": "A responsive action would alter at least one cell in that region.", "status": "active",
+                "id": "t0-h1",
+                "statement": "The 2x2 region may respond to one opaque action.",
+                "basis": [{"observation_id": "t0-o1"}],
+                "prediction": "A responsive action would alter at least one cell in that region.",
+                "status": "active"
             },
             {
-                "id": "t0-h2", "statement": "The visible 2x2 region may remain invariant under the available actions.",
-                "support_observation_ids": ["t0-o1"],
-                "prediction": "A probe could leave every grid cell unchanged.", "status": "proposed",
-            },
+                "id": "t0-h2",
+                "statement": "The visible 2x2 region may remain invariant under the available actions.",
+                "basis": [{"observation_id": "t0-o1"}],
+                "prediction": "A probe could leave every grid cell unchanged.",
+                "status": "proposed"
+            }
         ],
         "candidate_goals": [
             {
@@ -286,26 +354,37 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
                     {"hypothesis_id": "t0-h1", "observation_id": "t0-o1"},
                     {"hypothesis_id": "t0-h2", "observation_id": "t0-o1"}
                 ],
-                "status": "active",
+                "status": "active"
             }
         ],
-        "opposition": {"falsification_questions": ["Would an unchanged grid after the probe favor the invariant interpretation?"]},
+        "opposition": {
+            "falsification_questions": [
+                "Would an unchanged grid after the probe favor the invariant interpretation?"
+            ]
+        },
         "experiment": {
             "tests_hypothesis_ids": ["t0-h1", "t0-h2"],
             "information_goal": "Test whether the current grid responds to ACTION1.",
             "predicted_observation": "Either at least one cell changes or the grid remains unchanged.",
-            "action": "ACTION1", "action_params": {},
+            "action": "ACTION1",
+            "action_params": {}
         },
-        "residual_uncertainty": ["The semantics of ACTION1 and ACTION2 are unknown."],
+        "residual_uncertainty": ["The semantics of ACTION1 and ACTION2 are unknown."]
     }
     validate_turn(proposal, contract, {"ACTION1", "ACTION2"})
 
     outcome = {
-        "turn": 0, "experiment_id": "turn-0-experiment", "action": "ACTION1",
-        "before_grid_digest": "before", "after_grid_digest": "after",
-        "changed_cells": 1, "changed_regions": ["r0"], "persistent_change": True,
+        "turn": 0,
+        "experiment_id": "turn-0-experiment",
+        "action": "ACTION1",
+        "before_grid_digest": "before",
+        "after_grid_digest": "after",
+        "changed_cells": 1,
+        "changed_regions": ["r0"],
+        "persistent_change": True,
         "observed_effect": "One visible cell changed persistently after ACTION1.",
-        "supports_hypothesis_ids": ["t0-h1"], "contradicts_hypothesis_ids": ["t0-h2"],
+        "supports_hypothesis_ids": ["t0-h1"],
+        "contradicts_hypothesis_ids": ["t0-h2"]
     }
     validate_outcome(outcome, contract, {"t0-h1", "t0-h2"})
 
@@ -327,10 +406,37 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
     else:
         raise AssertionError("self-test failed: copied prompt template was accepted")
 
-    bad_basis = json.loads(json.dumps(proposal))
-    bad_basis["candidate_goals"][0]["basis"] = []
+    bad_feedback = json.loads(json.dumps(proposal))
+    bad_feedback["hypotheses"][0]["statement"] = "The previous proposal was rejected by the validation error."
     try:
-        validate_turn(bad_basis, contract, {"ACTION1"})
+        validate_turn(bad_feedback, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: validator feedback became world evidence")
+
+    bad_hypothesis_basis = json.loads(json.dumps(proposal))
+    bad_hypothesis_basis["hypotheses"][0]["basis"] = []
+    try:
+        validate_turn(bad_hypothesis_basis, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: evidence-free hypothesis basis was accepted")
+
+    affordance_only_hypothesis = json.loads(json.dumps(proposal))
+    affordance_only_hypothesis["hypotheses"][0]["basis"] = [{"observation_id": "t0-o2"}]
+    try:
+        validate_turn(affordance_only_hypothesis, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: affordance-only causal hypothesis was accepted")
+
+    bad_goal_basis = json.loads(json.dumps(proposal))
+    bad_goal_basis["candidate_goals"][0]["basis"] = []
+    try:
+        validate_turn(bad_goal_basis, contract, {"ACTION1"})
     except ContractError:
         pass
     else:
