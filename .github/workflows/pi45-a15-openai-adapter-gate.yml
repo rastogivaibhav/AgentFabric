@@ -1,0 +1,40 @@
+name: PI4.5 A1.5 OpenAI Adapter Safety Gate
+
+on:
+  pull_request:
+    branches: [pi45-a14-minimal-interactive-world-prior-20260821]
+    paths:
+      - 'pi45_a1/a15_openai_arc_paper_runner.py'
+      - 'pi45_a1/a15_prepare_arc_api.sh'
+      - 'pi45_a1/a15_run_openai_arc_paper.sh'
+      - '.github/workflows/pi45-a15-openai-capacity-control.yml'
+      - '.github/workflows/pi45-a15-openai-adapter-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  adapter-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static API adapter safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            pi45_a1/a15_openai_arc_paper_runner.py \
+            pi45_a1/a15_arc_paper_runner.py \
+            pi45_a1/a15_arc_diagnostic_runner.py
+          bash -n pi45_a1/a15_prepare_arc_api.sh
+          bash -n pi45_a1/a15_run_openai_arc_paper.sh
+          ! grep -R --line-number --fixed-strings 'sk-' \
+            pi45_a1/a15_openai_arc_paper_runner.py \
+            pi45_a1/a15_run_openai_arc_paper.sh \
+            .github/workflows/pi45-a15-openai-capacity-control.yml
+          ! grep -R --line-number 'echo .*OPENAI_API_KEY\|print.*OPENAI_API_KEY\|sha256sum .*OPENAI_API_KEY' \
+            pi45_a1/a15_openai_arc_paper_runner.py \
+            pi45_a1/a15_run_openai_arc_paper.sh
+          PYTHONPATH=pi45_a1 python3 pi45_a1/a15_contract_gate.py
+          echo 'openai_adapter_safety=PASS'
