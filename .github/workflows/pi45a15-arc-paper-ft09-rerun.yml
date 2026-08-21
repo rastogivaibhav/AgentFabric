@@ -1,0 +1,62 @@
+name: PI4.5 A1.5 ARC ft09 Measurement Rerun
+
+on:
+  pull_request:
+    branches: [pi45-a14-minimal-interactive-world-prior-20260821]
+    paths:
+      - 'pi45_a1/ARC_A15_FT09_RERUN_TRIGGER.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: ft09-rerun-preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and epistemic contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile pi45_a1/a15_arc_paper_runner.py pi45_a1/arc_paper_normalize.py
+          PYTHONPATH="$GITHUB_WORKSPACE/pi45_a1" python3 -m unittest -v \
+            pi45_a1/test_a15_proposal_prompt.py \
+            pi45_a1/test_a15_outcome_prompt.py \
+            pi45_a1/test_a15_arc_dialectic_adapter.py
+
+  a15-ft09-rerun:
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare pinned environment
+        shell: bash
+        run: bash pi45_a1/a13_prepare.sh
+      - name: Run frozen A1.5 treatment on ft09
+        shell: bash
+        env:
+          OUT_DIR: results/arc-paper-rerun/a15/ft09
+        run: |
+          set -euo pipefail
+          bash pi45_a1/a15_run_arc_paper.sh ft09 10 "$OUT_DIR"
+      - name: Normalize rerun
+        if: always()
+        shell: bash
+        env:
+          OUT_DIR: results/arc-paper-rerun/a15/ft09
+        run: |
+          set -u
+          mkdir -p "$OUT_DIR"
+          python3 pi45_a1/arc_paper_normalize.py --variant a15 --out-dir "$OUT_DIR" --game ft09 --max-actions 10 --output "$OUT_DIR/paper_result.json" > "$OUT_DIR/normalizer_stdout.log" 2>&1 || true
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+      - name: Upload corrected ft09 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-a15-ft09-corrected
+          path: results/arc-paper-rerun/a15/ft09
+          if-no-files-found: error
+          retention-days: 30
