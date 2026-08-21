@@ -1,34 +1,8 @@
 name: PI4.5 A1.5 Synthetic Dialectical Harness
 
-# Pre-game proof only. The harness links the full ModelWorld platform durability
-# dependency closure and contains no ARC game execution surface.
+# Development sanity harness only. ARC paper evidence now comes from controlled
+# live comparisons; synthetic execution is deliberately manual-only.
 on:
-  pull_request:
-    branches: [pi45-a14-minimal-interactive-world-prior-20260821]
-    paths:
-      - 'pi45_a1/a15_synthetic_world_harness.py'
-      - 'pi45_a1/a15_synthetic_world_harness_v2.py'
-      - 'pi45_a1/a15_run_synthetic_harness.sh'
-      - 'pi45_a1/a15_arc_dialectic_adapter.py'
-      - 'pi45_a1/a15_contract_gate.py'
-      - 'pi45_a1/a15_proposal_prompt.py'
-      - 'pi45_a1/a15_outcome_prompt.py'
-      - 'pi45_a1/test_a15_**'
-      - 'pi45_a1/a15_reasoning_constitution.json'
-      - 'pi45_a1/a15_state_contract.json'
-      - 'pi45_a1/a15_native_runtime_helper.cpp'
-      - 'pi45_a1/a15_graphene_bootstrap.cpp'
-      - 'pi45_a1/a15_model_world_dump.cpp'
-      - 'pi45_a1/a15_native_runtime/**'
-      - 'pi45_a1/a15_native_model_world/**'
-      - '.github/workflows/pi45-a15-synthetic-harness.yml'
-  push:
-    branches: [pi45-a15-dialectical-model-world-20260821]
-    paths:
-      - 'pi45_a1/a15_synthetic_world_harness.py'
-      - 'pi45_a1/a15_synthetic_world_harness_v2.py'
-      - 'pi45_a1/a15_run_synthetic_harness.sh'
-      - '.github/workflows/pi45-a15-synthetic-harness.yml'
   workflow_dispatch:
 
 permissions:
@@ -71,9 +45,9 @@ jobs:
           mkdir -p "$OUT_DIR"
           printf '%s\n' \
             "job_status=${{ job.status }}" \
-            "phase=pre_game_synthetic_harness" \
+            "phase=development_synthetic_sanity" \
             "arc_game_execution=false" \
-            "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
+            "head_sha=${{ github.sha }}" \
             > "$OUT_DIR/job_status.txt"
           find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
 
