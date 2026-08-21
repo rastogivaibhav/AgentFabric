@@ -1,0 +1,50 @@
+name: PI4.5 A1.5 Native Dialectical Runtime Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - pi45-a15-dialectical-model-world-20260821
+    paths:
+      - 'pi45_a1/a15_native_runtime_helper.cpp'
+      - 'pi45_a1/a15_native_runtime_proof.sh'
+      - 'pi45_a1/a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/a15_example_turn.json'
+      - 'pi45_a1/a15_example_outcome.json'
+      - '.github/workflows/pi45-a15-native-runtime-gate.yml'
+  pull_request:
+    branches:
+      - pi45-a14-minimal-interactive-world-prior-20260821
+    paths:
+      - 'pi45_a1/a15_native_runtime_helper.cpp'
+      - 'pi45_a1/a15_native_runtime_proof.sh'
+      - 'pi45_a1/a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/a15_example_turn.json'
+      - 'pi45_a1/a15_example_outcome.json'
+      - '.github/workflows/pi45-a15-native-runtime-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native-dialectical-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax and contract tests
+        env:
+          PYTHONPATH: pi45_a1
+        run: |
+          python3 -m py_compile pi45_a1/a15_arc_dialectic_adapter.py
+          python3 -m unittest -v pi45_a1/test_a15_arc_dialectic_adapter.py
+      - name: Build and prove native GrapheneDB HypoKosh bridge
+        run: bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-evidence
+      - name: Record commit
+        run: printf '%s\n' "${GITHUB_SHA}" > /tmp/a15-native-runtime-evidence/agentfabric_commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi45-a15-native-runtime-evidence
+          path: /tmp/a15-native-runtime-evidence
+          if-no-files-found: error
+          retention-days: 14

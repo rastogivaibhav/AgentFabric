@@ -1,0 +1,82 @@
+name: PI4.5 A1.5 OpenAI Capacity Control
+
+# The workflow can be run manually, or once via a sentinel created only after
+# the project-scoped OpenAI key has been configured as a GitHub Actions secret.
+on:
+  pull_request:
+    branches: [pi45-a14-minimal-interactive-world-prior-20260821]
+    paths:
+      - 'pi45_a1/OPENAI_CAPACITY_CONTROL_TRIGGER.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static safety and epistemic checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            pi45_a1/a15_openai_arc_paper_runner.py \
+            pi45_a1/a15_arc_paper_runner.py \
+            pi45_a1/a15_arc_diagnostic_runner.py
+          bash -n pi45_a1/a15_prepare_arc_api.sh
+          bash -n pi45_a1/a15_run_openai_arc_paper.sh
+          ! grep -R --line-number --fixed-strings 'sk-' \
+            pi45_a1/a15_openai_arc_paper_runner.py \
+            pi45_a1/a15_run_openai_arc_paper.sh \
+            .github/workflows/pi45-a15-openai-capacity-control.yml
+          PYTHONPATH=pi45_a1 python3 pi45_a1/a15_contract_gate.py
+
+  openai-dmw-ft09:
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      OPENAI_API_KEY: ${{ secrets.pulapi }}
+      OPENAI_MODEL: gpt-5.6-sol
+      OUT_DIR: results/arc-paper/openai-dmw/ft09
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare ARC API environment
+        shell: bash
+        run: bash pi45_a1/a15_prepare_arc_api.sh
+      - name: Verify secret is present without exposing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}" || {
+            echo 'Configured GitHub Actions secret pulapi was not exposed to OPENAI_API_KEY.' >&2
+            exit 78
+          }
+          echo 'openai_api_key_present=true'
+      - name: Run frozen A1.5 with OpenAI proposer
+        shell: bash
+        run: bash pi45_a1/a15_run_openai_arc_paper.sh ft09 10 "$OUT_DIR"
+      - name: Record immutable experiment identity
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$OUT_DIR"
+          printf '%s\n' \
+            'experiment=PI4.5A1.5-openai-capacity-control' \
+            'condition=openai-plus-dmw' \
+            'game=ft09' \
+            'max_actions=10' \
+            'model=gpt-5.6-sol' \
+            "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
+            > "$OUT_DIR/workflow_identity.txt"
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+      - name: Upload capacity-control evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-openai-dmw-ft09
+          path: results/arc-paper/openai-dmw/ft09
+          if-no-files-found: error
+          retention-days: 30

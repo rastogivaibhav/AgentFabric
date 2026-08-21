@@ -1,0 +1,152 @@
+{
+  "schema_version": 5,
+  "perception_contract": {
+    "reasoning_allowed_inputs": [
+      "current_grid",
+      "opaque_available_actions",
+      "prior_agent_actions",
+      "before_after_grid_changes",
+      "graphenedb_memories_derived_from_allowed_inputs"
+    ],
+    "evaluator_only_fields": [
+      "game_id",
+      "guid",
+      "state",
+      "levels_completed",
+      "win_levels",
+      "score",
+      "score_delta",
+      "level_delta",
+      "scorecard",
+      "official_success",
+      "level_scores"
+    ],
+    "native_world_scope": "a15-isolated-world"
+  },
+  "turn_proposal": {
+    "required": [
+      "turn",
+      "observations",
+      "hypotheses",
+      "candidate_goals",
+      "opposition",
+      "experiment",
+      "residual_uncertainty"
+    ],
+    "controller_owned_fields": [
+      "provisional_hypothesis_id",
+      "provisional_goal_id",
+      "challenged_hypothesis_id",
+      "reopen_hypothesis_ids"
+    ],
+    "limits": {
+      "observations_min": 1,
+      "observations_max": 8,
+      "hypotheses_min": 2,
+      "hypotheses_max": 5,
+      "hypothesis_basis_min": 1,
+      "candidate_goals_min": 1,
+      "candidate_goals_max": 3,
+      "goal_basis_min": 1,
+      "falsification_questions_min": 1,
+      "falsification_questions_max": 3
+    },
+    "objects": {
+      "observation": {
+        "required": ["id", "statement", "evidence_ref", "evidence_kind"],
+        "allowed_evidence_kind": ["grid", "transition", "affordance", "memory"],
+        "epistemic_origin": "observed"
+      },
+      "hypothesis": {
+        "required": ["id", "statement", "basis", "prediction", "status"],
+        "basis_item_required": ["observation_id"],
+        "required_world_evidence_kind": ["grid", "transition"],
+        "allowed_status": ["proposed", "active", "contested"],
+        "epistemic_origin": "hypothetical"
+      },
+      "candidate_goal": {
+        "required": ["id", "statement", "basis", "status"],
+        "basis_item_required": ["hypothesis_id", "observation_id"],
+        "allowed_status": ["proposed", "active", "contested"],
+        "epistemic_origin": "hypothetical"
+      },
+      "opposition": {
+        "required": ["falsification_questions"]
+      },
+      "experiment": {
+        "required": ["tests_hypothesis_ids", "information_goal", "predicted_observation", "action", "action_params"],
+        "action_must_be_available": true,
+        "tests_active_or_preserved_hypothesis": true
+      }
+    }
+  },
+  "outcome_record": {
+    "required": [
+      "turn",
+      "experiment_id",
+      "action",
+      "before_grid_digest",
+      "after_grid_digest",
+      "changed_cells",
+      "changed_regions",
+      "persistent_change",
+      "observed_effect",
+      "supports_hypothesis_ids",
+      "contradicts_hypothesis_ids"
+    ],
+    "epistemic_origin": "observed",
+    "forbidden_evaluator_fields": [
+      "game_id",
+      "guid",
+      "state",
+      "levels_completed",
+      "win_levels",
+      "score",
+      "score_delta",
+      "level_delta",
+      "scorecard",
+      "official_success",
+      "level_scores"
+    ]
+  },
+  "controller_invariants": [
+    "candidate_goal_is_never_fact",
+    "candidate_goal_has_explicit_hypothesis_and_observation_basis",
+    "hypothesis_has_explicit_observation_basis",
+    "world_hypothesis_requires_grid_or_transition_evidence",
+    "validator_feedback_is_never_world_evidence",
+    "hypothetical_is_never_silently_promoted_to_observed_or_discovered",
+    "convergence_does_not_delete_preserved_alternatives",
+    "llm_does_not_select_provisional_convergence_or_reopen_set",
+    "native_opposition_selects_challenge_and_reopen_candidates",
+    "every_executed_action_has_experiment_and_outcome",
+    "informative_outcome_updates_epistemic_state",
+    "opposition_can_reopen_discarded_alternative",
+    "no_evidence_allows_abstention",
+    "repeated_no_information_state_is_eligible_for_lyapunov_escape",
+    "evaluator_metadata_never_enters_reasoning_or_graphenedb"
+  ],
+  "diagnostic_metrics": [
+    "hypotheses_generated",
+    "distinct_hypotheses_preserved",
+    "hypothesis_basis_links",
+    "world_grounded_hypotheses",
+    "candidate_goals_generated",
+    "goal_basis_links",
+    "experiments_executed",
+    "outcomes_recorded",
+    "hypotheses_supported",
+    "hypotheses_contradicted",
+    "hypotheses_rejected",
+    "opposition_rounds",
+    "alternatives_reopened",
+    "native_primary_hypothesis_selections",
+    "lyapunov_checks",
+    "escape_events",
+    "no_evidence_abstentions",
+    "false_promotion_violations",
+    "model_world_nodes",
+    "model_world_events",
+    "model_world_audit_findings"
+  ]
+}

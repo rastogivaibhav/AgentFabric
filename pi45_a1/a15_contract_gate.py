@@ -1,0 +1,505 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+
+class ContractError(ValueError):
+    pass
+
+
+_TEMPLATE_TEXT = {
+    "...",
+    "observable fact only",
+    "possible interpretation a",
+    "competing interpretation b",
+    "testable grid prediction",
+    "different testable grid prediction",
+    "evidence-seeking/progress goal",
+    "exact_available_action",
+}
+
+_NON_EVIDENCE_PHRASES = {
+    "previous proposal was rejected",
+    "proposal was rejected",
+    "validation error",
+    "deterministic epistemic contract",
+    "output contract",
+    "repair context",
+    "repair instruction",
+}
+
+
+def load_json(path: str | Path) -> dict[str, Any]:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def require_keys(obj: dict[str, Any], keys: list[str], where: str) -> None:
+    missing = [key for key in keys if key not in obj]
+    if missing:
+        raise ContractError(f"{where}: missing required keys {missing}")
+
+
+def _require_concrete_text(value: Any, where: str) -> str:
+    if not isinstance(value, str):
+        raise ContractError(f"{where}: must be concrete text")
+    text = value.strip()
+    if not text:
+        raise ContractError(f"{where}: must not be empty")
+    lower = text.lower()
+    if lower in _TEMPLATE_TEXT:
+        raise ContractError(f"{where}: copied/template semantic text is forbidden")
+    leaked = sorted(fragment for fragment in _NON_EVIDENCE_PHRASES if fragment in lower)
+    if leaked:
+        raise ContractError(f"{where}: validator/contract feedback is not world evidence: {leaked}")
+    return text
+
+
+def reject_forbidden_keys(obj: Any, forbidden: set[str], where: str) -> None:
+    if isinstance(obj, dict):
+        bad = sorted(str(k) for k in obj if str(k) in forbidden)
+        if bad:
+            raise ContractError(f"{where}: evaluator-only fields entered epistemic payload: {bad}")
+        for key, value in obj.items():
+            reject_forbidden_keys(value, forbidden, f"{where}.{key}")
+    elif isinstance(obj, list):
+        for index, value in enumerate(obj):
+            reject_forbidden_keys(value, forbidden, f"{where}[{index}]")
+
+
+def reject_controller_owned_fields(proposal: dict[str, Any], contract: dict[str, Any]) -> None:
+    controller_fields = {
+        str(x) for x in contract.get("turn_proposal", {}).get("controller_owned_fields", [])
+    }
+    root_bad = sorted(k for k in proposal if str(k) in controller_fields)
+    opposition = proposal.get("opposition") if isinstance(proposal.get("opposition"), dict) else {}
+    opposition_bad = sorted(k for k in opposition if str(k) in controller_fields)
+    bad = root_bad + [f"opposition.{k}" for k in opposition_bad]
+    if bad:
+        raise ContractError(
+            "turn_proposal: native-controller-owned fields must not be supplied by the LLM: "
+            + str(bad)
+        )
+
+
+def require_unique_ids(items: list[dict[str, Any]], where: str) -> set[str]:
+    ids: list[str] = []
+    for idx, item in enumerate(items):
+        value = str(item.get("id", "")).strip()
+        if not value:
+            raise ContractError(f"{where}[{idx}]: id must be non-empty")
+        ids.append(value)
+    if len(ids) != len(set(ids)):
+        raise ContractError(f"{where}: ids must be unique")
+    return set(ids)
+
+
+def evaluator_only_fields(contract: dict[str, Any]) -> set[str]:
+    return {str(x) for x in (contract.get("perception_contract", {}).get("evaluator_only_fields") or [])}
+
+
+def validate_constitution(constitution: dict[str, Any]) -> None:
+    required_sequence = [
+        "non_convergent_expansion",
+        "convergent_compression",
+        "opposition",
+        "re_expansion",
+        "synthesis",
+        "implementation",
+        "outcome_feedback",
+        "model_world_update",
+    ]
+    if constitution.get("control_sequence") != required_sequence:
+        raise ContractError("constitution: dialectical control sequence changed")
+    principles = constitution.get("principles") or []
+    ids = {str(p.get("id")) for p in principles}
+    required = {
+        "preserve-alternatives", "separate-observation-inference",
+        "goals-emerge-from-model-world", "actions-are-experiments",
+        "outcomes-update-beliefs", "opposition-before-closure",
+        "contradictions-are-information", "lyapunov-pattern-lock",
+        "abstain-without-evidence", "provenance-governs-promotion",
+    }
+    if ids != required:
+        raise ContractError(f"constitution: expected principle ids {sorted(required)}, got {sorted(ids)}")
+    raw = json.dumps(constitution, sort_keys=True).lower()
+    for token in constitution.get("forbidden_tokens") or []:
+        if str(token).lower() in raw.replace(
+            json.dumps(constitution.get("forbidden_tokens"), sort_keys=True).lower(), ""
+        ):
+            raise ContractError(f"constitution: target-game contamination token present: {token}")
+    mapping = constitution.get("model_world_mapping") or {}
+    if mapping.get("candidate_goal", {}).get("node_type") != "Decision":
+        raise ContractError("constitution: candidate goals must map to native ModelWorld Decision nodes")
+    if mapping.get("candidate_goal", {}).get("origin") != "Hypothetical":
+        raise ContractError("constitution: candidate goals must remain hypothetical")
+    if mapping.get("outcome", {}).get("origin") != "Observed":
+        raise ContractError("constitution: outcomes must be observed")
+
+
+def _require_turn_scoped(ids: set[str], prefix: str, where: str) -> None:
+    bad = sorted(x for x in ids if not x.startswith(prefix))
+    if bad:
+        raise ContractError(f"{where}: ids must be turn-scoped with prefix {prefix!r}; got {bad}")
+
+
+def _validate_evidence_ref(kind: str, evidence_ref: str, where: str) -> None:
+    required_prefix = {
+        "grid": "grid:",
+        "transition": "transition:",
+        "affordance": "affordance:",
+        "memory": "memory:",
+    }.get(kind)
+    if required_prefix is None:
+        raise ContractError(f"{where}: unsupported evidence_kind {kind!r}")
+    if not evidence_ref.startswith(required_prefix):
+        raise ContractError(
+            f"{where}: evidence_ref {evidence_ref!r} does not match evidence_kind {kind!r}"
+        )
+
+
+def validate_turn(
+    proposal: dict[str, Any],
+    contract: dict[str, Any],
+    available_actions: set[str] | None = None,
+) -> None:
+    reject_forbidden_keys(proposal, evaluator_only_fields(contract), "turn_proposal")
+    reject_controller_owned_fields(proposal, contract)
+    spec = contract["turn_proposal"]
+    require_keys(proposal, spec["required"], "turn_proposal")
+    turn = int(proposal["turn"])
+    limits = spec["limits"]
+    observations = list(proposal["observations"])
+    hypotheses = list(proposal["hypotheses"])
+    goals = list(proposal["candidate_goals"])
+    if not limits["observations_min"] <= len(observations) <= limits["observations_max"]:
+        raise ContractError("turn_proposal: observation count outside contract")
+    if not limits["hypotheses_min"] <= len(hypotheses) <= limits["hypotheses_max"]:
+        raise ContractError("turn_proposal: hypothesis count outside contract")
+    if not limits["candidate_goals_min"] <= len(goals) <= limits["candidate_goals_max"]:
+        raise ContractError("turn_proposal: candidate-goal count outside contract")
+
+    obj_specs = spec["objects"]
+    observation_kind_by_id: dict[str, str] = {}
+    for idx, item in enumerate(observations):
+        require_keys(item, obj_specs["observation"]["required"], f"observations[{idx}]")
+        _require_concrete_text(item["statement"], f"observations[{idx}].statement")
+        evidence_ref = _require_concrete_text(item["evidence_ref"], f"observations[{idx}].evidence_ref")
+        kind = str(item["evidence_kind"])
+        if kind not in set(map(str, obj_specs["observation"]["allowed_evidence_kind"])):
+            raise ContractError(f"observations[{idx}]: invalid evidence_kind {kind!r}")
+        _validate_evidence_ref(kind, evidence_ref, f"observations[{idx}]")
+        observation_kind_by_id[str(item["id"])] = kind
+
+    hypothesis_statements: list[str] = []
+    for idx, item in enumerate(hypotheses):
+        require_keys(item, obj_specs["hypothesis"]["required"], f"hypotheses[{idx}]")
+        if item["status"] not in obj_specs["hypothesis"]["allowed_status"]:
+            raise ContractError(f"hypotheses[{idx}]: invalid status {item['status']}")
+        hypothesis_statements.append(
+            _require_concrete_text(item["statement"], f"hypotheses[{idx}].statement").lower()
+        )
+        _require_concrete_text(item["prediction"], f"hypotheses[{idx}].prediction")
+    if len(hypothesis_statements) != len(set(hypothesis_statements)):
+        raise ContractError("hypotheses: competing hypotheses must have distinct statements")
+
+    for idx, item in enumerate(goals):
+        require_keys(item, obj_specs["candidate_goal"]["required"], f"candidate_goals[{idx}]")
+        if item["status"] not in obj_specs["candidate_goal"]["allowed_status"]:
+            raise ContractError(f"candidate_goals[{idx}]: invalid status {item['status']}")
+        goal_statement = _require_concrete_text(item["statement"], f"candidate_goals[{idx}].statement")
+        if goal_statement.lower() in {"win", "win the game", "complete the game", "beat the game"}:
+            raise ContractError("candidate_goal: content-free win goal is forbidden")
+
+    observation_ids = require_unique_ids(observations, "observations")
+    hypothesis_ids = require_unique_ids(hypotheses, "hypotheses")
+    goal_ids = require_unique_ids(goals, "candidate_goals")
+    _require_turn_scoped(observation_ids, f"t{turn}-o", "observations")
+    _require_turn_scoped(hypothesis_ids, f"t{turn}-h", "hypotheses")
+    _require_turn_scoped(goal_ids, f"t{turn}-g", "candidate_goals")
+
+    hypothesis_basis_required = list(obj_specs["hypothesis"].get("basis_item_required") or [])
+    hypothesis_basis_min = int(limits.get("hypothesis_basis_min", 1))
+    required_world_kinds = set(map(str, obj_specs["hypothesis"].get("required_world_evidence_kind") or []))
+    for idx, hypothesis in enumerate(hypotheses):
+        basis = hypothesis.get("basis")
+        if not isinstance(basis, list) or len(basis) < hypothesis_basis_min:
+            raise ContractError(f"hypotheses[{idx}]: must contain at least one explicit observation basis")
+        linked_kinds: set[str] = set()
+        for basis_idx, link in enumerate(basis):
+            if not isinstance(link, dict):
+                raise ContractError(f"hypotheses[{idx}].basis[{basis_idx}]: must be an object")
+            require_keys(link, hypothesis_basis_required, f"hypotheses[{idx}].basis[{basis_idx}]")
+            observation_id = str(link["observation_id"])
+            if observation_id not in observation_ids:
+                raise ContractError(f"hypotheses[{idx}].basis[{basis_idx}]: unknown observation")
+            linked_kinds.add(observation_kind_by_id[observation_id])
+        if required_world_kinds and not (linked_kinds & required_world_kinds):
+            raise ContractError(
+                f"hypotheses[{idx}]: causal/world hypothesis must be grounded in grid or transition evidence"
+            )
+
+    goal_basis_required = list(obj_specs["candidate_goal"].get("basis_item_required") or [])
+    goal_basis_min = int(limits.get("goal_basis_min", 1))
+    for idx, goal in enumerate(goals):
+        basis = goal.get("basis")
+        if not isinstance(basis, list) or len(basis) < goal_basis_min:
+            raise ContractError(f"candidate_goals[{idx}]: must contain at least one explicit basis pair")
+        for basis_idx, link in enumerate(basis):
+            if not isinstance(link, dict):
+                raise ContractError(f"candidate_goals[{idx}].basis[{basis_idx}]: must be an object")
+            require_keys(link, goal_basis_required, f"candidate_goals[{idx}].basis[{basis_idx}]")
+            hypothesis_id = str(link["hypothesis_id"])
+            observation_id = str(link["observation_id"])
+            if hypothesis_id not in hypothesis_ids:
+                raise ContractError(f"candidate_goals[{idx}].basis[{basis_idx}]: unknown hypothesis")
+            if observation_id not in observation_ids:
+                raise ContractError(f"candidate_goals[{idx}].basis[{basis_idx}]: unknown observation")
+
+    opposition = proposal["opposition"]
+    require_keys(opposition, obj_specs["opposition"]["required"], "opposition")
+    questions = list(opposition["falsification_questions"])
+    if not limits["falsification_questions_min"] <= len(questions) <= limits["falsification_questions_max"]:
+        raise ContractError("opposition: falsification-question count outside contract")
+    for idx, question in enumerate(questions):
+        _require_concrete_text(question, f"opposition.falsification_questions[{idx}]")
+
+    experiment = proposal["experiment"]
+    require_keys(experiment, obj_specs["experiment"]["required"], "experiment")
+    tests = set(map(str, experiment["tests_hypothesis_ids"]))
+    if not tests or not tests.issubset(hypothesis_ids):
+        raise ContractError("experiment: every action must test a preserved hypothesis")
+    _require_concrete_text(experiment["information_goal"], "experiment.information_goal")
+    _require_concrete_text(experiment["predicted_observation"], "experiment.predicted_observation")
+    action = str(experiment["action"])
+    if available_actions is not None and action not in available_actions:
+        raise ContractError(f"experiment: action {action!r} not in available action set")
+
+    uncertainty = proposal["residual_uncertainty"]
+    if not isinstance(uncertainty, list):
+        raise ContractError("residual_uncertainty: must be a list")
+    for idx, text in enumerate(uncertainty):
+        _require_concrete_text(text, f"residual_uncertainty[{idx}]")
+
+
+def validate_outcome(outcome: dict[str, Any], contract: dict[str, Any], known_hypotheses: set[str]) -> None:
+    spec = contract["outcome_record"]
+    forbidden = set(map(str, spec.get("forbidden_evaluator_fields") or [])) | evaluator_only_fields(contract)
+    reject_forbidden_keys(outcome, forbidden, "outcome")
+    require_keys(outcome, spec["required"], "outcome")
+    supports = set(map(str, outcome["supports_hypothesis_ids"]))
+    contradicts = set(map(str, outcome["contradicts_hypothesis_ids"]))
+    if not supports.issubset(known_hypotheses) or not contradicts.issubset(known_hypotheses):
+        raise ContractError("outcome: references unknown hypothesis")
+    if supports & contradicts:
+        raise ContractError("outcome: same hypothesis cannot be both supported and contradicted by one atomic interpretation")
+    changed_cells = int(outcome["changed_cells"])
+    if changed_cells < 0:
+        raise ContractError("outcome: changed_cells cannot be negative")
+    if not isinstance(outcome["changed_regions"], list):
+        raise ContractError("outcome: changed_regions must be a list of observable regions")
+    _require_concrete_text(outcome["observed_effect"], "outcome.observed_effect")
+    informative = (
+        changed_cells > 0
+        or bool(outcome["changed_regions"])
+        or bool(outcome["persistent_change"])
+        or bool(str(outcome["observed_effect"]).strip())
+    )
+    if informative and not (supports or contradicts):
+        raise ContractError("outcome: informative result must update at least one hypothesis")
+
+
+def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
+    validate_constitution(constitution)
+    proposal = {
+        "turn": 0,
+        "observations": [
+            {
+                "id": "t0-o1",
+                "statement": "A 2x2 region of value 1 is visible near the upper-left quadrant.",
+                "evidence_ref": "grid:0",
+                "evidence_kind": "grid"
+            },
+            {
+                "id": "t0-o2",
+                "statement": "ACTION1 is currently available as an opaque affordance.",
+                "evidence_ref": "affordance:0:ACTION1",
+                "evidence_kind": "affordance"
+            }
+        ],
+        "hypotheses": [
+            {
+                "id": "t0-h1",
+                "statement": "The 2x2 region may respond to one opaque action.",
+                "basis": [{"observation_id": "t0-o1"}],
+                "prediction": "A responsive action would alter at least one cell in that region.",
+                "status": "active"
+            },
+            {
+                "id": "t0-h2",
+                "statement": "The visible 2x2 region may remain invariant under the available actions.",
+                "basis": [{"observation_id": "t0-o1"}],
+                "prediction": "A probe could leave every grid cell unchanged.",
+                "status": "proposed"
+            }
+        ],
+        "candidate_goals": [
+            {
+                "id": "t0-g1",
+                "statement": "Determine whether any opaque action causes a reproducible grid transition.",
+                "basis": [
+                    {"hypothesis_id": "t0-h1", "observation_id": "t0-o1"},
+                    {"hypothesis_id": "t0-h2", "observation_id": "t0-o1"}
+                ],
+                "status": "active"
+            }
+        ],
+        "opposition": {
+            "falsification_questions": [
+                "Would an unchanged grid after the probe favor the invariant interpretation?"
+            ]
+        },
+        "experiment": {
+            "tests_hypothesis_ids": ["t0-h1", "t0-h2"],
+            "information_goal": "Test whether the current grid responds to ACTION1.",
+            "predicted_observation": "Either at least one cell changes or the grid remains unchanged.",
+            "action": "ACTION1",
+            "action_params": {}
+        },
+        "residual_uncertainty": ["The semantics of ACTION1 and ACTION2 are unknown."]
+    }
+    validate_turn(proposal, contract, {"ACTION1", "ACTION2"})
+
+    outcome = {
+        "turn": 0,
+        "experiment_id": "turn-0-experiment",
+        "action": "ACTION1",
+        "before_grid_digest": "before",
+        "after_grid_digest": "after",
+        "changed_cells": 1,
+        "changed_regions": ["r0"],
+        "persistent_change": True,
+        "observed_effect": "One visible cell changed persistently after ACTION1.",
+        "supports_hypothesis_ids": ["t0-h1"],
+        "contradicts_hypothesis_ids": ["t0-h2"]
+    }
+    validate_outcome(outcome, contract, {"t0-h1", "t0-h2"})
+
+    bad_goal = json.loads(json.dumps(proposal))
+    bad_goal["candidate_goals"][0]["statement"] = "Win the game"
+    try:
+        validate_turn(bad_goal, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: content-free goal was accepted")
+
+    bad_template = json.loads(json.dumps(proposal))
+    bad_template["hypotheses"][0]["statement"] = "possible interpretation A"
+    try:
+        validate_turn(bad_template, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: copied prompt template was accepted")
+
+    bad_feedback = json.loads(json.dumps(proposal))
+    bad_feedback["hypotheses"][0]["statement"] = "The previous proposal was rejected by the validation error."
+    try:
+        validate_turn(bad_feedback, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: validator feedback became world evidence")
+
+    bad_hypothesis_basis = json.loads(json.dumps(proposal))
+    bad_hypothesis_basis["hypotheses"][0]["basis"] = []
+    try:
+        validate_turn(bad_hypothesis_basis, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: evidence-free hypothesis basis was accepted")
+
+    affordance_only_hypothesis = json.loads(json.dumps(proposal))
+    affordance_only_hypothesis["hypotheses"][0]["basis"] = [{"observation_id": "t0-o2"}]
+    try:
+        validate_turn(affordance_only_hypothesis, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: affordance-only causal hypothesis was accepted")
+
+    bad_goal_basis = json.loads(json.dumps(proposal))
+    bad_goal_basis["candidate_goals"][0]["basis"] = []
+    try:
+        validate_turn(bad_goal_basis, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: evidence-free goal basis was accepted")
+
+    bad_action = json.loads(json.dumps(proposal))
+    bad_action["experiment"]["action"] = "ACTION99"
+    try:
+        validate_turn(bad_action, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: unavailable action was accepted")
+
+    bad_id = json.loads(json.dumps(proposal))
+    bad_id["hypotheses"][0]["id"] = "h1"
+    try:
+        validate_turn(bad_id, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: unscoped hypothesis id was accepted")
+
+    controller_leak = json.loads(json.dumps(proposal))
+    controller_leak["opposition"]["reopen_hypothesis_ids"] = ["t0-h2"]
+    try:
+        validate_turn(controller_leak, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: LLM was allowed to select native reopen nodes")
+
+    contaminated = json.loads(json.dumps(outcome))
+    contaminated["score_delta"] = 1
+    try:
+        validate_outcome(contaminated, contract, {"t0-h1", "t0-h2"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: evaluator metadata entered epistemic outcome")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--contract", default="pi45_a1/a15_state_contract.json")
+    ap.add_argument("--constitution", default="pi45_a1/a15_reasoning_constitution.json")
+    ap.add_argument("--proposal")
+    ap.add_argument("--available-actions", default="")
+    ap.add_argument("--outcome")
+    args = ap.parse_args()
+    contract = load_json(args.contract)
+    constitution = load_json(args.constitution)
+    self_test(contract, constitution)
+    if args.proposal:
+        proposal = load_json(args.proposal)
+        available = {x for x in args.available_actions.split(",") if x} or None
+        validate_turn(proposal, contract, available)
+        if args.outcome:
+            outcome = load_json(args.outcome)
+            hypothesis_ids = {str(x["id"]) for x in proposal["hypotheses"]}
+            validate_outcome(outcome, contract, hypothesis_ids)
+    print("a15_contract_gate=PASS")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,53 @@
+{
+  "turn": 0,
+  "observations": [
+    {
+      "id": "t0-o-state",
+      "statement": "The initial grid contains visible spatial structure whose semantics are unknown.",
+      "evidence_ref": "grid:turn:0",
+      "evidence_kind": "grid"
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "t0-h-interactable",
+      "statement": "At least one visible element may respond to an available action.",
+      "basis": [{"observation_id": "t0-o-state"}],
+      "prediction": "A suitable action will produce a persistent observable grid change.",
+      "status": "active"
+    },
+    {
+      "id": "t0-h-inert",
+      "statement": "The currently salient visible element may not respond in the present context.",
+      "basis": [{"observation_id": "t0-o-state"}],
+      "prediction": "Probing it will leave the observable grid unchanged.",
+      "status": "proposed"
+    }
+  ],
+  "candidate_goals": [
+    {
+      "id": "t0-g-discover-rule",
+      "statement": "Identify one reproducible interaction rule that distinguishes controllable from non-controllable visible state.",
+      "basis": [
+        {"hypothesis_id": "t0-h-interactable", "observation_id": "t0-o-state"},
+        {"hypothesis_id": "t0-h-inert", "observation_id": "t0-o-state"}
+      ],
+      "status": "active"
+    }
+  ],
+  "opposition": {
+    "falsification_questions": [
+      "What observable grid result would show that the salient element is inert rather than controllable?"
+    ]
+  },
+  "experiment": {
+    "tests_hypothesis_ids": ["t0-h-interactable", "t0-h-inert"],
+    "information_goal": "Discriminate between responsive and inert interpretations.",
+    "predicted_observation": "The grid either changes persistently or remains invariant.",
+    "action": "ACTION1",
+    "action_params": {}
+  },
+  "residual_uncertainty": [
+    "The semantics of the available action are not yet known."
+  ]
+}

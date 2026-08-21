@@ -1,0 +1,9 @@
+upstream_repo=rastogivaibhav/graphenedb_v1
+upstream_branch=agent/dialectic-model-world-v0
+upstream_commit=fb960c209a888505a64ed17157ca640d732d2640
+source_mode=vendored-byte-identical-minimal-model-world-slice
+include/graphene/epistemic.hpp 7cf87ae0ea3fd35d383f66f2d337166421729097
+include/graphene/dialectic.hpp cf0adf152f25f940ff43414ab9a63c53dd0415b7
+include/graphene/fiber_bundle.hpp 9fad86483ab37ef929eb81d7ef91f1938f0a3077
+include/graphene/model_world.hpp f7df58b62472dc6bbe84cec191f515df6184dbf6
+src/model_world.cpp 103f4ad5771292dcbf9f6fe2957676e2e8da4dd7

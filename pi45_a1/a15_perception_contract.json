@@ -1,0 +1,45 @@
+{
+  "contract_version": "pi45-a15-perception-v1",
+  "environment": "arc-agi==0.9.9",
+  "modality": "structured_grid_not_pixels",
+  "model_visible": {
+    "current_grid": "last frame as integer grid, label-free",
+    "available_actions": "opaque names only: ACTION1..ACTION7; RESET is runtime-controlled",
+    "recent_interactions": "agent's own prior observation/action/outcome evidence only",
+    "retrieved_model_world": "GrapheneDB evidence/hypotheses with provenance; no oracle labels"
+  },
+  "runtime_only_not_model_visible": [
+    "game_id",
+    "guid",
+    "state",
+    "levels_completed",
+    "win_levels",
+    "score",
+    "scorecard",
+    "action_input",
+    "baseline_actions",
+    "level_scores"
+  ],
+  "forbidden_semantic_labels": [
+    "player_position",
+    "enemy_position",
+    "goal_position",
+    "target_position",
+    "key_position",
+    "door_state",
+    "collectible",
+    "hazard",
+    "MOVE_UP",
+    "MOVE_DOWN",
+    "MOVE_LEFT",
+    "MOVE_RIGHT",
+    "PICK_UP_KEY",
+    "OPEN_DOOR"
+  ],
+  "runner_may_use_for_control_only": [
+    "state for terminal/reset handling",
+    "levels_completed and win_levels for post-hoc evaluation"
+  ],
+  "vision_model_required": false,
+  "rationale": "A1.5 isolates unknown-world reasoning from visual perception. A later visual embodiment treatment may replace this adapter with screenshot/video perception while keeping the same dialectical reasoning substrate."
+}

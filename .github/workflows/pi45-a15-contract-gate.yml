@@ -1,0 +1,119 @@
+name: PI4.5 A1.5 Dialectical Contract Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - pi45-a15-dialectical-model-world-20260821
+    paths:
+      - 'pi45_a1/A15_DESIGN_GUARDRAIL.md'
+      - 'pi45_a1/A15_NATIVE_RUNTIME_CONTRACT.md'
+      - 'pi45_a1/a15_reasoning_constitution.json'
+      - 'pi45_a1/a15_state_contract.json'
+      - 'pi45_a1/a15_contract_gate.py'
+      - 'pi45_a1/a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/a15_proposal_prompt.py'
+      - 'pi45_a1/test_a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/test_a15_proposal_prompt.py'
+      - 'pi45_a1/a15_example_turn.json'
+      - 'pi45_a1/a15_example_outcome.json'
+      - 'pi45_a1/a15_adapter_smoke.sh'
+      - '.github/workflows/pi45-a15-contract-gate.yml'
+  pull_request:
+    branches:
+      - pi45-a14-minimal-interactive-world-prior-20260821
+    paths:
+      - 'pi45_a1/A15_DESIGN_GUARDRAIL.md'
+      - 'pi45_a1/A15_NATIVE_RUNTIME_CONTRACT.md'
+      - 'pi45_a1/a15_reasoning_constitution.json'
+      - 'pi45_a1/a15_state_contract.json'
+      - 'pi45_a1/a15_contract_gate.py'
+      - 'pi45_a1/a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/a15_proposal_prompt.py'
+      - 'pi45_a1/test_a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/test_a15_proposal_prompt.py'
+      - 'pi45_a1/a15_example_turn.json'
+      - 'pi45_a1/a15_example_outcome.json'
+      - 'pi45_a1/a15_adapter_smoke.sh'
+      - '.github/workflows/pi45-a15-contract-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax
+        run: |
+          python3 -m py_compile pi45_a1/a15_contract_gate.py
+          python3 -m py_compile pi45_a1/a15_arc_dialectic_adapter.py
+          python3 -m py_compile pi45_a1/a15_proposal_prompt.py
+          python3 -m py_compile pi45_a1/test_a15_arc_dialectic_adapter.py
+          python3 -m py_compile pi45_a1/test_a15_proposal_prompt.py
+      - name: JSON syntax
+        run: |
+          python3 -m json.tool pi45_a1/a15_reasoning_constitution.json >/dev/null
+          python3 -m json.tool pi45_a1/a15_state_contract.json >/dev/null
+          python3 -m json.tool pi45_a1/a15_example_turn.json >/dev/null
+          python3 -m json.tool pi45_a1/a15_example_outcome.json >/dev/null
+      - name: Dialectical contract self-test
+        run: python3 pi45_a1/a15_contract_gate.py
+      - name: ARC adapter and proposal tests
+        env:
+          PYTHONPATH: pi45_a1
+        run: |
+          python3 -m unittest -v \
+            pi45_a1/test_a15_arc_dialectic_adapter.py \
+            pi45_a1/test_a15_proposal_prompt.py
+      - name: ARC adapter dry-run smoke
+        run: bash pi45_a1/a15_adapter_smoke.sh
+      - name: Guard against target-game contamination
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('pi45_a1/a15_reasoning_constitution.json')
+          data = json.loads(p.read_text())
+          forbidden = [x.lower() for x in data['forbidden_tokens']]
+          scrubbed = dict(data)
+          scrubbed['forbidden_tokens'] = []
+          raw = json.dumps(scrubbed, sort_keys=True).lower()
+          hits = [x for x in forbidden if x in raw]
+          assert not hits, f'target-game contamination: {hits}'
+          print('a15_prior_contamination_gate=PASS')
+          PY
+      - name: Evidence summary
+        run: |
+          mkdir -p /tmp/a15-contract-evidence
+          sha256sum \
+            pi45_a1/A15_DESIGN_GUARDRAIL.md \
+            pi45_a1/A15_NATIVE_RUNTIME_CONTRACT.md \
+            pi45_a1/a15_reasoning_constitution.json \
+            pi45_a1/a15_state_contract.json \
+            pi45_a1/a15_contract_gate.py \
+            pi45_a1/a15_arc_dialectic_adapter.py \
+            pi45_a1/a15_proposal_prompt.py \
+            pi45_a1/test_a15_arc_dialectic_adapter.py \
+            pi45_a1/test_a15_proposal_prompt.py \
+            pi45_a1/a15_example_turn.json \
+            pi45_a1/a15_example_outcome.json \
+            pi45_a1/a15_adapter_smoke.sh \
+            > /tmp/a15-contract-evidence/SHA256SUMS.txt
+          python3 pi45_a1/a15_contract_gate.py > /tmp/a15-contract-evidence/contract_gate.txt
+          PYTHONPATH=pi45_a1 python3 -m unittest -v \
+            pi45_a1/test_a15_arc_dialectic_adapter.py \
+            pi45_a1/test_a15_proposal_prompt.py \
+            > /tmp/a15-contract-evidence/tests.txt 2>&1
+          bash pi45_a1/a15_adapter_smoke.sh > /tmp/a15-contract-evidence/adapter_smoke.txt 2>&1
+          cp /tmp/a15_proposal_request.json /tmp/a15-contract-evidence/
+          cp /tmp/a15_outcome_request.json /tmp/a15-contract-evidence/
+          printf '%s\n' "${GITHUB_SHA}" > /tmp/a15-contract-evidence/commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi45-a15-dialectical-contract-evidence
+          path: /tmp/a15-contract-evidence
+          if-no-files-found: error
+          retention-days: 14

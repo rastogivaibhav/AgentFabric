@@ -1,0 +1,77 @@
+{
+  "name": "pi45-a15-dialectical-model-world-v1",
+  "scope": "generic reasoning policy only; no target-game observations, solutions, action answers, state signatures, or labels",
+  "authority": "GrapheneDB/HypoKosh dialectical and epistemic contracts",
+  "control_sequence": [
+    "non_convergent_expansion",
+    "convergent_compression",
+    "opposition",
+    "re_expansion",
+    "synthesis",
+    "implementation",
+    "outcome_feedback",
+    "model_world_update"
+  ],
+  "principles": [
+    {
+      "id": "preserve-alternatives",
+      "instruction": "Before convergence preserve multiple materially distinct explanations and candidate goals. Convergence is a provisional view and must not destroy discarded alternatives."
+    },
+    {
+      "id": "separate-observation-inference",
+      "instruction": "Keep direct observations distinct from hypotheses, analogies, predictions, reinforcement, and synthesis. Do not restate an inference as an observed fact."
+    },
+    {
+      "id": "goals-emerge-from-model-world",
+      "instruction": "Candidate goals must be implied by current hypotheses and evidence. Do not use a content-free goal such as 'win the game' as the reasoning state."
+    },
+    {
+      "id": "actions-are-experiments",
+      "instruction": "Choose actions as bounded experiments that discriminate between hypotheses, test a precondition, resolve uncertainty, or exploit a relation already supported by evidence."
+    },
+    {
+      "id": "outcomes-update-beliefs",
+      "instruction": "Compare the observed result with the experiment prediction. Use informative outcomes to support, contradict, contest, reject, or supersede hypotheses; repetition alone is not truth evidence."
+    },
+    {
+      "id": "opposition-before-closure",
+      "instruction": "Attack the provisional convergence: identify hidden assumptions, ask what would falsify it, inspect contradictions, and reopen a preserved alternative when warranted."
+    },
+    {
+      "id": "contradictions-are-information",
+      "instruction": "Preserve contradictory evidence and competing paths. Do not discard contradiction because it lowers confidence or complicates the current answer."
+    },
+    {
+      "id": "lyapunov-pattern-lock",
+      "instruction": "Stable repetition is not success. If hypothesis, goal, or action behaviour stabilises without information gain, explanatory improvement, or world progress, treat it as possible unhealthy convergence and invoke bounded escape/reopening."
+    },
+    {
+      "id": "abstain-without-evidence",
+      "instruction": "When evidence is insufficient, retain uncertainty or abstain rather than promote the strongest similarity, analogy, or repeated assertion to truth."
+    },
+    {
+      "id": "provenance-governs-promotion",
+      "instruction": "Observed, discovered, inferred, reinforced, and hypothetical origins remain distinct. Inferred, reinforced, hypothetical, and analogical material cannot silently become observed/discovered truth."
+    }
+  ],
+  "model_world_mapping": {
+    "observation": {"node_type": "Fact", "origin": "Observed"},
+    "hypothesis": {"node_type": "Hypothesis", "origin": "Hypothetical"},
+    "contradiction": {"node_type": "Contradiction"},
+    "candidate_goal": {"node_type": "Decision", "origin": "Hypothetical", "metadata": {"a15_semantic_kind": "candidate_goal"}},
+    "opposition": {"node_type": "Opposition"},
+    "experiment": {"node_type": "Experiment"},
+    "implementation": {"node_type": "Implementation"},
+    "outcome": {"node_type": "Outcome", "origin": "Observed"},
+    "failure": {"node_type": "Failure"},
+    "synthesis": {"node_type": "Model"}
+  },
+  "weak_analogy_policy": {
+    "a14_controller_memories": "optional",
+    "edge_role": "Analogical",
+    "origin": "Hypothetical",
+    "may_override_observed_evidence": false,
+    "requires_current_world_verification": true
+  },
+  "forbidden_tokens": ["ls20", "ft09", "bp35"]
+}

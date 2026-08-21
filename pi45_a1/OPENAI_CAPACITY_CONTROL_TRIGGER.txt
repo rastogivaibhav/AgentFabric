@@ -1,0 +1,9 @@
+PI4.5 A1.5 OpenAI capacity control
+condition=openai-plus-dmw
+game=ft09
+max_actions=10
+model=gpt-5.6-sol
+architecture=frozen
+purpose=capacity-control-paper-evidence
+secret_binding=pulapi->OPENAI_API_KEY
+trigger_revision=2

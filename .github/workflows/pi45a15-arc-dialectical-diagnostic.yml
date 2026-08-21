@@ -1,0 +1,57 @@
+name: PI4.5A.1.5 ARC Dialectical Model World diagnostic
+
+# Live ARC execution is deliberately manual-only. A1.5 must pass the
+# synthetic model-in-the-loop harness before this workflow is dispatched.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    name: diagnostic-${{ matrix.game }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [ft09, bp35]
+
+    steps:
+      - name: Checkout A1.5 branch
+        uses: actions/checkout@v4
+
+      - name: Prepare pinned ARC and Qwen environment
+        shell: bash
+        run: bash pi45_a1/a13_prepare.sh
+
+      - name: Run 10-turn dialectical diagnostic
+        shell: bash
+        env:
+          OUT_DIR: results/pi45a15-diagnostic/${{ matrix.game }}
+        run: bash pi45_a1/a15_run_diagnostic.sh '${{ matrix.game }}' 10 "$OUT_DIR"
+
+      - name: Record job status
+        if: always()
+        shell: bash
+        env:
+          OUT_DIR: results/pi45a15-diagnostic/${{ matrix.game }}
+        run: |
+          mkdir -p "$OUT_DIR"
+          printf '%s\n' \
+            "job_status=${{ job.status }}" \
+            "phase=diagnostic" \
+            "game=${{ matrix.game }}" \
+            "head_sha=${{ github.sha }}" \
+            > "$OUT_DIR/job_status.txt"
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi45a15-diagnostic-${{ matrix.game }}-evidence
+          path: results/pi45a15-diagnostic/${{ matrix.game }}
+          if-no-files-found: error
+          retention-days: 30
