@@ -1,0 +1,73 @@
+name: PI4.5 A1.5 Synthetic Dialectical Harness
+
+on:
+  push:
+    branches: [pi45-a15-dialectical-model-world-20260821]
+    paths:
+      - 'pi45_a1/a15_synthetic_world_harness.py'
+      - 'pi45_a1/a15_run_synthetic_harness.sh'
+      - 'pi45_a1/a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/a15_contract_gate.py'
+      - 'pi45_a1/a15_proposal_prompt.py'
+      - 'pi45_a1/a15_outcome_prompt.py'
+      - 'pi45_a1/test_a15_**'
+      - 'pi45_a1/a15_reasoning_constitution.json'
+      - 'pi45_a1/a15_state_contract.json'
+      - 'pi45_a1/a15_native_runtime_helper.cpp'
+      - 'pi45_a1/a15_graphene_bootstrap.cpp'
+      - 'pi45_a1/a15_model_world_dump.cpp'
+      - 'pi45_a1/a15_native_runtime/**'
+      - 'pi45_a1/a15_native_model_world/**'
+      - '.github/workflows/pi45-a15-synthetic-harness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout A1.5 branch
+        uses: actions/checkout@v4
+
+      - name: Assert no live ARC execution in harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eq '(^|[[:space:]])(import|from)[[:space:]]+(arc_agi|arcengine)' pi45_a1/a15_synthetic_world_harness.py
+          ! grep -q 'arc\.make\|get_environments\|env\.step\|Arcade(' pi45_a1/a15_synthetic_world_harness.py
+          ! grep -q 'a15_run_diagnostic.sh' pi45_a1/a15_run_synthetic_harness.sh
+          echo 'synthetic_harness_arc_execution=ABSENT'
+
+      - name: Run H0 plus Qwen-in-loop H1 synthetic harness
+        shell: bash
+        env:
+          OUT_DIR: results/pi45a15-synthetic-harness
+        run: bash pi45_a1/a15_run_synthetic_harness.sh "$OUT_DIR"
+
+      - name: Record harness status and evidence hashes
+        if: always()
+        shell: bash
+        env:
+          OUT_DIR: results/pi45a15-synthetic-harness
+        run: |
+          mkdir -p "$OUT_DIR"
+          printf '%s\n' \
+            "job_status=${{ job.status }}" \
+            "phase=pre_game_synthetic_harness" \
+            "arc_game_execution=false" \
+            "head_sha=${{ github.sha }}" \
+            > "$OUT_DIR/job_status.txt"
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+
+      - name: Upload synthetic harness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi45a15-synthetic-harness-evidence
+          path: results/pi45a15-synthetic-harness
+          if-no-files-found: error
+          retention-days: 30
