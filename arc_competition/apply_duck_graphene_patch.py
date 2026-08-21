@@ -16,13 +16,7 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
-def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
-    tool_agent = duck_root / "ARC3-Inference/inference/agent/tool_agent.py"
-    if not tool_agent.exists():
-        raise FileNotFoundError(tool_agent)
-    original = tool_agent.read_text(encoding="utf-8")
-    original_sha = hashlib.sha256(original.encode()).hexdigest()
-
+def _patch_tool_agent(original: str) -> str:
     text = replace_once(
         original,
         "from inference.agent.runtime_state import Frame, HistoryEntry, RUNTIME_STATE_FILENAME, load_runtime_state\n",
@@ -64,7 +58,6 @@ def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
         "        lines.append(\"end of world model. \")\n",
         "prompt-context",
     )
-
     old_step_block = (
         "            raw_payload = self._step_env_callback({\"actions\": normalized_actions})\n"
         "            if not isinstance(raw_payload, dict):\n"
@@ -109,7 +102,6 @@ def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
         "            if not isinstance(raw_payload, dict):\n"
     )
     text = replace_once(text, old_step_block, new_step_block, "transition-capture-and-dead-action-block")
-
     old_normal_block = (
         "            if compact_payload.get(\"executed\") and _terminal_action_reason(compact_payload):\n"
         "                terminal_action_result = compact_payload\n"
@@ -138,15 +130,67 @@ def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
         "            return {\n"
         "                \"action_result\": compact_payload,\n"
     )
-    text = replace_once(text, old_normal_block, new_normal_block, "transition-record")
+    return replace_once(text, old_normal_block, new_normal_block, "transition-record")
+
+
+def _patch_solver(original: str) -> str:
+    text = replace_once(
+        original,
+        "    kaggle_enable_vllm: bool = field(default=True, repr=False)\n",
+        "    kaggle_enable_vllm: bool = field(default=True, repr=False)\n"
+        "    graphene_dmw_mode: str = field(\n"
+        "        default_factory=lambda: os.environ.get('GRAPHENE_DMW_MODE', 'off').strip().lower() or 'off',\n"
+        "        repr=False,\n"
+        "    )\n",
+        "solver-mode-field",
+    )
+    old_property = (
+        "    @property\n"
+        "    def kaggle_setup_commands(self) -> list[str]:\n"
+        "        if not self.kaggle_enable_vllm:\n"
+        "            return []\n"
+        "        return [duck_kaggle_setup_command(self._kaggle_vllm_config())]\n"
+    )
+    new_property = (
+        "    @property\n"
+        "    def kaggle_setup_commands(self) -> list[str]:\n"
+        "        mode = str(self.graphene_dmw_mode or 'off').strip().lower()\n"
+        "        if mode not in {'off', 'evidence', 'dialectic'}:\n"
+        "            raise ValueError(f'Unsupported GRAPHENE_DMW_MODE: {mode}')\n"
+        "        commands = []\n"
+        "        if self.kaggle_enable_vllm:\n"
+        "            commands.append(duck_kaggle_setup_command(self._kaggle_vllm_config()))\n"
+        "        persist = (\n"
+        "            '\"$PYTHON\" -c \'import json,os; p=os.environ[\"TAAF_KAGGLE_SETUP_ENV\"]; ' \n"
+        "            'd=json.load(open(p)); d[\"GRAPHENE_DMW_MODE\"]=' + repr(mode) + '; ' \n"
+        "            'open(p,\"w\").write(json.dumps(d,sort_keys=True))\''\n"
+        "        )\n"
+        "        commands.append(persist)\n"
+        "        return commands\n"
+    )
+    return replace_once(text, old_property, new_property, "solver-kaggle-mode-persistence")
+
+
+def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
+    tool_agent = duck_root / "ARC3-Inference/inference/agent/tool_agent.py"
+    solver = duck_root / "ARC3-Inference/inference/framework/solver.py"
+    if not tool_agent.exists() or not solver.exists():
+        raise FileNotFoundError(f"Duck source missing: {tool_agent} / {solver}")
+    original_agent = tool_agent.read_text(encoding="utf-8")
+    original_solver = solver.read_text(encoding="utf-8")
+    patched_agent = _patch_tool_agent(original_agent)
+    patched_solver = _patch_solver(original_solver)
 
     bridge_target = duck_root / "ARC3-Inference/inference/agent/graphene_dmw_bridge.py"
     shutil.copy2(bridge_source, bridge_target)
-    tool_agent.write_text(text, encoding="utf-8")
+    tool_agent.write_text(patched_agent, encoding="utf-8")
+    solver.write_text(patched_solver, encoding="utf-8")
     return {
         "upstream_commit": UPSTREAM_COMMIT,
-        "tool_agent_original_sha256": original_sha,
-        "tool_agent_patched_sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "tool_agent_original_sha256": hashlib.sha256(original_agent.encode()).hexdigest(),
+        "tool_agent_patched_sha256": hashlib.sha256(patched_agent.encode()).hexdigest(),
+        "solver_original_sha256": hashlib.sha256(original_solver.encode()).hexdigest(),
+        "solver_patched_sha256": hashlib.sha256(patched_solver.encode()).hexdigest(),
         "bridge_sha256": hashlib.sha256(bridge_source.read_bytes()).hexdigest(),
     }
 
