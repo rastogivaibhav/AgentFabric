@@ -12,7 +12,9 @@ on:
       - 'pi45_a1/a15_state_contract.json'
       - 'pi45_a1/a15_contract_gate.py'
       - 'pi45_a1/a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/a15_proposal_prompt.py'
       - 'pi45_a1/test_a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/test_a15_proposal_prompt.py'
       - 'pi45_a1/a15_example_turn.json'
       - 'pi45_a1/a15_example_outcome.json'
       - 'pi45_a1/a15_adapter_smoke.sh'
@@ -27,7 +29,9 @@ on:
       - 'pi45_a1/a15_state_contract.json'
       - 'pi45_a1/a15_contract_gate.py'
       - 'pi45_a1/a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/a15_proposal_prompt.py'
       - 'pi45_a1/test_a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/test_a15_proposal_prompt.py'
       - 'pi45_a1/a15_example_turn.json'
       - 'pi45_a1/a15_example_outcome.json'
       - 'pi45_a1/a15_adapter_smoke.sh'
@@ -46,7 +50,9 @@ jobs:
         run: |
           python3 -m py_compile pi45_a1/a15_contract_gate.py
           python3 -m py_compile pi45_a1/a15_arc_dialectic_adapter.py
+          python3 -m py_compile pi45_a1/a15_proposal_prompt.py
           python3 -m py_compile pi45_a1/test_a15_arc_dialectic_adapter.py
+          python3 -m py_compile pi45_a1/test_a15_proposal_prompt.py
       - name: JSON syntax
         run: |
           python3 -m json.tool pi45_a1/a15_reasoning_constitution.json >/dev/null
@@ -55,10 +61,13 @@ jobs:
           python3 -m json.tool pi45_a1/a15_example_outcome.json >/dev/null
       - name: Dialectical contract self-test
         run: python3 pi45_a1/a15_contract_gate.py
-      - name: ARC adapter tests
+      - name: ARC adapter and proposal tests
         env:
           PYTHONPATH: pi45_a1
-        run: python3 -m unittest -v pi45_a1/test_a15_arc_dialectic_adapter.py
+        run: |
+          python3 -m unittest -v \
+            pi45_a1/test_a15_arc_dialectic_adapter.py \
+            pi45_a1/test_a15_proposal_prompt.py
       - name: ARC adapter dry-run smoke
         run: bash pi45_a1/a15_adapter_smoke.sh
       - name: Guard against target-game contamination
@@ -86,14 +95,18 @@ jobs:
             pi45_a1/a15_state_contract.json \
             pi45_a1/a15_contract_gate.py \
             pi45_a1/a15_arc_dialectic_adapter.py \
+            pi45_a1/a15_proposal_prompt.py \
             pi45_a1/test_a15_arc_dialectic_adapter.py \
+            pi45_a1/test_a15_proposal_prompt.py \
             pi45_a1/a15_example_turn.json \
             pi45_a1/a15_example_outcome.json \
             pi45_a1/a15_adapter_smoke.sh \
             > /tmp/a15-contract-evidence/SHA256SUMS.txt
           python3 pi45_a1/a15_contract_gate.py > /tmp/a15-contract-evidence/contract_gate.txt
-          PYTHONPATH=pi45_a1 python3 -m unittest -v pi45_a1/test_a15_arc_dialectic_adapter.py \
-            > /tmp/a15-contract-evidence/adapter_tests.txt 2>&1
+          PYTHONPATH=pi45_a1 python3 -m unittest -v \
+            pi45_a1/test_a15_arc_dialectic_adapter.py \
+            pi45_a1/test_a15_proposal_prompt.py \
+            > /tmp/a15-contract-evidence/tests.txt 2>&1
           bash pi45_a1/a15_adapter_smoke.sh > /tmp/a15-contract-evidence/adapter_smoke.txt 2>&1
           cp /tmp/a15_proposal_request.json /tmp/a15-contract-evidence/
           cp /tmp/a15_outcome_request.json /tmp/a15-contract-evidence/
