@@ -23,7 +23,7 @@ def proposal() -> dict:
             {"id": "t3-h-b", "statement": "The region may be inert in this context.", "support_observation_ids": ["t3-o-a", "t3-o-b"], "prediction": "Interaction leaves the grid invariant.", "status": "proposed"},
         ],
         "candidate_goals": [
-            {"id": "t3-g-a", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["t3-h-a", "t3-h-b"], "evidence_observation_ids": ["t3-o-a"], "status": "active"},
+            {"id": "t3-g-a", "statement": "Determine whether the visible region participates in the world rules.", "basis": [{"hypothesis_id": "t3-h-a", "observation_id": "t3-o-a"}, {"hypothesis_id": "t3-h-b", "observation_id": "t3-o-b"}], "status": "active"},
         ],
         "opposition": {"falsification_questions": ["What observable grid outcome would make inertness more plausible?"]},
         "experiment": {"tests_hypothesis_ids": ["t3-h-a", "t3-h-b"], "information_goal": "Discriminate responsive from inert.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION2", "action_params": {}},
@@ -59,6 +59,7 @@ class A15AdapterTests(unittest.TestCase):
         self.assertEqual(by_id["t3-h-a"]["origin"], "Hypothetical")
         self.assertEqual(by_id["t3-g-a"]["node_type"], "Decision")
         self.assertEqual(by_id["t3-g-a"]["origin"], "Hypothetical")
+        self.assertEqual(by_id["t3-g-a"]["metadata"]["basis_count"], "2")
         self.assertIn("turn-3-opposition", by_id)
         self.assertIn("turn-3-experiment", by_id)
         self.assertEqual(req["action"], "ACTION2")
@@ -69,8 +70,20 @@ class A15AdapterTests(unittest.TestCase):
         self.assertNotIn("reopen_hypothesis_ids", req)
         self.assertNotIn("ft09-secret-evaluator-id", json.dumps(req, sort_keys=True))
         self.assertNotIn("game_id", json.dumps(req, sort_keys=True))
+        roles = {(r["from"], r["to"], r["role"]) for r in req["relations"]}
+        self.assertIn(("t3-h-a", "t3-g-a", "Predictive"), roles)
+        self.assertIn(("t3-h-b", "t3-g-a", "Predictive"), roles)
+        self.assertIn(("t3-o-a", "t3-g-a", "Supports"), roles)
+        self.assertIn(("t3-o-b", "t3-g-a", "Supports"), roles)
         opposition_relations = [r for r in req["relations"] if r["from"] == "turn-3-opposition"]
         self.assertEqual(opposition_relations, [])
+
+    def test_goal_basis_must_reference_known_hypothesis_and_observation(self) -> None:
+        for key, value in [("hypothesis_id", "t3-h-missing"), ("observation_id", "t3-o-missing")]:
+            contaminated = proposal()
+            contaminated["candidate_goals"][0]["basis"][0][key] = value
+            with self.assertRaises(ContractError):
+                validate_turn(contaminated, CONTRACT, {"ACTION2"})
 
     def test_llm_controller_fields_are_rejected(self) -> None:
         for mutate in [
