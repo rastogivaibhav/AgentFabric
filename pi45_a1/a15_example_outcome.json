@@ -2,12 +2,12 @@
   "turn": 0,
   "experiment_id": "turn-0-experiment",
   "action": "ACTION1",
-  "before_state_digest": "example-before",
-  "after_state_digest": "example-after",
-  "meaningful_change": true,
-  "score_delta": 0,
-  "level_delta": 0,
-  "observed_effect": "A persistent observable state change occurred after the experiment.",
+  "before_grid_digest": "example-before-grid",
+  "after_grid_digest": "example-after-grid",
+  "changed_cells": 1,
+  "changed_regions": ["r0"],
+  "persistent_change": true,
+  "observed_effect": "A persistent observable grid change occurred after the experiment.",
   "supports_hypothesis_ids": ["h0-interactable"],
   "contradicts_hypothesis_ids": ["h0-inert"]
 }
