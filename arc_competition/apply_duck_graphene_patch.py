@@ -7,7 +7,6 @@ import shutil
 from pathlib import Path
 
 UPSTREAM_COMMIT = "7652836056c59e044f093e3c13ed7438c814169e"
-UPSTREAM_TOOL_AGENT_SHA256 = ""
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -75,11 +74,16 @@ def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
         "            if not isinstance(raw_payload, dict):\n",
         "transition-capture",
     )
-    text = replace_once(
-        text,
+    old_normal_block = (
+        "            if compact_payload.get(\"executed\") and _terminal_action_reason(compact_payload):\n"
+        "                terminal_action_result = compact_payload\n"
         "            self._last_action_result = dict(compact_payload)\n"
         "            return {\n"
-        "                \"action_result\": compact_payload,\n",
+        "                \"action_result\": compact_payload,\n"
+    )
+    new_normal_block = (
+        "            if compact_payload.get(\"executed\") and _terminal_action_reason(compact_payload):\n"
+        "                terminal_action_result = compact_payload\n"
         "            self._last_action_result = dict(compact_payload)\n"
         "            if (\n"
         "                self._graphene_dmw is not None\n"
@@ -98,9 +102,9 @@ def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
         "                    level_after=dmw_after_frame.level,\n"
         "                )\n"
         "            return {\n"
-        "                \"action_result\": compact_payload,\n",
-        "transition-record",
+        "                \"action_result\": compact_payload,\n"
     )
+    text = replace_once(text, old_normal_block, new_normal_block, "transition-record")
 
     bridge_target = duck_root / "ARC3-Inference/inference/agent/graphene_dmw_bridge.py"
     shutil.copy2(bridge_source, bridge_target)
