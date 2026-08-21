@@ -37,8 +37,37 @@ def build_outcome_prompt(*, turn: int, experiment: dict[str, Any], hypotheses: l
     }
     prompt = SYSTEM_RULES + "\n\nEVIDENCE:\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
     prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
+    prompt += "\nEach tested hypothesis ID may appear in AT MOST ONE of supports_hypothesis_ids, contradicts_hypothesis_ids, or unresolved_hypothesis_ids."
     if len(prompt) > max_chars:
         raise ValueError(f"A1.5 outcome prompt exceeds dedicated budget: {len(prompt)} > {max_chars}")
+    return prompt
+
+
+def build_outcome_repair_prompt(*, original_prompt: str, invalid_output: str,
+                                validation_error: str, tested_ids: set[str],
+                                max_chars: int = 6000) -> str:
+    """Build one bounded repair request without adding new world evidence.
+
+    The repair step is deliberately syntactic/epistemic: it receives only the
+    already-authorized outcome prompt, the model's rejected JSON, the validator
+    error, and the tested IDs. It may not add observations or reinterpret hidden
+    evaluator metadata. A second invalid result remains a hard failure.
+    """
+    payload = {
+        "validation_error": str(validation_error)[:600],
+        "tested_hypothesis_ids": sorted(str(x) for x in tested_ids),
+        "rejected_output": str(invalid_output)[:2400],
+    }
+    repair_rules = """Your previous outcome JSON was rejected by the deterministic epistemic validator.
+Repair the JSON using ONLY the exact evidence in ORIGINAL OUTCOME REQUEST.
+Do not add new observations, hypotheses, game semantics, score, level, terminal state, or game identity.
+Every referenced ID must be one of TESTED_HYPOTHESIS_IDS.
+The supported, contradicted, and unresolved ID sets MUST be pairwise disjoint.
+Do not promote any hypothesis to truth. Return one corrected JSON object only."""
+    prompt = repair_rules + "\n\nORIGINAL OUTCOME REQUEST:\n" + original_prompt
+    prompt += "\n\nREPAIR CONTEXT:\n" + json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    if len(prompt) > max_chars:
+        raise ValueError(f"A1.5 outcome repair prompt exceeds dedicated budget: {len(prompt)} > {max_chars}")
     return prompt
 
 
