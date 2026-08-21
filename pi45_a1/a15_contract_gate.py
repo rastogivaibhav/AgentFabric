@@ -33,6 +33,21 @@ def reject_forbidden_keys(obj: Any, forbidden: set[str], where: str) -> None:
             reject_forbidden_keys(value, forbidden, f"{where}[{index}]")
 
 
+def reject_controller_owned_fields(proposal: dict[str, Any], contract: dict[str, Any]) -> None:
+    controller_fields = {
+        str(x) for x in contract.get("turn_proposal", {}).get("controller_owned_fields", [])
+    }
+    root_bad = sorted(k for k in proposal if str(k) in controller_fields)
+    opposition = proposal.get("opposition") if isinstance(proposal.get("opposition"), dict) else {}
+    opposition_bad = sorted(k for k in opposition if str(k) in controller_fields)
+    bad = root_bad + [f"opposition.{k}" for k in opposition_bad]
+    if bad:
+        raise ContractError(
+            "turn_proposal: native-controller-owned fields must not be supplied by the LLM: "
+            + str(bad)
+        )
+
+
 def require_unique_ids(items: list[dict[str, Any]], where: str) -> set[str]:
     ids: list[str] = []
     for idx, item in enumerate(items):
@@ -75,7 +90,9 @@ def validate_constitution(constitution: dict[str, Any]) -> None:
         raise ContractError(f"constitution: expected principle ids {sorted(required)}, got {sorted(ids)}")
     raw = json.dumps(constitution, sort_keys=True).lower()
     for token in constitution.get("forbidden_tokens") or []:
-        if str(token).lower() in raw.replace(json.dumps(constitution.get("forbidden_tokens"), sort_keys=True).lower(), ""):
+        if str(token).lower() in raw.replace(
+            json.dumps(constitution.get("forbidden_tokens"), sort_keys=True).lower(), ""
+        ):
             raise ContractError(f"constitution: target-game contamination token present: {token}")
     mapping = constitution.get("model_world_mapping") or {}
     if mapping.get("candidate_goal", {}).get("node_type") != "Decision":
@@ -92,8 +109,13 @@ def _require_turn_scoped(ids: set[str], prefix: str, where: str) -> None:
         raise ContractError(f"{where}: ids must be turn-scoped with prefix {prefix!r}; got {bad}")
 
 
-def validate_turn(proposal: dict[str, Any], contract: dict[str, Any], available_actions: set[str] | None = None) -> None:
+def validate_turn(
+    proposal: dict[str, Any],
+    contract: dict[str, Any],
+    available_actions: set[str] | None = None,
+) -> None:
     reject_forbidden_keys(proposal, evaluator_only_fields(contract), "turn_proposal")
+    reject_controller_owned_fields(proposal, contract)
     spec = contract["turn_proposal"]
     require_keys(proposal, spec["required"], "turn_proposal")
     turn = int(proposal["turn"])
@@ -138,26 +160,16 @@ def validate_turn(proposal: dict[str, Any], contract: dict[str, Any], available_
         evidence = set(map(str, goal["evidence_observation_ids"]))
         if not implied or not implied.issubset(hypothesis_ids):
             raise ContractError(f"candidate_goals[{idx}]: must be implied by known hypothesis")
-        if not evidence.issubset(observation_ids):
-            raise ContractError(f"candidate_goals[{idx}]: references unknown observation")
-
-    provisional_h = str(proposal["provisional_hypothesis_id"])
-    provisional_g = str(proposal["provisional_goal_id"])
-    if provisional_h not in hypothesis_ids:
-        raise ContractError("turn_proposal: provisional hypothesis is not preserved in FiberBundle input")
-    if provisional_g not in goal_ids:
-        raise ContractError("turn_proposal: provisional goal is unknown")
+        if not evidence or not evidence.issubset(observation_ids):
+            raise ContractError(f"candidate_goals[{idx}]: must reference known observation evidence")
 
     opposition = proposal["opposition"]
     require_keys(opposition, obj_specs["opposition"]["required"], "opposition")
-    if str(opposition["challenged_hypothesis_id"]) != provisional_h:
-        raise ContractError("opposition: must challenge the provisional convergence")
     questions = list(opposition["falsification_questions"])
     if not limits["falsification_questions_min"] <= len(questions) <= limits["falsification_questions_max"]:
         raise ContractError("opposition: falsification-question count outside contract")
-    reopened = set(map(str, opposition["reopen_hypothesis_ids"]))
-    if not reopened.issubset(hypothesis_ids):
-        raise ContractError("opposition: attempted to reopen unknown hypothesis")
+    if any(not str(q).strip() for q in questions):
+        raise ContractError("opposition: falsification questions must be non-empty")
 
     experiment = proposal["experiment"]
     require_keys(experiment, obj_specs["experiment"]["required"], "experiment")
@@ -185,7 +197,12 @@ def validate_outcome(outcome: dict[str, Any], contract: dict[str, Any], known_hy
         raise ContractError("outcome: changed_cells cannot be negative")
     if not isinstance(outcome["changed_regions"], list):
         raise ContractError("outcome: changed_regions must be a list of observable regions")
-    informative = changed_cells > 0 or bool(outcome["changed_regions"]) or bool(outcome["persistent_change"]) or bool(str(outcome["observed_effect"]).strip())
+    informative = (
+        changed_cells > 0
+        or bool(outcome["changed_regions"])
+        or bool(outcome["persistent_change"])
+        or bool(str(outcome["observed_effect"]).strip())
+    )
     if informative and not (supports or contradicts):
         raise ContractError("outcome: informative result must update at least one hypothesis")
 
@@ -194,25 +211,60 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
     validate_constitution(constitution)
     proposal = {
         "turn": 0,
-        "observations": [{"id": "t0-o1", "statement": "A visible region exists.", "evidence_ref": "grid:0"}],
-        "hypotheses": [
-            {"id": "t0-h1", "statement": "The region may be interactable.", "support_observation_ids": ["t0-o1"], "prediction": "An interaction may alter the grid.", "status": "active"},
-            {"id": "t0-h2", "statement": "The region may be inert.", "support_observation_ids": ["t0-o1"], "prediction": "Interaction leaves the grid invariant.", "status": "proposed"}
+        "observations": [
+            {"id": "t0-o1", "statement": "A visible region exists.", "evidence_ref": "grid:0"}
         ],
-        "candidate_goals": [{"id": "t0-g1", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["t0-h1", "t0-h2"], "evidence_observation_ids": ["t0-o1"], "status": "active"}],
-        "provisional_hypothesis_id": "t0-h1",
-        "provisional_goal_id": "t0-g1",
-        "opposition": {"challenged_hypothesis_id": "t0-h1", "falsification_questions": ["What grid change would support inertness instead?"], "reopen_hypothesis_ids": ["t0-h2"]},
-        "experiment": {"tests_hypothesis_ids": ["t0-h1", "t0-h2"], "information_goal": "Discriminate responsive from inert using observable grid evidence.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION1", "action_params": {}},
-        "residual_uncertainty": ["Action semantics are not yet known."]
+        "hypotheses": [
+            {
+                "id": "t0-h1",
+                "statement": "The region may be interactable.",
+                "support_observation_ids": ["t0-o1"],
+                "prediction": "An interaction may alter the grid.",
+                "status": "active",
+            },
+            {
+                "id": "t0-h2",
+                "statement": "The region may be inert.",
+                "support_observation_ids": ["t0-o1"],
+                "prediction": "Interaction leaves the grid invariant.",
+                "status": "proposed",
+            },
+        ],
+        "candidate_goals": [
+            {
+                "id": "t0-g1",
+                "statement": "Determine whether the visible region participates in the world rules.",
+                "implied_by_hypothesis_ids": ["t0-h1", "t0-h2"],
+                "evidence_observation_ids": ["t0-o1"],
+                "status": "active",
+            }
+        ],
+        "opposition": {
+            "falsification_questions": ["What grid change would support inertness instead?"]
+        },
+        "experiment": {
+            "tests_hypothesis_ids": ["t0-h1", "t0-h2"],
+            "information_goal": "Discriminate responsive from inert using observable grid evidence.",
+            "predicted_observation": "The grid changes or remains invariant.",
+            "action": "ACTION1",
+            "action_params": {},
+        },
+        "residual_uncertainty": ["Action semantics are not yet known."],
     }
     validate_turn(proposal, contract, {"ACTION1", "ACTION2"})
+
     outcome = {
-        "turn": 0, "experiment_id": "turn-0-experiment", "action": "ACTION1",
-        "before_grid_digest": "before", "after_grid_digest": "after",
-        "changed_cells": 1, "changed_regions": ["r0"], "persistent_change": True,
+        "turn": 0,
+        "experiment_id": "turn-0-experiment",
+        "action": "ACTION1",
+        "before_grid_digest": "before",
+        "after_grid_digest": "after",
+        "changed_cells": 1,
+        "changed_regions": ["r0"],
+        "persistent_change": True,
         "observed_effect": "One visible cell changed persistently.",
-        "supports_hypothesis_ids": ["t0-h1"], "contradicts_hypothesis_ids": ["t0-h2"]
+        "supports_hypothesis_ids": ["t0-h1"],
+        "contradicts_hypothesis_ids": ["t0-h2"],
     }
     validate_outcome(outcome, contract, {"t0-h1", "t0-h2"})
 
@@ -242,6 +294,15 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
         pass
     else:
         raise AssertionError("self-test failed: unscoped hypothesis id was accepted")
+
+    controller_leak = json.loads(json.dumps(proposal))
+    controller_leak["opposition"]["reopen_hypothesis_ids"] = ["t0-h2"]
+    try:
+        validate_turn(controller_leak, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: LLM was allowed to select native reopen nodes")
 
     contaminated = json.loads(json.dumps(outcome))
     contaminated["score_delta"] = 1
