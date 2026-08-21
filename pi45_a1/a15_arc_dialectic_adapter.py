@@ -45,12 +45,6 @@ def native_line_protocol(request: dict[str, Any]) -> str:
             "REL", _hex(rel["from"]), _hex(rel["to"]), str(rel["role"]),
             str(rel["origin"]), format(float(rel["confidence"]), ".17g"),
         ]))
-    if request.get("provisional_hypothesis_id") is not None:
-        lines.append(f"PROVISIONAL_H {_hex(request['provisional_hypothesis_id'])}")
-    if request.get("provisional_goal_id") is not None:
-        lines.append(f"PROVISIONAL_G {_hex(request['provisional_goal_id'])}")
-    for hid in request.get("reopen_hypothesis_ids") or []:
-        lines.append(f"REOPEN {_hex(hid)}")
     if request.get("experiment_id") is not None:
         lines.append(f"EXPERIMENT {_hex(request['experiment_id'])}")
     if request.get("action") is not None:
@@ -75,8 +69,10 @@ def _node(external_id: str, node_type: str, status: str, statement: str, origin:
 def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str | None = None) -> dict[str, Any]:
     """Map a validated proposal into native epistemic objects.
 
-    evaluator_game_id is intentionally ignored here. It is permitted in the
-    outer evidence trace only and must never become GrapheneDB/ModelWorld state.
+    The LLM proposes evidence, competing hypotheses, candidate goals,
+    falsification language and an experiment. It does not seed convergence,
+    opposition targets or reopen nodes. Those are native runtime decisions.
+    evaluator_game_id is intentionally ignored.
     """
     turn = int(proposal["turn"])
     nodes: list[dict[str, Any]] = []
@@ -84,52 +80,75 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
 
     for obs in proposal["observations"]:
         oid = str(obs["id"])
-        nodes.append(_node(oid, "Fact", "Active", str(obs["statement"]), "Observed", turn,
-                           {"evidence_ref": obs["evidence_ref"]}))
+        nodes.append(_node(
+            oid, "Fact", "Active", str(obs["statement"]), "Observed", turn,
+            {"evidence_ref": obs["evidence_ref"]},
+        ))
 
     for hyp in proposal["hypotheses"]:
         hid = str(hyp["id"])
         status = {"proposed": "Proposed", "active": "Active", "contested": "Contested"}[hyp["status"]]
-        nodes.append(_node(hid, "Hypothesis", status, str(hyp["statement"]), "Hypothetical", turn,
-                           {"prediction": hyp["prediction"]}))
+        nodes.append(_node(
+            hid, "Hypothesis", status, str(hyp["statement"]), "Hypothetical", turn,
+            {"prediction": hyp["prediction"]},
+        ))
         for oid in hyp["support_observation_ids"]:
-            relations.append({"from": str(oid), "to": hid, "role": "Supports", "origin": "Inferred", "confidence": 0.55})
+            relations.append({
+                "from": str(oid), "to": hid, "role": "Supports",
+                "origin": "Inferred", "confidence": 0.55,
+            })
 
     for goal in proposal["candidate_goals"]:
         gid = str(goal["id"])
         status = {"proposed": "Proposed", "active": "Active", "contested": "Contested"}[goal["status"]]
-        nodes.append(_node(gid, "Decision", status, str(goal["statement"]), "Hypothetical", turn,
-                           {"kind": "candidate_goal"}))
+        nodes.append(_node(
+            gid, "Decision", status, str(goal["statement"]), "Hypothetical", turn,
+            {"kind": "candidate_goal"},
+        ))
         for hid in goal["implied_by_hypothesis_ids"]:
-            relations.append({"from": str(hid), "to": gid, "role": "Predictive", "origin": "Hypothetical", "confidence": 0.45})
+            relations.append({
+                "from": str(hid), "to": gid, "role": "Predictive",
+                "origin": "Hypothetical", "confidence": 0.45,
+            })
         for oid in goal["evidence_observation_ids"]:
-            relations.append({"from": str(oid), "to": gid, "role": "Supports", "origin": "Inferred", "confidence": 0.40})
+            relations.append({
+                "from": str(oid), "to": gid, "role": "Supports",
+                "origin": "Inferred", "confidence": 0.40,
+            })
 
     opposition = proposal["opposition"]
     opp_id = f"turn-{turn}-opposition"
     opp_statement = " | ".join(str(x) for x in opposition["falsification_questions"])
-    nodes.append(_node(opp_id, "Opposition", "Active", opp_statement, "Hypothetical", turn,
-                       {"reopen": ",".join(map(str, opposition["reopen_hypothesis_ids"]))}))
-    relations.append({"from": opp_id, "to": str(opposition["challenged_hypothesis_id"]), "role": "Contradicts", "origin": "Hypothetical", "confidence": 0.50})
+    nodes.append(_node(
+        opp_id, "Opposition", "Active", opp_statement, "Hypothetical", turn,
+        {"kind": "proposal_falsification_questions_only"},
+    ))
 
     exp = proposal["experiment"]
     exp_id = f"turn-{turn}-experiment"
-    nodes.append(_node(exp_id, "Experiment", "Active", str(exp["information_goal"]), "Hypothetical", turn,
-                       {"action": exp["action"], "predicted_observation": exp["predicted_observation"],
-                        "action_params": json.dumps(exp["action_params"], sort_keys=True)}))
+    nodes.append(_node(
+        exp_id, "Experiment", "Active", str(exp["information_goal"]), "Hypothetical", turn,
+        {
+            "action": exp["action"],
+            "predicted_observation": exp["predicted_observation"],
+            "action_params": json.dumps(exp["action_params"], sort_keys=True),
+        },
+    ))
     for hid in exp["tests_hypothesis_ids"]:
-        relations.append({"from": exp_id, "to": str(hid), "role": "Mechanistic", "origin": "Hypothetical", "confidence": 0.50})
+        relations.append({
+            "from": exp_id, "to": str(hid), "role": "Mechanistic",
+            "origin": "Hypothetical", "confidence": 0.50,
+        })
 
     return {
-        "protocol": "agentfabric-a15-native-v2",
+        "protocol": "agentfabric-a15-native-v3",
         "operation": "ingest_and_reason",
         "world_scope": OPAQUE_WORLD_SCOPE,
         "turn": turn,
         "nodes": nodes,
         "relations": relations,
-        "provisional_hypothesis_id": str(proposal["provisional_hypothesis_id"]),
-        "provisional_goal_id": str(proposal["provisional_goal_id"]),
-        "reopen_hypothesis_ids": list(map(str, opposition["reopen_hypothesis_ids"])),
+        "candidate_hypothesis_ids": [str(h["id"]) for h in proposal["hypotheses"]],
+        "candidate_goal_ids": [str(g["id"]) for g in proposal["candidate_goals"]],
         "residual_uncertainty": list(map(str, proposal["residual_uncertainty"])),
         "experiment_id": exp_id,
         "action": str(exp["action"]),
@@ -153,13 +172,22 @@ def outcome_to_native_request(outcome: dict[str, Any], evaluator_game_id: str | 
             "persistent_change": outcome["persistent_change"],
         },
     )
-    relations = [{"from": str(outcome["experiment_id"]), "to": oid, "role": "Causal", "origin": "Observed", "confidence": 1.0}]
+    relations = [{
+        "from": str(outcome["experiment_id"]), "to": oid, "role": "Causal",
+        "origin": "Observed", "confidence": 1.0,
+    }]
     for hid in outcome["supports_hypothesis_ids"]:
-        relations.append({"from": oid, "to": str(hid), "role": "Supports", "origin": "Observed", "confidence": 0.80})
+        relations.append({
+            "from": oid, "to": str(hid), "role": "Supports",
+            "origin": "Observed", "confidence": 0.80,
+        })
     for hid in outcome["contradicts_hypothesis_ids"]:
-        relations.append({"from": oid, "to": str(hid), "role": "Contradicts", "origin": "Observed", "confidence": 0.80})
+        relations.append({
+            "from": oid, "to": str(hid), "role": "Contradicts",
+            "origin": "Observed", "confidence": 0.80,
+        })
     return {
-        "protocol": "agentfabric-a15-native-v2",
+        "protocol": "agentfabric-a15-native-v3",
         "operation": "apply_outcome_and_reason",
         "world_scope": OPAQUE_WORLD_SCOPE,
         "turn": turn,
@@ -169,8 +197,10 @@ def outcome_to_native_request(outcome: dict[str, Any], evaluator_game_id: str | 
 
 
 def invoke_native(helper: str, request: dict[str, Any], db_path: str) -> dict[str, Any]:
-    proc = subprocess.run([helper, "--db", db_path], input=native_line_protocol(request), text=True,
-                          capture_output=True, timeout=60)
+    proc = subprocess.run(
+        [helper, "--db", db_path], input=native_line_protocol(request), text=True,
+        capture_output=True, timeout=60,
+    )
     if proc.returncode != 0:
         raise NativeRuntimeError(f"native helper failed rc={proc.returncode}: {proc.stderr.strip()}")
     try:
@@ -188,6 +218,10 @@ def invoke_native(helper: str, request: dict[str, Any], db_path: str) -> dict[st
         raise NativeRuntimeError(f"native helper receipt missing {missing}")
     if not all(bool(receipt[k]) for k in required_receipt):
         raise NativeRuntimeError(f"native GrapheneDB reasoning gate incomplete: {receipt}")
+    if request.get("operation") == "ingest_and_reason":
+        for field in ["reopened_hypothesis_ids", "challenged_claims", "native_falsification_questions"]:
+            if field not in response:
+                raise NativeRuntimeError(f"native controller response missing {field}")
     return response
 
 
