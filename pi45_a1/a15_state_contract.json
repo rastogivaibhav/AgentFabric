@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "turn_proposal": {
+    "required": [
+      "turn",
+      "observations",
+      "hypotheses",
+      "candidate_goals",
+      "provisional_hypothesis_id",
+      "provisional_goal_id",
+      "opposition",
+      "experiment",
+      "residual_uncertainty"
+    ],
+    "limits": {
+      "observations_min": 1,
+      "observations_max": 8,
+      "hypotheses_min": 2,
+      "hypotheses_max": 5,
+      "candidate_goals_min": 1,
+      "candidate_goals_max": 3,
+      "falsification_questions_min": 1,
+      "falsification_questions_max": 3
+    },
+    "objects": {
+      "observation": {
+        "required": ["id", "statement", "evidence_ref"],
+        "epistemic_origin": "observed"
+      },
+      "hypothesis": {
+        "required": ["id", "statement", "support_observation_ids", "prediction", "status"],
+        "allowed_status": ["proposed", "active", "contested"],
+        "epistemic_origin": "hypothetical"
+      },
+      "candidate_goal": {
+        "required": ["id", "statement", "implied_by_hypothesis_ids", "evidence_observation_ids", "status"],
+        "allowed_status": ["proposed", "active", "contested"],
+        "epistemic_origin": "hypothetical"
+      },
+      "opposition": {
+        "required": ["challenged_hypothesis_id", "falsification_questions", "reopen_hypothesis_ids"]
+      },
+      "experiment": {
+        "required": ["tests_hypothesis_ids", "information_goal", "predicted_observation", "action", "action_params"],
+        "action_must_be_available": true,
+        "tests_active_or_preserved_hypothesis": true
+      }
+    }
+  },
+  "outcome_record": {
+    "required": [
+      "turn",
+      "experiment_id",
+      "action",
+      "before_state_digest",
+      "after_state_digest",
+      "meaningful_change",
+      "score_delta",
+      "level_delta",
+      "observed_effect",
+      "supports_hypothesis_ids",
+      "contradicts_hypothesis_ids"
+    ],
+    "epistemic_origin": "observed"
+  },
+  "controller_invariants": [
+    "candidate_goal_is_never_fact",
+    "hypothetical_is_never_silently_promoted_to_observed_or_discovered",
+    "convergence_does_not_delete_preserved_alternatives",
+    "every_executed_action_has_experiment_and_outcome",
+    "informative_outcome_updates_epistemic_state",
+    "opposition_can_reopen_discarded_alternative",
+    "no_evidence_allows_abstention",
+    "repeated_no_information_state_is_eligible_for_lyapunov_escape"
+  ],
+  "diagnostic_metrics": [
+    "hypotheses_generated",
+    "distinct_hypotheses_preserved",
+    "candidate_goals_generated",
+    "goal_hypothesis_links",
+    "experiments_executed",
+    "outcomes_recorded",
+    "hypotheses_supported",
+    "hypotheses_contradicted",
+    "hypotheses_rejected",
+    "opposition_rounds",
+    "alternatives_reopened",
+    "lyapunov_checks",
+    "escape_events",
+    "no_evidence_abstentions",
+    "false_promotion_violations",
+    "model_world_nodes",
+    "model_world_events",
+    "model_world_audit_findings"
+  ]
+}
