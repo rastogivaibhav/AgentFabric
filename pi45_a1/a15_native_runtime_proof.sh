@@ -4,46 +4,54 @@ set -euo pipefail
 OUT_DIR="${1:-/tmp/a15-native-runtime-evidence}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GDB_COMMIT="fb960c209a888505a64ed17157ca640d732d2640"
-GDB_DIR=/tmp/a15-graphenedb-full
 HELPER=/tmp/a15_native_runtime_helper
 DB=/tmp/a15_native_runtime.graphenedb
 TRACE="$OUT_DIR/native_trace.jsonl"
+RUNTIME="$ROOT/pi45_a1/a15_native_runtime"
+MODEL_WORLD="$ROOT/pi45_a1/a15_native_model_world"
+CORE="$ROOT/pi45_a1/graphenedb_snapshot"
 
-rm -rf "$OUT_DIR" "$GDB_DIR" "$DB" "$DB.modelworld"
+rm -rf "$OUT_DIR" "$DB" "$DB.modelworld"
 mkdir -p "$OUT_DIR"
+printf '%s\n' "$GDB_COMMIT" > "$OUT_DIR/graphenedb_source_commit.txt"
+printf '%s\n' 'vendored_pinned_runtime_closure_no_cross_repo_network_dependency' > "$OUT_DIR/graphenedb_source_mode.txt"
 
-git clone --quiet https://github.com/rastogivaibhav/graphenedb_v1.git "$GDB_DIR"
-git -C "$GDB_DIR" checkout --quiet "$GDB_COMMIT"
-test "$(git -C "$GDB_DIR" rev-parse HEAD)" = "$GDB_COMMIT"
-printf '%s\n' "$GDB_COMMIT" > "$OUT_DIR/graphenedb_commit.txt"
+find "$RUNTIME" -type f -print0 | sort -z | xargs -0 sha256sum > "$OUT_DIR/runtime_vendor_SHA256SUMS.txt"
+sha256sum \
+  "$MODEL_WORLD/src/model_world.cpp" \
+  "$MODEL_WORLD/include/graphene/model_world.hpp" \
+  "$CORE/src/db.cpp" "$CORE/src/platform_posix.cpp" \
+  "$CORE/include/graphene/db.hpp" "$CORE/include/graphene/types.hpp" \
+  > "$OUT_DIR/core_SHA256SUMS.txt"
 
-mapfile -t SOURCES < <(find "$GDB_DIR/src" -maxdepth 1 -type f -name '*.cpp' ! -name 'platform_windows.cpp' | sort)
-test "${#SOURCES[@]}" -gt 10
-
-g++ -std=c++20 -O2 -UNDEBUG -I"$GDB_DIR/include" \
+g++ -std=c++20 -O2 -UNDEBUG \
+  -I"$RUNTIME/include" -I"$MODEL_WORLD/include" -I"$CORE/include" \
   "$ROOT/pi45_a1/a15_native_runtime_helper.cpp" \
-  "${SOURCES[@]}" -pthread -o "$HELPER"
+  "$CORE/src/db.cpp" "$CORE/src/platform_posix.cpp" \
+  "$MODEL_WORLD/src/model_world.cpp" \
+  "$RUNTIME/src/epistemic.cpp" \
+  "$RUNTIME/src/dialectic.cpp" \
+  "$RUNTIME/src/fiber_bundle.cpp" \
+  "$RUNTIME/src/stability_critic.cpp" \
+  "$RUNTIME/src/epistemic_control.cpp" \
+  "$RUNTIME/src/escape.cpp" \
+  "$RUNTIME/src/self_healing.cpp" \
+  "$RUNTIME/src/path_verifier.cpp" \
+  "$RUNTIME/src/hypokosh_runtime.cpp" \
+  -pthread -o "$HELPER"
 sha256sum "$HELPER" > "$OUT_DIR/helper_SHA256SUMS.txt"
 sha256sum "$ROOT/pi45_a1/a15_native_runtime_helper.cpp" > "$OUT_DIR/helper_source_SHA256SUMS.txt"
 
 PYTHONPATH="$ROOT/pi45_a1" python3 "$ROOT/pi45_a1/a15_arc_dialectic_adapter.py" \
-  --mode proposal \
-  --input "$ROOT/pi45_a1/a15_example_turn.json" \
-  --game-id diagnostic \
-  --available-actions ACTION1,ACTION2 \
-  --native-helper "$HELPER" \
-  --db "$DB" \
-  --trace "$TRACE" \
+  --mode proposal --input "$ROOT/pi45_a1/a15_example_turn.json" \
+  --game-id diagnostic --available-actions ACTION1,ACTION2 \
+  --native-helper "$HELPER" --db "$DB" --trace "$TRACE" \
   > "$OUT_DIR/proposal_response.json"
 
 PYTHONPATH="$ROOT/pi45_a1" python3 "$ROOT/pi45_a1/a15_arc_dialectic_adapter.py" \
-  --mode outcome \
-  --input "$ROOT/pi45_a1/a15_example_outcome.json" \
-  --game-id diagnostic \
-  --known-hypotheses h0-interactable,h0-inert \
-  --native-helper "$HELPER" \
-  --db "$DB" \
-  --trace "$TRACE" \
+  --mode outcome --input "$ROOT/pi45_a1/a15_example_outcome.json" \
+  --game-id diagnostic --known-hypotheses h0-interactable,h0-inert \
+  --native-helper "$HELPER" --db "$DB" --trace "$TRACE" \
   > "$OUT_DIR/outcome_response.json"
 
 python3 - "$OUT_DIR" <<'PY'
