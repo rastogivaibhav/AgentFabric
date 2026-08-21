@@ -1,0 +1,28 @@
+name: PI4.5 A1.5 Perception Contract Audit
+
+on:
+  push:
+    branches:
+      - pi45-a15-dialectical-model-world-20260821
+  pull_request:
+    branches:
+      - pi45-a14-minimal-interactive-world-prior-20260821
+
+permissions:
+  contents: read
+
+jobs:
+  perception-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run one-turn exact-input perception audit
+        run: bash pi45_a1/a15_perception_audit.sh /tmp/a15-perception-audit
+      - name: Record commit
+        run: git rev-parse HEAD > /tmp/a15-perception-audit/agentfabric_commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi45-a15-perception-contract-evidence
+          path: /tmp/a15-perception-audit
+          if-no-files-found: error
