@@ -52,10 +52,12 @@ g++ -std=c++20 -O2 -UNDEBUG \
   -pthread -o "$HELPER"
 
 # Build a read-only sanitized ModelWorld projection for next-turn feedback.
+# ModelWorld links the platform durable-replace helper even for a read-only dump.
 g++ -std=c++20 -O2 -UNDEBUG \
   -I"$RUNTIME/include" -I"$MODEL_WORLD/include" -I"$CORE/include" \
   "$ROOT/pi45_a1/a15_model_world_dump.cpp" \
   "$MODEL_WORLD/src/model_world.cpp" \
+  "$CORE/src/platform_posix.cpp" \
   -pthread -o "$DUMPER"
 
 sha256sum "$HELPER" "$BOOTSTRAP" "$DUMPER" > "$OUT_DIR/native_binaries_SHA256SUMS.txt"
