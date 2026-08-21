@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from a15_proposal_prompt import SYSTEM_RULES, build_proposal_prompt, parse_json_object
+from a15_proposal_prompt import SYSTEM_RULES, build_proposal_prompt, build_proposal_repair_prompt, parse_json_object
 
 
 class A15ProposalPromptTests(unittest.TestCase):
@@ -28,6 +28,8 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("t5-h2", prompt)
         self.assertIn("t5-g1", prompt)
         self.assertIn("new epistemic revision", prompt)
+        self.assertIn("implied_by_hypothesis_ids", prompt)
+        self.assertIn("evidence_observation_ids", prompt)
         self.assertNotIn("secret-ft09-evaluator-id", prompt)
         self.assertNotIn('"game_id"', prompt)
 
@@ -49,6 +51,40 @@ class A15ProposalPromptTests(unittest.TestCase):
             build_proposal_prompt(
                 turn=0, game_id="hidden", observation={"grid": [[0]]},
                 available_actions=["MOVE_UP"], recent_outcomes=[], governed_context={}
+            )
+
+    def test_repair_prompt_is_same-turn_and_adds_no_new_evidence(self) -> None:
+        original = "CURRENT EVIDENCE token-clean\nOUTPUT CONTRACT token-contract"
+        rejected = json.dumps({
+            "turn": 2,
+            "candidate_goals": [{"id": "t2-g1", "statement": "seek evidence", "status": "active"}],
+        })
+        prompt = build_proposal_repair_prompt(
+            original_prompt=original,
+            invalid_output=rejected,
+            validation_error="candidate_goals[0]: missing required keys ['implied_by_hypothesis_ids', 'evidence_observation_ids']",
+            turn=2,
+            available_actions=["ACTION1", "ACTION2", "ACTION3"],
+        )
+        self.assertIn(original, prompt)
+        self.assertIn("SAME proposal", prompt)
+        self.assertIn("implied_by_hypothesis_ids", prompt)
+        self.assertIn("evidence_observation_ids", prompt)
+        self.assertIn("t2-o", prompt)
+        self.assertIn("t2-h", prompt)
+        self.assertIn("t2-g", prompt)
+        self.assertIn("ACTION3", prompt)
+        self.assertNotIn("ft09", prompt)
+        self.assertNotIn("bp35", prompt)
+
+    def test_repair_prompt_rejects_semantic_action_names(self) -> None:
+        with self.assertRaises(ValueError):
+            build_proposal_repair_prompt(
+                original_prompt="clean",
+                invalid_output="{}",
+                validation_error="bad",
+                turn=1,
+                available_actions=["MOVE_UP"],
             )
 
     def test_parser_accepts_json_and_fenced_json(self) -> None:
