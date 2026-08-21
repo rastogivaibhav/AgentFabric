@@ -14,13 +14,18 @@ class A15ProposalPromptTests(unittest.TestCase):
             observation={"grid": [[0, 1], [1, 0]]},
             available_actions=["ACTION1", "ACTION2"],
             recent_outcomes=[{"turn": i, "changed_cells": 0, "effect": "none", "large": "x" * 1500} for i in range(6)],
-            governed_context={"status": "Contested", "reopen_hypothesis_ids": ["old-h2"], "noise": "y" * 4000},
+            governed_context={
+                "status": "Contested",
+                "reopened_hypothesis_ids": ["old-h2"],
+                "challenged_claims": ["competing causal roots remain"],
+                "noise": "y" * 4000,
+            },
             max_chars=6500,
         )
         self.assertLessEqual(len(prompt), 6500)
         self.assertIn("Preserve at least two competing hypotheses", prompt)
         self.assertIn("never use 'win the game'", prompt)
-        self.assertIn("GrapheneDB runtime owns convergence", prompt)
+        self.assertIn("native GrapheneDB/HypoKosh controller owns those decisions", prompt)
         self.assertIn('"ACTION1"', prompt)
         self.assertIn('"ACTION2"', prompt)
         self.assertIn("t5-o1", prompt)
@@ -32,6 +37,12 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("evidence_observation_ids", prompt)
         self.assertNotIn("secret-ft09-evaluator-id", prompt)
         self.assertNotIn('"game_id"', prompt)
+
+        output_contract = prompt.split("\n\nOUTPUT CONTRACT:\n", 1)[1].split("\nConstraints:", 1)[0]
+        schema = json.loads(output_contract)
+        self.assertNotIn("provisional_hypothesis_id", schema)
+        self.assertNotIn("provisional_goal_id", schema)
+        self.assertEqual(set(schema["opposition"]), {"falsification_questions"})
 
     def test_evaluator_metadata_is_rejected(self) -> None:
         for bad in [
@@ -70,6 +81,7 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("SAME proposal", prompt)
         self.assertIn("implied_by_hypothesis_ids", prompt)
         self.assertIn("evidence_observation_ids", prompt)
+        self.assertIn("native-controller-owned", prompt)
         self.assertIn("t2-o", prompt)
         self.assertIn("t2-h", prompt)
         self.assertIn("t2-g", prompt)
@@ -92,10 +104,12 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertEqual(parse_json_object(json.dumps(expected)), expected)
         self.assertEqual(parse_json_object("```json\n" + json.dumps(expected) + "\n```"), expected)
 
-    def test_system_rules_do_not_claim_known_goal(self) -> None:
+    def test_system_rules_do_not_claim_known_goal_or_controller_authority(self) -> None:
         lower = SYSTEM_RULES.lower()
         self.assertIn("do not know the objective", lower)
         self.assertNotIn("goal is to", lower)
+        self.assertIn("do not choose a provisional convergence", lower)
+        self.assertIn("controller owns those decisions", lower)
 
 
 if __name__ == "__main__":
