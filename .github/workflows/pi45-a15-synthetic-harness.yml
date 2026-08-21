@@ -1,5 +1,7 @@
 name: PI4.5 A1.5 Synthetic Dialectical Harness
 
+# Pre-game proof only. The harness links the full ModelWorld platform durability
+# dependency closure and contains no ARC game execution surface.
 on:
   pull_request:
     branches: [pi45-a14-minimal-interactive-world-prior-20260821]
