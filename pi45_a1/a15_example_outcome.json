@@ -8,6 +8,6 @@
   "changed_regions": ["r0"],
   "persistent_change": true,
   "observed_effect": "A persistent observable grid change occurred after the experiment.",
-  "supports_hypothesis_ids": ["h0-interactable"],
-  "contradicts_hypothesis_ids": ["h0-inert"]
+  "supports_hypothesis_ids": ["t0-h-interactable"],
+  "contradicts_hypothesis_ids": ["t0-h-inert"]
 }
