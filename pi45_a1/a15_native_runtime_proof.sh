@@ -5,6 +5,7 @@ OUT_DIR="${1:-/tmp/a15-native-runtime-evidence}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GDB_COMMIT="fb960c209a888505a64ed17157ca640d732d2640"
 HELPER=/tmp/a15_native_runtime_helper
+BOOTSTRAP=/tmp/a15_graphene_bootstrap
 DB=/tmp/a15_native_runtime.graphenedb
 TRACE="$OUT_DIR/native_trace.jsonl"
 RUNTIME="$ROOT/pi45_a1/a15_native_runtime"
@@ -23,6 +24,14 @@ sha256sum \
   "$CORE/src/db.cpp" "$CORE/src/platform_posix.cpp" \
   "$CORE/include/graphene/db.hpp" "$CORE/include/graphene/types.hpp" \
   > "$OUT_DIR/core_SHA256SUMS.txt"
+
+g++ -std=c++20 -O2 -UNDEBUG -I"$CORE/include" \
+  "$ROOT/pi45_a1/a15_graphene_bootstrap.cpp" \
+  "$CORE/src/db.cpp" "$CORE/src/platform_posix.cpp" \
+  -pthread -o "$BOOTSTRAP"
+sha256sum "$BOOTSTRAP" "$ROOT/pi45_a1/a15_graphene_bootstrap.cpp" > "$OUT_DIR/bootstrap_SHA256SUMS.txt"
+"$BOOTSTRAP" "$DB" | tee "$OUT_DIR/bootstrap.txt"
+grep -q 'a15_zero_id_sentinel=PASS id=0' "$OUT_DIR/bootstrap.txt"
 
 g++ -std=c++20 -O2 -UNDEBUG \
   -I"$RUNTIME/include" -I"$MODEL_WORLD/include" -I"$CORE/include" \
@@ -77,6 +86,12 @@ assert proposal['governed_action'] == 'ACTION1', proposal
 assert outcome['action_authorized'] is False, outcome
 assert outcome['model_world_events'] > proposal['model_world_events'], (proposal, outcome)
 assert outcome['reasoning_receipt']['model_world_event_hash'] != proposal['reasoning_receipt']['model_world_event_hash']
+trace=(out/'native_trace.jsonl').read_text()
+assert 'diagnostic' in trace  # evaluator trace may retain evaluator id
+for response_file in ('proposal_response.json','outcome_response.json'):
+    body=(out/response_file).read_text()
+    assert 'diagnostic' not in body, body
+    assert 'score_delta' not in body and 'level_delta' not in body, body
 print('a15_native_runtime_bridge=PASS')
 PY
 
