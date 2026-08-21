@@ -1,0 +1,184 @@
+name: PI4.5 ARC Paper Comparative Pilot
+
+# The sentinel path is the only automatic trigger. This prevents normal A1.5
+# development commits from consuming ARC evaluation runs.
+on:
+  pull_request:
+    branches: [pi45-a14-minimal-interactive-world-prior-20260821]
+    paths:
+      - 'pi45_a1/ARC_PAPER_PILOT_TRIGGER.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    name: ${{ matrix.variant }}-${{ matrix.game }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [a0, a13, a14, a15]
+        game: [ls20, ft09, bp35]
+
+    steps:
+      - name: Checkout frozen A1.5 experiment branch
+        uses: actions/checkout@v4
+
+      - name: Prepare pinned ARC, Qwen, GrapheneDB and llama.cpp
+        shell: bash
+        run: bash pi45_a1/a13_prepare.sh
+
+      - name: Assert paper harness syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            pi45_a1/a15_arc_paper_runner.py \
+            pi45_a1/arc_paper_normalize.py
+          bash -n pi45_a1/a0_run_game_paper.sh
+          bash -n pi45_a1/a15_run_arc_paper.sh
+
+      - name: Run frozen treatment
+        id: treatment
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+          GAME: ${{ matrix.game }}
+          MAX_ACTIONS: '10'
+          OUT_DIR: results/arc-paper/${{ matrix.variant }}/${{ matrix.game }}
+        run: |
+          set -u
+          mkdir -p "$OUT_DIR"
+          set +e
+          case "$VARIANT" in
+            a0)
+              bash pi45_a1/a0_run_game_paper.sh "$GAME" "$MAX_ACTIONS" "$OUT_DIR"
+              ;;
+            a13)
+              bash pi45_a1/a13_run_game.sh "$GAME" "$MAX_ACTIONS" "$OUT_DIR"
+              ;;
+            a14)
+              bash pi45_a1/a14_run_game.sh "$GAME" "$MAX_ACTIONS" "$OUT_DIR"
+              ;;
+            a15)
+              bash pi45_a1/a15_run_arc_paper.sh "$GAME" "$MAX_ACTIONS" "$OUT_DIR"
+              ;;
+            *)
+              echo "unknown variant $VARIANT" >&2
+              exit 2
+              ;;
+          esac
+          RC=$?
+          set -e
+          mkdir -p "$OUT_DIR"
+          printf '%s\n' "$RC" > "$OUT_DIR/variant_exit_code.txt"
+          printf '%s\n' \
+            "variant=$VARIANT" \
+            "game=$GAME" \
+            "max_actions=$MAX_ACTIONS" \
+            "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
+            > "$OUT_DIR/pilot_identity.txt"
+          # Deliberately return success here. The normalizer carries validity;
+          # poor treatment behavior or an invalid measurement must still upload.
+          exit 0
+
+      - name: Normalize paper result
+        if: always()
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+          GAME: ${{ matrix.game }}
+          MAX_ACTIONS: '10'
+          OUT_DIR: results/arc-paper/${{ matrix.variant }}/${{ matrix.game }}
+        run: |
+          set -u
+          mkdir -p "$OUT_DIR"
+          python3 pi45_a1/arc_paper_normalize.py \
+            --variant "$VARIANT" --out-dir "$OUT_DIR" \
+            --game "$GAME" --max-actions "$MAX_ACTIONS" \
+            --output "$OUT_DIR/paper_result.json" \
+            > "$OUT_DIR/normalizer_stdout.log" 2>&1 || true
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+
+      - name: Upload variant evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-${{ matrix.variant }}-${{ matrix.game }}
+          path: results/arc-paper/${{ matrix.variant }}/${{ matrix.game }}
+          if-no-files-found: error
+          retention-days: 30
+
+  aggregate:
+    name: aggregate-paper-pilot
+    if: always()
+    needs: [experiment]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all experiment evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: arc-paper-*
+          path: all-results
+
+      - name: Build comparison artifact
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          rows=[]
+          for path in sorted(Path('all-results').rglob('paper_result.json')):
+              try:
+                  row=json.loads(path.read_text())
+              except Exception:
+                  continue
+              row['_source']=str(path)
+              rows.append(row)
+          expected=12
+          payload={
+              'experiment':'PI4.5 ARC Paper Comparative Pilot',
+              'action_budget_per_condition':10,
+              'expected_conditions':expected,
+              'normalized_conditions':len(rows),
+              'rows':rows,
+          }
+          Path('comparison').mkdir()
+          Path('comparison/comparison.json').write_text(json.dumps(payload,indent=2,sort_keys=True,default=str)+'\n')
+
+          headers=['variant','game_id','valid','actions','levels','score','unique','no_ops','repeat','proposal_err','outcome_err','reopens']
+          lines=['| '+' | '.join(headers)+' |','|'+'|'.join(['---']*len(headers))+'|']
+          for r in sorted(rows,key=lambda x:(x.get('game_id',''),x.get('variant',''))):
+              vals=[
+                  r.get('variant'),r.get('game_id'),r.get('valid_measurement'),r.get('actions'),
+                  r.get('levels_gained'),r.get('score'),r.get('unique_actions'),r.get('no_ops'),
+                  r.get('repeated_state_action'),r.get('proposal_errors'),r.get('outcome_errors'),
+                  r.get('native_reopen_events'),
+              ]
+              lines.append('| '+' | '.join(str(v) for v in vals)+' |')
+          Path('comparison/comparison.md').write_text('\n'.join(lines)+'\n')
+
+          valid=[r for r in rows if r.get('valid_measurement')]
+          by_variant={}
+          for r in valid:
+              v=r.get('variant')
+              x=by_variant.setdefault(v,{'conditions':0,'actions':0,'levels_gained':0,'no_ops':0,'repeated_state_action':0,'proposal_errors':0,'outcome_errors':0})
+              x['conditions']+=1
+              for key in ['actions','levels_gained','no_ops','repeated_state_action','proposal_errors','outcome_errors']:
+                  x[key]+=int(r.get(key) or 0)
+          Path('comparison/aggregate_by_variant.json').write_text(json.dumps(by_variant,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(payload,indent=2,default=str))
+          PY
+          find comparison -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > comparison/SHA256SUMS.txt
+
+      - name: Upload comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-comparison-pilot
+          path: comparison
+          if-no-files-found: error
+          retention-days: 30
