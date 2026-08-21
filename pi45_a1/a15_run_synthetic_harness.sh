@@ -15,8 +15,10 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 # The synthetic H1 runner must have no live target-game imports or execution surface.
-! grep -Eq '(^|[[:space:]])(import|from)[[:space:]]+(arc_agi|arcengine)' "$ROOT/pi45_a1/a15_synthetic_world_harness.py"
-! grep -q 'arc\.make\|get_environments\|env\.step\|Arcade(' "$ROOT/pi45_a1/a15_synthetic_world_harness.py"
+for harness in "$ROOT/pi45_a1/a15_synthetic_world_harness.py" "$ROOT/pi45_a1/a15_synthetic_world_harness_v2.py"; do
+  ! grep -Eq '(^|[[:space:]])(import|from)[[:space:]]+(arc_agi|arcengine)' "$harness"
+  ! grep -q 'arc\.make\|get_environments\|env\.step\|Arcade(' "$harness"
+done
 printf '%s\n' 'arc_static_execution_surface=ABSENT' > "$OUT_DIR/arc_execution_guard.txt"
 
 # H0: contract/prompt/adapter tests first. No environment is created here.
@@ -25,7 +27,8 @@ python3 -m py_compile \
   "$ROOT/pi45_a1/a15_arc_dialectic_adapter.py" \
   "$ROOT/pi45_a1/a15_proposal_prompt.py" \
   "$ROOT/pi45_a1/a15_outcome_prompt.py" \
-  "$ROOT/pi45_a1/a15_synthetic_world_harness.py"
+  "$ROOT/pi45_a1/a15_synthetic_world_harness.py" \
+  "$ROOT/pi45_a1/a15_synthetic_world_harness_v2.py"
 PYTHONPATH="$ROOT/pi45_a1" python3 -m unittest -v \
   pi45_a1/test_a15_arc_dialectic_adapter.py \
   pi45_a1/test_a15_proposal_prompt.py \
@@ -59,6 +62,7 @@ g++ -std=c++20 -O2 -UNDEBUG \
 sha256sum "$HELPER" "$BOOTSTRAP" "$DUMPER" > "$OUT_DIR/native_binaries_SHA256SUMS.txt"
 sha256sum \
   "$ROOT/pi45_a1/a15_synthetic_world_harness.py" \
+  "$ROOT/pi45_a1/a15_synthetic_world_harness_v2.py" \
   "$ROOT/pi45_a1/a15_arc_dialectic_adapter.py" \
   "$ROOT/pi45_a1/a15_proposal_prompt.py" \
   "$ROOT/pi45_a1/a15_outcome_prompt.py" \
@@ -81,6 +85,7 @@ printf '%s\n' \
   'native_runtime=CompleteHypoKoshRuntime' \
   'persistent_model_world=true' \
   'evaluator_metadata_in_reasoning=false' \
+  'proposal_repair=max_one_same-model-validation-retry' \
   'outcome_repair=max_one_same-model-validation-retry' \
   > "$OUT_DIR/harness_contract.txt"
 
@@ -104,7 +109,7 @@ for _ in $(seq 1 120); do
 done
 test "$ready" = 1
 
-PYTHONPATH="$ROOT/pi45_a1" /tmp/pi45venv/bin/python "$ROOT/pi45_a1/a15_synthetic_world_harness.py" \
+PYTHONPATH="$ROOT/pi45_a1" /tmp/pi45venv/bin/python "$ROOT/pi45_a1/a15_synthetic_world_harness_v2.py" \
   --endpoint http://127.0.0.1:9090/v1/chat/completions \
   --out "$OUT_DIR/h1" \
   --native-helper "$HELPER" \
@@ -131,32 +136,37 @@ assert summary['meaningful_changes'] >= 1
 assert summary['max_same_state_action_trials'] <= 2
 assert summary['model_world_nodes'] > 0
 assert summary['model_world_event_hash'] != 0
-repairs=int(inst.get('outcome_repairs_attempted',0))
-assert repairs <= int(summary['turns_executed'])
-assert int(inst.get('outcome_repairs_succeeded',0)) == repairs
+proposal_repairs=int(inst.get('proposal_repairs_attempted',0))
+outcome_repairs=int(inst.get('outcome_repairs_attempted',0))
+assert proposal_repairs <= int(summary['turns_executed'])
+assert outcome_repairs <= int(summary['turns_executed'])
+assert int(inst.get('proposal_repairs_succeeded',0)) == proposal_repairs
+assert int(inst.get('outcome_repairs_succeeded',0)) == outcome_repairs
 
 # Hidden evaluator rules are kept in a separate artifact. They must never be
-# copied into model-call or epistemic-turn records.
-model_text=(out/'h1/synthetic.a15.model_calls.jsonl').read_text().lower()
-turn_rows=[json.loads(line) for line in (out/'h1/synthetic.a15.turns.jsonl').read_text().splitlines() if line.strip()]
+# copied into model-call, repair, or epistemic-turn records.
+paths=[out/'h1/synthetic.a15.model_calls.jsonl', out/'h1/synthetic.a15.turns.jsonl']
+proposal_repair_path=out/'h1/synthetic.a15.proposal_repairs.jsonl'
+if proposal_repair_path.exists():
+    paths.append(proposal_repair_path)
 for forbidden in ['ft09','bp35','ls20','win_levels','levels_completed','score_delta','level_delta','scorecard','official_success']:
-    assert forbidden not in model_text, forbidden
-    for row in turn_rows:
-        epistemic={k:v for k,v in row.items() if k != 'evaluator'}
-        assert forbidden not in json.dumps(epistemic,sort_keys=True).lower(), (forbidden,row.get('turn'))
+    for path in paths:
+        text=path.read_text().lower()
+        assert forbidden not in text, (forbidden,str(path))
 
 records=[json.loads(line) for line in (out/'transport_proxy.jsonl').read_text().splitlines() if line.strip()]
 posts=[r for r in records if r.get('method')=='POST']
 turns=int(summary['turns_executed'])
-expected=2*turns+repairs
-assert len(posts) == expected, (len(posts),expected,turns,repairs)
+expected=2*turns+proposal_repairs+outcome_repairs
+assert len(posts) == expected, (len(posts),expected,turns,proposal_repairs,outcome_repairs)
 assert not any(r.get('client_disconnected') for r in posts)
 assert not any(r.get('error') or (r.get('status') or 0) >= 500 for r in posts)
 assert max((int(r.get('max_active_observed',0)) for r in posts),default=0) <= 1
 transport={
   'requests':len(posts),
   'expected_requests':expected,
-  'outcome_repair_requests':repairs,
+  'proposal_repair_requests':proposal_repairs,
+  'outcome_repair_requests':outcome_repairs,
   'truncated_requests':sum(bool(r.get('truncated')) for r in posts),
   'transport_errors':sum(bool(r.get('error')) or (r.get('status') or 0)>=500 for r in posts),
   'client_disconnects':sum(bool(r.get('client_disconnected')) for r in posts),
