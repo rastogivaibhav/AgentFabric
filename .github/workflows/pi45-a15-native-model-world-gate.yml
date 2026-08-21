@@ -9,6 +9,13 @@ on:
       - 'pi45_a1/a15_native_model_world/**'
       - 'pi45_a1/a15_native_model_world_proof.sh'
       - '.github/workflows/pi45-a15-native-model-world-gate.yml'
+  pull_request:
+    branches:
+      - pi45-a14-minimal-interactive-world-prior-20260821
+    paths:
+      - 'pi45_a1/a15_native_model_world/**'
+      - 'pi45_a1/a15_native_model_world_proof.sh'
+      - '.github/workflows/pi45-a15-native-model-world-gate.yml'
 
 permissions:
   contents: read
