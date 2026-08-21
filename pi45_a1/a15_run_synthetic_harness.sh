@@ -50,11 +50,13 @@ test -x "$BOOTSTRAP"
 test -f "$MODEL"
 
 # Build only the read-only ModelWorld dumper needed to feed sanitized epistemic
-# state back to Qwen on the next synthetic turn.
+# state back to Qwen on the next synthetic turn. ModelWorld links the platform
+# durable-replace helper even though the dumper itself is read-only.
 g++ -std=c++20 -O2 -UNDEBUG \
   -I"$RUNTIME/include" -I"$MODEL_WORLD/include" -I"$CORE/include" \
   "$ROOT/pi45_a1/a15_model_world_dump.cpp" \
   "$MODEL_WORLD/src/model_world.cpp" \
+  "$CORE/src/platform_posix.cpp" \
   -pthread -o "$DUMPER"
 sha256sum "$HELPER" "$BOOTSTRAP" "$DUMPER" > "$OUT_DIR/native_binaries_SHA256SUMS.txt"
 sha256sum \
