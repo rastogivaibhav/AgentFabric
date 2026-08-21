@@ -1,7 +1,7 @@
 name: PI4.5 A1.5 OpenAI Capacity Control
 
 # The workflow can be run manually, or once via a sentinel created only after
-# OPENAI_API_KEY has been configured as a GitHub Actions secret.
+# the project-scoped OpenAI key has been configured as a GitHub Actions secret.
 on:
   pull_request:
     branches: [pi45-a14-minimal-interactive-world-prior-20260821]
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.pulapi }}
       OPENAI_MODEL: gpt-5.6-sol
       OUT_DIR: results/arc-paper/openai-dmw/ft09
     steps:
@@ -51,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${OPENAI_API_KEY:-}" || {
-            echo 'OPENAI_API_KEY GitHub Actions secret is not configured.' >&2
+            echo 'Configured GitHub Actions secret pulapi was not exposed to OPENAI_API_KEY.' >&2
             exit 78
           }
           echo 'openai_api_key_present=true'
