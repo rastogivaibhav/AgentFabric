@@ -97,15 +97,19 @@ class A15AdapterTests(unittest.TestCase):
             with self.assertRaises(ContractError):
                 validate_turn(contaminated, CONTRACT, {"ACTION2"})
 
-    def test_outcome_is_grid_observed_and_updates_beliefs(self) -> None:
+    def test_outcome_is_observed_and_builds_reverse_fiber_evidence(self) -> None:
         o = outcome()
         validate_outcome(o, CONTRACT, {"t3-h-a", "t3-h-b"})
         req = outcome_to_native_request(o, "bp35-secret-evaluator-id")
         self.assertEqual(req["nodes"][0]["node_type"], "Outcome")
         self.assertEqual(req["nodes"][0]["origin"], "Observed")
-        roles = {(r["to"], r["role"], r["origin"]) for r in req["relations"]}
-        self.assertIn(("t3-h-a", "Supports", "Observed"), roles)
-        self.assertIn(("t3-h-b", "Contradicts", "Observed"), roles)
+        roles = {(r["from"], r["to"], r["role"], r["origin"]) for r in req["relations"]}
+        # Semantic belief update direction.
+        self.assertIn(("turn-3-outcome", "t3-h-a", "Supports", "Observed"), roles)
+        self.assertIn(("turn-3-outcome", "t3-h-b", "Contradicts", "Observed"), roles)
+        # Causal graph projection used by reverse FiberBundle expansion.
+        self.assertIn(("t3-h-a", "turn-3-outcome", "Supports", "Observed"), roles)
+        self.assertIn(("t3-h-b", "turn-3-outcome", "Contradicts", "Observed"), roles)
         encoded = json.dumps(req, sort_keys=True)
         self.assertNotIn("score", encoded)
         self.assertNotIn("level", encoded)
@@ -133,6 +137,12 @@ class A15AdapterTests(unittest.TestCase):
     def test_content_free_goal_remains_forbidden(self) -> None:
         p = proposal()
         p["candidate_goals"][0]["statement"] = "Win the game"
+        with self.assertRaises(ContractError):
+            validate_turn(p, CONTRACT, {"ACTION2"})
+
+    def test_template_semantics_are_rejected(self) -> None:
+        p = proposal()
+        p["hypotheses"][0]["statement"] = "possible interpretation A"
         with self.assertRaises(ContractError):
             validate_turn(p, CONTRACT, {"ACTION2"})
 
