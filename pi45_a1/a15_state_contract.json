@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "perception_contract": {
     "reasoning_allowed_inputs": [
       "current_grid",
@@ -29,11 +29,15 @@
       "observations",
       "hypotheses",
       "candidate_goals",
-      "provisional_hypothesis_id",
-      "provisional_goal_id",
       "opposition",
       "experiment",
       "residual_uncertainty"
+    ],
+    "controller_owned_fields": [
+      "provisional_hypothesis_id",
+      "provisional_goal_id",
+      "challenged_hypothesis_id",
+      "reopen_hypothesis_ids"
     ],
     "limits": {
       "observations_min": 1,
@@ -61,7 +65,7 @@
         "epistemic_origin": "hypothetical"
       },
       "opposition": {
-        "required": ["challenged_hypothesis_id", "falsification_questions", "reopen_hypothesis_ids"]
+        "required": ["falsification_questions"]
       },
       "experiment": {
         "required": ["tests_hypothesis_ids", "information_goal", "predicted_observation", "action", "action_params"],
@@ -103,6 +107,8 @@
     "candidate_goal_is_never_fact",
     "hypothetical_is_never_silently_promoted_to_observed_or_discovered",
     "convergence_does_not_delete_preserved_alternatives",
+    "llm_does_not_select_provisional_convergence_or_reopen_set",
+    "native_opposition_selects_challenge_and_reopen_candidates",
     "every_executed_action_has_experiment_and_outcome",
     "informative_outcome_updates_epistemic_state",
     "opposition_can_reopen_discarded_alternative",
@@ -122,6 +128,7 @@
     "hypotheses_rejected",
     "opposition_rounds",
     "alternatives_reopened",
+    "native_primary_hypothesis_selections",
     "lyapunov_checks",
     "escape_events",
     "no_evidence_abstentions",
