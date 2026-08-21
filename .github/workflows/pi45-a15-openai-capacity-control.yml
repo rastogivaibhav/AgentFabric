@@ -1,7 +1,12 @@
 name: PI4.5 A1.5 OpenAI Capacity Control
 
-# Manual-only because this workflow consumes a project-scoped OpenAI API secret.
+# The workflow can be run manually, or once via a sentinel created only after
+# OPENAI_API_KEY has been configured as a GitHub Actions secret.
 on:
+  pull_request:
+    branches: [pi45-a14-minimal-interactive-world-prior-20260821]
+    paths:
+      - 'pi45_a1/OPENAI_CAPACITY_CONTROL_TRIGGER.txt'
   workflow_dispatch:
 
 permissions:
@@ -64,7 +69,7 @@ jobs:
             'game=ft09' \
             'max_actions=10' \
             'model=gpt-5.6-sol' \
-            "head_sha=${{ github.sha }}" \
+            "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
             > "$OUT_DIR/workflow_identity.txt"
           find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
       - name: Upload capacity-control evidence
