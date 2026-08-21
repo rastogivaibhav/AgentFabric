@@ -32,6 +32,29 @@ class GrapheneDMWDuckBridgeTests(unittest.TestCase):
             reloaded = GrapheneDMWDuckBridge(state, mode="dialectic")
             self.assertEqual(reloaded.negative_count(grid, "ACTION1"), 2)
 
+    def test_exact_state_action_is_blocked_after_one_observed_noop(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bridge = GrapheneDMWDuckBridge(Path(td) / "state.json", mode="evidence")
+            grid = [[0, 0], [0, 1]]
+            actions = [{"action": "ACTION1"}]
+            label = bridge.canonical_action(actions)
+            self.assertIsNone(bridge.dead_action_reason(grid, label))
+            bridge.record_transition(turn=0, action=label, before_grid=grid, after_grid=grid)
+            reason = bridge.dead_action_reason(grid, label)
+            self.assertIsNotNone(reason)
+            self.assertIn("exact action", reason or "")
+            # Same action in a changed state is not generalized into a block.
+            changed_state = [[0, 0], [0, 2]]
+            self.assertIsNone(bridge.dead_action_reason(changed_state, label))
+
+    def test_off_mode_never_blocks_action(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bridge = GrapheneDMWDuckBridge(Path(td) / "state.json", mode="off")
+            grid = [[0]]
+            label = bridge.canonical_action([{"action": "ACTION1"}])
+            bridge.record_transition(turn=0, action=label, before_grid=grid, after_grid=grid)
+            self.assertIsNone(bridge.dead_action_reason(grid, label))
+
     def test_changed_evidence_supersedes_dead_signature(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             bridge = GrapheneDMWDuckBridge(Path(td) / "state.json", mode="evidence")
