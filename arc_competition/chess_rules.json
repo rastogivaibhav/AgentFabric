@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "game": "chess",
+  "objective": "Checkmate the opponent's king while never leaving your own king in check.",
+  "board": {
+    "files": ["a", "b", "c", "d", "e", "f", "g", "h"],
+    "ranks": [1, 2, 3, 4, 5, 6, 7, 8],
+    "initial_position": "standard"
+  },
+  "turns": [
+    "White moves first.",
+    "Players alternate one move at a time."
+  ],
+  "piece_rules": {
+    "king": [
+      "Moves one square in any direction to a square not occupied by a friendly piece and not attacked by an enemy piece.",
+      "A king may never move into check or remain in check after its side's move."
+    ],
+    "queen": [
+      "Moves any number of unobstructed squares horizontally, vertically, or diagonally."
+    ],
+    "rook": [
+      "Moves any number of unobstructed squares horizontally or vertically."
+    ],
+    "bishop": [
+      "Moves any number of unobstructed squares diagonally."
+    ],
+    "knight": [
+      "Moves in an L shape: two squares along one axis and one square along the perpendicular axis.",
+      "Knights may jump over intervening pieces."
+    ],
+    "pawn": [
+      "Moves one square straight forward into an empty square.",
+      "From its starting rank, a pawn may move two squares straight forward if both squares are empty.",
+      "Captures one square diagonally forward.",
+      "White pawns move toward rank 8; Black pawns move toward rank 1."
+    ]
+  },
+  "captures": [
+    "A piece captures by moving to a square occupied by an enemy piece, removing that piece, except for en passant which captures the passed pawn.",
+    "A piece may not move onto a square occupied by a friendly piece."
+  ],
+  "check": [
+    "A king is in check when attacked by one or more enemy pieces.",
+    "A move is illegal if it leaves the moving side's king in check.",
+    "When in check, the player must make a legal move that removes the check."
+  ],
+  "checkmate": [
+    "Checkmate occurs when a king is in check and the checked side has no legal move that removes the check.",
+    "Checkmate immediately wins the game for the mating side."
+  ],
+  "stalemate": [
+    "Stalemate occurs when the side to move is not in check but has no legal move; the game is drawn."
+  ],
+  "castling": [
+    "Kingside castling moves the king two squares toward the kingside rook and places that rook on the square crossed by the king.",
+    "Queenside castling moves the king two squares toward the queenside rook and places that rook on the square crossed by the king.",
+    "Castling is legal only if king and relevant rook have not moved, all squares between them are empty, the king is not currently in check, and the king does not cross or land on an attacked square."
+  ],
+  "en_passant": [
+    "If a pawn advances two squares from its starting rank and lands adjacent to an enemy pawn, that enemy pawn may capture it as though it had advanced only one square.",
+    "En passant is available only on the immediately following move."
+  ],
+  "promotion": [
+    "A pawn reaching the last rank must be promoted to a queen, rook, bishop, or knight of the same color as part of that move."
+  ],
+  "draws": [
+    "The game is drawn by stalemate.",
+    "The game is drawn if the same position occurs three times with the same side to move and the same castling and en-passant rights when a valid threefold-repetition claim is made.",
+    "The game is drawn under the fifty-move rule when fifty moves by each side occur without a pawn move or capture when a valid claim is made.",
+    "The game is drawn when checkmate is impossible by any legal sequence, including standard insufficient-material cases.",
+    "Players may agree to a draw."
+  ],
+  "termination": [
+    "A player may resign, giving the opponent the win.",
+    "Checkmate ends the game immediately.",
+    "Applicable draw conditions end the game as a draw."
+  ],
+  "notation": {
+    "test_move_format": "UCI coordinate notation such as e2e4 or e7e8q",
+    "note": "Notation is representation only and does not alter the rules."
+  }
+}
