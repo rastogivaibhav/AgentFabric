@@ -33,8 +33,9 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("t5-h2", prompt)
         self.assertIn("t5-g1", prompt)
         self.assertIn("new epistemic revision", prompt)
-        self.assertIn("implied_by_hypothesis_ids", prompt)
-        self.assertIn("evidence_observation_ids", prompt)
+        self.assertIn('"basis"', prompt)
+        self.assertIn('"hypothesis_id"', prompt)
+        self.assertIn('"observation_id"', prompt)
         self.assertNotIn("secret-ft09-evaluator-id", prompt)
         self.assertNotIn('"game_id"', prompt)
 
@@ -43,6 +44,10 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertNotIn("provisional_hypothesis_id", schema)
         self.assertNotIn("provisional_goal_id", schema)
         self.assertEqual(set(schema["opposition"]), {"falsification_questions"})
+        goal = schema["candidate_goals"][0]
+        self.assertEqual(set(goal["basis"][0]), {"hypothesis_id", "observation_id"})
+        self.assertNotIn("implied_by_hypothesis_ids", goal)
+        self.assertNotIn("evidence_observation_ids", goal)
 
     def test_evaluator_metadata_is_rejected(self) -> None:
         for bad in [
@@ -73,14 +78,15 @@ class A15ProposalPromptTests(unittest.TestCase):
         prompt = build_proposal_repair_prompt(
             original_prompt=original,
             invalid_output=rejected,
-            validation_error="candidate_goals[0]: missing required keys ['implied_by_hypothesis_ids', 'evidence_observation_ids']",
+            validation_error="candidate_goals[0]: missing required keys ['basis']",
             turn=2,
             available_actions=["ACTION1", "ACTION2", "ACTION3"],
         )
         self.assertIn(original, prompt)
         self.assertIn("SAME proposal", prompt)
-        self.assertIn("implied_by_hypothesis_ids", prompt)
-        self.assertIn("evidence_observation_ids", prompt)
+        self.assertIn("non-empty `basis` array", prompt)
+        self.assertIn("hypothesis_id", prompt)
+        self.assertIn("observation_id", prompt)
         self.assertIn("native-controller-owned", prompt)
         self.assertIn("t2-o", prompt)
         self.assertIn("t2-h", prompt)
