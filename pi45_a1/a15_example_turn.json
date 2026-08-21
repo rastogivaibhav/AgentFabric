@@ -32,14 +32,10 @@
       "status": "active"
     }
   ],
-  "provisional_hypothesis_id": "t0-h-interactable",
-  "provisional_goal_id": "t0-g-discover-rule",
   "opposition": {
-    "challenged_hypothesis_id": "t0-h-interactable",
     "falsification_questions": [
       "What observable grid result would show that the salient element is inert rather than controllable?"
-    ],
-    "reopen_hypothesis_ids": ["t0-h-inert"]
+    ]
   },
   "experiment": {
     "tests_hypothesis_ids": ["t0-h-interactable", "t0-h-inert"],
