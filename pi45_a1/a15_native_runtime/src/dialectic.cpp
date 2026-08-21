@@ -1,0 +1,6 @@
+#include "dialectic_frontier_part_1.inc"
+#include "dialectic_frontier_part_2.inc"
+#include "dialectic_frontier_part_3.inc"
+#include "dialectic_frontier_part_4.inc"
+#include "dialectic_frontier_part_5.inc"
+#include "dialectic_frontier_part_6.inc"
