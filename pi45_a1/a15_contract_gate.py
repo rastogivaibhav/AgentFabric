@@ -21,6 +21,18 @@ def require_keys(obj: dict[str, Any], keys: list[str], where: str) -> None:
         raise ContractError(f"{where}: missing required keys {missing}")
 
 
+def reject_forbidden_keys(obj: Any, forbidden: set[str], where: str) -> None:
+    if isinstance(obj, dict):
+        bad = sorted(str(k) for k in obj if str(k) in forbidden)
+        if bad:
+            raise ContractError(f"{where}: evaluator-only fields entered epistemic payload: {bad}")
+        for key, value in obj.items():
+            reject_forbidden_keys(value, forbidden, f"{where}.{key}")
+    elif isinstance(obj, list):
+        for index, value in enumerate(obj):
+            reject_forbidden_keys(value, forbidden, f"{where}[{index}]")
+
+
 def require_unique_ids(items: list[dict[str, Any]], where: str) -> set[str]:
     ids: list[str] = []
     for idx, item in enumerate(items):
@@ -31,6 +43,10 @@ def require_unique_ids(items: list[dict[str, Any]], where: str) -> set[str]:
     if len(ids) != len(set(ids)):
         raise ContractError(f"{where}: ids must be unique")
     return set(ids)
+
+
+def evaluator_only_fields(contract: dict[str, Any]) -> set[str]:
+    return {str(x) for x in (contract.get("perception_contract", {}).get("evaluator_only_fields") or [])}
 
 
 def validate_constitution(constitution: dict[str, Any]) -> None:
@@ -49,16 +65,11 @@ def validate_constitution(constitution: dict[str, Any]) -> None:
     principles = constitution.get("principles") or []
     ids = {str(p.get("id")) for p in principles}
     required = {
-        "preserve-alternatives",
-        "separate-observation-inference",
-        "goals-emerge-from-model-world",
-        "actions-are-experiments",
-        "outcomes-update-beliefs",
-        "opposition-before-closure",
-        "contradictions-are-information",
-        "lyapunov-pattern-lock",
-        "abstain-without-evidence",
-        "provenance-governs-promotion",
+        "preserve-alternatives", "separate-observation-inference",
+        "goals-emerge-from-model-world", "actions-are-experiments",
+        "outcomes-update-beliefs", "opposition-before-closure",
+        "contradictions-are-information", "lyapunov-pattern-lock",
+        "abstain-without-evidence", "provenance-governs-promotion",
     }
     if ids != required:
         raise ContractError(f"constitution: expected principle ids {sorted(required)}, got {sorted(ids)}")
@@ -76,10 +87,10 @@ def validate_constitution(constitution: dict[str, Any]) -> None:
 
 
 def validate_turn(proposal: dict[str, Any], contract: dict[str, Any], available_actions: set[str] | None = None) -> None:
+    reject_forbidden_keys(proposal, evaluator_only_fields(contract), "turn_proposal")
     spec = contract["turn_proposal"]
     require_keys(proposal, spec["required"], "turn_proposal")
     limits = spec["limits"]
-
     observations = list(proposal["observations"])
     hypotheses = list(proposal["hypotheses"])
     goals = list(proposal["candidate_goals"])
@@ -107,7 +118,6 @@ def validate_turn(proposal: dict[str, Any], contract: dict[str, Any], available_
     observation_ids = require_unique_ids(observations, "observations")
     hypothesis_ids = require_unique_ids(hypotheses, "hypotheses")
     goal_ids = require_unique_ids(goals, "candidate_goals")
-
     for idx, hypothesis in enumerate(hypotheses):
         support = set(map(str, hypothesis["support_observation_ids"]))
         if not support.issubset(observation_ids):
@@ -150,6 +160,8 @@ def validate_turn(proposal: dict[str, Any], contract: dict[str, Any], available_
 
 def validate_outcome(outcome: dict[str, Any], contract: dict[str, Any], known_hypotheses: set[str]) -> None:
     spec = contract["outcome_record"]
+    forbidden = set(map(str, spec.get("forbidden_evaluator_fields") or [])) | evaluator_only_fields(contract)
+    reject_forbidden_keys(outcome, forbidden, "outcome")
     require_keys(outcome, spec["required"], "outcome")
     supports = set(map(str, outcome["supports_hypothesis_ids"]))
     contradicts = set(map(str, outcome["contradicts_hypothesis_ids"]))
@@ -157,7 +169,12 @@ def validate_outcome(outcome: dict[str, Any], contract: dict[str, Any], known_hy
         raise ContractError("outcome: references unknown hypothesis")
     if supports & contradicts:
         raise ContractError("outcome: same hypothesis cannot be both supported and contradicted by one atomic interpretation")
-    informative = bool(outcome["meaningful_change"]) or bool(outcome["observed_effect"].strip())
+    changed_cells = int(outcome["changed_cells"])
+    if changed_cells < 0:
+        raise ContractError("outcome: changed_cells cannot be negative")
+    if not isinstance(outcome["changed_regions"], list):
+        raise ContractError("outcome: changed_regions must be a list of observable regions")
+    informative = changed_cells > 0 or bool(outcome["changed_regions"]) or bool(outcome["persistent_change"]) or bool(str(outcome["observed_effect"]).strip())
     if informative and not (supports or contradicts):
         raise ContractError("outcome: informative result must update at least one hypothesis")
 
@@ -166,35 +183,25 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
     validate_constitution(constitution)
     proposal = {
         "turn": 0,
-        "observations": [
-            {"id": "o1", "statement": "A visible region exists.", "evidence_ref": "state:0"}
-        ],
+        "observations": [{"id": "o1", "statement": "A visible region exists.", "evidence_ref": "grid:0"}],
         "hypotheses": [
-            {"id": "h1", "statement": "The region may be interactable.", "support_observation_ids": ["o1"], "prediction": "An interaction may alter state.", "status": "active"},
-            {"id": "h2", "statement": "The region may be decorative.", "support_observation_ids": ["o1"], "prediction": "Interaction will not alter state.", "status": "proposed"}
+            {"id": "h1", "statement": "The region may be interactable.", "support_observation_ids": ["o1"], "prediction": "An interaction may alter the grid.", "status": "active"},
+            {"id": "h2", "statement": "The region may be inert.", "support_observation_ids": ["o1"], "prediction": "Interaction leaves the grid invariant.", "status": "proposed"}
         ],
-        "candidate_goals": [
-            {"id": "g1", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["h1", "h2"], "evidence_observation_ids": ["o1"], "status": "active"}
-        ],
+        "candidate_goals": [{"id": "g1", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["h1", "h2"], "evidence_observation_ids": ["o1"], "status": "active"}],
         "provisional_hypothesis_id": "h1",
         "provisional_goal_id": "g1",
-        "opposition": {"challenged_hypothesis_id": "h1", "falsification_questions": ["What result would support decoration instead?"], "reopen_hypothesis_ids": ["h2"]},
-        "experiment": {"tests_hypothesis_ids": ["h1", "h2"], "information_goal": "Discriminate interactable from decorative.", "predicted_observation": "State either changes or remains invariant.", "action": "ACTION1", "action_params": {}},
+        "opposition": {"challenged_hypothesis_id": "h1", "falsification_questions": ["What grid change would support inertness instead?"], "reopen_hypothesis_ids": ["h2"]},
+        "experiment": {"tests_hypothesis_ids": ["h1", "h2"], "information_goal": "Discriminate responsive from inert using observable grid evidence.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION1", "action_params": {}},
         "residual_uncertainty": ["Action semantics are not yet known."]
     }
     validate_turn(proposal, contract, {"ACTION1", "ACTION2"})
     outcome = {
-        "turn": 0,
-        "experiment_id": "e1",
-        "action": "ACTION1",
-        "before_state_digest": "before",
-        "after_state_digest": "after",
-        "meaningful_change": True,
-        "score_delta": 0,
-        "level_delta": 0,
-        "observed_effect": "The region changed.",
-        "supports_hypothesis_ids": ["h1"],
-        "contradicts_hypothesis_ids": ["h2"]
+        "turn": 0, "experiment_id": "e1", "action": "ACTION1",
+        "before_grid_digest": "before", "after_grid_digest": "after",
+        "changed_cells": 1, "changed_regions": ["r0"], "persistent_change": True,
+        "observed_effect": "One visible cell changed persistently.",
+        "supports_hypothesis_ids": ["h1"], "contradicts_hypothesis_ids": ["h2"]
     }
     validate_outcome(outcome, contract, {"h1", "h2"})
 
@@ -216,6 +223,15 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
     else:
         raise AssertionError("self-test failed: unavailable action was accepted")
 
+    contaminated = json.loads(json.dumps(outcome))
+    contaminated["score_delta"] = 1
+    try:
+        validate_outcome(contaminated, contract, {"h1", "h2"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: evaluator metadata entered epistemic outcome")
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -225,11 +241,9 @@ def main() -> None:
     ap.add_argument("--available-actions", default="")
     ap.add_argument("--outcome")
     args = ap.parse_args()
-
     contract = load_json(args.contract)
     constitution = load_json(args.constitution)
     self_test(contract, constitution)
-
     if args.proposal:
         proposal = load_json(args.proposal)
         available = {x for x in args.available_actions.split(",") if x} or None
@@ -238,7 +252,6 @@ def main() -> None:
             outcome = load_json(args.outcome)
             hypothesis_ids = {str(x["id"]) for x in proposal["hypotheses"]}
             validate_outcome(outcome, contract, hypothesis_ids)
-
     print("a15_contract_gate=PASS")
 
 
