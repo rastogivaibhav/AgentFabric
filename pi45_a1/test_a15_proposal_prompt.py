@@ -14,7 +14,7 @@ class A15ProposalPromptTests(unittest.TestCase):
             observation={"grid": [[0, 1], [1, 0]]},
             available_actions=["ACTION1", "ACTION2"],
             recent_outcomes=[{"turn": i, "changed_cells": 0, "effect": "none", "large": "x" * 1500} for i in range(6)],
-            governed_context={"status": "Contested", "reopen_hypothesis_ids": ["h2"], "noise": "y" * 4000},
+            governed_context={"status": "Contested", "reopen_hypothesis_ids": ["old-h2"], "noise": "y" * 4000},
             max_chars=6500,
         )
         self.assertLessEqual(len(prompt), 6500)
@@ -23,6 +23,11 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("GrapheneDB runtime owns convergence", prompt)
         self.assertIn('"ACTION1"', prompt)
         self.assertIn('"ACTION2"', prompt)
+        self.assertIn("t5-o1", prompt)
+        self.assertIn("t5-h1", prompt)
+        self.assertIn("t5-h2", prompt)
+        self.assertIn("t5-g1", prompt)
+        self.assertIn("new epistemic revision", prompt)
         self.assertNotIn("secret-ft09-evaluator-id", prompt)
         self.assertNotIn('"game_id"', prompt)
 
