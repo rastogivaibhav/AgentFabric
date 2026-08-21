@@ -15,6 +15,9 @@ class NativeRuntimeError(RuntimeError):
     pass
 
 
+OPAQUE_WORLD_SCOPE = "a15-isolated-world"
+
+
 def stable_digest(obj: Any) -> str:
     raw = json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
@@ -25,36 +28,22 @@ def _hex(value: Any) -> str:
 
 
 def native_line_protocol(request: dict[str, Any]) -> str:
-    """Serialize the validated request into a dependency-free native protocol.
-
-    JSON remains the evidence/adapter contract. The C++ helper deliberately does
-    not carry a JSON dependency, so every free-text field is UTF-8 hex encoded
-    before crossing the process boundary.
-    """
     lines = [
         "A15V1",
         f"OP {_hex(request['operation'])}",
-        f"GAME {_hex(request['game_id'])}",
+        f"GAME {_hex(request['world_scope'])}",
         f"TURN {int(request['turn'])}",
     ]
     for node in request.get("nodes") or []:
         lines.append(" ".join([
-            "NODE",
-            _hex(node["external_id"]),
-            str(node["node_type"]),
-            str(node["status"]),
-            str(node["origin"]),
-            _hex(node["statement"]),
+            "NODE", _hex(node["external_id"]), str(node["node_type"]),
+            str(node["status"]), str(node["origin"]), _hex(node["statement"]),
             _hex(json.dumps(node.get("metadata") or {}, sort_keys=True, separators=(",", ":"))),
         ]))
     for rel in request.get("relations") or []:
         lines.append(" ".join([
-            "REL",
-            _hex(rel["from"]),
-            _hex(rel["to"]),
-            str(rel["role"]),
-            str(rel["origin"]),
-            format(float(rel["confidence"]), ".17g"),
+            "REL", _hex(rel["from"]), _hex(rel["to"]), str(rel["role"]),
+            str(rel["origin"]), format(float(rel["confidence"]), ".17g"),
         ]))
     if request.get("provisional_hypothesis_id") is not None:
         lines.append(f"PROVISIONAL_H {_hex(request['provisional_hypothesis_id'])}")
@@ -83,7 +72,12 @@ def _node(external_id: str, node_type: str, status: str, statement: str, origin:
     }
 
 
-def proposal_to_native_request(proposal: dict[str, Any], game_id: str) -> dict[str, Any]:
+def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str | None = None) -> dict[str, Any]:
+    """Map a validated proposal into native epistemic objects.
+
+    evaluator_game_id is intentionally ignored here. It is permitted in the
+    outer evidence trace only and must never become GrapheneDB/ModelWorld state.
+    """
     turn = int(proposal["turn"])
     nodes: list[dict[str, Any]] = []
     relations: list[dict[str, Any]] = []
@@ -91,13 +85,13 @@ def proposal_to_native_request(proposal: dict[str, Any], game_id: str) -> dict[s
     for obs in proposal["observations"]:
         oid = str(obs["id"])
         nodes.append(_node(oid, "Fact", "Active", str(obs["statement"]), "Observed", turn,
-                           {"game_id": game_id, "evidence_ref": obs["evidence_ref"]}))
+                           {"evidence_ref": obs["evidence_ref"]}))
 
     for hyp in proposal["hypotheses"]:
         hid = str(hyp["id"])
         status = {"proposed": "Proposed", "active": "Active", "contested": "Contested"}[hyp["status"]]
         nodes.append(_node(hid, "Hypothesis", status, str(hyp["statement"]), "Hypothetical", turn,
-                           {"game_id": game_id, "prediction": hyp["prediction"]}))
+                           {"prediction": hyp["prediction"]}))
         for oid in hyp["support_observation_ids"]:
             relations.append({"from": str(oid), "to": hid, "role": "Supports", "origin": "Inferred", "confidence": 0.55})
 
@@ -105,7 +99,7 @@ def proposal_to_native_request(proposal: dict[str, Any], game_id: str) -> dict[s
         gid = str(goal["id"])
         status = {"proposed": "Proposed", "active": "Active", "contested": "Contested"}[goal["status"]]
         nodes.append(_node(gid, "Decision", status, str(goal["statement"]), "Hypothetical", turn,
-                           {"game_id": game_id, "kind": "candidate_goal"}))
+                           {"kind": "candidate_goal"}))
         for hid in goal["implied_by_hypothesis_ids"]:
             relations.append({"from": str(hid), "to": gid, "role": "Predictive", "origin": "Hypothetical", "confidence": 0.45})
         for oid in goal["evidence_observation_ids"]:
@@ -115,21 +109,21 @@ def proposal_to_native_request(proposal: dict[str, Any], game_id: str) -> dict[s
     opp_id = f"turn-{turn}-opposition"
     opp_statement = " | ".join(str(x) for x in opposition["falsification_questions"])
     nodes.append(_node(opp_id, "Opposition", "Active", opp_statement, "Hypothetical", turn,
-                       {"game_id": game_id, "reopen": ",".join(map(str, opposition["reopen_hypothesis_ids"]))}))
+                       {"reopen": ",".join(map(str, opposition["reopen_hypothesis_ids"]))}))
     relations.append({"from": opp_id, "to": str(opposition["challenged_hypothesis_id"]), "role": "Contradicts", "origin": "Hypothetical", "confidence": 0.50})
 
     exp = proposal["experiment"]
     exp_id = f"turn-{turn}-experiment"
     nodes.append(_node(exp_id, "Experiment", "Active", str(exp["information_goal"]), "Hypothetical", turn,
-                       {"game_id": game_id, "action": exp["action"], "predicted_observation": exp["predicted_observation"],
+                       {"action": exp["action"], "predicted_observation": exp["predicted_observation"],
                         "action_params": json.dumps(exp["action_params"], sort_keys=True)}))
     for hid in exp["tests_hypothesis_ids"]:
         relations.append({"from": exp_id, "to": str(hid), "role": "Mechanistic", "origin": "Hypothetical", "confidence": 0.50})
 
     return {
-        "protocol": "agentfabric-a15-native-v1",
+        "protocol": "agentfabric-a15-native-v2",
         "operation": "ingest_and_reason",
-        "game_id": game_id,
+        "world_scope": OPAQUE_WORLD_SCOPE,
         "turn": turn,
         "nodes": nodes,
         "relations": relations,
@@ -143,20 +137,35 @@ def proposal_to_native_request(proposal: dict[str, Any], game_id: str) -> dict[s
     }
 
 
-def outcome_to_native_request(outcome: dict[str, Any], game_id: str) -> dict[str, Any]:
+def outcome_to_native_request(outcome: dict[str, Any], evaluator_game_id: str | None = None) -> dict[str, Any]:
     turn = int(outcome["turn"])
     oid = f"turn-{turn}-outcome"
-    node = _node(oid, "Outcome", "Active", str(outcome["observed_effect"] or "No observable effect."), "Observed", turn,
-                 {"game_id": game_id, "action": outcome["action"], "before_state_digest": outcome["before_state_digest"],
-                  "after_state_digest": outcome["after_state_digest"], "meaningful_change": outcome["meaningful_change"],
-                  "score_delta": outcome["score_delta"], "level_delta": outcome["level_delta"]})
+    node = _node(
+        oid, "Outcome", "Active",
+        str(outcome["observed_effect"] or "No observable grid effect."),
+        "Observed", turn,
+        {
+            "action": outcome["action"],
+            "before_grid_digest": outcome["before_grid_digest"],
+            "after_grid_digest": outcome["after_grid_digest"],
+            "changed_cells": outcome["changed_cells"],
+            "changed_regions": json.dumps(outcome["changed_regions"], sort_keys=True),
+            "persistent_change": outcome["persistent_change"],
+        },
+    )
     relations = [{"from": str(outcome["experiment_id"]), "to": oid, "role": "Causal", "origin": "Observed", "confidence": 1.0}]
     for hid in outcome["supports_hypothesis_ids"]:
         relations.append({"from": oid, "to": str(hid), "role": "Supports", "origin": "Observed", "confidence": 0.80})
     for hid in outcome["contradicts_hypothesis_ids"]:
         relations.append({"from": oid, "to": str(hid), "role": "Contradicts", "origin": "Observed", "confidence": 0.80})
-    return {"protocol": "agentfabric-a15-native-v1", "operation": "apply_outcome_and_reason", "game_id": game_id,
-            "turn": turn, "nodes": [node], "relations": relations}
+    return {
+        "protocol": "agentfabric-a15-native-v2",
+        "operation": "apply_outcome_and_reason",
+        "world_scope": OPAQUE_WORLD_SCOPE,
+        "turn": turn,
+        "nodes": [node],
+        "relations": relations,
+    }
 
 
 def invoke_native(helper: str, request: dict[str, Any], db_path: str) -> dict[str, Any]:
@@ -169,9 +178,11 @@ def invoke_native(helper: str, request: dict[str, Any], db_path: str) -> dict[st
     except json.JSONDecodeError as exc:
         raise NativeRuntimeError(f"native helper returned invalid JSON: {exc}") from exc
     receipt = response.get("reasoning_receipt") or {}
-    required_receipt = ["graphene_executed", "fiber_bundle_built", "stability_critic_executed",
-                        "epistemic_admissibility_executed", "lyapunov_trajectory_executed",
-                        "convergence_executed", "opposition_executed", "no_silent_promotion"]
+    required_receipt = [
+        "graphene_executed", "fiber_bundle_built", "stability_critic_executed",
+        "epistemic_admissibility_executed", "lyapunov_trajectory_executed",
+        "convergence_executed", "opposition_executed", "no_silent_promotion",
+    ]
     missing = [k for k in required_receipt if k not in receipt]
     if missing:
         raise NativeRuntimeError(f"native helper receipt missing {missing}")
@@ -190,7 +201,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["proposal", "outcome"], required=True)
     ap.add_argument("--input", required=True)
-    ap.add_argument("--game-id", required=True)
+    ap.add_argument("--game-id", required=True, help="evaluator-only identifier; never enters native reasoning")
     ap.add_argument("--contract", default="pi45_a1/a15_state_contract.json")
     ap.add_argument("--constitution", default="pi45_a1/a15_reasoning_constitution.json")
     ap.add_argument("--available-actions", default="")
@@ -227,7 +238,13 @@ def main() -> None:
         response["request_digest"] = envelope["request_digest"]
 
     if args.trace:
-        append_jsonl(Path(args.trace), {"mode": args.mode, "game_id": args.game_id, "request": request, "response": response})
+        append_jsonl(Path(args.trace), {
+            "mode": args.mode,
+            "evaluator_game_id": args.game_id,
+            "reasoning_world_scope": OPAQUE_WORLD_SCOPE,
+            "request": request,
+            "response": response,
+        })
     print(json.dumps(response, sort_keys=True))
 
 
