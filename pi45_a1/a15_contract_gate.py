@@ -11,6 +11,18 @@ class ContractError(ValueError):
     pass
 
 
+_TEMPLATE_TEXT = {
+    "...",
+    "observable fact only",
+    "possible interpretation a",
+    "competing interpretation b",
+    "testable grid prediction",
+    "different testable grid prediction",
+    "evidence-seeking/progress goal",
+    "exact_available_action",
+}
+
+
 def load_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -19,6 +31,17 @@ def require_keys(obj: dict[str, Any], keys: list[str], where: str) -> None:
     missing = [key for key in keys if key not in obj]
     if missing:
         raise ContractError(f"{where}: missing required keys {missing}")
+
+
+def _require_concrete_text(value: Any, where: str) -> str:
+    if not isinstance(value, str):
+        raise ContractError(f"{where}: must be concrete text")
+    text = value.strip()
+    if not text:
+        raise ContractError(f"{where}: must not be empty")
+    if text.lower() in _TEMPLATE_TEXT:
+        raise ContractError(f"{where}: copied/template semantic text is forbidden")
+    return text
 
 
 def reject_forbidden_keys(obj: Any, forbidden: set[str], where: str) -> None:
@@ -133,15 +156,25 @@ def validate_turn(
     obj_specs = spec["objects"]
     for idx, item in enumerate(observations):
         require_keys(item, obj_specs["observation"]["required"], f"observations[{idx}]")
+        _require_concrete_text(item["statement"], f"observations[{idx}].statement")
+        _require_concrete_text(item["evidence_ref"], f"observations[{idx}].evidence_ref")
+
+    hypothesis_statements: list[str] = []
     for idx, item in enumerate(hypotheses):
         require_keys(item, obj_specs["hypothesis"]["required"], f"hypotheses[{idx}]")
         if item["status"] not in obj_specs["hypothesis"]["allowed_status"]:
             raise ContractError(f"hypotheses[{idx}]: invalid status {item['status']}")
+        hypothesis_statements.append(_require_concrete_text(item["statement"], f"hypotheses[{idx}].statement").lower())
+        _require_concrete_text(item["prediction"], f"hypotheses[{idx}].prediction")
+    if len(hypothesis_statements) != len(set(hypothesis_statements)):
+        raise ContractError("hypotheses: competing hypotheses must have distinct statements")
+
     for idx, item in enumerate(goals):
         require_keys(item, obj_specs["candidate_goal"]["required"], f"candidate_goals[{idx}]")
         if item["status"] not in obj_specs["candidate_goal"]["allowed_status"]:
             raise ContractError(f"candidate_goals[{idx}]: invalid status {item['status']}")
-        if item["statement"].strip().lower() in {"win", "win the game", "complete the game", "beat the game"}:
+        goal_statement = _require_concrete_text(item["statement"], f"candidate_goals[{idx}].statement")
+        if goal_statement.lower() in {"win", "win the game", "complete the game", "beat the game"}:
             raise ContractError("candidate_goal: content-free win goal is forbidden")
 
     observation_ids = require_unique_ids(observations, "observations")
@@ -153,8 +186,8 @@ def validate_turn(
 
     for idx, hypothesis in enumerate(hypotheses):
         support = set(map(str, hypothesis["support_observation_ids"]))
-        if not support.issubset(observation_ids):
-            raise ContractError(f"hypotheses[{idx}]: references unknown observation")
+        if not support or not support.issubset(observation_ids):
+            raise ContractError(f"hypotheses[{idx}]: must reference known observation evidence")
 
     basis_required = list(obj_specs["candidate_goal"].get("basis_item_required") or [])
     basis_min = int(limits.get("goal_basis_min", 1))
@@ -178,17 +211,25 @@ def validate_turn(
     questions = list(opposition["falsification_questions"])
     if not limits["falsification_questions_min"] <= len(questions) <= limits["falsification_questions_max"]:
         raise ContractError("opposition: falsification-question count outside contract")
-    if any(not str(q).strip() for q in questions):
-        raise ContractError("opposition: falsification questions must be non-empty")
+    for idx, question in enumerate(questions):
+        _require_concrete_text(question, f"opposition.falsification_questions[{idx}]")
 
     experiment = proposal["experiment"]
     require_keys(experiment, obj_specs["experiment"]["required"], "experiment")
     tests = set(map(str, experiment["tests_hypothesis_ids"]))
     if not tests or not tests.issubset(hypothesis_ids):
         raise ContractError("experiment: every action must test a preserved hypothesis")
+    _require_concrete_text(experiment["information_goal"], "experiment.information_goal")
+    _require_concrete_text(experiment["predicted_observation"], "experiment.predicted_observation")
     action = str(experiment["action"])
     if available_actions is not None and action not in available_actions:
         raise ContractError(f"experiment: action {action!r} not in available action set")
+
+    uncertainty = proposal["residual_uncertainty"]
+    if not isinstance(uncertainty, list):
+        raise ContractError("residual_uncertainty: must be a list")
+    for idx, text in enumerate(uncertainty):
+        _require_concrete_text(text, f"residual_uncertainty[{idx}]")
 
 
 def validate_outcome(outcome: dict[str, Any], contract: dict[str, Any], known_hypotheses: set[str]) -> None:
@@ -207,6 +248,7 @@ def validate_outcome(outcome: dict[str, Any], contract: dict[str, Any], known_hy
         raise ContractError("outcome: changed_cells cannot be negative")
     if not isinstance(outcome["changed_regions"], list):
         raise ContractError("outcome: changed_regions must be a list of observable regions")
+    _require_concrete_text(outcome["observed_effect"], "outcome.observed_effect")
     informative = (
         changed_cells > 0
         or bool(outcome["changed_regions"])
@@ -222,24 +264,24 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
     proposal = {
         "turn": 0,
         "observations": [
-            {"id": "t0-o1", "statement": "A visible region exists.", "evidence_ref": "grid:0"}
+            {"id": "t0-o1", "statement": "A 2x2 region of value 1 is visible near the upper-left quadrant.", "evidence_ref": "grid:0"}
         ],
         "hypotheses": [
             {
-                "id": "t0-h1", "statement": "The region may be interactable.",
+                "id": "t0-h1", "statement": "The 2x2 region may respond to one opaque action.",
                 "support_observation_ids": ["t0-o1"],
-                "prediction": "An interaction may alter the grid.", "status": "active",
+                "prediction": "A responsive action would alter at least one cell in that region.", "status": "active",
             },
             {
-                "id": "t0-h2", "statement": "The region may be inert.",
+                "id": "t0-h2", "statement": "The visible 2x2 region may remain invariant under the available actions.",
                 "support_observation_ids": ["t0-o1"],
-                "prediction": "Interaction leaves the grid invariant.", "status": "proposed",
+                "prediction": "A probe could leave every grid cell unchanged.", "status": "proposed",
             },
         ],
         "candidate_goals": [
             {
                 "id": "t0-g1",
-                "statement": "Determine whether the visible region participates in the world rules.",
+                "statement": "Determine whether any opaque action causes a reproducible grid transition.",
                 "basis": [
                     {"hypothesis_id": "t0-h1", "observation_id": "t0-o1"},
                     {"hypothesis_id": "t0-h2", "observation_id": "t0-o1"}
@@ -247,14 +289,14 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
                 "status": "active",
             }
         ],
-        "opposition": {"falsification_questions": ["What grid change would support inertness instead?"]},
+        "opposition": {"falsification_questions": ["Would an unchanged grid after the probe favor the invariant interpretation?"]},
         "experiment": {
             "tests_hypothesis_ids": ["t0-h1", "t0-h2"],
-            "information_goal": "Discriminate responsive from inert using observable grid evidence.",
-            "predicted_observation": "The grid changes or remains invariant.",
+            "information_goal": "Test whether the current grid responds to ACTION1.",
+            "predicted_observation": "Either at least one cell changes or the grid remains unchanged.",
             "action": "ACTION1", "action_params": {},
         },
-        "residual_uncertainty": ["Action semantics are not yet known."],
+        "residual_uncertainty": ["The semantics of ACTION1 and ACTION2 are unknown."],
     }
     validate_turn(proposal, contract, {"ACTION1", "ACTION2"})
 
@@ -262,7 +304,7 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
         "turn": 0, "experiment_id": "turn-0-experiment", "action": "ACTION1",
         "before_grid_digest": "before", "after_grid_digest": "after",
         "changed_cells": 1, "changed_regions": ["r0"], "persistent_change": True,
-        "observed_effect": "One visible cell changed persistently.",
+        "observed_effect": "One visible cell changed persistently after ACTION1.",
         "supports_hypothesis_ids": ["t0-h1"], "contradicts_hypothesis_ids": ["t0-h2"],
     }
     validate_outcome(outcome, contract, {"t0-h1", "t0-h2"})
@@ -275,6 +317,15 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
         pass
     else:
         raise AssertionError("self-test failed: content-free goal was accepted")
+
+    bad_template = json.loads(json.dumps(proposal))
+    bad_template["hypotheses"][0]["statement"] = "possible interpretation A"
+    try:
+        validate_turn(bad_template, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: copied prompt template was accepted")
 
     bad_basis = json.loads(json.dumps(proposal))
     bad_basis["candidate_goals"][0]["basis"] = []
