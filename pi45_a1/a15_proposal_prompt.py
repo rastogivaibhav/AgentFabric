@@ -18,7 +18,7 @@ Candidate goals must emerge from those hypotheses and current evidence; never us
 Choose one provisional hypothesis and goal only for the next experiment, not as truth.
 Oppose the provisional hypothesis with a falsification question and preserve at least one alternative when possible.
 Every action is an experiment chosen to discriminate hypotheses or reduce important uncertainty.
-If GOVERNED_CONTEXT contains an existing ModelWorld hypothesis or goal that you are continuing, reuse its external_id; create a new id only for a genuinely new interpretation.
+Treat each turn as a new epistemic revision. Use prior GOVERNED_CONTEXT as evidence/history, but create fresh turn-scoped IDs for this turn: tTURN-o..., tTURN-h..., and tTURN-g.... Do not mutate an older ModelWorld node by reusing its ID.
 Follow the supplied opaque action-affordance parameter schema exactly. Do not infer semantic meaning from it.
 Return JSON only. The external GrapheneDB runtime owns convergence, epistemic promotion, opposition/reopening, Lyapunov stability and model-world state."""
 
@@ -46,6 +46,10 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
     if any(not str(a).startswith("ACTION") for a in available_actions):
         raise ValueError("available_actions must remain opaque ACTIONn identifiers")
 
+    obs_id = f"t{turn}-o1"
+    h1 = f"t{turn}-h1"
+    h2 = f"t{turn}-h2"
+    g1 = f"t{turn}-g1"
     context = {
         "turn": int(turn),
         "current_observation": observation,
@@ -55,32 +59,34 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
     }
     schema = {
         "turn": turn,
-        "observations": [{"id": "o...", "statement": "observable fact only", "evidence_ref": "grid/transition ref"}],
+        "observations": [{"id": obs_id, "statement": "observable fact only", "evidence_ref": f"grid:turn:{turn}"}],
         "hypotheses": [
-            {"id": "h...", "statement": "possible interpretation", "support_observation_ids": ["o..."],
-             "prediction": "testable grid prediction", "status": "proposed|active|contested"}
+            {"id": h1, "statement": "possible interpretation A", "support_observation_ids": [obs_id],
+             "prediction": "testable grid prediction", "status": "active"},
+            {"id": h2, "statement": "competing interpretation B", "support_observation_ids": [obs_id],
+             "prediction": "different testable grid prediction", "status": "proposed"}
         ],
         "candidate_goals": [
-            {"id": "g...", "statement": "evidence-seeking/progress goal", "implied_by_hypothesis_ids": ["h..."],
-             "evidence_observation_ids": ["o..."], "status": "proposed|active|contested"}
+            {"id": g1, "statement": "evidence-seeking/progress goal", "implied_by_hypothesis_ids": [h1, h2],
+             "evidence_observation_ids": [obs_id], "status": "active"}
         ],
-        "provisional_hypothesis_id": "h...",
-        "provisional_goal_id": "g...",
-        "opposition": {"challenged_hypothesis_id": "h...", "falsification_questions": ["..."], "reopen_hypothesis_ids": ["h..."]},
-        "experiment": {"tests_hypothesis_ids": ["h..."], "information_goal": "...", "predicted_observation": "...",
+        "provisional_hypothesis_id": h1,
+        "provisional_goal_id": g1,
+        "opposition": {"challenged_hypothesis_id": h1, "falsification_questions": ["..."], "reopen_hypothesis_ids": [h2]},
+        "experiment": {"tests_hypothesis_ids": [h1, h2], "information_goal": "...", "predicted_observation": "...",
                        "action": "EXACT_AVAILABLE_ACTION", "action_params": {}},
         "residual_uncertainty": ["..."],
     }
     prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
     prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
-    prompt += "\nConstraints: 1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. Use only listed actions. JSON only."
+    prompt += f"\nConstraints: IDs created this turn MUST start with t{turn}-o, t{turn}-h, or t{turn}-g as appropriate. 1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. Use only listed actions. JSON only."
     if len(prompt) > max_chars:
         compact = dict(context)
         compact["recent_outcomes"] = compact["recent_outcomes"][-1:]
         compact["governed_context"] = _compact_governed(compact["governed_context"])
         prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(compact, sort_keys=True, separators=(",", ":"))
         prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
-        prompt += "\nConstraints: 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; use only listed actions; JSON only."
+        prompt += f"\nConstraints: use t{turn}-scoped IDs; 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; use only listed actions; JSON only."
     if len(prompt) > max_chars:
         raise ValueError(f"A1.5 proposal prompt exceeds dedicated budget: {len(prompt)} > {max_chars}")
     return prompt
@@ -91,7 +97,6 @@ def _compact_governed(value: dict[str, Any]) -> dict[str, Any]:
             "residual_uncertainty", "escape_required", "lyapunov_goal_reached", "model_world_nodes"]
     out = {k: value[k] for k in keys if k in value}
     if isinstance(out.get("model_world_nodes"), list):
-        # Keep the most recent compact epistemic objects when context is tight.
         out["model_world_nodes"] = out["model_world_nodes"][-8:]
     return out
 
