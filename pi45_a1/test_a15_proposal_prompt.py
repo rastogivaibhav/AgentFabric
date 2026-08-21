@@ -35,6 +35,9 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn('"basis"', prompt)
         self.assertIn('"hypothesis_id"', prompt)
         self.assertIn('"observation_id"', prompt)
+        self.assertIn('"evidence_kind"', prompt)
+        self.assertIn("grid or transition", prompt)
+        self.assertIn("Affordance-only support is invalid", prompt)
         self.assertNotIn("secret-ft09-evaluator-id", prompt)
         self.assertNotIn('"game_id"', prompt)
 
@@ -42,10 +45,11 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("FIELD-ONLY CONTRACT", output_contract)
         self.assertIn('"candidate_goals"', output_contract)
         self.assertIn('"falsification_questions"', output_contract)
+        self.assertIn("HypothesisBasis object", output_contract)
+        self.assertIn("GoalBasis object", output_contract)
         self.assertIn("provisional_hypothesis_id", output_contract)
         self.assertIn("reopen_hypothesis_ids", output_contract)
         self.assertIn("Forbidden controller-owned keys", output_contract)
-        # There must be no copyable semantic JSON shell or empty semantic slot.
         self.assertNotIn('"statement":""', output_contract.replace(" ", ""))
         self.assertNotIn('"prediction":""', output_contract.replace(" ", ""))
         self.assertNotIn("observable fact only", output_contract.lower())
@@ -75,18 +79,21 @@ class A15ProposalPromptTests(unittest.TestCase):
         original = "CURRENT EVIDENCE token-clean\nOUTPUT CONTRACT token-contract"
         rejected = json.dumps({
             "turn": 2,
+            "hypotheses": [{"id": "t2-h1", "statement": "some possibility", "prediction": "some visible result", "status": "active"}],
             "candidate_goals": [{"id": "t2-g1", "statement": "seek evidence", "status": "active"}],
         })
         prompt = build_proposal_repair_prompt(
             original_prompt=original,
             invalid_output=rejected,
-            validation_error="candidate_goals[0]: missing required keys ['basis']",
+            validation_error="hypotheses[0]: missing required keys ['basis']",
             turn=2,
             available_actions=["ACTION1", "ACTION2", "ACTION3"],
         )
         self.assertIn(original, prompt)
         self.assertIn("SAME proposal", prompt)
-        self.assertIn("non-empty `basis` array", prompt)
+        self.assertIn("Every Hypothesis MUST contain non-empty `basis`", prompt)
+        self.assertIn("grid or transition evidence", prompt)
+        self.assertIn("Every candidate goal MUST contain a non-empty `basis` array", prompt)
         self.assertIn("hypothesis_id", prompt)
         self.assertIn("observation_id", prompt)
         self.assertIn("native-controller-owned", prompt)
@@ -122,6 +129,8 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("controller owns those decisions", lower)
         self.assertIn("contract labels", lower)
         self.assertIn("not world evidence", lower)
+        self.assertIn("affordance evidence", lower)
+        self.assertIn("grid or transition observation", lower)
 
 
 if __name__ == "__main__":
