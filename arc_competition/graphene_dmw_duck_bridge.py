@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """GrapheneDMW sidecar for the ARC-AGI-3 Duck harness.
 
-The bridge deliberately does not replace Duck's proven action loop.  It owns
+The bridge deliberately does not replace Duck's proven action loop. It owns
 only durable evidence, negative-action memory and optional dialectical
-escalation.  This makes baseline, evidence-memory and full-DMW conditions
+escalation. This keeps baseline, evidence-memory and full-DMW conditions
 cleanly ablatable.
 """
 from __future__ import annotations
@@ -155,8 +155,6 @@ class GrapheneDMWDuckBridge:
             if event.no_op:
                 self.state.negative_signatures[signature] = self.state.negative_signatures.get(signature, 0) + 1
             elif signature in self.state.negative_signatures:
-                # A previously negative signature changed state; evidence supersedes
-                # the stale dead-action assumption rather than making it permanent.
                 del self.state.negative_signatures[signature]
             self._save()
         return event
@@ -211,14 +209,15 @@ class GrapheneDMWDuckBridge:
         ]:
             if note.get(key):
                 lines.append(f"- {label}: {note[key]}")
-
-        recent_negative: list[tuple[str, int]] = sorted(
+        recent_negative = sorted(
             self.state.negative_signatures.items(), key=lambda item: (-item[1], item[0])
         )[:max_negative_items]
         if recent_negative:
             lines.append("- Negative causal evidence: do not repeat a state/action signature unless new evidence justifies retesting.")
-            lines.extend(f"  - signature {sig[:12]}... produced no observable grid change {count} time(s)" for sig, count in recent_negative)
-
+            lines.extend(
+                f"  - signature {sig[:12]}... produced no observable grid change {count} time(s)"
+                for sig, count in recent_negative
+            )
         reasons = self.stagnation_reasons()
         if self.mode == "dialectic" and reasons:
             lines.append("- DIALECTIC ESCALATION ACTIVE: current interpretation may be in a false-convergence attractor.")
@@ -245,18 +244,17 @@ class GrapheneDMWDuckBridge:
         action: str,
         predicted_observation: str,
         falsification_questions: list[str],
+        action_params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Build canonical A1.5 schema without asking Duck to emit database JSON.
-
-        `hypotheses` is [(statement, prediction), ...]. The caller must provide at
-        least two genuinely different semantic alternatives before invoking native
-        opposition. The bridge assigns IDs/provenance deterministically.
-        """
+        """Build canonical A1.5 schema without asking Duck to emit database JSON."""
         if len(hypotheses) < 2:
             raise ValueError("dialectic escalation requires at least two competing hypotheses")
         normalized = [(" ".join(s.split()), " ".join(p.split())) for s, p in hypotheses]
         if len({s.lower() for s, _ in normalized}) < 2:
             raise ValueError("competing hypotheses must be semantically distinct strings")
+        questions = [" ".join(q.split()) for q in falsification_questions if q.strip()]
+        if not questions:
+            raise ValueError("dialectic escalation requires at least one falsification question")
         oid = f"t{turn}-o1"
         hs = [
             {
@@ -275,7 +273,7 @@ class GrapheneDMWDuckBridge:
                 "id": oid,
                 "statement": " ".join(observation_statement.split()),
                 "evidence_ref": str(observation_ref),
-                "evidence_kind": "grid_transition",
+                "evidence_kind": "transition",
             }],
             "hypotheses": hs,
             "candidate_goals": [{
@@ -284,13 +282,13 @@ class GrapheneDMWDuckBridge:
                 "basis": [{"hypothesis_id": hs[0]["id"], "observation_id": oid}],
                 "status": "proposed",
             }],
-            "opposition": {"falsification_questions": [" ".join(q.split()) for q in falsification_questions if q.strip()]},
+            "opposition": {"falsification_questions": questions[:3]},
             "experiment": {
                 "tests_hypothesis_ids": [h["id"] for h in hs],
                 "action": str(action),
-                "action_params": {},
-                "information_goal": "Distinguish the competing world-model hypotheses using observable environment evidence.",
+                "action_params": dict(action_params or {}),
+                "information_goal": "Distinguish competing world-model hypotheses using observable environment evidence.",
                 "predicted_observation": " ".join(predicted_observation.split()),
             },
-            "residual_uncertainty": ["The hidden game mechanics and objective remain provisional until falsified or repeatedly supported."],
+            "residual_uncertainty": ["Hidden mechanics and objective remain provisional until falsified or repeatedly supported."],
         }
