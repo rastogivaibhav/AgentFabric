@@ -1,5 +1,28 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "perception_contract": {
+    "reasoning_allowed_inputs": [
+      "current_grid",
+      "opaque_available_actions",
+      "prior_agent_actions",
+      "before_after_grid_changes",
+      "graphenedb_memories_derived_from_allowed_inputs"
+    ],
+    "evaluator_only_fields": [
+      "game_id",
+      "guid",
+      "state",
+      "levels_completed",
+      "win_levels",
+      "score",
+      "score_delta",
+      "level_delta",
+      "scorecard",
+      "official_success",
+      "level_scores"
+    ],
+    "native_world_scope": "a15-isolated-world"
+  },
   "turn_proposal": {
     "required": [
       "turn",
@@ -52,16 +75,29 @@
       "turn",
       "experiment_id",
       "action",
-      "before_state_digest",
-      "after_state_digest",
-      "meaningful_change",
-      "score_delta",
-      "level_delta",
+      "before_grid_digest",
+      "after_grid_digest",
+      "changed_cells",
+      "changed_regions",
+      "persistent_change",
       "observed_effect",
       "supports_hypothesis_ids",
       "contradicts_hypothesis_ids"
     ],
-    "epistemic_origin": "observed"
+    "epistemic_origin": "observed",
+    "forbidden_evaluator_fields": [
+      "game_id",
+      "guid",
+      "state",
+      "levels_completed",
+      "win_levels",
+      "score",
+      "score_delta",
+      "level_delta",
+      "scorecard",
+      "official_success",
+      "level_scores"
+    ]
   },
   "controller_invariants": [
     "candidate_goal_is_never_fact",
@@ -71,7 +107,8 @@
     "informative_outcome_updates_epistemic_state",
     "opposition_can_reopen_discarded_alternative",
     "no_evidence_allows_abstention",
-    "repeated_no_information_state_is_eligible_for_lyapunov_escape"
+    "repeated_no_information_state_is_eligible_for_lyapunov_escape",
+    "evaluator_metadata_never_enters_reasoning_or_graphenedb"
   ],
   "diagnostic_metrics": [
     "hypotheses_generated",
