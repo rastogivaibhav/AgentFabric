@@ -7,6 +7,7 @@ on:
     branches: [pi45-a14-minimal-interactive-world-prior-20260821]
     paths:
       - 'pi45_a1/a15_synthetic_world_harness.py'
+      - 'pi45_a1/a15_synthetic_world_harness_v2.py'
       - 'pi45_a1/a15_run_synthetic_harness.sh'
       - 'pi45_a1/a15_arc_dialectic_adapter.py'
       - 'pi45_a1/a15_contract_gate.py'
@@ -25,6 +26,7 @@ on:
     branches: [pi45-a15-dialectical-model-world-20260821]
     paths:
       - 'pi45_a1/a15_synthetic_world_harness.py'
+      - 'pi45_a1/a15_synthetic_world_harness_v2.py'
       - 'pi45_a1/a15_run_synthetic_harness.sh'
       - '.github/workflows/pi45-a15-synthetic-harness.yml'
   workflow_dispatch:
@@ -45,8 +47,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Eq '(^|[[:space:]])(import|from)[[:space:]]+(arc_agi|arcengine)' pi45_a1/a15_synthetic_world_harness.py
-          ! grep -q 'arc\.make\|get_environments\|env\.step\|Arcade(' pi45_a1/a15_synthetic_world_harness.py
+          for harness in pi45_a1/a15_synthetic_world_harness.py pi45_a1/a15_synthetic_world_harness_v2.py; do
+            ! grep -Eq '(^|[[:space:]])(import|from)[[:space:]]+(arc_agi|arcengine)' "$harness"
+            ! grep -q 'arc\.make\|get_environments\|env\.step\|Arcade(' "$harness"
+          done
           ! grep -q 'a15_run_diagnostic.sh' pi45_a1/a15_run_synthetic_harness.sh
           grep -q 'platform_posix.cpp' pi45_a1/a15_run_synthetic_harness.sh
           echo 'synthetic_harness_arc_execution=ABSENT'
