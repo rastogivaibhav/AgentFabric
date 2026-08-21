@@ -14,7 +14,7 @@ SYSTEM_RULES = """You are the proposal generator inside a governed dialectical r
 You do NOT know the objective or action semantics. Do not invent target-specific rules.
 Your perceptual evidence is limited to the observable grid, opaque legal actions, and prior outcomes derived from observable grid changes.
 Separate observations from hypotheses. Preserve at least two competing hypotheses.
-Candidate goals must emerge from those hypotheses and current evidence; never use 'win the game' as a goal.
+Candidate goals must emerge from hypotheses and current evidence; never use 'win the game' as a goal. For every candidate goal, give at least one explicit basis pair linking a hypothesis_id to an observation_id.
 Provide falsification questions that could challenge the current hypothesis set, but DO NOT choose a provisional convergence, challenged hypothesis, or reopen set. The native GrapheneDB/HypoKosh controller owns those decisions.
 Every action is an experiment chosen to discriminate hypotheses or reduce important uncertainty.
 Treat each turn as a new epistemic revision. Use prior GOVERNED_CONTEXT as evidence/history, but create fresh turn-scoped IDs for this turn: tTURN-o..., tTURN-h..., and tTURN-g.... Do not mutate an older ModelWorld node by reusing its ID.
@@ -58,7 +58,9 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
     }
     schema = {
         "turn": turn,
-        "observations": [{"id": obs_id, "statement": "observable fact only", "evidence_ref": f"grid:turn:{turn}"}],
+        "observations": [
+            {"id": obs_id, "statement": "observable fact only", "evidence_ref": f"grid:turn:{turn}"}
+        ],
         "hypotheses": [
             {"id": h1, "statement": "possible interpretation A", "support_observation_ids": [obs_id],
              "prediction": "testable grid prediction", "status": "active"},
@@ -66,24 +68,39 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
              "prediction": "different testable grid prediction", "status": "proposed"}
         ],
         "candidate_goals": [
-            {"id": g1, "statement": "evidence-seeking/progress goal", "implied_by_hypothesis_ids": [h1, h2],
-             "evidence_observation_ids": [obs_id], "status": "active"}
+            {"id": g1, "statement": "evidence-seeking/progress goal",
+             "basis": [{"hypothesis_id": h1, "observation_id": obs_id}], "status": "active"}
         ],
         "opposition": {"falsification_questions": ["..."]},
-        "experiment": {"tests_hypothesis_ids": [h1, h2], "information_goal": "...", "predicted_observation": "...",
-                       "action": "EXACT_AVAILABLE_ACTION", "action_params": {}},
+        "experiment": {"tests_hypothesis_ids": [h1, h2], "information_goal": "...",
+                       "predicted_observation": "...", "action": "EXACT_AVAILABLE_ACTION",
+                       "action_params": {}},
         "residual_uncertainty": ["..."],
     }
-    prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(context, sort_keys=True, separators=(",", ":"))
+    prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(
+        context, sort_keys=True, separators=(",", ":")
+    )
     prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
-    prompt += f"\nConstraints: IDs created this turn MUST start with t{turn}-o, t{turn}-h, or t{turn}-g as appropriate. 1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. Every candidate goal MUST include both implied_by_hypothesis_ids and evidence_observation_ids. Do NOT output provisional_hypothesis_id, provisional_goal_id, challenged_hypothesis_id, or reopen_hypothesis_ids. Use only listed actions. JSON only."
+    prompt += (
+        f"\nConstraints: IDs created this turn MUST start with t{turn}-o, t{turn}-h, or t{turn}-g as appropriate. "
+        "1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. "
+        "Every candidate goal MUST include non-empty basis, and each basis item MUST contain one hypothesis_id and one observation_id from this turn. "
+        "Do NOT output provisional_hypothesis_id, provisional_goal_id, challenged_hypothesis_id, or reopen_hypothesis_ids. "
+        "Use only listed actions. JSON only."
+    )
     if len(prompt) > max_chars:
         compact = dict(context)
         compact["recent_outcomes"] = compact["recent_outcomes"][-1:]
         compact["governed_context"] = _compact_governed(compact["governed_context"])
-        prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(compact, sort_keys=True, separators=(",", ":"))
+        prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(
+            compact, sort_keys=True, separators=(",", ":")
+        )
         prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
-        prompt += f"\nConstraints: use t{turn}-scoped IDs; 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; each goal must include hypothesis and observation links; native controller owns convergence/opposition/reopening; use only listed actions; JSON only."
+        prompt += (
+            f"\nConstraints: use t{turn}-scoped IDs; 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; "
+            "each goal must have a non-empty hypothesis/observation basis pair; native controller owns convergence/opposition/reopening; "
+            "use only listed actions; JSON only."
+        )
     if len(prompt) > max_chars:
         raise ValueError(f"A1.5 proposal prompt exceeds dedicated budget: {len(prompt)} > {max_chars}")
     return prompt
@@ -105,7 +122,7 @@ def build_proposal_repair_prompt(*, original_prompt: str, invalid_output: str,
 Repair that SAME proposal using ONLY the evidence in ORIGINAL PROPOSAL REQUEST.
 Do not add hidden semantics, score, level, terminal state, game identity, or new observations.
 Preserve at least two competing hypotheses and one evidence-linked candidate goal.
-Every candidate goal MUST contain `implied_by_hypothesis_ids` and `evidence_observation_ids`, referencing IDs present in this turn's proposal.
+Every candidate goal MUST contain a non-empty `basis` array. Each basis item MUST contain exactly the explicit references `hypothesis_id` and `observation_id`, using IDs present in this turn's proposal.
 Provide one to three falsification questions, but do NOT output provisional_hypothesis_id, provisional_goal_id, challenged_hypothesis_id, or reopen_hypothesis_ids; those are native-controller-owned decisions.
 Preserve turn-scoped IDs beginning with t{turn}-o, t{turn}-h, and t{turn}-g.
 Use only the listed opaque actions and the supplied parameter schema.
