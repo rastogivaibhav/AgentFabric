@@ -21,7 +21,7 @@ on:
       - '.github/workflows/pi45-a15-contract-gate.yml'
   pull_request:
     branches:
-      - agentfabric-dev
+      - pi45-a14-minimal-interactive-world-prior-20260821
     paths:
       - 'pi45_a1/A15_DESIGN_GUARDRAIL.md'
       - 'pi45_a1/A15_NATIVE_RUNTIME_CONTRACT.md'
