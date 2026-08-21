@@ -8,13 +8,19 @@ from pathlib import Path
 from typing import Any
 
 import a15_synthetic_world_harness as base
-from a15_proposal_prompt import build_proposal_repair_prompt, parse_json_object
+from a15_proposal_prompt import (
+    build_proposal_repair_prompt,
+    extract_prompt_context,
+    parse_and_canonicalize_model_proposal,
+    parse_json_object,
+)
 
 
 _ORIGINAL_CALL_LLM = base.call_llm
 _ORIGINAL_VALIDATE_TURN = base.validate_turn
 _ORIGINAL_INVOKE_NATIVE = base.invoke_native
 _ORIGINAL_GOVERNED_CONTEXT = base.governed_context
+_ORIGINAL_PARSE_JSON = base.parse_json_object
 _STATE: dict[str, Any] = {
     "last_proposal_prompt": None,
     "last_proposal_raw": None,
@@ -53,19 +59,47 @@ def tracked_call_llm(endpoint: str, prompt: str, *, max_tokens: int, timeout: in
     return raw, usage
 
 
+def tracked_parse_json_object(text: str) -> dict[str, Any]:
+    """Preserve proposal parse failures so the bounded repair path can handle them.
+
+    Outcome JSON continues through the original parser unchanged. For the most
+    recent proposal only, a truncated/malformed model answer becomes a sentinel
+    object; validate_turn_with_one_repair then retries the same model once using
+    the exact parse/validation error and no new world evidence.
+    """
+    if text == _STATE.get("last_proposal_raw"):
+        try:
+            return _ORIGINAL_PARSE_JSON(text)
+        except Exception as exc:
+            return {"__compact_proposal_parse_error__": repr(exc)}
+    return _ORIGINAL_PARSE_JSON(text)
+
+
+def _canonicalize_latest(raw: str, prompt: str) -> dict[str, Any]:
+    return parse_and_canonicalize_model_proposal(raw, prompt=prompt)
+
+
 def validate_turn_with_one_repair(proposal: dict[str, Any], contract: dict[str, Any], available_actions: set[str]) -> None:
-    try:
+    original_prompt = _STATE.get("last_proposal_prompt")
+    original_raw = _STATE.get("last_proposal_raw")
+    endpoint = _STATE.get("last_endpoint")
+    max_tokens = _STATE.get("last_max_tokens")
+    if not original_prompt or original_raw is None:
         _ORIGINAL_VALIDATE_TURN(proposal, contract, available_actions)
         return
+
+    try:
+        canonical = _canonicalize_latest(str(original_raw), str(original_prompt))
+        _ORIGINAL_VALIDATE_TURN(canonical, contract, available_actions)
+        proposal.clear()
+        proposal.update(canonical)
+        return
     except Exception as first_error:
-        original_prompt = _STATE.get("last_proposal_prompt")
-        original_raw = _STATE.get("last_proposal_raw")
-        endpoint = _STATE.get("last_endpoint")
-        max_tokens = _STATE.get("last_max_tokens")
-        if not original_prompt or original_raw is None or not endpoint or not max_tokens:
+        if not endpoint or not max_tokens:
             raise
 
-        turn = int(proposal.get("turn", -1))
+        context = extract_prompt_context(str(original_prompt))
+        turn = int(context["turn"])
         _STATE["proposal_repairs_attempted"] += 1
         record: dict[str, Any] = {
             "turn": turn,
@@ -79,21 +113,21 @@ def validate_turn_with_one_repair(proposal: dict[str, Any], contract: dict[str, 
         }
         try:
             repair_prompt = build_proposal_repair_prompt(
-                original_prompt=original_prompt,
-                invalid_output=original_raw,
+                original_prompt=str(original_prompt),
+                invalid_output=str(original_raw),
                 validation_error=str(first_error),
                 turn=turn,
                 available_actions=sorted(str(a) for a in available_actions),
                 max_chars=11500,
             )
             repaired_raw, repaired_usage = _ORIGINAL_CALL_LLM(
-                endpoint, repair_prompt, max_tokens=int(max_tokens)
+                str(endpoint), repair_prompt, max_tokens=int(max_tokens)
             )
             record["repair_prompt_sha256"] = hashlib.sha256(repair_prompt.encode()).hexdigest()
             record["repair_prompt_chars"] = len(repair_prompt)
             record["repair_raw"] = repaired_raw
             record["repair_usage"] = repaired_usage
-            repaired = parse_json_object(repaired_raw)
+            repaired = _canonicalize_latest(repaired_raw, str(original_prompt))
             _ORIGINAL_VALIDATE_TURN(repaired, contract, available_actions)
             proposal.clear()
             proposal.update(repaired)
@@ -169,6 +203,7 @@ def _configure_patches(out_dir: Path) -> None:
         "reopened_ids": set(),
     })
     base.call_llm = tracked_call_llm
+    base.parse_json_object = tracked_parse_json_object
     base.validate_turn = validate_turn_with_one_repair
     base.invoke_native = tracked_invoke_native
     base.governed_context = governed_context_with_native_controller
@@ -208,6 +243,8 @@ def main() -> None:
     inst["native_primary_hypothesis_selections"] = int(_STATE["native_primary_hypothesis_selections"])
     summary["native_reopened_hypothesis_ids"] = sorted(_STATE["reopened_ids"])
     summary["proposal_repair_policy"] = "max_one_same-model-validation-retry"
+    summary["proposal_language"] = "compact-semantics-over-runtime-evidence-catalog"
+    summary["observation_authority"] = "deterministic-runtime"
     summary["dialectic_control_owner"] = "CompleteHypoKoshRuntime"
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -225,6 +262,8 @@ def main() -> None:
         raise AssertionError("native controller never reopened a competing hypothesis")
     if int(inst.get("alternatives_reopened", 0)) < 1:
         raise AssertionError("no alternative hypothesis survived/reopened through native opposition")
+    if summary.get("observation_authority") != "deterministic-runtime":
+        raise AssertionError("observed evidence authority drifted back to the language model")
     if summary.get("dialectic_control_owner") != "CompleteHypoKoshRuntime":
         raise AssertionError("dialectic control ownership drifted away from native runtime")
 
