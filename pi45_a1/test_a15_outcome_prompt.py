@@ -18,10 +18,8 @@ class A15OutcomePromptTests(unittest.TestCase):
             grid_outcome={"before_grid_digest": "a", "after_grid_digest": "b", "changed_cells": 2, "changed_regions": [[4,5,0,1]], "persistent_change": True},
         )
         self.assertIn("observable before/after grid evidence", prompt)
-        self.assertIn("AT MOST ONE", prompt)
-        # Guardrail prose is allowed to name forbidden evaluator concepts (e.g.
-        # "Do not use score"). What must remain clean is the serialized EVIDENCE
-        # payload actually supplied as observations.
+        self.assertIn("exactly one row", prompt.lower())
+        self.assertIn("classifications", prompt)
         evidence_text = prompt.split("\n\nEVIDENCE:\n", 1)[1].split("\n\nOUTPUT CONTRACT:\n", 1)[0]
         evidence = json.loads(evidence_text)
         encoded = json.dumps(evidence, sort_keys=True).lower()
@@ -37,17 +35,59 @@ class A15OutcomePromptTests(unittest.TestCase):
                 grid_outcome={"changed_cells": 0, "score_delta": 1},
             )
 
+    def test_valid_classification_projects_to_graphene_edges(self) -> None:
+        result = validate_outcome_interpretation({
+            "observed_effect": "the tested region did not change",
+            "classifications": [
+                {"hypothesis_id": "h1", "verdict": "contradicted"},
+                {"hypothesis_id": "h2", "verdict": "supported"},
+            ],
+        }, {"h1", "h2"})
+        self.assertEqual(result["supports_hypothesis_ids"], ["h2"])
+        self.assertEqual(result["contradicts_hypothesis_ids"], ["h1"])
+        self.assertEqual(result["unresolved_hypothesis_ids"], [])
+
     def test_interpretation_must_only_classify_tested_hypotheses(self) -> None:
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "untested"):
             validate_outcome_interpretation({
                 "observed_effect": "none",
-                "supports_hypothesis_ids": ["h3"],
-                "contradicts_hypothesis_ids": [],
-                "unresolved_hypothesis_ids": [],
+                "classifications": [
+                    {"hypothesis_id": "h1", "verdict": "unresolved"},
+                    {"hypothesis_id": "h3", "verdict": "supported"},
+                ],
             }, {"h1", "h2"})
 
-    def test_overlapping_classification_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "disjoint"):
+    def test_duplicate_hypothesis_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicates"):
+            validate_outcome_interpretation({
+                "observed_effect": "none",
+                "classifications": [
+                    {"hypothesis_id": "h1", "verdict": "supported"},
+                    {"hypothesis_id": "h1", "verdict": "unresolved"},
+                ],
+            }, {"h1", "h2"})
+
+    def test_omitted_hypothesis_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "exactly one row"):
+            validate_outcome_interpretation({
+                "observed_effect": "none",
+                "classifications": [
+                    {"hypothesis_id": "h1", "verdict": "unresolved"},
+                ],
+            }, {"h1", "h2"})
+
+    def test_invalid_verdict_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "invalid verdict"):
+            validate_outcome_interpretation({
+                "observed_effect": "none",
+                "classifications": [
+                    {"hypothesis_id": "h1", "verdict": "maybe"},
+                    {"hypothesis_id": "h2", "verdict": "unresolved"},
+                ],
+            }, {"h1", "h2"})
+
+    def test_old_overlapping_array_shape_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing"):
             validate_outcome_interpretation({
                 "observed_effect": "no visible change",
                 "supports_hypothesis_ids": ["h1"],
@@ -59,18 +99,19 @@ class A15OutcomePromptTests(unittest.TestCase):
         original = "ORIGINAL GRID EVIDENCE token-abc"
         invalid = json.dumps({
             "observed_effect": "none",
-            "supports_hypothesis_ids": ["h1"],
-            "contradicts_hypothesis_ids": [],
-            "unresolved_hypothesis_ids": ["h1"],
+            "classifications": [
+                {"hypothesis_id": "h1", "verdict": "supported"},
+                {"hypothesis_id": "h1", "verdict": "unresolved"},
+            ],
         })
         prompt = build_outcome_repair_prompt(
             original_prompt=original,
             invalid_output=invalid,
-            validation_error="outcome interpretation classifications must be disjoint",
+            validation_error="outcome classification duplicates hypothesis 'h1'",
             tested_ids={"h1", "h2"},
         )
         self.assertIn(original, prompt)
-        self.assertIn("pairwise disjoint", prompt)
+        self.assertIn("EXACTLY ONE", prompt)
         self.assertIn("h1", prompt)
         self.assertIn("h2", prompt)
         self.assertNotIn("ft09", prompt)
