@@ -12,8 +12,10 @@ EVALUATOR_ONLY_FIELDS = {
 
 SYSTEM_RULES = """You are the proposal generator inside a governed dialectical reasoning system for an unknown interactive world.
 You do NOT know the objective or action semantics. Do not invent target-specific rules.
-Your perceptual evidence is limited to the observable grid, opaque legal actions, and prior outcomes derived from observable grid changes.
+Your perceptual evidence is limited to the observable grid, opaque legal actions, prior agent actions, and prior outcomes derived from observable grid changes.
 Separate observations from hypotheses. Preserve at least two genuinely different competing hypotheses.
+Classify each observation by evidence_kind: grid, transition, affordance, or memory. An opaque ACTIONn being available is only affordance evidence; it does not by itself support a causal claim about what that action will do.
+Every hypothesis must explicitly link to one or more current-turn observations through its basis. Every causal/world hypothesis must include at least one grid or transition observation in that basis.
 Candidate goals must emerge from hypotheses and current evidence; never use 'win the game' as a goal. Every candidate goal must explicitly link at least one current-turn hypothesis to one current-turn observation.
 Provide falsification questions that could challenge the current hypothesis set, but DO NOT choose a provisional convergence, challenged hypothesis, or reopen set. The native GrapheneDB/HypoKosh controller owns those decisions.
 Every action is an experiment chosen to discriminate hypotheses or reduce important uncertainty. A repeated no-effect action in an unchanged state is weak evidence against repeating the same experiment when another opaque action is available.
@@ -36,12 +38,7 @@ def _reject_evaluator_metadata(value: Any, where: str) -> None:
 
 
 def _output_contract(turn: int) -> str:
-    """Describe shape without a copyable worked JSON object.
-
-    A 1.5B model previously copied both semantic examples and empty structural
-    slots. This field-only contract specifies keys/types/cardinalities while
-    leaving every semantic value to be derived from CURRENT EVIDENCE.
-    """
+    """Describe shape without a copyable worked JSON object."""
     return f"""FIELD-ONLY CONTRACT — these are key names and constraints, not values to copy.
 Top-level required keys:
 - "turn": integer exactly {turn}
@@ -55,22 +52,28 @@ Top-level required keys:
 Observation object required keys:
 - "id": current-turn ID beginning t{turn}-o
 - "statement": concrete observable fact from CURRENT EVIDENCE
-- "evidence_ref": concrete evidence reference, normally grid:turn:{turn}
+- "evidence_ref": concrete source reference using exactly one prefix: grid:, transition:, affordance:, or memory:
+- "evidence_kind": exactly one of grid | transition | affordance | memory and it must match evidence_ref
+Use grid for facts directly visible in the current integer grid. Use transition for before/after grid-change facts. Use affordance only for facts such as an opaque ACTIONn being available. Use memory only for prior persisted evidence.
 
 Hypothesis object required keys:
 - "id": current-turn ID beginning t{turn}-h
-- "statement": concrete possible interpretation
-- "support_observation_ids": non-empty array of Observation IDs from this turn
+- "statement": concrete possible interpretation of the world
+- "basis": non-empty array of HypothesisBasis objects
 - "prediction": concrete observable prediction
 - "status": one of proposed | active | contested
+Every hypothesis basis MUST contain at least one observation whose evidence_kind is grid or transition. Affordance-only support is invalid.
+
+HypothesisBasis object required keys:
+- "observation_id": Observation ID from this turn
 
 CandidateGoal object required keys:
 - "id": current-turn ID beginning t{turn}-g
 - "statement": concrete evidence-seeking/progress objective, never a generic win objective
-- "basis": non-empty array of Basis objects
+- "basis": non-empty array of GoalBasis objects
 - "status": one of proposed | active | contested
 
-Basis object required keys:
+GoalBasis object required keys:
 - "hypothesis_id": Hypothesis ID from this turn
 - "observation_id": Observation ID from this turn
 
@@ -145,9 +148,10 @@ def build_proposal_repair_prompt(*, original_prompt: str, invalid_output: str,
     rules = f"""Your previous proposal JSON for turn {turn} was rejected by the deterministic epistemic contract.
 Repair that SAME proposal using ONLY the world evidence in ORIGINAL PROPOSAL REQUEST -> CURRENT EVIDENCE.
 The rejection, validation error, contract text and this repair instruction are NOT world evidence. Never mention or paraphrase them in observation statements, hypothesis statements, predictions, goals, falsification questions, experiment text, or residual uncertainty.
-Do not add hidden semantics, score, level, terminal state, game identity, or new observations.
+Do not add hidden semantics, score, level, terminal state, game identity, or new observations unsupported by CURRENT EVIDENCE.
 Preserve at least two genuinely different competing hypotheses and one evidence-linked candidate goal.
-Every candidate goal MUST contain a non-empty `basis` array. Each basis item MUST contain `hypothesis_id` and `observation_id`, using IDs present in this turn's proposal.
+Every Observation MUST contain evidence_kind and a matching evidence_ref prefix. Every Hypothesis MUST contain non-empty `basis`, each item containing `observation_id`; at least one linked observation must be grid or transition evidence, not affordance-only evidence.
+Every candidate goal MUST contain a non-empty `basis` array. Each goal basis item MUST contain `hypothesis_id` and `observation_id`, using IDs present in this turn's proposal.
 Provide one to three evidence-grounded falsification questions, but do NOT output provisional_hypothesis_id, provisional_goal_id, challenged_hypothesis_id, or reopen_hypothesis_ids; those are native-controller-owned decisions.
 Preserve turn-scoped IDs beginning with t{turn}-o, t{turn}-h, and t{turn}-g.
 Use only the listed opaque actions and the supplied parameter schema.
