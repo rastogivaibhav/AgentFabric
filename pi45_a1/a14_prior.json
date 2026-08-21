@@ -1,33 +1,46 @@
 {
   "prior_name": "minimal-interactive-world-prior-v1",
-  "scope": "generic controller literacy, goal setting, interaction design, and game design only; no ARC game-specific knowledge",
-  "principles": [
-    {"id":"controller-directional","category":"controller","text":"Directional controls such as D-pad, arrow keys, WASD, or left stick are usually candidates for movement or navigation."},
-    {"id":"controller-action-buttons","category":"controller","text":"Buttons such as A/B/X/Y, face buttons, space, enter, mouse buttons, shoulder buttons, and triggers are usually candidates for primary, secondary, contextual, or mode-changing actions."},
-    {"id":"controller-system-buttons","category":"controller","text":"Start, Select, Menu, View, Escape, and similar controls are usually candidates for starting, pausing, opening menus, confirming, cancelling, or changing interface state rather than ordinary movement."},
-    {"id":"controller-gameboy","category":"controller","text":"Game Boy pattern: D-pad for directions; A/B for primary and secondary actions; Start and Select for game/system functions."},
-    {"id":"controller-nes","category":"controller","text":"NES pattern: D-pad for directions; A/B for actions; Start and Select for game/system functions."},
-    {"id":"controller-snes","category":"controller","text":"SNES pattern: D-pad for directions; A/B/X/Y for actions; L/R for additional actions; Start and Select for game/system functions."},
-    {"id":"controller-xbox","category":"controller","text":"Xbox-style pattern: left stick or D-pad for movement/navigation; right stick often for camera/aim; A/B/X/Y for actions; LB/RB and LT/RT for secondary actions; Menu/View for system functions."},
-    {"id":"controller-pc","category":"controller","text":"PC pattern: WASD or arrows often map to movement; mouse movement often maps to pointing/camera; left/right click, space, enter, shift, control, and number keys are common action candidates; Escape often maps to pause/back."},
-    {"id":"goal-discover-control","category":"goal","text":"When the game is unknown, first form a short-term goal to discover what is controllable and which available actions produce meaningful state changes."},
-    {"id":"goal-progress-signals","category":"goal","text":"Treat changes in position, reachable area, object state, score, counters, inventory, level state, or other persistent environment changes as evidence that an action may advance progress."},
-    {"id":"goal-provisional","category":"goal","text":"Maintain a provisional current goal rather than assuming the final objective. Keep it when observations support progress and revise it when repeated evidence contradicts it."},
-    {"id":"goal-stop-stagnation","category":"goal","text":"If the same action in an equivalent state repeatedly produces no useful change, stop prioritizing that action for the current goal and test another plausible control."},
-    {"id":"goal-explicit-success","category":"goal","text":"When the environment reveals a clear success, completion, score, or progression signal, promote that signal to the primary goal."},
-    {"id":"interaction-affordance","category":"interaction-design","text":"Interactive systems expose affordances: spatial placement, shapes, highlighting, boundaries, objects, and controls may indicate possible interactions, but their meaning must be confirmed by observation."},
-    {"id":"interaction-feedback","category":"interaction-design","text":"Evaluate an action by comparing the environment immediately before and after it. Visual, spatial, numerical, modal, or object changes are feedback."},
-    {"id":"interaction-constraint","category":"interaction-design","text":"When an action has no effect, possible explanations include a boundary, obstacle, unmet precondition, wrong context, inactive control, or already-satisfied state. Do not assume only one explanation."},
-    {"id":"interaction-discoverability","category":"interaction-design","text":"Unknown controls should be probed systematically. Prefer testing unresolved controls over repeatedly issuing a control whose effect is already known to be unhelpful."},
-    {"id":"interaction-consistency","category":"interaction-design","text":"A control that produced a kind of effect before is evidence for a stable role, although context may change its effect. Reuse that evidence when choosing future actions."},
-    {"id":"game-goal","category":"game-design","text":"Games usually contain an explicit or implicit success condition. Infer it from feedback and progression signals rather than assuming a specific objective such as exit, collection, or combat."},
-    {"id":"game-rules","category":"game-design","text":"Games are governed by learnable rules connecting state, action, and consequence. Preserve useful observations that reveal those rules."},
-    {"id":"game-player-state","category":"game-design","text":"The controllable entity may have position, mode, inventory, health, capabilities, or other state. A change in these can alter which actions are useful."},
-    {"id":"game-objects","category":"game-design","text":"Environment elements may be obstacles, targets, resources, switches, hazards, decorations, or mechanisms. Determine their role from interaction evidence rather than appearance alone."},
-    {"id":"game-resource","category":"game-design","text":"Some objects or counters may be collected, consumed, accumulated, spent, or required as preconditions. Treat persistent count/state changes as evidence of resource mechanics."},
-    {"id":"game-obstacle","category":"game-design","text":"Blocked or harmful transitions may indicate obstacles or hazards. Useful responses can include avoiding, navigating around, changing state, or satisfying a precondition."},
-    {"id":"game-reward-penalty","category":"game-design","text":"Score gain, new area, unlocked state, new capability, object acquisition, or level transition can signal progress; reset, lost state, negative score, or blocked progress can signal penalty or failure."},
-    {"id":"game-progression","category":"game-design","text":"Games often progress through states or levels. Previously learned control roles and interaction rules may remain useful across later states unless evidence changes."},
-    {"id":"game-rule-discovery","category":"game-design","text":"When an unexplained useful transition occurs, retain the before-state, action, after-state, and observed effect as evidence for future decisions."}
+  "scope": "generic transferable interaction knowledge only; no target-game observations, solutions, state signatures, action outcomes, or labels",
+  "memories": [
+    {
+      "id": "controller-gameboy",
+      "category": "controller",
+      "instruction": "Game Boy convention: D-pad usually supplies four directions; A/B usually supply primary/secondary actions; Start/Select usually handle start, pause, menu, or selection. Treat this only as a weak mapping prior and verify from state changes."
+    },
+    {
+      "id": "controller-nes",
+      "category": "controller",
+      "instruction": "NES convention: D-pad usually supplies four directions; A/B usually supply action controls; Start/Select usually handle game or menu functions. Treat this only as a weak mapping prior and verify from feedback."
+    },
+    {
+      "id": "controller-snes",
+      "category": "controller",
+      "instruction": "SNES convention: D-pad usually supplies directions; A/B/X/Y are action candidates; L/R are additional action candidates; Start/Select are usually system or menu controls. Verify every mapping in the current game."
+    },
+    {
+      "id": "controller-xbox",
+      "category": "controller",
+      "instruction": "Xbox-style convention: left stick or D-pad often controls movement/navigation; right stick often controls camera/aim; A/B/X/Y, bumpers, and triggers are action candidates; Menu/View are usually system controls. Verify from observed effects."
+    },
+    {
+      "id": "controller-pc",
+      "category": "controller",
+      "instruction": "PC convention: WASD or arrows often control movement; mouse movement often points or aims; mouse buttons, Space, Enter, Shift, Ctrl, and number keys are common action candidates; Escape often means pause/back. Verify rather than assume."
+    },
+    {
+      "id": "goal-setting",
+      "category": "goal",
+      "instruction": "For an unknown game, first discover what is controllable and which actions change state. Set a provisional short-term goal from observable progress. If repeated actions in an equivalent state produce no useful change, revise the action or goal. Promote explicit success or progression signals when discovered."
+    },
+    {
+      "id": "interaction-design",
+      "category": "interaction-design",
+      "instruction": "Use interaction-design priors: visible/spatial elements may offer affordances; compare before/after state for feedback; no effect may mean boundary, obstacle, precondition, wrong context, or inactive control; probe unresolved controls systematically; reuse mappings that remain consistent."
+    },
+    {
+      "id": "game-design",
+      "category": "game-design",
+      "instruction": "Use game-design priors: games usually have learnable rules and an explicit or implicit goal; objects may be targets, resources, obstacles, hazards, switches, or decoration; score, new area, capability, persistent state change, or level transition may signal progress; preserve before-action-after evidence to infer rules."
+    }
   ]
 }

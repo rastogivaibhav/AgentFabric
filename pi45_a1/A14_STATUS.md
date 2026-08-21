@@ -1,1 +1,1 @@
-A1.4 implementation in progress. Do not treat as evidence until workflow validity gates and artifacts pass.
+A1.4 implementation is wired for execution. Treatment = separate reusable GrapheneDB prior store containing 8 generic memories (Game Boy, NES, SNES, Xbox, PC, goal setting, interaction design, game design) queried every turn alongside the unchanged A1.3 episodic store. No target-game-specific prior data. Evidence is not valid until the A1.4 workflow diagnostic and full validity gates pass.
