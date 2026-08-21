@@ -59,7 +59,7 @@ PYTHONPATH="$ROOT/pi45_a1" python3 "$ROOT/pi45_a1/a15_arc_dialectic_adapter.py" 
 
 PYTHONPATH="$ROOT/pi45_a1" python3 "$ROOT/pi45_a1/a15_arc_dialectic_adapter.py" \
   --mode outcome --input "$ROOT/pi45_a1/a15_example_outcome.json" \
-  --game-id diagnostic --known-hypotheses h0-interactable,h0-inert \
+  --game-id diagnostic --known-hypotheses t0-h-interactable,t0-h-inert \
   --native-helper "$HELPER" --db "$DB" --trace "$TRACE" \
   > "$OUT_DIR/outcome_response.json"
 
@@ -87,7 +87,7 @@ assert outcome['action_authorized'] is False, outcome
 assert outcome['model_world_events'] > proposal['model_world_events'], (proposal, outcome)
 assert outcome['reasoning_receipt']['model_world_event_hash'] != proposal['reasoning_receipt']['model_world_event_hash']
 trace=(out/'native_trace.jsonl').read_text()
-assert 'diagnostic' in trace  # evaluator trace may retain evaluator id
+assert 'diagnostic' in trace
 for response_file in ('proposal_response.json','outcome_response.json'):
     body=(out/response_file).read_text()
     assert 'diagnostic' not in body, body
