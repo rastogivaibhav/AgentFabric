@@ -27,8 +27,10 @@
     {
       "id": "t0-g-discover-rule",
       "statement": "Identify one reproducible interaction rule that distinguishes controllable from non-controllable visible state.",
-      "implied_by_hypothesis_ids": ["t0-h-interactable", "t0-h-inert"],
-      "evidence_observation_ids": ["t0-o-state"],
+      "basis": [
+        {"hypothesis_id": "t0-h-interactable", "observation_id": "t0-o-state"},
+        {"hypothesis_id": "t0-h-inert", "observation_id": "t0-o-state"}
+      ],
       "status": "active"
     }
   ],
