@@ -1,12 +1,9 @@
 name: PI4.5 A1.5 Perception Contract Audit
 
+# This audit touches a one-turn ARC environment and therefore remains manual-only
+# until the synthetic A1.5 harness is green.
 on:
-  push:
-    branches:
-      - pi45-a15-dialectical-model-world-20260821
-  pull_request:
-    branches:
-      - pi45-a14-minimal-interactive-world-prior-20260821
+  workflow_dispatch:
 
 permissions:
   contents: read
