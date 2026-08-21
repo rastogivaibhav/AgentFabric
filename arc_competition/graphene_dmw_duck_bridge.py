@@ -2,7 +2,7 @@
 """GrapheneDMW sidecar for the ARC-AGI-3 Duck harness.
 
 The bridge deliberately does not replace Duck's proven action loop. It owns
-only durable evidence, negative-action memory and optional dialectical
+only durable evidence, exact negative-action memory and optional dialectical
 escalation. This keeps baseline, evidence-memory and full-DMW conditions
 cleanly ablatable.
 """
@@ -123,6 +123,11 @@ class GrapheneDMWDuckBridge:
         self._save()
 
     @staticmethod
+    def canonical_action(actions: Any) -> str:
+        """Stable identity for one Duck action() call, including mouse coordinates."""
+        return _stable_json(actions)
+
+    @staticmethod
     def action_signature(before_digest: str, action: str) -> str:
         return digest({"state": before_digest, "action": action})
 
@@ -155,13 +160,31 @@ class GrapheneDMWDuckBridge:
             if event.no_op:
                 self.state.negative_signatures[signature] = self.state.negative_signatures.get(signature, 0) + 1
             elif signature in self.state.negative_signatures:
+                # Contradicting observation supersedes the stale negative edge.
                 del self.state.negative_signatures[signature]
             self._save()
         return event
 
     def negative_count(self, before_grid: Any, action: str) -> int:
+        if self.mode == "off":
+            return 0
         before_digest = digest(normalize_grid(before_grid))
         return self.state.negative_signatures.get(self.action_signature(before_digest, action), 0)
+
+    def dead_action_reason(self, before_grid: Any, action: str) -> str | None:
+        """Return an evidence-grounded block reason for an exact repeated no-op.
+
+        This is deliberately exact-state + exact-action only. We do not generalize
+        a failure to nearby states, similar actions or object classes without evidence.
+        """
+        count = self.negative_count(before_grid, action)
+        if count <= 0:
+            return None
+        return (
+            "Graphene negative evidence: this exact action in this exact grid state "
+            f"already produced no observable grid change {count} time(s). Choose a different "
+            "interaction or first change the state; retest only if new evidence justifies it."
+        )
 
     def stagnation_reasons(self) -> list[str]:
         if self.mode == "off":
@@ -213,7 +236,7 @@ class GrapheneDMWDuckBridge:
             self.state.negative_signatures.items(), key=lambda item: (-item[1], item[0])
         )[:max_negative_items]
         if recent_negative:
-            lines.append("- Negative causal evidence: do not repeat a state/action signature unless new evidence justifies retesting.")
+            lines.append("- Negative causal evidence: an exact state/action no-op is blocked from immediate repetition unless the state changes.")
             lines.extend(
                 f"  - signature {sig[:12]}... produced no observable grid change {count} time(s)"
                 for sig, count in recent_negative
