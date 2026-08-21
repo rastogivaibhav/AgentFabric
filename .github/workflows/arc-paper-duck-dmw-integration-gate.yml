@@ -70,11 +70,14 @@ jobs:
             --manifest-out /tmp/duck_patch_manifest.json
           python3 -m py_compile \
             /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py \
-            /tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py
+            /tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py \
+            /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
           grep -q 'GrapheneDMWDuckBridge' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
-          grep -q 'GRAPHENE_DMW_MODE' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'graphene_negative_evidence' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'record_transition' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'prompt_context' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'graphene_dmw_mode' /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
+          grep -q 'TAAF_KAGGLE_SETUP_ENV' /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
 
       - name: Prove baseline remains selectable
         shell: bash
@@ -86,6 +89,7 @@ jobs:
           b=GrapheneDMWDuckBridge(Path('/tmp/off.json'),mode='off')
           assert b.prompt_context()==''
           assert b.stagnation_reasons()==[]
+          assert b.dead_action_reason([[0]], b.canonical_action([{'action':'ACTION1'}])) is None
           print('duck_baseline_mode=PASS')
           PY
 
@@ -102,6 +106,7 @@ jobs:
             'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
             'qwen_model=vrfai/Qwen3.6-27B-FP8' \
             'variants=off,evidence,dialectic' \
+            'evidence_mode_exact_noop_suppression=true' \
             'arc_game_execution=false' \
             > results/arc-paper/duck-dmw-integration/gate_identity.txt
           find results/arc-paper/duck-dmw-integration -type f -print0 | sort -z | xargs -0 sha256sum > results/arc-paper/duck-dmw-integration/SHA256SUMS.txt
