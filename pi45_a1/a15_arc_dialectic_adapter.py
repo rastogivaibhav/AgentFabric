@@ -20,6 +20,56 @@ def stable_digest(obj: Any) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _hex(value: Any) -> str:
+    return str(value).encode("utf-8").hex()
+
+
+def native_line_protocol(request: dict[str, Any]) -> str:
+    """Serialize the validated request into a dependency-free native protocol.
+
+    JSON remains the evidence/adapter contract. The C++ helper deliberately does
+    not carry a JSON dependency, so every free-text field is UTF-8 hex encoded
+    before crossing the process boundary.
+    """
+    lines = [
+        "A15V1",
+        f"OP {_hex(request['operation'])}",
+        f"GAME {_hex(request['game_id'])}",
+        f"TURN {int(request['turn'])}",
+    ]
+    for node in request.get("nodes") or []:
+        lines.append(" ".join([
+            "NODE",
+            _hex(node["external_id"]),
+            str(node["node_type"]),
+            str(node["status"]),
+            str(node["origin"]),
+            _hex(node["statement"]),
+            _hex(json.dumps(node.get("metadata") or {}, sort_keys=True, separators=(",", ":"))),
+        ]))
+    for rel in request.get("relations") or []:
+        lines.append(" ".join([
+            "REL",
+            _hex(rel["from"]),
+            _hex(rel["to"]),
+            str(rel["role"]),
+            str(rel["origin"]),
+            format(float(rel["confidence"]), ".17g"),
+        ]))
+    if request.get("provisional_hypothesis_id") is not None:
+        lines.append(f"PROVISIONAL_H {_hex(request['provisional_hypothesis_id'])}")
+    if request.get("provisional_goal_id") is not None:
+        lines.append(f"PROVISIONAL_G {_hex(request['provisional_goal_id'])}")
+    for hid in request.get("reopen_hypothesis_ids") or []:
+        lines.append(f"REOPEN {_hex(hid)}")
+    if request.get("experiment_id") is not None:
+        lines.append(f"EXPERIMENT {_hex(request['experiment_id'])}")
+    if request.get("action") is not None:
+        lines.append(f"ACTION {_hex(request['action'])}")
+    lines.append("END")
+    return "\n".join(lines) + "\n"
+
+
 def _node(external_id: str, node_type: str, status: str, statement: str, origin: str,
           turn: int, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     md = {"turn": str(turn), **{str(k): str(v) for k, v in (metadata or {}).items()}}
@@ -110,7 +160,7 @@ def outcome_to_native_request(outcome: dict[str, Any], game_id: str) -> dict[str
 
 
 def invoke_native(helper: str, request: dict[str, Any], db_path: str) -> dict[str, Any]:
-    proc = subprocess.run([helper, "--db", db_path], input=json.dumps(request), text=True,
+    proc = subprocess.run([helper, "--db", db_path], input=native_line_protocol(request), text=True,
                           capture_output=True, timeout=60)
     if proc.returncode != 0:
         raise NativeRuntimeError(f"native helper failed rc={proc.returncode}: {proc.stderr.strip()}")
