@@ -64,16 +64,52 @@ def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
         "        lines.append(\"end of world model. \")\n",
         "prompt-context",
     )
-    text = replace_once(
-        text,
+
+    old_step_block = (
         "            raw_payload = self._step_env_callback({\"actions\": normalized_actions})\n"
-        "            if not isinstance(raw_payload, dict):\n",
+        "            if not isinstance(raw_payload, dict):\n"
+    )
+    new_step_block = (
         "            dmw_before_frame, _ = load_runtime_state(state_path)\n"
+        "            dmw_action_label = (\n"
+        "                self._graphene_dmw.canonical_action(normalized_actions)\n"
+        "                if self._graphene_dmw is not None else ''\n"
+        "            )\n"
+        "            dmw_block_reason = (\n"
+        "                self._graphene_dmw.dead_action_reason(dmw_before_frame.grid, dmw_action_label)\n"
+        "                if self._graphene_dmw is not None and dmw_before_frame is not None else None\n"
+        "            )\n"
+        "            if dmw_block_reason:\n"
+        "                compact_payload = {\n"
+        "                    'executed': False,\n"
+        "                    'action_num': None,\n"
+        "                    'level': dmw_before_frame.level if dmw_before_frame is not None else None,\n"
+        "                    'score': None,\n"
+        "                    'reward': 0.0,\n"
+        "                    'state': 'GRAPHENE_EVIDENCE_BLOCK',\n"
+        "                    'valid_actions': list(valid_actions),\n"
+        "                    'board_changed': False,\n"
+        "                    'done': False,\n"
+        "                    'level_completed': False,\n"
+        "                    'game_over': False,\n"
+        "                    'run_complete': False,\n"
+        "                    'requested_count': len(normalized_actions),\n"
+        "                    'executed_count': 0,\n"
+        "                    'stopped_early': True,\n"
+        "                    'stop_reason': 'graphene_negative_evidence',\n"
+        "                    'stop_detail': dmw_block_reason,\n"
+        "                }\n"
+        "                self._last_action_result = dict(compact_payload)\n"
+        "                return {\n"
+        "                    'action_result': compact_payload,\n"
+        "                    'state': _serialized_runtime_state(last_action_result=compact_payload),\n"
+        "                }\n"
         "            raw_payload = self._step_env_callback({\"actions\": normalized_actions})\n"
         "            dmw_after_frame, _ = load_runtime_state(state_path)\n"
-        "            if not isinstance(raw_payload, dict):\n",
-        "transition-capture",
+        "            if not isinstance(raw_payload, dict):\n"
     )
+    text = replace_once(text, old_step_block, new_step_block, "transition-capture-and-dead-action-block")
+
     old_normal_block = (
         "            if compact_payload.get(\"executed\") and _terminal_action_reason(compact_payload):\n"
         "                terminal_action_result = compact_payload\n"
@@ -91,11 +127,9 @@ def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
         "                and dmw_before_frame is not None\n"
         "                and dmw_after_frame is not None\n"
         "            ):\n"
-        "                executed = compact_payload.get('executed_actions') or [compact_payload.get('action_display') or 'UNKNOWN']\n"
-        "                action_label = ' -> '.join(str(item) for item in executed if str(item).strip())\n"
         "                self._graphene_dmw.record_transition(\n"
         "                    turn=int(compact_payload.get('action_num') or 0),\n"
-        "                    action=action_label or 'UNKNOWN',\n"
+        "                    action=dmw_action_label,\n"
         "                    before_grid=dmw_before_frame.grid,\n"
         "                    after_grid=dmw_after_frame.grid,\n"
         "                    level_before=dmw_before_frame.level,\n"
