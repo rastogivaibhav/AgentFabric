@@ -25,9 +25,7 @@ def proposal() -> dict:
         "candidate_goals": [
             {"id": "t3-g-a", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["t3-h-a", "t3-h-b"], "evidence_observation_ids": ["t3-o-a"], "status": "active"},
         ],
-        "provisional_hypothesis_id": "t3-h-a",
-        "provisional_goal_id": "t3-g-a",
-        "opposition": {"challenged_hypothesis_id": "t3-h-a", "falsification_questions": ["What observable grid outcome would make inertness more plausible?"], "reopen_hypothesis_ids": ["t3-h-b"]},
+        "opposition": {"falsification_questions": ["What observable grid outcome would make inertness more plausible?"]},
         "experiment": {"tests_hypothesis_ids": ["t3-h-a", "t3-h-b"], "information_goal": "Discriminate responsive from inert.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION2", "action_params": {}},
         "residual_uncertainty": ["Control semantics remain uncertain."],
     }
@@ -50,7 +48,7 @@ def outcome() -> dict:
 
 
 class A15AdapterTests(unittest.TestCase):
-    def test_proposal_maps_to_native_epistemic_types(self) -> None:
+    def test_proposal_maps_to_native_epistemic_types_without_controller_seeds(self) -> None:
         p = proposal()
         validate_turn(p, CONTRACT, {"ACTION1", "ACTION2"})
         req = proposal_to_native_request(p, "ft09-secret-evaluator-id")
@@ -64,10 +62,27 @@ class A15AdapterTests(unittest.TestCase):
         self.assertIn("turn-3-opposition", by_id)
         self.assertIn("turn-3-experiment", by_id)
         self.assertEqual(req["action"], "ACTION2")
-        self.assertEqual(req["reopen_hypothesis_ids"], ["t3-h-b"])
+        self.assertEqual(req["candidate_hypothesis_ids"], ["t3-h-a", "t3-h-b"])
         self.assertEqual(req["world_scope"], OPAQUE_WORLD_SCOPE)
+        self.assertNotIn("provisional_hypothesis_id", req)
+        self.assertNotIn("provisional_goal_id", req)
+        self.assertNotIn("reopen_hypothesis_ids", req)
         self.assertNotIn("ft09-secret-evaluator-id", json.dumps(req, sort_keys=True))
         self.assertNotIn("game_id", json.dumps(req, sort_keys=True))
+        opposition_relations = [r for r in req["relations"] if r["from"] == "turn-3-opposition"]
+        self.assertEqual(opposition_relations, [])
+
+    def test_llm_controller_fields_are_rejected(self) -> None:
+        for mutate in [
+            lambda p: p.update({"provisional_hypothesis_id": "t3-h-a"}),
+            lambda p: p.update({"provisional_goal_id": "t3-g-a"}),
+            lambda p: p["opposition"].update({"challenged_hypothesis_id": "t3-h-a"}),
+            lambda p: p["opposition"].update({"reopen_hypothesis_ids": ["t3-h-b"]}),
+        ]:
+            contaminated = proposal()
+            mutate(contaminated)
+            with self.assertRaises(ContractError):
+                validate_turn(contaminated, CONTRACT, {"ACTION2"})
 
     def test_outcome_is_grid_observed_and_updates_beliefs(self) -> None:
         o = outcome()
