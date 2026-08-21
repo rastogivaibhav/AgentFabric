@@ -155,13 +155,23 @@ def validate_turn(
         support = set(map(str, hypothesis["support_observation_ids"]))
         if not support.issubset(observation_ids):
             raise ContractError(f"hypotheses[{idx}]: references unknown observation")
+
+    basis_required = list(obj_specs["candidate_goal"].get("basis_item_required") or [])
+    basis_min = int(limits.get("goal_basis_min", 1))
     for idx, goal in enumerate(goals):
-        implied = set(map(str, goal["implied_by_hypothesis_ids"]))
-        evidence = set(map(str, goal["evidence_observation_ids"]))
-        if not implied or not implied.issubset(hypothesis_ids):
-            raise ContractError(f"candidate_goals[{idx}]: must be implied by known hypothesis")
-        if not evidence or not evidence.issubset(observation_ids):
-            raise ContractError(f"candidate_goals[{idx}]: must reference known observation evidence")
+        basis = goal.get("basis")
+        if not isinstance(basis, list) or len(basis) < basis_min:
+            raise ContractError(f"candidate_goals[{idx}]: must contain at least one explicit basis pair")
+        for basis_idx, link in enumerate(basis):
+            if not isinstance(link, dict):
+                raise ContractError(f"candidate_goals[{idx}].basis[{basis_idx}]: must be an object")
+            require_keys(link, basis_required, f"candidate_goals[{idx}].basis[{basis_idx}]")
+            hypothesis_id = str(link["hypothesis_id"])
+            observation_id = str(link["observation_id"])
+            if hypothesis_id not in hypothesis_ids:
+                raise ContractError(f"candidate_goals[{idx}].basis[{basis_idx}]: unknown hypothesis")
+            if observation_id not in observation_ids:
+                raise ContractError(f"candidate_goals[{idx}].basis[{basis_idx}]: unknown observation")
 
     opposition = proposal["opposition"]
     require_keys(opposition, obj_specs["opposition"]["required"], "opposition")
@@ -216,55 +226,44 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
         ],
         "hypotheses": [
             {
-                "id": "t0-h1",
-                "statement": "The region may be interactable.",
+                "id": "t0-h1", "statement": "The region may be interactable.",
                 "support_observation_ids": ["t0-o1"],
-                "prediction": "An interaction may alter the grid.",
-                "status": "active",
+                "prediction": "An interaction may alter the grid.", "status": "active",
             },
             {
-                "id": "t0-h2",
-                "statement": "The region may be inert.",
+                "id": "t0-h2", "statement": "The region may be inert.",
                 "support_observation_ids": ["t0-o1"],
-                "prediction": "Interaction leaves the grid invariant.",
-                "status": "proposed",
+                "prediction": "Interaction leaves the grid invariant.", "status": "proposed",
             },
         ],
         "candidate_goals": [
             {
                 "id": "t0-g1",
                 "statement": "Determine whether the visible region participates in the world rules.",
-                "implied_by_hypothesis_ids": ["t0-h1", "t0-h2"],
-                "evidence_observation_ids": ["t0-o1"],
+                "basis": [
+                    {"hypothesis_id": "t0-h1", "observation_id": "t0-o1"},
+                    {"hypothesis_id": "t0-h2", "observation_id": "t0-o1"}
+                ],
                 "status": "active",
             }
         ],
-        "opposition": {
-            "falsification_questions": ["What grid change would support inertness instead?"]
-        },
+        "opposition": {"falsification_questions": ["What grid change would support inertness instead?"]},
         "experiment": {
             "tests_hypothesis_ids": ["t0-h1", "t0-h2"],
             "information_goal": "Discriminate responsive from inert using observable grid evidence.",
             "predicted_observation": "The grid changes or remains invariant.",
-            "action": "ACTION1",
-            "action_params": {},
+            "action": "ACTION1", "action_params": {},
         },
         "residual_uncertainty": ["Action semantics are not yet known."],
     }
     validate_turn(proposal, contract, {"ACTION1", "ACTION2"})
 
     outcome = {
-        "turn": 0,
-        "experiment_id": "turn-0-experiment",
-        "action": "ACTION1",
-        "before_grid_digest": "before",
-        "after_grid_digest": "after",
-        "changed_cells": 1,
-        "changed_regions": ["r0"],
-        "persistent_change": True,
+        "turn": 0, "experiment_id": "turn-0-experiment", "action": "ACTION1",
+        "before_grid_digest": "before", "after_grid_digest": "after",
+        "changed_cells": 1, "changed_regions": ["r0"], "persistent_change": True,
         "observed_effect": "One visible cell changed persistently.",
-        "supports_hypothesis_ids": ["t0-h1"],
-        "contradicts_hypothesis_ids": ["t0-h2"],
+        "supports_hypothesis_ids": ["t0-h1"], "contradicts_hypothesis_ids": ["t0-h2"],
     }
     validate_outcome(outcome, contract, {"t0-h1", "t0-h2"})
 
@@ -276,6 +275,15 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
         pass
     else:
         raise AssertionError("self-test failed: content-free goal was accepted")
+
+    bad_basis = json.loads(json.dumps(proposal))
+    bad_basis["candidate_goals"][0]["basis"] = []
+    try:
+        validate_turn(bad_basis, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: evidence-free goal basis was accepted")
 
     bad_action = json.loads(json.dumps(proposal))
     bad_action["experiment"]["action"] = "ACTION99"
