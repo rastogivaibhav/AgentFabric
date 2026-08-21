@@ -1,7 +1,17 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "game": "chess",
-  "objective": "Checkmate the opponent's king while never leaving your own king in check.",
+  "source": {
+    "primary": "https://www.chess.com/terms/cheat-sheet-chess",
+    "derived_concepts": [
+      "https://www.chess.com/terms/chess-strategy",
+      "https://www.chess.com/terms/chess-tactics",
+      "https://www.chess.com/terms/castling-chess",
+      "https://www.chess.com/terms/checkmate-chess"
+    ],
+    "note": "Structured, paraphrased knowledge derived from the Chess.com cheat sheet and linked concept pages; no opening-book moves or engine evaluations are included."
+  },
+  "objective": "Checkmate the opponent while keeping your own king safe and obeying all legal-move constraints.",
   "board": {
     "files": ["a", "b", "c", "d", "e", "f", "g", "h"],
     "ranks": [1, 2, 3, 4, 5, 6, 7, 8],
@@ -9,72 +19,111 @@
   },
   "turns": [
     "White moves first.",
-    "Players alternate one move at a time."
+    "Players alternate one legal move at a time."
   ],
   "piece_rules": {
     "king": [
-      "Moves one square in any direction to a square not occupied by a friendly piece and not attacked by an enemy piece.",
-      "A king may never move into check or remain in check after its side's move."
+      "Moves one square in any direction to a legal square.",
+      "The king may not move into check or remain in check."
     ],
-    "queen": [
-      "Moves any number of unobstructed squares horizontally, vertically, or diagonally."
-    ],
-    "rook": [
-      "Moves any number of unobstructed squares horizontally or vertically."
-    ],
-    "bishop": [
-      "Moves any number of unobstructed squares diagonally."
-    ],
+    "queen": ["Moves any unobstructed distance horizontally, vertically, or diagonally."],
+    "rook": ["Moves any unobstructed distance horizontally or vertically."],
+    "bishop": ["Moves any unobstructed distance diagonally."],
     "knight": [
-      "Moves in an L shape: two squares along one axis and one square along the perpendicular axis.",
-      "Knights may jump over intervening pieces."
+      "Moves in an L shape: two squares on one axis and one on the other.",
+      "May jump over intervening pieces."
     ],
     "pawn": [
-      "Moves one square straight forward into an empty square.",
-      "From its starting rank, a pawn may move two squares straight forward if both squares are empty.",
+      "Moves one square forward into an empty square.",
+      "From its starting rank may move two squares forward if both squares are empty.",
       "Captures one square diagonally forward.",
       "White pawns move toward rank 8; Black pawns move toward rank 1."
     ]
   },
   "captures": [
-    "A piece captures by moving to a square occupied by an enemy piece, removing that piece, except for en passant which captures the passed pawn.",
-    "A piece may not move onto a square occupied by a friendly piece."
+    "A normal capture moves onto a square occupied by an enemy piece and removes that piece.",
+    "A piece may not move onto a friendly piece."
   ],
   "check": [
-    "A king is in check when attacked by one or more enemy pieces.",
+    "A king is in check when attacked by an enemy piece.",
     "A move is illegal if it leaves the moving side's king in check.",
-    "When in check, the player must make a legal move that removes the check."
+    "A checked player must make a move that removes the check."
   ],
   "checkmate": [
-    "Checkmate occurs when a king is in check and the checked side has no legal move that removes the check.",
-    "Checkmate immediately wins the game for the mating side."
+    "Checkmate occurs when the king is in check and no legal escape exists.",
+    "Delivering checkmate ends the game immediately and wins regardless of material balance."
   ],
-  "stalemate": [
-    "Stalemate occurs when the side to move is not in check but has no legal move; the game is drawn."
-  ],
+  "stalemate": ["No legal move while not in check is stalemate and is a draw."],
   "castling": [
-    "Kingside castling moves the king two squares toward the kingside rook and places that rook on the square crossed by the king.",
-    "Queenside castling moves the king two squares toward the queenside rook and places that rook on the square crossed by the king.",
-    "Castling is legal only if king and relevant rook have not moved, all squares between them are empty, the king is not currently in check, and the king does not cross or land on an attacked square."
+    "Castling moves the king two squares toward a rook and moves that rook across the king.",
+    "Castling requires that the king and chosen rook have not moved and that squares between them are empty.",
+    "The king may not castle while in check, through an attacked square, or into check.",
+    "Castling is strategically useful because it improves king safety and activates a rook."
   ],
   "en_passant": [
-    "If a pawn advances two squares from its starting rank and lands adjacent to an enemy pawn, that enemy pawn may capture it as though it had advanced only one square.",
-    "En passant is available only on the immediately following move."
+    "A pawn may capture an adjacent enemy pawn immediately after that pawn advances two squares, as if it had advanced one square.",
+    "The opportunity exists only on the immediately following move."
   ],
-  "promotion": [
-    "A pawn reaching the last rank must be promoted to a queen, rook, bishop, or knight of the same color as part of that move."
-  ],
+  "promotion": ["A pawn reaching the final rank must promote to a queen, rook, bishop, or knight."],
   "draws": [
-    "The game is drawn by stalemate.",
-    "The game is drawn if the same position occurs three times with the same side to move and the same castling and en-passant rights when a valid threefold-repetition claim is made.",
-    "The game is drawn under the fifty-move rule when fifty moves by each side occur without a pawn move or capture when a valid claim is made.",
-    "The game is drawn when checkmate is impossible by any legal sequence, including standard insufficient-material cases.",
+    "Stalemate is a draw.",
+    "Threefold repetition may be claimed when the same position with equivalent move rights recurs three times.",
+    "The fifty-move rule may be claimed after fifty moves by each side without a pawn move or capture.",
+    "Insufficient mating material produces a draw.",
     "Players may agree to a draw."
   ],
   "termination": [
-    "A player may resign, giving the opponent the win.",
-    "Checkmate ends the game immediately.",
+    "Checkmate ends the game.",
+    "A player may resign.",
     "Applicable draw conditions end the game as a draw."
+  ],
+  "strategic_principles": {
+    "development": [
+      "Develop pieces so they participate actively rather than remaining blocked on their starting squares.",
+      "Prefer useful development that improves coordination and future options."
+    ],
+    "center_control": [
+      "Control central squares because central influence increases mobility and access to both sides of the board.",
+      "Moves that occupy or attack the center can improve piece activity."
+    ],
+    "king_safety": [
+      "Protect the king; an exposed king can outweigh material advantages.",
+      "Moving the king away from the center and maintaining protective pawn cover is often desirable."
+    ],
+    "material": [
+      "Track the relative value and quantity of pieces to detect material advantages or losses.",
+      "Material advantage is useful but may be outweighed by checkmate threats or strong activity."
+    ],
+    "piece_activity": [
+      "Active pieces influence useful squares, attack targets, defend allies, and create threats.",
+      "A position with more active pieces can compensate for some material deficit."
+    ],
+    "mobility": ["More safe and useful move options generally increase flexibility and attacking or defensive potential."],
+    "pawn_structure": [
+      "Pawn placement shapes long-term strengths, weaknesses, open lines, and available plans.",
+      "Avoid creating unnecessary structural weaknesses unless compensated by another advantage."
+    ],
+    "space": [
+      "A space advantage provides more room for pieces to maneuver.",
+      "Restricting the opponent's useful squares can reduce their activity."
+    ]
+  },
+  "tactical_principles": {
+    "forcing_play": [
+      "Tactical opportunities are short-term sequences that can force material gain or checkmate.",
+      "Checks, captures, and direct threats deserve special examination because they constrain replies."
+    ],
+    "pin": ["A pinned piece is constrained because moving it would expose a more valuable piece, critical square, or king."],
+    "skewer": ["A skewer attacks a valuable piece first so that, after it moves, a less valuable piece behind it can be captured."],
+    "fork": ["A fork occurs when one piece attacks two or more valuable targets at the same time."],
+    "discovered_attack": ["A discovered attack occurs when one piece moves away and reveals an attack by another piece."],
+    "tactical_priority": ["A sound forcing tactic that wins decisive material or checkmates can take precedence over slower strategic improvements."]
+  },
+  "reasoning_guidance": [
+    "For each legal move, consider whether it develops a piece, controls the center, improves king safety, preserves or wins material, increases activity or mobility, improves space, or avoids pawn weaknesses.",
+    "Also test each candidate for immediate tactical consequences: checks, captures, threats, pins, skewers, forks, and discovered attacks.",
+    "Prefer moves whose predicted consequences advance the objective while surviving the opponent's strongest plausible reply.",
+    "Treat strategic and tactical principles as defeasible guidance, not immutable facts; concrete tactical evidence can override a general heuristic."
   ],
   "notation": {
     "test_move_format": "UCI coordinate notation such as e2e4 or e7e8q",
