@@ -69,10 +69,10 @@ def _node(external_id: str, node_type: str, status: str, statement: str, origin:
 def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str | None = None) -> dict[str, Any]:
     """Map a validated proposal into native epistemic objects.
 
-    The LLM proposes evidence, competing hypotheses, evidence-linked candidate
-    goals, falsification language and an experiment. It does not seed
-    convergence, opposition targets or reopen nodes. evaluator_game_id is
-    intentionally ignored.
+    Evidence provenance is explicit: observations carry their source kind,
+    hypotheses carry observation-basis links, and goals carry hypothesis plus
+    observation basis links. The LLM never seeds native convergence or reopen
+    decisions. evaluator_game_id is intentionally ignored.
     """
     turn = int(proposal["turn"])
     nodes: list[dict[str, Any]] = []
@@ -82,7 +82,10 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
         oid = str(obs["id"])
         nodes.append(_node(
             oid, "Fact", "Active", str(obs["statement"]), "Observed", turn,
-            {"evidence_ref": obs["evidence_ref"]},
+            {
+                "evidence_ref": obs["evidence_ref"],
+                "evidence_kind": obs["evidence_kind"],
+            },
         ))
 
     for hyp in proposal["hypotheses"]:
@@ -90,15 +93,18 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
         status = {"proposed": "Proposed", "active": "Active", "contested": "Contested"}[hyp["status"]]
         nodes.append(_node(
             hid, "Hypothesis", status, str(hyp["statement"]), "Hypothetical", turn,
-            {"prediction": hyp["prediction"]},
+            {"prediction": hyp["prediction"], "basis_count": len(hyp["basis"])},
         ))
-        # Semantic support relation. It remains Inferred because observing a
-        # grid fact does not itself make the hypothesis true.
-        for oid in hyp["support_observation_ids"]:
+        seen_observations: set[str] = set()
+        for basis in hyp["basis"]:
+            oid = str(basis["observation_id"])
+            if oid in seen_observations:
+                continue
             relations.append({
-                "from": str(oid), "to": hid, "role": "Supports",
+                "from": oid, "to": hid, "role": "Supports",
                 "origin": "Inferred", "confidence": 0.55,
             })
+            seen_observations.add(oid)
 
     for goal in proposal["candidate_goals"]:
         gid = str(goal["id"])
@@ -150,7 +156,7 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
         })
 
     return {
-        "protocol": "agentfabric-a15-native-v4",
+        "protocol": "agentfabric-a15-native-v5",
         "operation": "ingest_and_reason",
         "world_scope": OPAQUE_WORLD_SCOPE,
         "turn": turn,
@@ -166,16 +172,7 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
 
 
 def outcome_to_native_request(outcome: dict[str, Any], evaluator_game_id: str | None = None) -> dict[str, Any]:
-    """Materialize an observed experiment result and its belief effects.
-
-    Two edge directions are intentional:
-      * outcome -> hypothesis is the semantic epistemic update used by ModelWorld;
-      * hypothesis -> outcome is the causal-graph projection used by Graphene's
-        reverse expansion to construct a root-to-observed-evidence FiberPath.
-
-    Both are Observed only after an environment transition has actually been
-    measured and the strict outcome classifier has assigned the verdict.
-    """
+    """Materialize an observed experiment result and its belief effects."""
     turn = int(outcome["turn"])
     oid = f"turn-{turn}-outcome"
     node = _node(
@@ -216,7 +213,7 @@ def outcome_to_native_request(outcome: dict[str, Any], evaluator_game_id: str | 
             "origin": "Observed", "confidence": 0.80,
         })
     return {
-        "protocol": "agentfabric-a15-native-v4",
+        "protocol": "agentfabric-a15-native-v5",
         "operation": "apply_outcome_and_reason",
         "world_scope": OPAQUE_WORLD_SCOPE,
         "turn": turn,
