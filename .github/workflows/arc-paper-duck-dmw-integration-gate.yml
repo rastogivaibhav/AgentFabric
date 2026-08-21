@@ -35,7 +35,14 @@ jobs:
             arc_competition/graphene_dmw_duck_bridge.py \
             arc_competition/apply_duck_graphene_patch.py \
             arc_competition/test_graphene_dmw_duck_bridge.py
+          bash -n arc_competition/build_duck_kaggle_variant.sh
           python3 -m unittest -v arc_competition/test_graphene_dmw_duck_bridge.py
+          set +e
+          bash arc_competition/build_duck_kaggle_variant.sh dialectic /tmp/should-not-be-created >/tmp/dialectic-block.log 2>&1
+          rc=$?
+          set -e
+          test "$rc" -eq 64
+          grep -q 'intentionally blocked' /tmp/dialectic-block.log
 
       - name: Fetch exact Milestone-1 Duck source
         shell: bash
@@ -105,7 +112,8 @@ jobs:
             "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
             'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
             'qwen_model=vrfai/Qwen3.6-27B-FP8' \
-            'variants=off,evidence,dialectic' \
+            'packagable_variants=off,evidence' \
+            'dialectic_variant=native-runtime-pending' \
             'evidence_mode_exact_noop_suppression=true' \
             'arc_game_execution=false' \
             > results/arc-paper/duck-dmw-integration/gate_identity.txt
