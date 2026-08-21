@@ -13,12 +13,13 @@ EVALUATOR_ONLY_FIELDS = {
 SYSTEM_RULES = """You are the proposal generator inside a governed dialectical reasoning system for an unknown interactive world.
 You do NOT know the objective or action semantics. Do not invent target-specific rules.
 Your perceptual evidence is limited to the observable grid, opaque legal actions, and prior outcomes derived from observable grid changes.
-Separate observations from hypotheses. Preserve at least two competing hypotheses.
+Separate observations from hypotheses. Preserve at least two genuinely different competing hypotheses.
 Candidate goals must emerge from hypotheses and current evidence; never use 'win the game' as a goal. For every candidate goal, give at least one explicit basis pair linking a hypothesis_id to an observation_id.
 Provide falsification questions that could challenge the current hypothesis set, but DO NOT choose a provisional convergence, challenged hypothesis, or reopen set. The native GrapheneDB/HypoKosh controller owns those decisions.
-Every action is an experiment chosen to discriminate hypotheses or reduce important uncertainty.
+Every action is an experiment chosen to discriminate hypotheses or reduce important uncertainty. A repeated no-effect action in an unchanged state is weak evidence against repeating the same experiment when another opaque action is available.
 Treat each turn as a new epistemic revision. Use prior GOVERNED_CONTEXT as evidence/history, but create fresh turn-scoped IDs for this turn: tTURN-o..., tTURN-h..., and tTURN-g.... Do not mutate an older ModelWorld node by reusing its ID.
-Follow the supplied opaque action-affordance parameter schema exactly. Do not infer semantic meaning from it.
+Follow the supplied opaque action-affordance parameter schema exactly. Do not infer semantic meaning from action names.
+All empty strings in the OUTPUT CONTRACT are structural slots, not text to copy. Replace every one with concrete evidence-grounded language. Generic template phrases are invalid.
 Return JSON only. The external GrapheneDB runtime owns convergence, epistemic promotion, opposition targeting/reopening, Lyapunov stability and model-world state."""
 
 
@@ -56,26 +57,29 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
         "recent_outcomes": recent_outcomes[-4:],
         "governed_context": governed_context or {},
     }
+    # This is deliberately a structural shell, not a semantic worked example.
+    # Empty text slots force the model to derive content from CURRENT EVIDENCE
+    # instead of copying a canned interpretation into the experiment trace.
     schema = {
         "turn": turn,
         "observations": [
-            {"id": obs_id, "statement": "observable fact only", "evidence_ref": f"grid:turn:{turn}"}
+            {"id": obs_id, "statement": "", "evidence_ref": f"grid:turn:{turn}"}
         ],
         "hypotheses": [
-            {"id": h1, "statement": "possible interpretation A", "support_observation_ids": [obs_id],
-             "prediction": "testable grid prediction", "status": "active"},
-            {"id": h2, "statement": "competing interpretation B", "support_observation_ids": [obs_id],
-             "prediction": "different testable grid prediction", "status": "proposed"}
+            {"id": h1, "statement": "", "support_observation_ids": [obs_id],
+             "prediction": "", "status": "active"},
+            {"id": h2, "statement": "", "support_observation_ids": [obs_id],
+             "prediction": "", "status": "proposed"}
         ],
         "candidate_goals": [
-            {"id": g1, "statement": "evidence-seeking/progress goal",
+            {"id": g1, "statement": "",
              "basis": [{"hypothesis_id": h1, "observation_id": obs_id}], "status": "active"}
         ],
-        "opposition": {"falsification_questions": ["..."]},
-        "experiment": {"tests_hypothesis_ids": [h1, h2], "information_goal": "...",
-                       "predicted_observation": "...", "action": "EXACT_AVAILABLE_ACTION",
+        "opposition": {"falsification_questions": [""]},
+        "experiment": {"tests_hypothesis_ids": [h1, h2], "information_goal": "",
+                       "predicted_observation": "", "action": "EXACT_AVAILABLE_ACTION",
                        "action_params": {}},
-        "residual_uncertainty": ["..."],
+        "residual_uncertainty": [""],
     }
     prompt = SYSTEM_RULES + "\n\nCURRENT EVIDENCE:\n" + json.dumps(
         context, sort_keys=True, separators=(",", ":")
@@ -84,6 +88,7 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
     prompt += (
         f"\nConstraints: IDs created this turn MUST start with t{turn}-o, t{turn}-h, or t{turn}-g as appropriate. "
         "1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. "
+        "Replace every empty text slot with a concrete statement grounded in CURRENT EVIDENCE. "
         "Every candidate goal MUST include non-empty basis, and each basis item MUST contain one hypothesis_id and one observation_id from this turn. "
         "Do NOT output provisional_hypothesis_id, provisional_goal_id, challenged_hypothesis_id, or reopen_hypothesis_ids. "
         "Use only listed actions. JSON only."
@@ -98,8 +103,8 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
         prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
         prompt += (
             f"\nConstraints: use t{turn}-scoped IDs; 1-8 observations; 2-5 distinct hypotheses; 1-3 goals; "
-            "each goal must have a non-empty hypothesis/observation basis pair; native controller owns convergence/opposition/reopening; "
-            "use only listed actions; JSON only."
+            "replace every empty text slot with concrete evidence-grounded language; each goal must have a non-empty hypothesis/observation basis pair; "
+            "native controller owns convergence/opposition/reopening; use only listed actions; JSON only."
         )
     if len(prompt) > max_chars:
         raise ValueError(f"A1.5 proposal prompt exceeds dedicated budget: {len(prompt)} > {max_chars}")
@@ -121,8 +126,9 @@ def build_proposal_repair_prompt(*, original_prompt: str, invalid_output: str,
     rules = f"""Your previous proposal JSON for turn {turn} was rejected by the deterministic epistemic contract.
 Repair that SAME proposal using ONLY the evidence in ORIGINAL PROPOSAL REQUEST.
 Do not add hidden semantics, score, level, terminal state, game identity, or new observations.
-Preserve at least two competing hypotheses and one evidence-linked candidate goal.
-Every candidate goal MUST contain a non-empty `basis` array. Each basis item MUST contain exactly the explicit references `hypothesis_id` and `observation_id`, using IDs present in this turn's proposal.
+Replace empty, generic, or copied template text with concrete language grounded in the supplied grid/outcome evidence.
+Preserve at least two genuinely different competing hypotheses and one evidence-linked candidate goal.
+Every candidate goal MUST contain a non-empty `basis` array. Each basis item MUST contain the explicit references `hypothesis_id` and `observation_id`, using IDs present in this turn's proposal.
 Provide one to three falsification questions, but do NOT output provisional_hypothesis_id, provisional_goal_id, challenged_hypothesis_id, or reopen_hypothesis_ids; those are native-controller-owned decisions.
 Preserve turn-scoped IDs beginning with t{turn}-o, t{turn}-h, and t{turn}-g.
 Use only the listed opaque actions and the supplied parameter schema.
