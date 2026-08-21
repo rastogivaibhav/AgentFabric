@@ -13,7 +13,34 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    name: paper-pilot-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and epistemic contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            pi45_a1/a15_arc_paper_runner.py \
+            pi45_a1/arc_paper_normalize.py \
+            pi45_a1/a15_proposal_prompt.py \
+            pi45_a1/a15_outcome_prompt.py \
+            pi45_a1/a15_arc_dialectic_adapter.py \
+            pi45_a1/a15_contract_gate.py
+          bash -n pi45_a1/a0_run_game_paper.sh
+          bash -n pi45_a1/a15_run_arc_paper.sh
+          PYTHONPATH=pi45_a1 python3 -m unittest -v \
+            pi45_a1/test_a15_arc_dialectic_adapter.py \
+            pi45_a1/test_a15_proposal_prompt.py \
+            pi45_a1/test_a15_outcome_prompt.py
+          python3 pi45_a1/a15_contract_gate.py
+          echo 'arc_paper_pilot_preflight=PASS'
+
   experiment:
+    needs: [preflight]
     name: ${{ matrix.variant }}-${{ matrix.game }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -30,16 +57,6 @@ jobs:
       - name: Prepare pinned ARC, Qwen, GrapheneDB and llama.cpp
         shell: bash
         run: bash pi45_a1/a13_prepare.sh
-
-      - name: Assert paper harness syntax
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile \
-            pi45_a1/a15_arc_paper_runner.py \
-            pi45_a1/arc_paper_normalize.py
-          bash -n pi45_a1/a0_run_game_paper.sh
-          bash -n pi45_a1/a15_run_arc_paper.sh
 
       - name: Run frozen treatment
         id: treatment
