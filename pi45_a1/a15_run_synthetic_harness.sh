@@ -14,7 +14,7 @@ MODEL=/tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
-# The synthetic H1 runner must have no ARC imports or game execution surface.
+# The synthetic H1 runner must have no live target-game imports or execution surface.
 ! grep -Eq '(^|[[:space:]])(import|from)[[:space:]]+(arc_agi|arcengine)' "$ROOT/pi45_a1/a15_synthetic_world_harness.py"
 ! grep -q 'arc\.make\|get_environments\|env\.step\|Arcade(' "$ROOT/pi45_a1/a15_synthetic_world_harness.py"
 printf '%s\n' 'arc_static_execution_surface=ABSENT' > "$OUT_DIR/arc_execution_guard.txt"
@@ -34,30 +34,28 @@ PYTHONPATH="$ROOT/pi45_a1" python3 -m unittest -v \
 PYTHONPATH="$ROOT/pi45_a1" python3 "$ROOT/pi45_a1/a15_contract_gate.py" \
   > "$OUT_DIR/h0_contract_gate.log" 2>&1
 
-# H0: execute the real native CompleteHypoKoshRuntime proof. This creates only
-# a local synthetic GrapheneDB/ModelWorld; no ARC package is involved.
+# H0: execute the real native CompleteHypoKoshRuntime proof.
 bash "$ROOT/pi45_a1/a15_native_runtime_proof.sh" "$OUT_DIR/h0_native_runtime" \
   > "$OUT_DIR/h0_native_runtime_stdout.log" 2>&1
-
 grep -q 'a15_native_runtime_bridge=PASS' "$OUT_DIR/h0_native_runtime_stdout.log"
 
-# Reuse the already-pinned Qwen/llama.cpp preparation harness. It installs the
-# ARC package for parity with later experiments but performs no game creation or step.
+# Reuse the pinned Qwen/llama.cpp preparation harness. It may install the ARC
+# package for parity, but this synthetic path never creates or steps a game.
 bash "$ROOT/pi45_a1/a13_prepare.sh" > "$OUT_DIR/model_prepare.log" 2>&1
 
 test -x "$HELPER"
 test -x "$BOOTSTRAP"
 test -f "$MODEL"
 
-# Build only the read-only ModelWorld dumper needed to feed sanitized epistemic
-# state back to Qwen on the next synthetic turn. ModelWorld links the platform
-# durable-replace helper even though the dumper itself is read-only.
+# ModelWorld uses durable_replace while saving; link the platform closure even
+# though this helper only reads the resulting snapshot.
 g++ -std=c++20 -O2 -UNDEBUG \
   -I"$RUNTIME/include" -I"$MODEL_WORLD/include" -I"$CORE/include" \
   "$ROOT/pi45_a1/a15_model_world_dump.cpp" \
   "$MODEL_WORLD/src/model_world.cpp" \
   "$CORE/src/platform_posix.cpp" \
   -pthread -o "$DUMPER"
+
 sha256sum "$HELPER" "$BOOTSTRAP" "$DUMPER" > "$OUT_DIR/native_binaries_SHA256SUMS.txt"
 sha256sum \
   "$ROOT/pi45_a1/a15_synthetic_world_harness.py" \
@@ -83,6 +81,7 @@ printf '%s\n' \
   'native_runtime=CompleteHypoKoshRuntime' \
   'persistent_model_world=true' \
   'evaluator_metadata_in_reasoning=false' \
+  'outcome_repair=max_one_same-model-validation-retry' \
   > "$OUT_DIR/harness_contract.txt"
 
 /tmp/llama.cpp/build/bin/llama-server \
@@ -121,6 +120,7 @@ python3 - "$OUT_DIR" <<'PY'
 import json, pathlib, sys
 out=pathlib.Path(sys.argv[1])
 summary=json.loads((out/'h1/summary.json').read_text())
+inst=summary.get('instrumentation') or {}
 assert summary['arc_environment_used'] is False
 assert summary['evaluator_metadata_in_reasoning'] is False
 assert summary['native_dialectical_runtime'] is True
@@ -131,6 +131,9 @@ assert summary['meaningful_changes'] >= 1
 assert summary['max_same_state_action_trials'] <= 2
 assert summary['model_world_nodes'] > 0
 assert summary['model_world_event_hash'] != 0
+repairs=int(inst.get('outcome_repairs_attempted',0))
+assert repairs <= int(summary['turns_executed'])
+assert int(inst.get('outcome_repairs_succeeded',0)) == repairs
 
 # Hidden evaluator rules are kept in a separate artifact. They must never be
 # copied into model-call or epistemic-turn records.
@@ -145,12 +148,15 @@ for forbidden in ['ft09','bp35','ls20','win_levels','levels_completed','score_de
 records=[json.loads(line) for line in (out/'transport_proxy.jsonl').read_text().splitlines() if line.strip()]
 posts=[r for r in records if r.get('method')=='POST']
 turns=int(summary['turns_executed'])
-assert len(posts) == 2*turns, (len(posts),turns)
+expected=2*turns+repairs
+assert len(posts) == expected, (len(posts),expected,turns,repairs)
 assert not any(r.get('client_disconnected') for r in posts)
 assert not any(r.get('error') or (r.get('status') or 0) >= 500 for r in posts)
 assert max((int(r.get('max_active_observed',0)) for r in posts),default=0) <= 1
 transport={
   'requests':len(posts),
+  'expected_requests':expected,
+  'outcome_repair_requests':repairs,
   'truncated_requests':sum(bool(r.get('truncated')) for r in posts),
   'transport_errors':sum(bool(r.get('error')) or (r.get('status') or 0)>=500 for r in posts),
   'client_disconnects':sum(bool(r.get('client_disconnected')) for r in posts),
