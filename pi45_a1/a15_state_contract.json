@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "perception_contract": {
     "reasoning_allowed_inputs": [
       "current_grid",
@@ -44,6 +44,7 @@
       "observations_max": 8,
       "hypotheses_min": 2,
       "hypotheses_max": 5,
+      "hypothesis_basis_min": 1,
       "candidate_goals_min": 1,
       "candidate_goals_max": 3,
       "goal_basis_min": 1,
@@ -52,11 +53,14 @@
     },
     "objects": {
       "observation": {
-        "required": ["id", "statement", "evidence_ref"],
+        "required": ["id", "statement", "evidence_ref", "evidence_kind"],
+        "allowed_evidence_kind": ["grid", "transition", "affordance", "memory"],
         "epistemic_origin": "observed"
       },
       "hypothesis": {
-        "required": ["id", "statement", "support_observation_ids", "prediction", "status"],
+        "required": ["id", "statement", "basis", "prediction", "status"],
+        "basis_item_required": ["observation_id"],
+        "required_world_evidence_kind": ["grid", "transition"],
         "allowed_status": ["proposed", "active", "contested"],
         "epistemic_origin": "hypothetical"
       },
@@ -108,6 +112,9 @@
   "controller_invariants": [
     "candidate_goal_is_never_fact",
     "candidate_goal_has_explicit_hypothesis_and_observation_basis",
+    "hypothesis_has_explicit_observation_basis",
+    "world_hypothesis_requires_grid_or_transition_evidence",
+    "validator_feedback_is_never_world_evidence",
     "hypothetical_is_never_silently_promoted_to_observed_or_discovered",
     "convergence_does_not_delete_preserved_alternatives",
     "llm_does_not_select_provisional_convergence_or_reopen_set",
@@ -122,6 +129,8 @@
   "diagnostic_metrics": [
     "hypotheses_generated",
     "distinct_hypotheses_preserved",
+    "hypothesis_basis_links",
+    "world_grounded_hypotheses",
     "candidate_goals_generated",
     "goal_basis_links",
     "experiments_executed",
