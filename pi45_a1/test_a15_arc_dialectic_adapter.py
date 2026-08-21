@@ -15,20 +15,20 @@ def proposal() -> dict:
     return {
         "turn": 3,
         "observations": [
-            {"id": "o3a", "statement": "A region is visible in the grid.", "evidence_ref": "grid:3"},
-            {"id": "o3b", "statement": "The previous action left the grid unchanged.", "evidence_ref": "transition:2-3"},
+            {"id": "t3-o-a", "statement": "A region is visible in the grid.", "evidence_ref": "grid:3"},
+            {"id": "t3-o-b", "statement": "The previous action left the grid unchanged.", "evidence_ref": "transition:2-3"},
         ],
         "hypotheses": [
-            {"id": "h3a", "statement": "The region may respond to interaction.", "support_observation_ids": ["o3a"], "prediction": "A suitable interaction alters the grid.", "status": "active"},
-            {"id": "h3b", "statement": "The region may be inert in this context.", "support_observation_ids": ["o3a", "o3b"], "prediction": "Interaction leaves the grid invariant.", "status": "proposed"},
+            {"id": "t3-h-a", "statement": "The region may respond to interaction.", "support_observation_ids": ["t3-o-a"], "prediction": "A suitable interaction alters the grid.", "status": "active"},
+            {"id": "t3-h-b", "statement": "The region may be inert in this context.", "support_observation_ids": ["t3-o-a", "t3-o-b"], "prediction": "Interaction leaves the grid invariant.", "status": "proposed"},
         ],
         "candidate_goals": [
-            {"id": "g3a", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["h3a", "h3b"], "evidence_observation_ids": ["o3a"], "status": "active"},
+            {"id": "t3-g-a", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["t3-h-a", "t3-h-b"], "evidence_observation_ids": ["t3-o-a"], "status": "active"},
         ],
-        "provisional_hypothesis_id": "h3a",
-        "provisional_goal_id": "g3a",
-        "opposition": {"challenged_hypothesis_id": "h3a", "falsification_questions": ["What observable grid outcome would make inertness more plausible?"], "reopen_hypothesis_ids": ["h3b"]},
-        "experiment": {"tests_hypothesis_ids": ["h3a", "h3b"], "information_goal": "Discriminate responsive from inert.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION2", "action_params": {}},
+        "provisional_hypothesis_id": "t3-h-a",
+        "provisional_goal_id": "t3-g-a",
+        "opposition": {"challenged_hypothesis_id": "t3-h-a", "falsification_questions": ["What observable grid outcome would make inertness more plausible?"], "reopen_hypothesis_ids": ["t3-h-b"]},
+        "experiment": {"tests_hypothesis_ids": ["t3-h-a", "t3-h-b"], "information_goal": "Discriminate responsive from inert.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION2", "action_params": {}},
         "residual_uncertainty": ["Control semantics remain uncertain."],
     }
 
@@ -44,8 +44,8 @@ def outcome() -> dict:
         "changed_regions": ["r0"],
         "persistent_change": True,
         "observed_effect": "A persistent cell changed.",
-        "supports_hypothesis_ids": ["h3a"],
-        "contradicts_hypothesis_ids": ["h3b"],
+        "supports_hypothesis_ids": ["t3-h-a"],
+        "contradicts_hypothesis_ids": ["t3-h-b"],
     }
 
 
@@ -55,29 +55,29 @@ class A15AdapterTests(unittest.TestCase):
         validate_turn(p, CONTRACT, {"ACTION1", "ACTION2"})
         req = proposal_to_native_request(p, "ft09-secret-evaluator-id")
         by_id = {n["external_id"]: n for n in req["nodes"]}
-        self.assertEqual(by_id["o3a"]["node_type"], "Fact")
-        self.assertEqual(by_id["o3a"]["origin"], "Observed")
-        self.assertEqual(by_id["h3a"]["node_type"], "Hypothesis")
-        self.assertEqual(by_id["h3a"]["origin"], "Hypothetical")
-        self.assertEqual(by_id["g3a"]["node_type"], "Decision")
-        self.assertEqual(by_id["g3a"]["origin"], "Hypothetical")
+        self.assertEqual(by_id["t3-o-a"]["node_type"], "Fact")
+        self.assertEqual(by_id["t3-o-a"]["origin"], "Observed")
+        self.assertEqual(by_id["t3-h-a"]["node_type"], "Hypothesis")
+        self.assertEqual(by_id["t3-h-a"]["origin"], "Hypothetical")
+        self.assertEqual(by_id["t3-g-a"]["node_type"], "Decision")
+        self.assertEqual(by_id["t3-g-a"]["origin"], "Hypothetical")
         self.assertIn("turn-3-opposition", by_id)
         self.assertIn("turn-3-experiment", by_id)
         self.assertEqual(req["action"], "ACTION2")
-        self.assertEqual(req["reopen_hypothesis_ids"], ["h3b"])
+        self.assertEqual(req["reopen_hypothesis_ids"], ["t3-h-b"])
         self.assertEqual(req["world_scope"], OPAQUE_WORLD_SCOPE)
         self.assertNotIn("ft09-secret-evaluator-id", json.dumps(req, sort_keys=True))
         self.assertNotIn("game_id", json.dumps(req, sort_keys=True))
 
     def test_outcome_is_grid_observed_and_updates_beliefs(self) -> None:
         o = outcome()
-        validate_outcome(o, CONTRACT, {"h3a", "h3b"})
+        validate_outcome(o, CONTRACT, {"t3-h-a", "t3-h-b"})
         req = outcome_to_native_request(o, "bp35-secret-evaluator-id")
         self.assertEqual(req["nodes"][0]["node_type"], "Outcome")
         self.assertEqual(req["nodes"][0]["origin"], "Observed")
         roles = {(r["to"], r["role"], r["origin"]) for r in req["relations"]}
-        self.assertIn(("h3a", "Supports", "Observed"), roles)
-        self.assertIn(("h3b", "Contradicts", "Observed"), roles)
+        self.assertIn(("t3-h-a", "Supports", "Observed"), roles)
+        self.assertIn(("t3-h-b", "Contradicts", "Observed"), roles)
         encoded = json.dumps(req, sort_keys=True)
         self.assertNotIn("score", encoded)
         self.assertNotIn("level", encoded)
@@ -88,11 +88,17 @@ class A15AdapterTests(unittest.TestCase):
             contaminated = copy.deepcopy(outcome())
             contaminated[key] = value
             with self.assertRaises(ContractError, msg=key):
-                validate_outcome(contaminated, CONTRACT, {"h3a", "h3b"})
+                validate_outcome(contaminated, CONTRACT, {"t3-h-a", "t3-h-b"})
 
     def test_evaluator_fields_are_rejected_from_proposal(self) -> None:
         contaminated = proposal()
         contaminated["observations"][0]["score"] = 10
+        with self.assertRaises(ContractError):
+            validate_turn(contaminated, CONTRACT, {"ACTION2"})
+
+    def test_unscoped_ids_are_rejected(self) -> None:
+        contaminated = proposal()
+        contaminated["hypotheses"][0]["id"] = "h-a"
         with self.assertRaises(ContractError):
             validate_turn(contaminated, CONTRACT, {"ACTION2"})
 
