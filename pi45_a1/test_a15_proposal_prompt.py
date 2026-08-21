@@ -28,10 +28,9 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("native GrapheneDB/HypoKosh controller owns those decisions", prompt)
         self.assertIn('"ACTION1"', prompt)
         self.assertIn('"ACTION2"', prompt)
-        self.assertIn("t5-o1", prompt)
-        self.assertIn("t5-h1", prompt)
-        self.assertIn("t5-h2", prompt)
-        self.assertIn("t5-g1", prompt)
+        self.assertIn("t5-o", prompt)
+        self.assertIn("t5-h", prompt)
+        self.assertIn("t5-g", prompt)
         self.assertIn("new epistemic revision", prompt)
         self.assertIn('"basis"', prompt)
         self.assertIn('"hypothesis_id"', prompt)
@@ -39,15 +38,18 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertNotIn("secret-ft09-evaluator-id", prompt)
         self.assertNotIn('"game_id"', prompt)
 
-        output_contract = prompt.split("\n\nOUTPUT CONTRACT:\n", 1)[1].split("\nConstraints:", 1)[0]
-        schema = json.loads(output_contract)
-        self.assertNotIn("provisional_hypothesis_id", schema)
-        self.assertNotIn("provisional_goal_id", schema)
-        self.assertEqual(set(schema["opposition"]), {"falsification_questions"})
-        goal = schema["candidate_goals"][0]
-        self.assertEqual(set(goal["basis"][0]), {"hypothesis_id", "observation_id"})
-        self.assertNotIn("implied_by_hypothesis_ids", goal)
-        self.assertNotIn("evidence_observation_ids", goal)
+        output_contract = prompt.split("\n\nOUTPUT CONTRACT:\n", 1)[1]
+        self.assertIn("FIELD-ONLY CONTRACT", output_contract)
+        self.assertIn('"candidate_goals"', output_contract)
+        self.assertIn('"falsification_questions"', output_contract)
+        self.assertIn("provisional_hypothesis_id", output_contract)
+        self.assertIn("reopen_hypothesis_ids", output_contract)
+        self.assertIn("Forbidden controller-owned keys", output_contract)
+        # There must be no copyable semantic JSON shell or empty semantic slot.
+        self.assertNotIn('"statement":""', output_contract.replace(" ", ""))
+        self.assertNotIn('"prediction":""', output_contract.replace(" ", ""))
+        self.assertNotIn("observable fact only", output_contract.lower())
+        self.assertNotIn("possible interpretation a", output_contract.lower())
 
     def test_evaluator_metadata_is_rejected(self) -> None:
         for bad in [
@@ -88,6 +90,8 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertIn("hypothesis_id", prompt)
         self.assertIn("observation_id", prompt)
         self.assertIn("native-controller-owned", prompt)
+        self.assertIn("NOT world evidence", prompt)
+        self.assertIn("Never mention or paraphrase", prompt)
         self.assertIn("t2-o", prompt)
         self.assertIn("t2-h", prompt)
         self.assertIn("t2-g", prompt)
@@ -116,6 +120,8 @@ class A15ProposalPromptTests(unittest.TestCase):
         self.assertNotIn("goal is to", lower)
         self.assertIn("do not choose a provisional convergence", lower)
         self.assertIn("controller owns those decisions", lower)
+        self.assertIn("contract labels", lower)
+        self.assertIn("not world evidence", lower)
 
 
 if __name__ == "__main__":
