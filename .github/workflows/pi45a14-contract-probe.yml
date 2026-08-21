@@ -27,15 +27,17 @@ jobs:
           echo '0e10bc6e81feab2071d1e75b1dc398656e666801ae0a608edf747b25af5857d6  /tmp/pi45a1_payload.tgz' | sha256sum -c -
           mkdir -p /tmp/pi45a1
           tar -xzf /tmp/pi45a1_payload.tgz -C /tmp/pi45a1
-      - name: Show frozen GrapheneDB helper contract
+      - name: Show exact frozen retrieval and prompt contract
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== agent helper calls ==='
-          grep -nE 'graphene|GRAPHENE|subprocess|helper|query|put|stats|verify|init' /tmp/pi45a1/arc_a1_graphene_episodic.py || true
-          echo '=== helper CLI/parser ==='
-          grep -nE 'argc|argv|usage|put|query|stats|verify|init|create|open' /tmp/pi45a1/pi45_graphene_memory.cpp || true
-          echo '=== tests ==='
-          grep -nE 'graphene|helper|query|put|stats|verify' /tmp/pi45a1/test_arc_a1_graphene_episodic.py || true
+          echo '=== grid feature vector + GrapheneDB adapter ==='
+          sed -n '180,255p' /tmp/pi45a1/arc_a1_graphene_episodic.py
+          echo '=== prompt builder ==='
+          sed -n '255,310p' /tmp/pi45a1/arc_a1_graphene_episodic.py
+          echo '=== play loop retrieval/put ==='
+          sed -n '312,490p' /tmp/pi45a1/arc_a1_graphene_episodic.py
+          echo '=== helper implementation ==='
+          sed -n '1,145p' /tmp/pi45a1/pi45_graphene_memory.cpp
           python3 pi45_a1/a14_seed_graphene.py pi45_a1/a14_prior.json /tmp/a14_seed_records.jsonl
           wc -l /tmp/a14_seed_records.jsonl
