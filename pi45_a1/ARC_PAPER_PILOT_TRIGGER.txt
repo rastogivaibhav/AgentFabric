@@ -1,0 +1,6 @@
+PI4.5 ARC paper comparative pilot
+trigger=2026-08-21-a15-dmw-freeze-1
+variants=a0,a13,a14,a15
+games=ls20,ft09,bp35
+max_actions_per_condition=10
+purpose=paper-evidence-not-synthetic-optimization
