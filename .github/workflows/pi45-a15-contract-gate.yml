@@ -17,6 +17,21 @@ on:
       - 'pi45_a1/a15_example_outcome.json'
       - 'pi45_a1/a15_adapter_smoke.sh'
       - '.github/workflows/pi45-a15-contract-gate.yml'
+  pull_request:
+    branches:
+      - agentfabric-dev
+    paths:
+      - 'pi45_a1/A15_DESIGN_GUARDRAIL.md'
+      - 'pi45_a1/A15_NATIVE_RUNTIME_CONTRACT.md'
+      - 'pi45_a1/a15_reasoning_constitution.json'
+      - 'pi45_a1/a15_state_contract.json'
+      - 'pi45_a1/a15_contract_gate.py'
+      - 'pi45_a1/a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/test_a15_arc_dialectic_adapter.py'
+      - 'pi45_a1/a15_example_turn.json'
+      - 'pi45_a1/a15_example_outcome.json'
+      - 'pi45_a1/a15_adapter_smoke.sh'
+      - '.github/workflows/pi45-a15-contract-gate.yml'
 
 permissions:
   contents: read
