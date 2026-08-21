@@ -1,11 +1,8 @@
 name: PI4.5A.1.5 ARC Dialectical Model World diagnostic
 
+# Live ARC execution is deliberately manual-only. A1.5 must pass the
+# synthetic model-in-the-loop harness before this workflow is dispatched.
 on:
-  pull_request:
-    branches: [pi45-a14-minimal-interactive-world-prior-20260821]
-    paths:
-      - 'pi45_a1/a15_**'
-      - '.github/workflows/pi45a15-arc-dialectical-diagnostic.yml'
   workflow_dispatch:
 
 permissions:
@@ -46,7 +43,7 @@ jobs:
             "job_status=${{ job.status }}" \
             "phase=diagnostic" \
             "game=${{ matrix.game }}" \
-            "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
+            "head_sha=${{ github.sha }}" \
             > "$OUT_DIR/job_status.txt"
           find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
 
