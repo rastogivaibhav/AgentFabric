@@ -5,8 +5,14 @@ import json
 from typing import Any
 
 
+EVALUATOR_ONLY_FIELDS = {
+    "game_id", "guid", "state", "levels_completed", "win_levels", "score",
+    "score_delta", "level_delta", "scorecard", "official_success", "level_scores",
+}
+
 SYSTEM_RULES = """You are the proposal generator inside a governed dialectical reasoning system for an unknown interactive world.
 You do NOT know the objective or action semantics. Do not invent target-specific rules.
+Your perceptual evidence is limited to the observable grid, opaque legal actions, and prior outcomes derived from observable grid changes.
 Separate observations from hypotheses. Preserve at least two competing hypotheses.
 Candidate goals must emerge from those hypotheses and current evidence; never use 'win the game' as a goal.
 Choose one provisional hypothesis and goal only for the next experiment, not as truth.
@@ -15,13 +21,37 @@ Every action is an experiment chosen to discriminate hypotheses or reduce import
 Return JSON only. The external GrapheneDB runtime owns convergence, epistemic promotion, opposition/reopening, Lyapunov stability and model-world state."""
 
 
+def _reject_evaluator_metadata(value: Any, where: str) -> None:
+    if isinstance(value, dict):
+        bad = sorted(str(k) for k in value if str(k) in EVALUATOR_ONLY_FIELDS)
+        if bad:
+            raise ValueError(f"{where}: evaluator-only metadata is forbidden in reasoning context: {bad}")
+        for key, child in value.items():
+            _reject_evaluator_metadata(child, f"{where}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _reject_evaluator_metadata(child, f"{where}[{index}]")
+
+
 def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
                           available_actions: list[str], recent_outcomes: list[dict[str, Any]],
                           governed_context: dict[str, Any] | None = None,
                           max_chars: int = 6500) -> str:
+    """Build the model proposal prompt without exposing evaluator identity.
+
+    game_id is retained only for call-site compatibility and is deliberately not
+    serialized into the prompt. The caller may use it outside reasoning for
+    artifact/evaluation bookkeeping.
+    """
+    del game_id
+    _reject_evaluator_metadata(observation, "observation")
+    _reject_evaluator_metadata(recent_outcomes, "recent_outcomes")
+    _reject_evaluator_metadata(governed_context or {}, "governed_context")
+    if any(not str(a).startswith("ACTION") for a in available_actions):
+        raise ValueError("available_actions must remain opaque ACTIONn identifiers")
+
     context = {
         "turn": int(turn),
-        "game_id": game_id,
         "current_observation": observation,
         "available_actions": available_actions,
         "recent_outcomes": recent_outcomes[-4:],
@@ -29,10 +59,10 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
     }
     schema = {
         "turn": turn,
-        "observations": [{"id": "o...", "statement": "observable fact only", "evidence_ref": "state/transition ref"}],
+        "observations": [{"id": "o...", "statement": "observable fact only", "evidence_ref": "grid/transition ref"}],
         "hypotheses": [
             {"id": "h...", "statement": "possible interpretation", "support_observation_ids": ["o..."],
-             "prediction": "testable prediction", "status": "proposed|active|contested"}
+             "prediction": "testable grid prediction", "status": "proposed|active|contested"}
         ],
         "candidate_goals": [
             {"id": "g...", "statement": "evidence-seeking/progress goal", "implied_by_hypothesis_ids": ["h..."],
@@ -49,7 +79,6 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
     prompt += "\n\nOUTPUT CONTRACT:\n" + json.dumps(schema, sort_keys=True, separators=(",", ":"))
     prompt += "\nConstraints: 1-8 observations; 2-5 genuinely distinct hypotheses; 1-3 candidate goals; 1-3 falsification questions. Use only listed actions. JSON only."
     if len(prompt) > max_chars:
-        # Preserve rules, live observation/actions, and contract. Governed/recent context is expendable first.
         compact = dict(context)
         compact["recent_outcomes"] = compact["recent_outcomes"][-1:]
         compact["governed_context"] = _compact_governed(compact["governed_context"])
