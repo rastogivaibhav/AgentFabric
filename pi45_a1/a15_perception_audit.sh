@@ -21,7 +21,6 @@ print('module=' + str(pathlib.Path(inspect.getfile(arc_agi)).resolve()))
 print('exports=' + ','.join(sorted(x for x in dir(arc_agi) if not x.startswith('_'))))
 PY
 
-# Preserve the package source inventory for interface review without relying on docs.
 /tmp/pi45venv/bin/python - <<'PY' > "$OUT/arc_agi_source_inventory.txt"
 import arc_agi, inspect, pathlib
 root=pathlib.Path(inspect.getfile(arc_agi)).resolve().parent
@@ -29,7 +28,38 @@ for p in sorted(root.rglob('*.py')):
     print(p.relative_to(root))
 PY
 
-# Extract all frozen-agent source lines that touch environment perception/action semantics.
+# Capture the raw reset observation and action-space surface directly from arc-agi.
+/tmp/pi45venv/bin/python - "$OUT" <<'PY'
+import json, pathlib, sys
+from arc_agi import Arcade, OperationMode
+out=pathlib.Path(sys.argv[1])
+arc=Arcade(operation_mode=OperationMode.ONLINE)
+envs=arc.get_environments()
+gid=next(e.game_id for e in envs if e.game_id=='ft09' or e.game_id.startswith('ft09-'))
+card=arc.create_scorecard(source_url=None,tags=['a15-perception-audit'],opaque={'purpose':'raw-interface-audit'})
+env=arc.make(gid,scorecard_id=card,save_recording=False,include_frame_data=True)
+obs=env.reset()
+def clean(v):
+    if hasattr(v,'model_dump'):
+        try: return clean(v.model_dump())
+        except Exception: pass
+    if isinstance(v,dict): return {str(k):clean(x) for k,x in v.items()}
+    if isinstance(v,(list,tuple)): return [clean(x) for x in v]
+    if hasattr(v,'name') and hasattr(v,'value'): return {'name':v.name,'value':v.value}
+    if isinstance(v,(str,int,float,bool)) or v is None: return v
+    return repr(v)
+raw={
+ 'game_id':gid,
+ 'observation_type':type(obs).__module__+'.'+type(obs).__name__,
+ 'observation_dir':[x for x in dir(obs) if not x.startswith('_')],
+ 'observation_model_dump':clean(obs),
+ 'action_space':[{'name':getattr(a,'name',str(a)),'value':clean(getattr(a,'value',None)),'type':type(a).__module__+'.'+type(a).__name__} for a in list(env.action_space)],
+}
+(out/'raw_arc_reset_observation.json').write_text(json.dumps(raw,indent=2,sort_keys=True))
+arc.close_scorecard(card)
+PY
+
+# Extract frozen-agent lines that transform raw ARC observation into model context/actions.
 /tmp/pi45venv/bin/python - <<'PY' > "$OUT/frozen_agent_interface_lines.txt"
 from pathlib import Path
 p=Path('/tmp/pi45a1/arc_a1_graphene_episodic.py')
@@ -40,7 +70,6 @@ for i,line in enumerate(p.read_text().splitlines(),1):
         print(f'{i:04d}: {line}')
 PY
 
-# Build only the already-pinned GrapheneDB helper needed by the frozen A1 agent.
 GDB="$ROOT/pi45_a1/graphenedb_snapshot"
 cmake -S /tmp/pi45a1 -B /tmp/pi45a1/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRAPHENEDB_SOURCE_DIR="$GDB" >/dev/null
 cmake --build /tmp/pi45a1/build --target pi45_graphene_memory -j 2 >/dev/null
@@ -66,11 +95,10 @@ python3 - "$OUT" <<'PY'
 import json, pathlib, re, sys, hashlib
 out=pathlib.Path(sys.argv[1])
 req=json.loads((out/'exact_llm_request.json').read_text())
+raw=json.loads((out/'raw_arc_reset_observation.json').read_text())
 messages=req.get('messages') or []
 text='\n'.join(str(m.get('content','')) for m in messages)
 (out/'exact_model_context.txt').write_text(text)
-
-# Conservative lexical leakage inventory. Presence is evidence to review, not automatic failure.
 patterns={
  'game_id': r'\bft09\b',
  'levels': r'\blevels?\b|0/6|6 levels',
@@ -82,6 +110,7 @@ patterns={
  'grid': r'\bgrid\b',
 }
 findings={k: bool(re.search(v,text,re.I)) for k,v in patterns.items()}
+raw_dump=raw.get('observation_model_dump') or {}
 summary={
  'messages': len(messages),
  'request_chars': len(json.dumps(req,sort_keys=True)),
@@ -90,10 +119,12 @@ summary={
  'model_request_sha256': hashlib.sha256(json.dumps(req,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
  'context_sha256': hashlib.sha256(text.encode()).hexdigest(),
  'visual_pixels_supplied': bool(re.search(r'(?i)(image_url|data:image|pixel|screenshot|frame_buffer)', json.dumps(req))),
+ 'raw_observation_top_level_keys': sorted(raw_dump.keys()) if isinstance(raw_dump,dict) else [],
+ 'raw_action_names': [x.get('name') for x in raw.get('action_space',[])],
 }
 json.dump(summary, open(out/'perception_contract_summary.json','w'), indent=2, sort_keys=True)
 print(json.dumps(summary,indent=2,sort_keys=True))
 PY
 
-sha256sum "$OUT/exact_llm_request.json" "$OUT/exact_model_context.txt" "$OUT/perception_contract_summary.json" > "$OUT/evidence_SHA256SUMS.txt"
+sha256sum "$OUT/exact_llm_request.json" "$OUT/exact_model_context.txt" "$OUT/raw_arc_reset_observation.json" "$OUT/perception_contract_summary.json" > "$OUT/evidence_SHA256SUMS.txt"
 echo 'a15_perception_audit=PASS_CAPTURED'
