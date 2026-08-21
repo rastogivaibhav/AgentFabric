@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from a15_outcome_prompt import build_outcome_prompt, validate_outcome_interpretation
@@ -17,8 +18,14 @@ class A15OutcomePromptTests(unittest.TestCase):
             grid_outcome={"before_grid_digest": "a", "after_grid_digest": "b", "changed_cells": 2, "changed_regions": [[4,5,0,1]], "persistent_change": True},
         )
         self.assertIn("observable before/after grid evidence", prompt)
-        self.assertNotIn("score", prompt.lower())
-        self.assertNotIn("level", prompt.lower())
+        # Guardrail prose is allowed to name forbidden evaluator concepts (e.g.
+        # "Do not use score"). What must remain clean is the serialized EVIDENCE
+        # payload actually supplied as observations.
+        evidence_text = prompt.split("\n\nEVIDENCE:\n", 1)[1].split("\n\nOUTPUT CONTRACT:\n", 1)[0]
+        evidence = json.loads(evidence_text)
+        encoded = json.dumps(evidence, sort_keys=True).lower()
+        for forbidden in ["score", "level", "game_id", "win_levels", "levels_completed", "score_delta", "level_delta"]:
+            self.assertNotIn(forbidden, encoded)
 
     def test_evaluator_metadata_rejected(self) -> None:
         with self.assertRaises(ValueError):
