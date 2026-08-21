@@ -1,6 +1,13 @@
 name: ARC Paper Duck GrapheneDMW Integration Gate
 
 on:
+  pull_request:
+    branches: [pi45-a15-dialectical-model-world-20260821]
+    paths:
+      - 'arc_competition/**'
+      - 'pi45_a1/a15_state_contract.json'
+      - 'pi45_a1/a15_contract_gate.py'
+      - '.github/workflows/arc-paper-duck-dmw-integration-gate.yml'
   push:
     branches: [arc-paper-dmw-duck-20260821]
     paths:
@@ -91,7 +98,7 @@ jobs:
           cp /tmp/duck_patch_manifest.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
           cp arc_competition/UPSTREAM_MANIFEST.json results/arc-paper/duck-dmw-integration/
           printf '%s\n' \
-            "head_sha=${{ github.sha }}" \
+            "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
             'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
             'qwen_model=vrfai/Qwen3.6-27B-FP8' \
             'variants=off,evidence,dialectic' \
