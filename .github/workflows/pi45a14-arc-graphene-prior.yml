@@ -1,0 +1,103 @@
+name: PI4.5A.1.4 ARC GrapheneDB minimal interactive world prior
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'pi45_a1/a14_prior.json'
+      - 'pi45_a1/a14_seed_graphene.py'
+      - 'pi45_a1/a14_build_treatment.py'
+      - 'pi45_a1/a14_run_game.sh'
+      - '.github/workflows/pi45a14-arc-graphene-prior.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    name: diagnostic-${{ matrix.game }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [ft09, bp35]
+
+    steps:
+      - name: Checkout execution-only PR
+        uses: actions/checkout@v4
+
+      - name: Prepare frozen A1.3 environment
+        shell: bash
+        run: bash pi45_a1/a13_prepare.sh
+
+      - name: Run 10-turn A1.4 prior diagnostic
+        shell: bash
+        env:
+          OUT_DIR: results/pi45a14-diagnostic/${{ matrix.game }}
+        run: bash pi45_a1/a14_run_game.sh '${{ matrix.game }}' 10 "$OUT_DIR"
+
+      - name: Hash diagnostic evidence
+        if: always()
+        shell: bash
+        env:
+          OUT_DIR: results/pi45a14-diagnostic/${{ matrix.game }}
+        run: |
+          set -u
+          mkdir -p "$OUT_DIR"
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+          printf '%s\n' "job_status=${{ job.status }}" "phase=diagnostic" "game=${{ matrix.game }}" > "$OUT_DIR/job_status.txt"
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi45a14-diagnostic-${{ matrix.game }}-evidence
+          path: results/pi45a14-diagnostic/${{ matrix.game }}
+          if-no-files-found: error
+          retention-days: 14
+
+  full:
+    name: full-${{ matrix.game }}
+    needs: diagnostic
+    if: needs.diagnostic.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [ls20, ft09, bp35]
+
+    steps:
+      - name: Checkout execution-only PR
+        uses: actions/checkout@v4
+
+      - name: Prepare frozen A1.3 environment
+        shell: bash
+        run: bash pi45_a1/a13_prepare.sh
+
+      - name: Run full A1.4 seeded-prior game
+        shell: bash
+        env:
+          OUT_DIR: results/pi45a14-full/${{ matrix.game }}
+        run: bash pi45_a1/a14_run_game.sh '${{ matrix.game }}' 40 "$OUT_DIR"
+
+      - name: Hash full evidence
+        if: always()
+        shell: bash
+        env:
+          OUT_DIR: results/pi45a14-full/${{ matrix.game }}
+        run: |
+          set -u
+          mkdir -p "$OUT_DIR"
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+          printf '%s\n' "job_status=${{ job.status }}" "phase=full" "game=${{ matrix.game }}" > "$OUT_DIR/job_status.txt"
+
+      - name: Upload full A1.4 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi45a14-full-${{ matrix.game }}-evidence
+          path: results/pi45a14-full/${{ matrix.game }}
+          if-no-files-found: error
+          retention-days: 14

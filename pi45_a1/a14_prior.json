@@ -1,0 +1,46 @@
+{
+  "prior_name": "minimal-interactive-world-prior-v1",
+  "scope": "generic transferable interaction knowledge only; no target-game observations, solutions, state signatures, action outcomes, or labels",
+  "memories": [
+    {
+      "id": "controller-gameboy",
+      "category": "controller",
+      "instruction": "Game Boy convention: D-pad usually supplies four directions; A/B usually supply primary/secondary actions; Start/Select usually handle start, pause, menu, or selection. Treat this only as a weak mapping prior and verify from state changes."
+    },
+    {
+      "id": "controller-nes",
+      "category": "controller",
+      "instruction": "NES convention: D-pad usually supplies four directions; A/B usually supply action controls; Start/Select usually handle game or menu functions. Treat this only as a weak mapping prior and verify from feedback."
+    },
+    {
+      "id": "controller-snes",
+      "category": "controller",
+      "instruction": "SNES convention: D-pad usually supplies directions; A/B/X/Y are action candidates; L/R are additional action candidates; Start/Select are usually system or menu controls. Verify every mapping in the current game."
+    },
+    {
+      "id": "controller-xbox",
+      "category": "controller",
+      "instruction": "Xbox-style convention: left stick or D-pad often controls movement/navigation; right stick often controls camera/aim; A/B/X/Y, bumpers, and triggers are action candidates; Menu/View are usually system controls. Verify from observed effects."
+    },
+    {
+      "id": "controller-pc",
+      "category": "controller",
+      "instruction": "PC convention: WASD or arrows often control movement; mouse movement often points or aims; mouse buttons, Space, Enter, Shift, Ctrl, and number keys are common action candidates; Escape often means pause/back. Verify rather than assume."
+    },
+    {
+      "id": "goal-setting",
+      "category": "goal",
+      "instruction": "For an unknown game, first discover what is controllable and which actions change state. Set a provisional short-term goal from observable progress. If repeated actions in an equivalent state produce no useful change, revise the action or goal. Promote explicit success or progression signals when discovered."
+    },
+    {
+      "id": "interaction-design",
+      "category": "interaction-design",
+      "instruction": "Use interaction-design priors: visible/spatial elements may offer affordances; compare before/after state for feedback; no effect may mean boundary, obstacle, precondition, wrong context, or inactive control; probe unresolved controls systematically; reuse mappings that remain consistent."
+    },
+    {
+      "id": "game-design",
+      "category": "game-design",
+      "instruction": "Use game-design priors: games usually have learnable rules and an explicit or implicit goal; objects may be targets, resources, obstacles, hazards, switches, or decoration; score, new area, capability, persistent state change, or level transition may signal progress; preserve before-action-after evidence to infer rules."
+    }
+  ]
+}

@@ -5,14 +5,21 @@ on:
     branches: [master]
     paths:
       - 'pi45_arc/**'
+      - '.github/workflows/pi45a0-arc-control.yml'
 
 permissions:
   contents: read
 
 jobs:
   baseline:
+    name: baseline-${{ matrix.game }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        game: [ls20, ft09, bp35]
+
     steps:
       - name: Checkout execution-only PR
         uses: actions/checkout@v4
@@ -62,23 +69,25 @@ jobs:
           echo '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf' | sha256sum -c -
           sha256sum "$MODEL" > /tmp/model_SHA256SUMS.txt
 
-      - name: Run frozen A0 public pilot
+      - name: Run frozen A0 game
+        id: run_a0
         shell: bash
         env:
           MODEL_ALIAS: pi45a0-qwen25-15b
-          ARC_GAMES: ls20,ft09,bp35
+          ARC_GAMES: ${{ matrix.game }}
           MAX_ACTIONS: '40'
           MEMORY_WINDOW: '6'
-          OUT_DIR: results/pi45a0
+          OUT_DIR: results/pi45a0/${{ matrix.game }}
         run: |
           set -euo pipefail
-          mkdir -p results/pi45a0
-          cp /tmp/model_SHA256SUMS.txt results/pi45a0/model_SHA256SUMS.txt
-          git -C /tmp/llama.cpp rev-parse HEAD > results/pi45a0/llama_cpp_commit.txt
+          mkdir -p "$OUT_DIR"
+          cp /tmp/model_SHA256SUMS.txt "$OUT_DIR/model_SHA256SUMS.txt"
+          git -C /tmp/llama.cpp rev-parse HEAD > "$OUT_DIR/llama_cpp_commit.txt"
+          printf '%s\n' "game=${ARC_GAMES}" "max_actions=${MAX_ACTIONS}" "memory_window=${MEMORY_WINDOW}" > "$OUT_DIR/control_contract.txt"
           /tmp/llama.cpp/build/bin/llama-server \
             -m /tmp/qwen2.5-1.5b-instruct-q4_k_m.gguf \
             -c 4096 --host 127.0.0.1 --port 9090 --alias pi45a0-qwen25-15b \
-            > results/pi45a0/llama_server.log 2>&1 &
+            > "$OUT_DIR/llama_server.log" 2>&1 &
           PID=$!
           trap 'kill "$PID" 2>/dev/null || true' EXIT
           ready=0
@@ -89,10 +98,11 @@ jobs:
           test "$ready" = 1
           /tmp/pi45venv/bin/python pi45_arc/arc_a0_baseline.py \
             --games "$ARC_GAMES" --max-actions "$MAX_ACTIONS" --memory-window "$MEMORY_WINDOW" --out "$OUT_DIR"
-          test -f results/pi45a0/summary.json
-          python3 - <<'PY'
-          import json
-          x=json.load(open('results/pi45a0/summary.json'))
+          test -f "$OUT_DIR/summary.json"
+          OUT_DIR="$OUT_DIR" python3 - <<'PY'
+          import json, os
+          p=os.path.join(os.environ['OUT_DIR'], 'summary.json')
+          x=json.load(open(p))
           assert x['graphenedb_enabled'] is False
           assert x['persistent_world_model'] is False
           assert x['model_sha256']=='6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e'
@@ -100,15 +110,22 @@ jobs:
           print(json.dumps(x['aggregate'], indent=2))
           PY
 
-      - name: Hash evidence
+      - name: Hash available evidence
+        if: always()
         shell: bash
+        env:
+          OUT_DIR: results/pi45a0/${{ matrix.game }}
         run: |
-          find results/pi45a0 -type f -print0 | sort -z | xargs -0 sha256sum > results/pi45a0/SHA256SUMS.txt
+          set -u
+          mkdir -p "$OUT_DIR"
+          find "$OUT_DIR" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > "$OUT_DIR/SHA256SUMS.txt"
+          printf '%s\n' "job_status=${{ job.status }}" "game=${{ matrix.game }}" > "$OUT_DIR/job_status.txt"
 
-      - name: Upload A0 evidence
+      - name: Upload A0 game evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pi45a0-arc-control-evidence
-          path: results/pi45a0
+          name: pi45a0-arc-control-${{ matrix.game }}-evidence
+          path: results/pi45a0/${{ matrix.game }}
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
