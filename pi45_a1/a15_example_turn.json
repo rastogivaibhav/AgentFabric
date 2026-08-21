@@ -4,21 +4,22 @@
     {
       "id": "t0-o-state",
       "statement": "The initial grid contains visible spatial structure whose semantics are unknown.",
-      "evidence_ref": "grid:turn:0"
+      "evidence_ref": "grid:turn:0",
+      "evidence_kind": "grid"
     }
   ],
   "hypotheses": [
     {
       "id": "t0-h-interactable",
       "statement": "At least one visible element may respond to an available action.",
-      "support_observation_ids": ["t0-o-state"],
+      "basis": [{"observation_id": "t0-o-state"}],
       "prediction": "A suitable action will produce a persistent observable grid change.",
       "status": "active"
     },
     {
       "id": "t0-h-inert",
       "statement": "The currently salient visible element may not respond in the present context.",
-      "support_observation_ids": ["t0-o-state"],
+      "basis": [{"observation_id": "t0-o-state"}],
       "prediction": "Probing it will leave the observable grid unchanged.",
       "status": "proposed"
     }
