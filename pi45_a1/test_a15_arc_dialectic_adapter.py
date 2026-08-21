@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import copy
+import json
 import unittest
 
-from a15_arc_dialectic_adapter import outcome_to_native_request, proposal_to_native_request, stable_digest
+from a15_arc_dialectic_adapter import OPAQUE_WORLD_SCOPE, outcome_to_native_request, proposal_to_native_request, stable_digest
 from a15_contract_gate import ContractError, load_json, validate_outcome, validate_turn
 
 
@@ -14,21 +15,37 @@ def proposal() -> dict:
     return {
         "turn": 3,
         "observations": [
-            {"id": "o3a", "statement": "A region is visible.", "evidence_ref": "state:3"},
-            {"id": "o3b", "statement": "The previous action produced no score change.", "evidence_ref": "transition:2-3"},
+            {"id": "o3a", "statement": "A region is visible in the grid.", "evidence_ref": "grid:3"},
+            {"id": "o3b", "statement": "The previous action left the grid unchanged.", "evidence_ref": "transition:2-3"},
         ],
         "hypotheses": [
-            {"id": "h3a", "statement": "The region may respond to interaction.", "support_observation_ids": ["o3a"], "prediction": "A suitable interaction alters state.", "status": "active"},
-            {"id": "h3b", "statement": "The region may be inert in this context.", "support_observation_ids": ["o3a", "o3b"], "prediction": "Interaction leaves state invariant.", "status": "proposed"},
+            {"id": "h3a", "statement": "The region may respond to interaction.", "support_observation_ids": ["o3a"], "prediction": "A suitable interaction alters the grid.", "status": "active"},
+            {"id": "h3b", "statement": "The region may be inert in this context.", "support_observation_ids": ["o3a", "o3b"], "prediction": "Interaction leaves the grid invariant.", "status": "proposed"},
         ],
         "candidate_goals": [
             {"id": "g3a", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["h3a", "h3b"], "evidence_observation_ids": ["o3a"], "status": "active"},
         ],
         "provisional_hypothesis_id": "h3a",
         "provisional_goal_id": "g3a",
-        "opposition": {"challenged_hypothesis_id": "h3a", "falsification_questions": ["What outcome would make inertness more plausible?"], "reopen_hypothesis_ids": ["h3b"]},
-        "experiment": {"tests_hypothesis_ids": ["h3a", "h3b"], "information_goal": "Discriminate responsive from inert.", "predicted_observation": "State changes or remains invariant.", "action": "ACTION2", "action_params": {}},
+        "opposition": {"challenged_hypothesis_id": "h3a", "falsification_questions": ["What observable grid outcome would make inertness more plausible?"], "reopen_hypothesis_ids": ["h3b"]},
+        "experiment": {"tests_hypothesis_ids": ["h3a", "h3b"], "information_goal": "Discriminate responsive from inert.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION2", "action_params": {}},
         "residual_uncertainty": ["Control semantics remain uncertain."],
+    }
+
+
+def outcome() -> dict:
+    return {
+        "turn": 3,
+        "experiment_id": "turn-3-experiment",
+        "action": "ACTION2",
+        "before_grid_digest": "before",
+        "after_grid_digest": "after",
+        "changed_cells": 1,
+        "changed_regions": ["r0"],
+        "persistent_change": True,
+        "observed_effect": "A persistent cell changed.",
+        "supports_hypothesis_ids": ["h3a"],
+        "contradicts_hypothesis_ids": ["h3b"],
     }
 
 
@@ -36,7 +53,7 @@ class A15AdapterTests(unittest.TestCase):
     def test_proposal_maps_to_native_epistemic_types(self) -> None:
         p = proposal()
         validate_turn(p, CONTRACT, {"ACTION1", "ACTION2"})
-        req = proposal_to_native_request(p, "diagnostic")
+        req = proposal_to_native_request(p, "ft09-secret-evaluator-id")
         by_id = {n["external_id"]: n for n in req["nodes"]}
         self.assertEqual(by_id["o3a"]["node_type"], "Fact")
         self.assertEqual(by_id["o3a"]["origin"], "Observed")
@@ -48,28 +65,36 @@ class A15AdapterTests(unittest.TestCase):
         self.assertIn("turn-3-experiment", by_id)
         self.assertEqual(req["action"], "ACTION2")
         self.assertEqual(req["reopen_hypothesis_ids"], ["h3b"])
+        self.assertEqual(req["world_scope"], OPAQUE_WORLD_SCOPE)
+        self.assertNotIn("ft09-secret-evaluator-id", json.dumps(req, sort_keys=True))
+        self.assertNotIn("game_id", json.dumps(req, sort_keys=True))
 
-    def test_outcome_is_observed_and_updates_beliefs(self) -> None:
-        outcome = {
-            "turn": 3,
-            "experiment_id": "turn-3-experiment",
-            "action": "ACTION2",
-            "before_state_digest": "before",
-            "after_state_digest": "after",
-            "meaningful_change": True,
-            "score_delta": 1,
-            "level_delta": 0,
-            "observed_effect": "A persistent cell changed.",
-            "supports_hypothesis_ids": ["h3a"],
-            "contradicts_hypothesis_ids": ["h3b"],
-        }
-        validate_outcome(outcome, CONTRACT, {"h3a", "h3b"})
-        req = outcome_to_native_request(outcome, "diagnostic")
+    def test_outcome_is_grid_observed_and_updates_beliefs(self) -> None:
+        o = outcome()
+        validate_outcome(o, CONTRACT, {"h3a", "h3b"})
+        req = outcome_to_native_request(o, "bp35-secret-evaluator-id")
         self.assertEqual(req["nodes"][0]["node_type"], "Outcome")
         self.assertEqual(req["nodes"][0]["origin"], "Observed")
         roles = {(r["to"], r["role"], r["origin"]) for r in req["relations"]}
         self.assertIn(("h3a", "Supports", "Observed"), roles)
         self.assertIn(("h3b", "Contradicts", "Observed"), roles)
+        encoded = json.dumps(req, sort_keys=True)
+        self.assertNotIn("score", encoded)
+        self.assertNotIn("level", encoded)
+        self.assertNotIn("bp35-secret-evaluator-id", encoded)
+
+    def test_evaluator_fields_are_rejected_from_epistemic_outcome(self) -> None:
+        for key, value in [("score_delta", 1), ("level_delta", 1), ("win_levels", 6), ("state", "WIN")]:
+            contaminated = copy.deepcopy(outcome())
+            contaminated[key] = value
+            with self.assertRaises(ContractError, msg=key):
+                validate_outcome(contaminated, CONTRACT, {"h3a", "h3b"})
+
+    def test_evaluator_fields_are_rejected_from_proposal(self) -> None:
+        contaminated = proposal()
+        contaminated["observations"][0]["score"] = 10
+        with self.assertRaises(ContractError):
+            validate_turn(contaminated, CONTRACT, {"ACTION2"})
 
     def test_content_free_goal_remains_forbidden(self) -> None:
         p = proposal()
