@@ -53,7 +53,7 @@ class A15ProposalPromptTests(unittest.TestCase):
                 available_actions=["MOVE_UP"], recent_outcomes=[], governed_context={}
             )
 
-    def test_repair_prompt_is_same-turn_and_adds_no_new_evidence(self) -> None:
+    def test_repair_prompt_is_same_turn_and_adds_no_new_evidence(self) -> None:
         original = "CURRENT EVIDENCE token-clean\nOUTPUT CONTRACT token-contract"
         rejected = json.dumps({
             "turn": 2,
