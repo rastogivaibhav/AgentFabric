@@ -86,10 +86,17 @@ def validate_constitution(constitution: dict[str, Any]) -> None:
         raise ContractError("constitution: outcomes must be observed")
 
 
+def _require_turn_scoped(ids: set[str], prefix: str, where: str) -> None:
+    bad = sorted(x for x in ids if not x.startswith(prefix))
+    if bad:
+        raise ContractError(f"{where}: ids must be turn-scoped with prefix {prefix!r}; got {bad}")
+
+
 def validate_turn(proposal: dict[str, Any], contract: dict[str, Any], available_actions: set[str] | None = None) -> None:
     reject_forbidden_keys(proposal, evaluator_only_fields(contract), "turn_proposal")
     spec = contract["turn_proposal"]
     require_keys(proposal, spec["required"], "turn_proposal")
+    turn = int(proposal["turn"])
     limits = spec["limits"]
     observations = list(proposal["observations"])
     hypotheses = list(proposal["hypotheses"])
@@ -118,6 +125,10 @@ def validate_turn(proposal: dict[str, Any], contract: dict[str, Any], available_
     observation_ids = require_unique_ids(observations, "observations")
     hypothesis_ids = require_unique_ids(hypotheses, "hypotheses")
     goal_ids = require_unique_ids(goals, "candidate_goals")
+    _require_turn_scoped(observation_ids, f"t{turn}-o", "observations")
+    _require_turn_scoped(hypothesis_ids, f"t{turn}-h", "hypotheses")
+    _require_turn_scoped(goal_ids, f"t{turn}-g", "candidate_goals")
+
     for idx, hypothesis in enumerate(hypotheses):
         support = set(map(str, hypothesis["support_observation_ids"]))
         if not support.issubset(observation_ids):
@@ -183,27 +194,27 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
     validate_constitution(constitution)
     proposal = {
         "turn": 0,
-        "observations": [{"id": "o1", "statement": "A visible region exists.", "evidence_ref": "grid:0"}],
+        "observations": [{"id": "t0-o1", "statement": "A visible region exists.", "evidence_ref": "grid:0"}],
         "hypotheses": [
-            {"id": "h1", "statement": "The region may be interactable.", "support_observation_ids": ["o1"], "prediction": "An interaction may alter the grid.", "status": "active"},
-            {"id": "h2", "statement": "The region may be inert.", "support_observation_ids": ["o1"], "prediction": "Interaction leaves the grid invariant.", "status": "proposed"}
+            {"id": "t0-h1", "statement": "The region may be interactable.", "support_observation_ids": ["t0-o1"], "prediction": "An interaction may alter the grid.", "status": "active"},
+            {"id": "t0-h2", "statement": "The region may be inert.", "support_observation_ids": ["t0-o1"], "prediction": "Interaction leaves the grid invariant.", "status": "proposed"}
         ],
-        "candidate_goals": [{"id": "g1", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["h1", "h2"], "evidence_observation_ids": ["o1"], "status": "active"}],
-        "provisional_hypothesis_id": "h1",
-        "provisional_goal_id": "g1",
-        "opposition": {"challenged_hypothesis_id": "h1", "falsification_questions": ["What grid change would support inertness instead?"], "reopen_hypothesis_ids": ["h2"]},
-        "experiment": {"tests_hypothesis_ids": ["h1", "h2"], "information_goal": "Discriminate responsive from inert using observable grid evidence.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION1", "action_params": {}},
+        "candidate_goals": [{"id": "t0-g1", "statement": "Determine whether the visible region participates in the world rules.", "implied_by_hypothesis_ids": ["t0-h1", "t0-h2"], "evidence_observation_ids": ["t0-o1"], "status": "active"}],
+        "provisional_hypothesis_id": "t0-h1",
+        "provisional_goal_id": "t0-g1",
+        "opposition": {"challenged_hypothesis_id": "t0-h1", "falsification_questions": ["What grid change would support inertness instead?"], "reopen_hypothesis_ids": ["t0-h2"]},
+        "experiment": {"tests_hypothesis_ids": ["t0-h1", "t0-h2"], "information_goal": "Discriminate responsive from inert using observable grid evidence.", "predicted_observation": "The grid changes or remains invariant.", "action": "ACTION1", "action_params": {}},
         "residual_uncertainty": ["Action semantics are not yet known."]
     }
     validate_turn(proposal, contract, {"ACTION1", "ACTION2"})
     outcome = {
-        "turn": 0, "experiment_id": "e1", "action": "ACTION1",
+        "turn": 0, "experiment_id": "turn-0-experiment", "action": "ACTION1",
         "before_grid_digest": "before", "after_grid_digest": "after",
         "changed_cells": 1, "changed_regions": ["r0"], "persistent_change": True,
         "observed_effect": "One visible cell changed persistently.",
-        "supports_hypothesis_ids": ["h1"], "contradicts_hypothesis_ids": ["h2"]
+        "supports_hypothesis_ids": ["t0-h1"], "contradicts_hypothesis_ids": ["t0-h2"]
     }
-    validate_outcome(outcome, contract, {"h1", "h2"})
+    validate_outcome(outcome, contract, {"t0-h1", "t0-h2"})
 
     bad_goal = json.loads(json.dumps(proposal))
     bad_goal["candidate_goals"][0]["statement"] = "Win the game"
@@ -223,10 +234,19 @@ def self_test(contract: dict[str, Any], constitution: dict[str, Any]) -> None:
     else:
         raise AssertionError("self-test failed: unavailable action was accepted")
 
+    bad_id = json.loads(json.dumps(proposal))
+    bad_id["hypotheses"][0]["id"] = "h1"
+    try:
+        validate_turn(bad_id, contract, {"ACTION1"})
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("self-test failed: unscoped hypothesis id was accepted")
+
     contaminated = json.loads(json.dumps(outcome))
     contaminated["score_delta"] = 1
     try:
-        validate_outcome(contaminated, contract, {"h1", "h2"})
+        validate_outcome(contaminated, contract, {"t0-h1", "t0-h2"})
     except ContractError:
         pass
     else:
