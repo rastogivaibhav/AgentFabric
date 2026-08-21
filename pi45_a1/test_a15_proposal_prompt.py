@@ -23,7 +23,7 @@ class A15ProposalPromptTests(unittest.TestCase):
             max_chars=6500,
         )
         self.assertLessEqual(len(prompt), 6500)
-        self.assertIn("Preserve at least two competing hypotheses", prompt)
+        self.assertIn("Preserve at least two genuinely different competing hypotheses", prompt)
         self.assertIn("never use 'win the game'", prompt)
         self.assertIn("native GrapheneDB/HypoKosh controller owns those decisions", prompt)
         self.assertIn('"ACTION1"', prompt)
