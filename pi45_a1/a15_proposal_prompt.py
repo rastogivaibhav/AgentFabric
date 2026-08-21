@@ -18,6 +18,8 @@ Candidate goals must emerge from those hypotheses and current evidence; never us
 Choose one provisional hypothesis and goal only for the next experiment, not as truth.
 Oppose the provisional hypothesis with a falsification question and preserve at least one alternative when possible.
 Every action is an experiment chosen to discriminate hypotheses or reduce important uncertainty.
+If GOVERNED_CONTEXT contains an existing ModelWorld hypothesis or goal that you are continuing, reuse its external_id; create a new id only for a genuinely new interpretation.
+Follow the supplied opaque action-affordance parameter schema exactly. Do not infer semantic meaning from it.
 Return JSON only. The external GrapheneDB runtime owns convergence, epistemic promotion, opposition/reopening, Lyapunov stability and model-world state."""
 
 
@@ -37,12 +39,6 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
                           available_actions: list[str], recent_outcomes: list[dict[str, Any]],
                           governed_context: dict[str, Any] | None = None,
                           max_chars: int = 6500) -> str:
-    """Build the model proposal prompt without exposing evaluator identity.
-
-    game_id is retained only for call-site compatibility and is deliberately not
-    serialized into the prompt. The caller may use it outside reasoning for
-    artifact/evaluation bookkeeping.
-    """
     del game_id
     _reject_evaluator_metadata(observation, "observation")
     _reject_evaluator_metadata(recent_outcomes, "recent_outcomes")
@@ -92,8 +88,12 @@ def build_proposal_prompt(*, turn: int, game_id: str, observation: Any,
 
 def _compact_governed(value: dict[str, Any]) -> dict[str, Any]:
     keys = ["status", "primary_hypothesis_id", "candidate_goal_ids", "reopen_hypothesis_ids",
-            "residual_uncertainty", "escape_required", "lyapunov_goal_reached"]
-    return {k: value[k] for k in keys if k in value}
+            "residual_uncertainty", "escape_required", "lyapunov_goal_reached", "model_world_nodes"]
+    out = {k: value[k] for k in keys if k in value}
+    if isinstance(out.get("model_world_nodes"), list):
+        # Keep the most recent compact epistemic objects when context is tight.
+        out["model_world_nodes"] = out["model_world_nodes"][-8:]
+    return out
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
