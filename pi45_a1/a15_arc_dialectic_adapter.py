@@ -69,10 +69,10 @@ def _node(external_id: str, node_type: str, status: str, statement: str, origin:
 def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str | None = None) -> dict[str, Any]:
     """Map a validated proposal into native epistemic objects.
 
-    The LLM proposes evidence, competing hypotheses, candidate goals,
-    falsification language and an experiment. It does not seed convergence,
-    opposition targets or reopen nodes. Those are native runtime decisions.
-    evaluator_game_id is intentionally ignored.
+    The LLM proposes evidence, competing hypotheses, evidence-linked candidate
+    goals, falsification language and an experiment. It does not seed
+    convergence, opposition targets or reopen nodes. evaluator_game_id is
+    intentionally ignored.
     """
     turn = int(proposal["turn"])
     nodes: list[dict[str, Any]] = []
@@ -103,18 +103,25 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
         status = {"proposed": "Proposed", "active": "Active", "contested": "Contested"}[goal["status"]]
         nodes.append(_node(
             gid, "Decision", status, str(goal["statement"]), "Hypothetical", turn,
-            {"kind": "candidate_goal"},
+            {"kind": "candidate_goal", "basis_count": len(goal["basis"])},
         ))
-        for hid in goal["implied_by_hypothesis_ids"]:
-            relations.append({
-                "from": str(hid), "to": gid, "role": "Predictive",
-                "origin": "Hypothetical", "confidence": 0.45,
-            })
-        for oid in goal["evidence_observation_ids"]:
-            relations.append({
-                "from": str(oid), "to": gid, "role": "Supports",
-                "origin": "Inferred", "confidence": 0.40,
-            })
+        seen_hypothesis_links: set[str] = set()
+        seen_observation_links: set[str] = set()
+        for basis in goal["basis"]:
+            hid = str(basis["hypothesis_id"])
+            oid = str(basis["observation_id"])
+            if hid not in seen_hypothesis_links:
+                relations.append({
+                    "from": hid, "to": gid, "role": "Predictive",
+                    "origin": "Hypothetical", "confidence": 0.45,
+                })
+                seen_hypothesis_links.add(hid)
+            if oid not in seen_observation_links:
+                relations.append({
+                    "from": oid, "to": gid, "role": "Supports",
+                    "origin": "Inferred", "confidence": 0.40,
+                })
+                seen_observation_links.add(oid)
 
     opposition = proposal["opposition"]
     opp_id = f"turn-{turn}-opposition"
@@ -141,7 +148,7 @@ def proposal_to_native_request(proposal: dict[str, Any], evaluator_game_id: str 
         })
 
     return {
-        "protocol": "agentfabric-a15-native-v3",
+        "protocol": "agentfabric-a15-native-v4",
         "operation": "ingest_and_reason",
         "world_scope": OPAQUE_WORLD_SCOPE,
         "turn": turn,
@@ -187,7 +194,7 @@ def outcome_to_native_request(outcome: dict[str, Any], evaluator_game_id: str | 
             "origin": "Observed", "confidence": 0.80,
         })
     return {
-        "protocol": "agentfabric-a15-native-v3",
+        "protocol": "agentfabric-a15-native-v4",
         "operation": "apply_outcome_and_reason",
         "world_scope": OPAQUE_WORLD_SCOPE,
         "turn": turn,
