@@ -42,6 +42,8 @@ struct Request {
   int turn{0};
   std::vector<RequestNode> nodes;
   std::vector<RequestRelation> relations;
+  // Legacy v1/v2 transport fields are parsed for backwards-compatible native
+  // proof fixtures, but A1.5 v3 never uses them to seed dialectic control.
   std::string provisional_hypothesis;
   std::string provisional_goal;
   std::vector<std::string> reopen;
@@ -116,7 +118,7 @@ Request parse_request(std::istream& input) {
         throw std::runtime_error("invalid NODE record");
       node.external_id = hex_decode(id_hex);
       node.statement = hex_decode(statement_hex);
-      (void)hex_decode(metadata_hex);  // validate transport; canonical metadata lives in evidence JSON.
+      (void)hex_decode(metadata_hex);
       request.nodes.push_back(std::move(node));
     } else if (kind == "REL") {
       RequestRelation relation;
@@ -196,7 +198,7 @@ ModelWorldStatus parse_world_status(const std::string& value) {
 }
 
 std::vector<float> anchor_vector() {
-  return std::vector<float>(kDimension, 0.125f); // unit norm at dimension 64
+  return std::vector<float>(kDimension, 0.125f);
 }
 
 uint32_t lookup_external_id(const GrapheneDB& db, const std::string& external_id) {
@@ -214,6 +216,29 @@ std::optional<uint64_t> lookup_world_external_id(const ModelWorld& world,
   return std::nullopt;
 }
 
+std::optional<std::string> hypothesis_external_id_for_graph_node(
+    const GrapheneDB& db, const ModelWorld& world, uint32_t graph_node_id) {
+  for (const auto& node : world.nodes()) {
+    if (node.type != ModelWorldNodeType::Hypothesis) continue;
+    const auto it = node.metadata.find("external_id");
+    if (it == node.metadata.end()) continue;
+    if (lookup_external_id(db, it->second) == graph_node_id) return it->second;
+  }
+  return std::nullopt;
+}
+
+std::vector<std::string> reopened_hypothesis_external_ids(
+    const GrapheneDB& db, const ModelWorld& world, const std::vector<uint32_t>& graph_node_ids) {
+  std::vector<std::string> out;
+  for (const auto graph_node_id : graph_node_ids) {
+    const auto external = hypothesis_external_id_for_graph_node(db, world, graph_node_id);
+    if (external && std::find(out.begin(), out.end(), *external) == out.end()) {
+      out.push_back(*external);
+    }
+  }
+  return out;
+}
+
 void require_status(const Status& status, const std::string& where) {
   if (!status) throw std::runtime_error(where + ": " + status.message);
 }
@@ -221,6 +246,15 @@ void require_status(const Status& status, const std::string& where) {
 void emit_bool(std::ostream& out, const char* key, bool value, bool comma = true) {
   out << '"' << key << "\":" << (value ? "true" : "false");
   if (comma) out << ',';
+}
+
+void emit_string_array(std::ostream& out, const std::vector<std::string>& values) {
+  out << '[';
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i) out << ',';
+    out << '"' << json_escape(values[i]) << '"';
+  }
+  out << ']';
 }
 
 } // namespace
@@ -311,7 +345,6 @@ int main(int argc, char** argv) {
       world.add(std::move(world_node), "AgentFabric A1.5 native ingest");
     }
 
-    // Outcomes alter belief status but never silently verify a hypothesis.
     if (request.operation == "apply_outcome_and_reason") {
       for (const auto& relation : request.relations) {
         const auto target_world_id = lookup_world_external_id(world, relation.to);
@@ -339,10 +372,8 @@ int main(int argc, char** argv) {
     options.dialectic.minimum_confidence = 0.0;
     options.dialectic.max_opposition_rounds = 1;
     options.dialectic.reexpansion_threshold = 0.25;
-    for (const auto& external_id : request.reopen) {
-      const auto id = lookup_external_id(db, external_id);
-      if (id != 0) options.dialectic.reopen_nodes.push_back(id);
-    }
+    // A1.5 v3 intentionally does NOT copy request.reopen into options. The
+    // DialecticEngine derives reopen_nodes from its own convergence/opposition.
     options.max_recursive_cycles = 2;
     options.enable_opposition_research = true;
     options.update_model_world = true;
@@ -364,11 +395,18 @@ int main(int argc, char** argv) {
       regime = lyapunov_regime_name(result.lyapunov.observations.back().regime);
     }
 
+    const auto primary_hypothesis =
+        hypothesis_external_id_for_graph_node(db, world, result.primary_node);
+    const auto reopened_hypotheses = reopened_hypothesis_external_ids(
+        db, world, result.final_opposition.reopen_nodes);
+
     std::cout << '{';
-    std::cout << "\"protocol\":\"agentfabric-a15-native-v1\",";
+    std::cout << "\"protocol\":\"agentfabric-a15-native-v3\",";
     std::cout << "\"operation\":\"" << json_escape(request.operation) << "\",";
     std::cout << "\"epistemic_status\":\"" << governed_status_name(result.status) << "\",";
     std::cout << "\"primary_node\":" << result.primary_node << ',';
+    std::cout << "\"primary_hypothesis_id\":\""
+              << json_escape(primary_hypothesis.value_or("")) << "\",";
     std::cout << "\"confidence\":" << std::setprecision(17) << result.confidence << ',';
     std::cout << "\"governed_action\":\"" << json_escape(action_authorized ? request.action : "") << "\",";
     emit_bool(std::cout, "action_authorized", action_authorized);
@@ -382,6 +420,17 @@ int main(int argc, char** argv) {
       std::cout << result.final_opposition.reopen_nodes[i];
     }
     std::cout << "],";
+    std::cout << "\"reopened_hypothesis_ids\":";
+    emit_string_array(std::cout, reopened_hypotheses);
+    std::cout << ',';
+    std::cout << "\"challenged_claims\":";
+    emit_string_array(std::cout, result.final_opposition.challenged_claims);
+    std::cout << ',';
+    std::cout << "\"native_falsification_questions\":";
+    emit_string_array(std::cout, result.final_opposition.falsification_questions);
+    std::cout << ',';
+    std::cout << "\"native_reopen_decision_source\":\"CompleteHypoKoshRuntime.final_opposition\",";
+    emit_bool(std::cout, "legacy_reopen_seed_ignored", !request.reopen.empty());
     std::cout << "\"model_world_nodes\":" << world.nodes().size() << ',';
     std::cout << "\"model_world_events\":" << world.events().size() << ',';
     std::cout << "\"model_world_audit_findings\":" << audit.size() << ',';
