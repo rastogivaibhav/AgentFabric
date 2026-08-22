@@ -2,23 +2,24 @@
 """Basic GrapheneDB/HypoKosh chess reasoning smoke test.
 
 Experiment:
-- Store the complete chess rule corpus in the native GrapheneDB ModelWorld.
+- Store the chess rule/strategy corpus in the native GrapheneDB ModelWorld.
 - Start from the standard chess initial position.
 - At each ply, enumerate legal moves with python-chess. The legality engine is the
   deterministic environment, not a move evaluator.
-- Materialize every legal move as a competing Hypothesis node.
+- Materialize every legal move as a competing Hypothesis and its immediate legal
+  counterfactual board as a Hypothetical Outcome (ChessMD-style variation evidence).
 - Ask native CompleteHypoKoshRuntime to reason/converge/opposition over them.
 - Select only the native runtime's primary hypothesis and apply that move.
 - Repeat for four White and four Black moves (8 plies).
 
-No opening book, Stockfish, external move score, or LLM chooses a move.
-This test proves native selection/persistence, not chess strength.
+No opening book, Stockfish, engine evaluation, external move score, or LLM chooses a move.
+The harness writes request/response/variation evidence before attempting selection so
+failed convergence remains inspectable.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +38,7 @@ def flatten_rules(rules: dict[str, Any]) -> list[str]:
     statements: list[str] = []
     statements.append(f"Objective: {rules['objective']}")
     for section, value in rules.items():
-        if section in {"schema_version", "game", "objective", "notation", "board"}:
+        if section in {"schema_version", "game", "objective", "notation", "board", "source"}:
             continue
         if isinstance(value, list):
             statements.extend(f"{section}: {item}" for item in value)
@@ -71,7 +72,32 @@ def position_statement(board: chess.Board) -> str:
     )
 
 
-def build_request(board: chess.Board, turn: int, rules: list[str], seed_rules: bool) -> tuple[dict[str, Any], dict[str, chess.Move]]:
+def variation_snapshot(board: chess.Board, move: chess.Move) -> dict[str, Any]:
+    mover = board.piece_at(move.from_square)
+    san = board.san(move)
+    capture = board.is_capture(move)
+    castling = board.is_castling(move)
+    gives_check = board.gives_check(move)
+    after = board.copy(stack=False)
+    after.push(move)
+    return {
+        "uci": move.uci(),
+        "san": san,
+        "moving_piece": mover.symbol() if mover else "?",
+        "from": chess.square_name(move.from_square),
+        "to": chess.square_name(move.to_square),
+        "capture": capture,
+        "castling": castling,
+        "promotion": chess.piece_name(move.promotion) if move.promotion else None,
+        "gives_check": gives_check,
+        "after_fen": after.fen(),
+        "opponent_legal_reply_count": after.legal_moves.count(),
+        "opponent_in_check": after.is_check(),
+        "game_over_after_move": after.is_game_over(claim_draw=True),
+    }
+
+
+def build_request(board: chess.Board, turn: int, rules: list[str], seed_rules: bool) -> tuple[dict[str, Any], dict[str, chess.Move], list[dict[str, Any]]]:
     nodes: list[dict[str, Any]] = []
     relations: list[dict[str, Any]] = []
     pos_id = f"ply-{turn}-position"
@@ -85,47 +111,48 @@ def build_request(board: chess.Board, turn: int, rules: list[str], seed_rules: b
             nodes.append(node(rid, "Fact", "Active", statement, "Observed", turn, {"kind": "chess_rule"}))
 
     move_by_hypothesis: dict[str, chess.Move] = {}
+    variations: list[dict[str, Any]] = []
     side = "White" if board.turn == chess.WHITE else "Black"
     for idx, move in enumerate(list(board.legal_moves), start=1):
         hid = f"ply-{turn}-move-{idx:03d}-{move.uci()}"
+        oid = f"ply-{turn}-variation-{idx:03d}-{move.uci()}"
         move_by_hypothesis[hid] = move
-        san = board.san(move)
+        snapshot = variation_snapshot(board, move)
+        variations.append({"hypothesis_id": hid, "outcome_id": oid, **snapshot})
         statement = (
-            f"Candidate {side} move {move.uci()} ({san}) is a legal next action under the stored chess rules "
+            f"Candidate {side} move {move.uci()} ({snapshot['san']}) is a legal next action under the stored chess rules "
             f"and should be considered as a possible step toward the checkmate objective."
         )
         nodes.append(node(hid, "Hypothesis", "Proposed", statement, "Hypothetical", turn, {
-            "kind": "candidate_chess_move",
-            "uci": move.uci(),
-            "san": san,
-            "side": side,
+            "kind": "candidate_chess_move", "uci": move.uci(), "san": snapshot["san"], "side": side,
+        }))
+        outcome_statement = (
+            f"Counterfactual variation after {side} plays {move.uci()} ({snapshot['san']}): "
+            f"FEN={snapshot['after_fen']}; capture={snapshot['capture']}; castling={snapshot['castling']}; "
+            f"gives_check={snapshot['gives_check']}; opponent_legal_reply_count={snapshot['opponent_legal_reply_count']}."
+        )
+        nodes.append(node(oid, "Outcome", "Proposed", outcome_statement, "Hypothetical", turn, {
+            "kind": "counterfactual_variation", "uci": move.uci(),
         }))
         relations.append({
-            "from": pos_id,
-            "to": hid,
-            "role": "Supports",
-            "origin": "Observed",
-            "confidence": 0.55,
+            "from": pos_id, "to": hid, "role": "Supports", "origin": "Observed", "confidence": 0.55,
         })
-        # Every candidate is explicitly tied to the game objective. This is not a
-        # quality score: all legal moves receive the same relation/confidence.
         relations.append({
-            "from": hid,
-            "to": objective_id,
-            "role": "Predictive",
-            "origin": "Hypothetical",
-            "confidence": 0.40,
+            "from": hid, "to": objective_id, "role": "Predictive", "origin": "Hypothetical", "confidence": 0.40,
+        })
+        relations.append({
+            "from": hid, "to": oid, "role": "Predictive", "origin": "Hypothetical", "confidence": 0.75,
         })
 
     request = {
-        "protocol": "agentfabric-chess-basic-v1",
+        "protocol": "agentfabric-chess-basic-v2",
         "operation": "ingest_and_reason",
         "world_scope": WORLD_SCOPE,
         "turn": turn,
         "nodes": nodes,
         "relations": relations,
     }
-    return request, move_by_hypothesis
+    return request, move_by_hypothesis, variations
 
 
 def choose_move(response: dict[str, Any], move_by_hypothesis: dict[str, chess.Move]) -> tuple[str, chess.Move]:
@@ -140,6 +167,10 @@ def choose_move(response: dict[str, Any], move_by_hypothesis: dict[str, chess.Mo
             f"reopened={reopened[:5]}"
         )
     return primary, move_by_hypothesis[primary]
+
+
+def write_json(path: Path, obj: Any) -> None:
+    path.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def main() -> None:
@@ -160,9 +191,30 @@ def main() -> None:
     for ply in range(args.plies):
         if board.is_game_over(claim_draw=True):
             break
-        request, move_map = build_request(board, ply, rules, seed_rules=(ply == 0))
+        request, move_map, variations = build_request(board, ply, rules, seed_rules=(ply == 0))
+        write_json(out / f"ply_{ply+1:02d}_request.json", request)
+        write_json(out / f"ply_{ply+1:02d}_variations.json", variations)
         response = invoke_native(args.native_helper, request, args.db)
-        selected_id, move = choose_move(response, move_map)
+        write_json(out / f"ply_{ply+1:02d}_native_response.json", response)
+        try:
+            selected_id, move = choose_move(response, move_map)
+        except Exception as exc:
+            write_json(out / "failure.json", {
+                "ply": ply + 1,
+                "error": str(exc),
+                "primary_hypothesis_id": response.get("primary_hypothesis_id"),
+                "reopened_hypothesis_ids": response.get("reopened_hypothesis_ids") or [],
+                "epistemic_status": response.get("epistemic_status"),
+                "confidence": response.get("confidence"),
+                "opposition_score": response.get("opposition_score"),
+                "challenged_claims": response.get("challenged_claims") or [],
+                "native_falsification_questions": response.get("native_falsification_questions") or [],
+                "residual_uncertainty": response.get("residual_uncertainty") or [],
+                "model_world_nodes": response.get("model_world_nodes"),
+                "model_world_events": response.get("model_world_events"),
+                "reasoning_receipt": response.get("reasoning_receipt") or {},
+            })
+            raise
         san = board.san(move)
         before_fen = board.fen()
         board.push(move)
@@ -186,7 +238,7 @@ def main() -> None:
             "request_digest": stable_digest(request),
         }
         game.append(entry)
-        (out / f"ply_{ply+1:02d}.json").write_text(json.dumps(entry, indent=2, sort_keys=True) + "\n")
+        write_json(out / f"ply_{ply+1:02d}.json", entry)
         print(f"{ply+1}. {entry['side']}: {san} [{move.uci()}] primary={selected_id}")
 
     summary = {
@@ -203,8 +255,9 @@ def main() -> None:
         "llm_move_selector": False,
         "opening_book": False,
         "stockfish": False,
+        "engine_guidance_during_reasoning": False,
     }
-    (out / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    write_json(out / "summary.json", summary)
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 
