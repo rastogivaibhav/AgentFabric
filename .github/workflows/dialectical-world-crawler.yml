@@ -1,0 +1,19 @@
+name: Dialectical World Crawler
+
+on:
+  pull_request:
+    paths:
+      - 'arc_competition/dialectical_world_crawler.py'
+      - 'arc_competition/test_dialectical_world_crawler.py'
+      - '.github/workflows/dialectical-world-crawler.yml'
+  workflow_dispatch:
+
+jobs:
+  crawler:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run world crawler sequence-discovery gate
+        env:
+          PYTHONPATH: arc_competition
+        run: python3 arc_competition/test_dialectical_world_crawler.py
