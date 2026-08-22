@@ -1,20 +1,9 @@
 #!/usr/bin/env python3
 """Basic GrapheneDB/HypoKosh chess reasoning smoke test.
 
-Experiment:
-- Store the chess rule/strategy corpus in the native GrapheneDB ModelWorld.
-- Start from the standard chess initial position.
-- At each ply, enumerate legal moves with python-chess. The legality engine is the
-  deterministic environment, not a move evaluator.
-- Materialize every legal move as a competing Hypothesis and its immediate legal
-  counterfactual board as a Hypothetical Outcome (ChessMD-style variation evidence).
-- Ask native CompleteHypoKoshRuntime to reason/converge/opposition over them.
-- Select only the native runtime's primary hypothesis and apply that move.
-- Repeat for four White and four Black moves (8 plies).
-
-No opening book, Stockfish, engine evaluation, external move score, or LLM chooses a move.
-The harness writes request/response/variation evidence before attempting selection so
-failed convergence remains inspectable.
+The default path is the original control.  ``--counterfactual-plugin`` adds only
+external, hypothetical consequence evidence before invoking the unchanged native
+GrapheneDB/HypoKosh runtime.  The plugin never chooses a move.
 """
 from __future__ import annotations
 
@@ -26,6 +15,7 @@ from typing import Any
 import chess
 
 from a15_arc_dialectic_adapter import NativeRuntimeError, invoke_native, stable_digest
+from chess_counterfactual_plugin import ChessCounterfactualPlugin
 
 WORLD_SCOPE = "graphene-chess-basic-v1"
 
@@ -180,11 +170,18 @@ def main() -> None:
     ap.add_argument("--rules", default="arc_competition/chess_rules.json")
     ap.add_argument("--plies", type=int, default=8)
     ap.add_argument("--out", default="/tmp/graphene-chess-basic")
+    ap.add_argument(
+        "--counterfactual-plugin",
+        action="store_true",
+        help="Enable external consequence enrichment; native Graphene/HypoKosh remains unchanged and owns selection.",
+    )
     args = ap.parse_args()
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    rules = flatten_rules(load_rules(Path(args.rules)))
+    rules_doc = load_rules(Path(args.rules))
+    rules = flatten_rules(rules_doc)
+    plugin = ChessCounterfactualPlugin(rules_doc) if args.counterfactual_plugin else None
     board = chess.Board()
     game: list[dict[str, Any]] = []
 
@@ -192,6 +189,15 @@ def main() -> None:
         if board.is_game_over(claim_draw=True):
             break
         request, move_map, variations = build_request(board, ply, rules, seed_rules=(ply == 0))
+        if plugin is not None:
+            plugin_diagnostics = plugin.enrich(
+                board=board,
+                turn=ply,
+                request=request,
+                move_by_hypothesis=move_map,
+                seed_principles=(ply == 0),
+            )
+            write_json(out / f"ply_{ply+1:02d}_plugin.json", plugin_diagnostics)
         write_json(out / f"ply_{ply+1:02d}_request.json", request)
         write_json(out / f"ply_{ply+1:02d}_variations.json", variations)
         response = invoke_native(args.native_helper, request, args.db)
@@ -202,6 +208,7 @@ def main() -> None:
             write_json(out / "failure.json", {
                 "ply": ply + 1,
                 "error": str(exc),
+                "counterfactual_plugin": bool(plugin),
                 "primary_hypothesis_id": response.get("primary_hypothesis_id"),
                 "reopened_hypothesis_ids": response.get("reopened_hypothesis_ids") or [],
                 "epistemic_status": response.get("epistemic_status"),
@@ -228,6 +235,7 @@ def main() -> None:
             "before_fen": before_fen,
             "after_fen": board.fen(),
             "legal_candidate_count": len(move_map),
+            "counterfactual_plugin": bool(plugin),
             "primary_hypothesis_id": response.get("primary_hypothesis_id"),
             "reopened_hypothesis_ids": response.get("reopened_hypothesis_ids") or [],
             "challenged_claims": response.get("challenged_claims") or [],
@@ -245,6 +253,10 @@ def main() -> None:
         "experiment": "Graphene Chess Dialectic Test basic",
         "world_scope": WORLD_SCOPE,
         "rules_count": len(rules),
+        "counterfactual_plugin": bool(plugin),
+        "counterfactual_plugin_name": plugin.name if plugin else None,
+        "core_graphenedb_modified": False,
+        "core_hypokosh_modified": False,
         "requested_plies": args.plies,
         "completed_plies": len(game),
         "moves": [{k: row[k] for k in ("ply", "side", "uci", "san", "selected_hypothesis_id")} for row in game],
