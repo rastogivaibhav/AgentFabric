@@ -1,0 +1,55 @@
+name: Graphene Generic Transfer P6A
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [pi45-a15-dialectical-model-world-20260821]
+permissions:
+  contents: read
+jobs:
+  p6-transfer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build unchanged native runtime and frozen helper
+        run: |
+          set -euo pipefail
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_chess_counterfactual_native_helper_p42.sh /tmp/generic_counterfactual_native_helper_p6
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
+      - name: Run opaque-world transfer, permutation, intervention and closed loop
+        env:
+          PYTHONPATH: pi45_a1:arc_competition
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/graphene-generic-p6 /tmp/graphene_generic_p6.*.graphenedb*
+          mkdir -p /tmp/graphene-generic-p6
+          python3 arc_competition/graphene_generic_transfer_p6.py \
+            --native-helper /tmp/generic_counterfactual_native_helper_p6 \
+            --bootstrap /tmp/a15_graphene_bootstrap \
+            --db-prefix /tmp/graphene_generic_p6 \
+            --runs 20 \
+            --out /tmp/graphene-generic-p6 | tee /tmp/graphene-generic-p6/run.log
+      - name: Record evidence identity
+        if: always()
+        run: |
+          mkdir -p /tmp/graphene-generic-p6
+          printf '%s\n' \
+            "agentfabric_commit=${GITHUB_SHA}" \
+            'experiment=P6A-opaque-world-transfer' \
+            'chess_semantics=false' \
+            'aggregation=mean_positive_minus_0.25_mean_contradiction' \
+            'permutations=20' \
+            'core_graphenedb_modified=false' \
+            'core_hypokosh_modified=false' \
+            'llm_selector=false' \
+            'engine=false' \
+            > /tmp/graphene-generic-p6/experiment_identity.txt
+          find /tmp/graphene-generic-p6 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-generic-p6/SHA256SUMS.txt
+      - name: Upload P6 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphene-generic-transfer-p6-evidence
+          path: /tmp/graphene-generic-p6
+          if-no-files-found: error
+          retention-days: 30
