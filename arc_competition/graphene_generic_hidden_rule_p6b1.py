@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# P6B.1: validated rule induction from observed transitions only.
 from __future__ import annotations
 import argparse,json,random,subprocess
 from collections import Counter
@@ -41,13 +42,11 @@ def main():
  ap=argparse.ArgumentParser(); ap.add_argument('--native-helper',required=True); ap.add_argument('--bootstrap',required=True); ap.add_argument('--db-prefix',default='/tmp/graphene_generic_p6b1'); ap.add_argument('--runs',type=int,default=10); ap.add_argument('--out',default='/tmp/graphene-generic-p6b1'); a=ap.parse_args(); out=Path(a.out); out.mkdir(parents=True,exist_ok=True); plugin=GenericHiddenRulePluginV2(); runs=[]
  for seed in range(a.runs):
   history=[]; trace=[]; turn=0
-  # reset episodes avoid boundary clipping without exposing hidden rules to the plugin
   for sample_idx,state0 in enumerate(SAFE_STATES):
    pending=set(ACTIONS)
    while pending:
     ordered=list(ACTIONS); random.Random(seed*1000+turn).shuffle(ordered); r=run_reason(a,plugin,dict(state0),history,ordered,f'p6b1-explore-{seed}-{turn}',turn); action=r['selected_action']
     if action is None or action not in pending:
-     # native reasoner may prefer an already more-sampled action; restrict this reset episode to pending by rebuilding order/candidates
      ordered=list(pending); random.Random(seed*1000+turn+77).shuffle(ordered); r=run_reason(a,plugin,dict(state0),history,ordered,f'p6b1-explore-pending-{seed}-{turn}',turn); action=r['selected_action']
     if action is None: break
     before=dict(state0); after=hidden_transition(before,action); history.append({"turn":turn,"sample_index":sample_idx,"action":action,"before":before,"after":after}); pending.discard(action); trace.append({"turn":turn,"sample_index":sample_idx,"action":action,"confidence":r['confidence'],"first_candidate":ordered[0]}); turn+=1
