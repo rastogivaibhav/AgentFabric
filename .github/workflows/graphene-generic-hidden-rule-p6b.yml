@@ -5,6 +5,7 @@ on:
     paths:
       - 'arc_competition/generic_hidden_rule_plugin_v1.py'
       - 'arc_competition/graphene_generic_hidden_rule_p6b.py'
+      - 'arc_competition/build_generic_hidden_rule_native_helper_p6b.sh'
       - '.github/workflows/graphene-generic-hidden-rule-p6b.yml'
   workflow_dispatch:
 
@@ -13,11 +14,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Build unchanged native runtime and frozen helper
+      - name: Build unchanged native runtime and P6B retrieval helper
         run: |
           set -euo pipefail
           bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
-          bash arc_competition/build_chess_counterfactual_native_helper_p42.sh /tmp/generic_hidden_rule_native_helper_p6b
+          bash arc_competition/build_generic_hidden_rule_native_helper_p6b.sh /tmp/generic_hidden_rule_native_helper_p6b
           git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
       - name: Run hidden-rule discovery, prediction and exploitation
         env:
@@ -40,6 +41,7 @@ jobs:
             "agentfabric_commit=${GITHUB_SHA}" \
             'experiment=P6B-hidden-rule-discovery' \
             'oracle_next_states_supplied_to_plugin=false' \
+            'retrieval_anchor_prefix=hidden-ply-' \
             'aggregation=mean_positive_minus_0.25_mean_contradiction' \
             'core_graphenedb_modified=false' \
             'core_hypokosh_modified=false' \
