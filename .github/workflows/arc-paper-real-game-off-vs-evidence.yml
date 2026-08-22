@@ -50,16 +50,19 @@ jobs:
           print('openai_diagnostic_model_access=PASS model=gpt-5.6-sol')
           PY
 
-      - name: Fetch and patch pinned Duck
+      - name: Fetch pinned Duck and public ARC environment assets
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/duck-harness
+          rm -rf /tmp/duck-harness /tmp/arc-public-envs
           git clone --filter=blob:none https://github.com/Tufalabs/duck-harness.git /tmp/duck-harness
           git -C /tmp/duck-harness checkout 7652836056c59e044f093e3c13ed7438c814169e
           test "$(git -C /tmp/duck-harness rev-parse HEAD)" = '7652836056c59e044f093e3c13ed7438c814169e'
           python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness \
             --manifest-out /tmp/duck_patch_manifest.json
+          git clone --depth=1 https://huggingface.co/datasets/zarczynski/arc-agi-3-public /tmp/arc-public-envs
+          test -d /tmp/arc-public-envs/environment_files/ft09/0d8bbf25
+          find /tmp/arc-public-envs/environment_files/ft09/0d8bbf25 -maxdepth 2 -type f -print | sort | tee /tmp/ft09-env-files.txt
 
       - name: Configure external diagnostic model
         shell: bash
@@ -79,6 +82,7 @@ jobs:
           c['environment'].update({
               'games':['ft09-0d8bbf25'],
               'include_tags':[],
+              'environments_dir':'/tmp/arc-public-envs/environment_files',
               'n_passes':1,
               'concurrent_jobs':1,
               'max_steps':12,
@@ -119,8 +123,9 @@ jobs:
           GRAPHENE_DMW_MODE=off \
           CONFIG_PATH=/tmp/arc-openai.json \
           EXPERIMENT_DIR=/tmp/arc-real-off \
-          GAME=ft09-0d8bbf25 GAME_TAGS='[]' N_PASSES=1 CONCURRENT_JOBS=1 \
-          MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
+          GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 \
+          SIMULATE_COMPETITION_ARCADE=true \
           make interactive
           CONFIG_PATH=/tmp/arc-openai.json make score_run \
             SCORE_RUN_DIR=/tmp/arc-real-off SCORE_OUTPUT_PATH=/tmp/arc-real-off/evaluation.json
@@ -134,8 +139,9 @@ jobs:
           GRAPHENE_DMW_MODE=evidence \
           CONFIG_PATH=/tmp/arc-openai.json \
           EXPERIMENT_DIR=/tmp/arc-real-evidence \
-          GAME=ft09-0d8bbf25 GAME_TAGS='[]' N_PASSES=1 CONCURRENT_JOBS=1 \
-          MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
+          GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 \
+          SIMULATE_COMPETITION_ARCADE=true \
           make interactive
           CONFIG_PATH=/tmp/arc-openai.json make score_run \
             SCORE_RUN_DIR=/tmp/arc-real-evidence SCORE_OUTPUT_PATH=/tmp/arc-real-evidence/evaluation.json
@@ -148,6 +154,7 @@ jobs:
           cp /tmp/arc-real-off/evaluation.json results/arc-paper/real-arc-off-vs-evidence/off-evaluation.json
           cp /tmp/arc-real-evidence/evaluation.json results/arc-paper/real-arc-off-vs-evidence/evidence-evaluation.json
           cp /tmp/duck_patch_manifest.json results/arc-paper/real-arc-off-vs-evidence/
+          cp /tmp/ft09-env-files.txt results/arc-paper/real-arc-off-vs-evidence/
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -168,6 +175,7 @@ jobs:
               'game':'ft09-0d8bbf25',
               'model':'gpt-5.6-sol',
               'competition_valid_model':False,
+              'environment_asset_source':'zarczynski/arc-agi-3-public',
               'purpose':'integration diagnostic only; final Kaggle path remains Qwen3.6-27B-FP8 offline',
               'action_cap':12,
               'off':g(a),
@@ -178,8 +186,8 @@ jobs:
           (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
           print(json.dumps(summary,indent=2,sort_keys=True))
           PY
-          find /tmp/arc-real-off -maxdepth 3 -type f -name 'graphene_dmw_state.json' -exec cp {} results/arc-paper/real-arc-off-vs-evidence/off-graphene-state.json \; || true
-          find /tmp/arc-real-evidence -maxdepth 3 -type f -name 'graphene_dmw_state.json' -exec cp {} results/arc-paper/real-arc-off-vs-evidence/evidence-graphene-state.json \; || true
+          find /tmp/arc-real-off -type f -name 'graphene_dmw_state.json' -exec cp {} results/arc-paper/real-arc-off-vs-evidence/off-graphene-state.json \; || true
+          find /tmp/arc-real-evidence -type f -name 'graphene_dmw_state.json' -exec cp {} results/arc-paper/real-arc-off-vs-evidence/evidence-graphene-state.json \; || true
           printf '%s\n' \
             "agentfabric_commit=${GITHUB_SHA}" \
             'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
@@ -187,6 +195,7 @@ jobs:
             'model=gpt-5.6-sol' \
             'competition_valid_model=false' \
             'diagnostic_external_api=true' \
+            'environment_asset_source=zarczynski/arc-agi-3-public' \
             'final_submission_external_api=false' \
             > results/arc-paper/real-arc-off-vs-evidence/identity.txt
           find results/arc-paper/real-arc-off-vs-evidence -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > results/arc-paper/real-arc-off-vs-evidence/SHA256SUMS.txt
