@@ -30,7 +30,7 @@ git -C "$DUCK_ROOT" clean -fd
 
 PATCH_MANIFEST="$ROOT/results/arc-paper/package-$MODE/duck_patch_manifest.json"
 mkdir -p "$(dirname "$PATCH_MANIFEST")"
-python3 "$ROOT/arc_competition/apply_duck_graphene_patch.py" "$DUCK_ROOT" \
+python3 "$ROOT/arc_competition/apply_duck_graphene_patch_v2.py" "$DUCK_ROOT" \
   --bridge "$ROOT/arc_competition/graphene_dmw_duck_bridge.py" \
   --manifest-out "$PATCH_MANIFEST"
 
@@ -70,7 +70,7 @@ printf '%s\n' \
   > "$OUT/package_identity.txt"
 find "$STAGED" -maxdepth 2 -type f -printf 'source/%P\n' | sort > "$OUT/source_bundle_files.txt"
 find "$KERNEL_DIR" -maxdepth 2 -type f -printf 'kernel/%P\n' | sort > "$OUT/kernel_bundle_files.txt"
-sha256sum "$ROOT/arc_competition/graphene_dmw_duck_bridge.py" "$ROOT/arc_competition/apply_duck_graphene_patch.py" > "$OUT/integration_SHA256SUMS.txt"
+sha256sum "$ROOT/arc_competition/graphene_dmw_duck_bridge.py" "$ROOT/arc_competition/apply_duck_graphene_patch_v2.py" > "$OUT/integration_SHA256SUMS.txt"
 
 echo "duck_kaggle_variant_package=PASS mode=$MODE"
 echo "source_dataset=$STAGED"
