@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Domain-neutral counterfactual evidence plugin for P6 transfer.
 
-No chess semantics, model, LLM, engine, or action preference.  The plugin receives
+No chess semantics, model, LLM, engine, or action preference. The plugin receives
 opaque candidate next-states and derives generic consequence evidence from four
 state dimensions: goal_distance (lower is better), resource (higher is better),
-hazard (lower is better), and information (higher is better).  It reuses the
+hazard (lower is better), and information (higher is better). It reuses the
 frozen P5 whole-evidence aggregation rule exactly:
 
     mean(positive confidences) - 0.25 * mean(contradiction confidences)
 
-The plugin never selects or ranks an action.
+The plugin never selects or ranks an action. The comparison-anchor identifier uses
+the already-frozen P5 helper routing contract so native retrieval behaviour is not
+changed for this transfer test.
 """
 from __future__ import annotations
 from typing import Any
@@ -39,7 +41,7 @@ class GenericCounterfactualPluginV1:
     def enrich(self, *, state: dict[str, float], turn: int, request: dict[str, Any], next_state_by_hypothesis: dict[str, dict[str, float]]) -> dict[str, Any]:
         nodes = request.setdefault("nodes", [])
         relations = request.setdefault("relations", [])
-        anchor_id = f"generic-ply-{turn}-comparison-anchor"
+        anchor_id = f"cf2-ply-{turn}-comparison-anchor"
         nodes.insert(0, node(anchor_id, "Outcome", "Proposed", f"Opaque-action comparison anchor at turn {turn}.", "Hypothetical", turn, {"kind": "generic_comparison_anchor", "plugin": self.name}))
         diagnostics: dict[str, Any] = {"plugin": self.name, "turn": turn, "selected_action": None, "ranked_actions": None, "candidates": []}
 
