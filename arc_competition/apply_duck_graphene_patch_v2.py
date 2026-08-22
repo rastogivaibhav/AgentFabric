@@ -11,7 +11,17 @@ the base patcher's existing session-init anchor to consume the remaining occurre
 All other anchors retain strict replace-once behavior.
 """
 
-import arc_competition.apply_duck_graphene_patch as base
+import sys
+from pathlib import Path
+
+# When executed as `python arc_competition/apply_duck_graphene_patch_v2.py`, Python
+# puts arc_competition/ itself on sys.path rather than the repository root. Import the
+# sibling module directly, while still supporting module execution in tests.
+try:
+    import apply_duck_graphene_patch as base
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import apply_duck_graphene_patch as base
 
 _original_replace_once = base.replace_once
 
