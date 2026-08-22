@@ -1,6 +1,10 @@
 name: ARC Paper Real Game Off vs Evidence
 
 on:
+  pull_request:
+    branches: [pi45-a15-dialectical-model-world-20260821]
+    paths:
+      - '.github/workflows/arc-paper-real-game-off-vs-evidence.yml'
   push:
     branches: [arc-paper-dmw-duck-20260821]
     paths:
@@ -90,7 +94,6 @@ jobs:
               'timeout':120,
               'save_request_logs':True,
           })
-          # Keep text/segmentation perception deterministic for this first integration diagnostic.
           c['multimodal']['context']=''
           q=Path('/tmp/arc-openai.json')
           q.write_text(json.dumps(c,indent=2,sort_keys=True))
