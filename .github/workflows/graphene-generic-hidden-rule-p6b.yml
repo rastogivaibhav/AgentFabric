@@ -3,9 +3,9 @@ name: Graphene Generic Hidden Rule P6B
 on:
   pull_request:
     paths:
-      - 'arc_competition/generic_hidden_rule_plugin_v2.py'
-      - 'arc_competition/graphene_generic_hidden_rule_p6b1.py'
-      - 'arc_competition/build_generic_hidden_rule_native_helper_p6b1.sh'
+      - 'arc_competition/generic_hidden_rule_plugin_v3.py'
+      - 'arc_competition/graphene_generic_hidden_rule_p6c.py'
+      - 'arc_competition/build_generic_hidden_rule_native_helper_p6c.sh'
       - '.github/workflows/graphene-generic-hidden-rule-p6b.yml'
   workflow_dispatch:
 
@@ -14,47 +14,47 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Build unchanged native runtime and P6B.1 retrieval helper
+      - name: Build unchanged native runtime and P6C retrieval helper
         run: |
           set -euo pipefail
           bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
-          bash arc_competition/build_generic_hidden_rule_native_helper_p6b1.sh /tmp/generic_hidden_rule_native_helper_p6b1
+          bash arc_competition/build_generic_hidden_rule_native_helper_p6c.sh /tmp/generic_hidden_rule_native_helper_p6c
           git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
-      - name: Run validated hidden-rule discovery, prediction and exploitation
+      - name: Run contradiction-driven model revision
         env:
           PYTHONPATH: pi45_a1:arc_competition
         run: |
           set -euo pipefail
-          rm -rf /tmp/graphene-generic-p6b1 /tmp/graphene_generic_p6b1.*.graphenedb*
-          mkdir -p /tmp/graphene-generic-p6b1
-          python3 arc_competition/graphene_generic_hidden_rule_p6b1.py \
-            --native-helper /tmp/generic_hidden_rule_native_helper_p6b1 \
+          rm -rf /tmp/graphene-p6c /tmp/graphene_p6c.*.graphenedb*
+          mkdir -p /tmp/graphene-p6c
+          python3 arc_competition/graphene_generic_hidden_rule_p6c.py \
+            --native-helper /tmp/generic_hidden_rule_native_helper_p6c \
             --bootstrap /tmp/a15_graphene_bootstrap \
-            --db-prefix /tmp/graphene_generic_p6b1 \
+            --db-prefix /tmp/graphene_p6c \
             --runs 10 \
-            --out /tmp/graphene-generic-p6b1 | tee /tmp/graphene-generic-p6b1/run.log
+            --out /tmp/graphene-p6c | tee /tmp/graphene-p6c/run.log
       - name: Record evidence identity
         if: always()
         run: |
-          mkdir -p /tmp/graphene-generic-p6b1
+          mkdir -p /tmp/graphene-p6c
           printf '%s\n' \
             "agentfabric_commit=${GITHUB_SHA}" \
-            'experiment=P6B.1-validated-hidden-rule-discovery' \
+            'experiment=P6C-contradiction-driven-model-revision' \
             'oracle_next_states_supplied_to_plugin=false' \
-            'training_samples_per_action=2' \
-            'heldout_validation_samples_per_action=1' \
-            'retrieval_anchor_prefix=hidden-v2-' \
+            'stale_rule_quarantine=true' \
+            'replacement_requires_2_train_plus_1_holdout=true' \
+            'retrieval_anchor_prefix=hidden-v3-' \
             'core_graphenedb_modified=false' \
             'core_hypokosh_modified=false' \
             'llm_selector=false' \
             'engine=false' \
-            > /tmp/graphene-generic-p6b1/experiment_identity.txt
-          find /tmp/graphene-generic-p6b1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-generic-p6b1/SHA256SUMS.txt
-      - name: Upload P6B.1 evidence
+            > /tmp/graphene-p6c/experiment_identity.txt
+          find /tmp/graphene-p6c -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-p6c/SHA256SUMS.txt
+      - name: Upload P6C evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: graphene-generic-hidden-rule-p6b1-evidence
-          path: /tmp/graphene-generic-p6b1
+          name: graphene-generic-hidden-rule-p6c-evidence
+          path: /tmp/graphene-p6c
           if-no-files-found: error
           retention-days: 30
