@@ -50,26 +50,25 @@ def patch_solver(original: str) -> str:
         "            return []\n"
         "        return [duck_kaggle_setup_command(self._kaggle_vllm_config())]\n"
     )
-    new_property = (
-        "    @property\n"
-        "    def kaggle_setup_commands(self) -> list[str]:\n"
-        "        mode = str(self.graphene_dmw_mode or 'off').strip().lower()\n"
-        "        if mode not in {'off', 'evidence', 'dialectic'}:\n"
-        "            raise ValueError(f'Unsupported GRAPHENE_DMW_MODE: {mode}')\n"
-        "        commands = []\n"
-        "        if self.kaggle_enable_vllm:\n"
-        "            commands.append(duck_kaggle_setup_command(self._kaggle_vllm_config()))\n"
-        "        payload = json.dumps({'GRAPHENE_DMW_MODE': mode})\n"
-        "        persist = (\n"
-        "            '\"$PYTHON\" -c \'import json,os; '"
-        "            'p=os.environ[\"TAAF_KAGGLE_SETUP_ENV\"]; '"
-        "            'd=json.load(open(p)); '"
-        "            'd.update(json.loads(' + repr(payload) + ')); '"
-        "            'open(p,\"w\").write(json.dumps(d,sort_keys=True))\''\n"
-        "        )\n"
-        "        commands.append(persist)\n"
-        "        return commands\n"
-    )
+    new_property = '''    @property
+    def kaggle_setup_commands(self) -> list[str]:
+        mode = str(self.graphene_dmw_mode or 'off').strip().lower()
+        if mode not in {'off', 'evidence', 'dialectic'}:
+            raise ValueError(f'Unsupported GRAPHENE_DMW_MODE: {mode}')
+        commands = []
+        if self.kaggle_enable_vllm:
+            commands.append(duck_kaggle_setup_command(self._kaggle_vllm_config()))
+        payload = json.dumps({"GRAPHENE_DMW_MODE": mode})
+        persist = (
+            "\\\"$PYTHON\\\" -c 'import json,os; "
+            "p=os.environ[\\\"TAAF_KAGGLE_SETUP_ENV\\\"]; "
+            "d=json.load(open(p)); "
+            f"d.update({payload}); "
+            "json.dump(d,open(p,\\\"w\\\"),sort_keys=True)'"
+        )
+        commands.append(persist)
+        return commands
+'''
     return _original_replace_once(text, old_property, new_property, "solver-kaggle-mode-persistence")
 
 
