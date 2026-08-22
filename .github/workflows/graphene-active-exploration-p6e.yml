@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - 'arc_competition/graphene_active_exploration_p6e.py'
-      - 'arc_competition/generic_goal_discovery_plugin_v1.py'
+      - 'arc_competition/generic_goal_discovery_plugin_v2.py'
       - 'arc_competition/build_generic_goal_discovery_native_helper_p6d.sh'
       - '.github/workflows/graphene-active-exploration-p6e.yml'
   workflow_dispatch:
@@ -26,6 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf /tmp/graphene-p6e /tmp/graphene_p6e.*.graphenedb*
+          mkdir -p /tmp/graphene-p6e
           python3 arc_competition/graphene_active_exploration_p6e.py \
             --native-helper /tmp/generic_goal_discovery_native_helper_p6d \
             --bootstrap /tmp/a15_graphene_bootstrap \
