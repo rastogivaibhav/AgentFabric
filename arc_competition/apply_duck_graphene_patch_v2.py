@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-"""Pinned-commit patch wrapper for Duck + GrapheneDMW integration."""
+"""Pinned-commit patch wrapper for Duck + GrapheneDMW integration.
+
+The base patcher now uses a context-specific constructor anchor. This wrapper only
+retains the Kaggle solver quoting fix required by the pinned Duck commit.
+"""
 
 import sys
 from pathlib import Path
@@ -13,23 +17,6 @@ except ModuleNotFoundError:
     import apply_duck_graphene_patch as base
 
 _original_replace_once = base.replace_once
-_SESSION_RESET = "            self._summarized_knowledge = _empty_world_model()\n"
-
-
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    if label != "constructor-state":
-        return _original_replace_once(text, old, new, label)
-    count = text.count(old)
-    nested_count = text.count(_SESSION_RESET)
-    if count != 2 or nested_count != 1:
-        raise RuntimeError(
-            f"Duck patch anchor {label!r} expected two textual matches with one nested session reset; "
-            f"found total={count}, nested={nested_count}"
-        )
-    patched = text.replace(old, new, 1)
-    if patched.count(_SESSION_RESET) != 1:
-        raise RuntimeError(f"Duck patch anchor {label!r} disturbed the unique nested session-reset anchor")
-    return patched
 
 
 def patch_solver(original: str) -> str:
@@ -72,7 +59,6 @@ def patch_solver(original: str) -> str:
     return _original_replace_once(text, old_property, new_property, "solver-kaggle-mode-persistence")
 
 
-base.replace_once = replace_once
 base._patch_solver = patch_solver
 
 if __name__ == "__main__":
