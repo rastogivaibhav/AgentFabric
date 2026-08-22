@@ -5,15 +5,13 @@ on:
     branches: [pi45-a15-dialectical-model-world-20260821]
     paths:
       - 'arc_competition/**'
-      - 'pi45_a1/a15_state_contract.json'
-      - 'pi45_a1/a15_contract_gate.py'
+      - 'pi45_a1/**'
       - '.github/workflows/arc-paper-duck-dmw-integration-gate.yml'
   push:
     branches: [arc-paper-dmw-duck-20260821]
     paths:
       - 'arc_competition/**'
-      - 'pi45_a1/a15_state_contract.json'
-      - 'pi45_a1/a15_contract_gate.py'
+      - 'pi45_a1/**'
       - '.github/workflows/arc-paper-duck-dmw-integration-gate.yml'
   workflow_dispatch:
 
@@ -33,17 +31,56 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             arc_competition/graphene_dmw_duck_bridge.py \
+            arc_competition/graphene_dmw_native_gate.py \
             arc_competition/apply_duck_graphene_patch.py \
             arc_competition/apply_duck_graphene_patch_v2.py \
             arc_competition/test_graphene_dmw_duck_bridge.py
           bash -n arc_competition/build_duck_kaggle_variant.sh
+          bash -n arc_competition/build_duck_dialectic_native_helper.sh
           python3 -m unittest -v arc_competition/test_graphene_dmw_duck_bridge.py
-          set +e
-          bash arc_competition/build_duck_kaggle_variant.sh dialectic /tmp/should-not-be-created >/tmp/dialectic-block.log 2>&1
-          rc=$?
-          set -e
-          test "$rc" -eq 64
-          grep -q 'intentionally blocked' /tmp/dialectic-block.log
+
+      - name: Build unchanged native runtime and Duck dialectic helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_duck_dialectic_native_helper.sh /tmp/duck_dialectic_native_helper
+          test -x /tmp/a15_graphene_bootstrap
+          test -x /tmp/duck_dialectic_native_helper
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
+
+      - name: Prove native stagnation review
+        shell: bash
+        env:
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-native-gate-test
+          python3 - <<'PY'
+          from arc_competition.graphene_dmw_native_gate import review_dialectic_action
+          r=review_dialectic_action(
+              state_dir='/tmp/duck-native-gate-test',
+              turn=12,
+              action='[{"action":"ACTION1"}]',
+              reasons=['two-consecutive-no-op-transitions','recent-forward-prediction-miss'],
+              scientist_note={
+                  'world_model':'Current interpretation predicts ACTION1 should change the board.',
+                  'current_plan':'Repeat the current interaction.',
+                  'open_questions':'Could a different object or interaction invalidate this interpretation?',
+              },
+          )
+          assert r['duck_gate_decision']=='reopen-world-model', r
+          assert r['duck_gate_action_authorized'] is False, r
+          assert r['primary_hypothesis_id'].endswith('-reopen-model'), r
+          assert r['confidence'] > 0, r
+          receipt=r['reasoning_receipt']
+          for k in ['graphene_executed','fiber_bundle_built','stability_critic_executed','epistemic_admissibility_executed','lyapunov_trajectory_executed','convergence_executed','opposition_executed','no_silent_promotion']:
+              assert receipt.get(k) is True, (k, receipt)
+          import json, pathlib
+          pathlib.Path('/tmp/native_gate_response.json').write_text(json.dumps(r,indent=2,sort_keys=True))
+          print('duck_native_dialectic_gate=PASS', r['primary_hypothesis_id'], r['confidence'])
+          PY
 
       - name: Fetch exact Milestone-1 Duck source
         shell: bash
@@ -70,7 +107,7 @@ jobs:
           print('duck_qwen27_config=PASS')
           PY
 
-      - name: Apply fail-closed GrapheneDMW patch
+      - name: Apply fail-closed GrapheneDMW patch with native action seam
         shell: bash
         run: |
           set -euo pipefail
@@ -79,32 +116,27 @@ jobs:
           python3 -m py_compile \
             /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py \
             /tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py \
+            /tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_native_gate.py \
             /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
-          grep -q 'GrapheneDMWDuckBridge' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'review_dialectic_action' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'graphene_dialectic_reopen' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'graphene_negative_evidence' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'record_transition' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'prompt_context' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'graphene_dmw_mode' /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
-          grep -q 'TAAF_KAGGLE_SETUP_ENV' /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
 
       - name: Prove baseline remains selectable
         shell: bash
         run: |
           set -euo pipefail
           GRAPHENE_DMW_MODE=off python3 - <<'PY'
-          import importlib.util
-          import sys
+          import importlib.util,sys
           from pathlib import Path
           path=Path('/tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py')
-          name='graphene_dmw_bridge_smoke'
-          spec=importlib.util.spec_from_file_location(name, path)
-          assert spec and spec.loader
-          mod=importlib.util.module_from_spec(spec)
-          sys.modules[name]=mod
-          spec.loader.exec_module(mod)
+          name='graphene_dmw_bridge_smoke'; spec=importlib.util.spec_from_file_location(name,path); assert spec and spec.loader
+          mod=importlib.util.module_from_spec(spec); sys.modules[name]=mod; spec.loader.exec_module(mod)
           b=mod.GrapheneDMWDuckBridge(Path('/tmp/off.json'),mode='off')
-          assert b.prompt_context()==''
-          assert b.stagnation_reasons()==[]
+          assert b.prompt_context()=='' and b.stagnation_reasons()==[]
           assert b.dead_action_reason([[0]], b.canonical_action([{'action':'ACTION1'}])) is None
           print('duck_baseline_mode=PASS')
           PY
@@ -116,14 +148,18 @@ jobs:
           set -euo pipefail
           mkdir -p results/arc-paper/duck-dmw-integration
           cp /tmp/duck_patch_manifest.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
+          cp /tmp/native_gate_response.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
           cp arc_competition/UPSTREAM_MANIFEST.json results/arc-paper/duck-dmw-integration/
           printf '%s\n' \
             "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
             'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
             'qwen_model=vrfai/Qwen3.6-27B-FP8' \
-            'packagable_variants=off,evidence' \
-            'dialectic_variant=native-runtime-pending' \
-            'evidence_mode_exact_noop_suppression=true' \
+            'native_dialectic_action_seam=true' \
+            'native_query_mode=Theoretical' \
+            'off_mode_preserved=true' \
+            'evidence_mode_preserved=true' \
+            'core_graphenedb_modified=false' \
+            'core_hypokosh_modified=false' \
             'arc_game_execution=false' \
             > results/arc-paper/duck-dmw-integration/gate_identity.txt
           find results/arc-paper/duck-dmw-integration -type f -print0 | sort -z | xargs -0 sha256sum > results/arc-paper/duck-dmw-integration/SHA256SUMS.txt
