@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-"""Pinned-commit patch wrapper that disambiguates Duck's constructor-state anchor."""
+"""Pinned-commit patch wrapper for Duck + GrapheneDMW integration."""
 
 import sys
 from pathlib import Path
@@ -28,13 +28,53 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         )
     patched = text.replace(old, new, 1)
     if patched.count(_SESSION_RESET) != 1:
-        raise RuntimeError(
-            f"Duck patch anchor {label!r} disturbed the unique nested session-reset anchor"
-        )
+        raise RuntimeError(f"Duck patch anchor {label!r} disturbed the unique nested session-reset anchor")
     return patched
 
 
+def patch_solver(original: str) -> str:
+    text = _original_replace_once(
+        original,
+        "    kaggle_enable_vllm: bool = field(default=True, repr=False)\n",
+        "    kaggle_enable_vllm: bool = field(default=True, repr=False)\n"
+        "    graphene_dmw_mode: str = field(\n"
+        "        default_factory=lambda: os.environ.get('GRAPHENE_DMW_MODE', 'off').strip().lower() or 'off',\n"
+        "        repr=False,\n"
+        "    )\n",
+        "solver-mode-field",
+    )
+    old_property = (
+        "    @property\n"
+        "    def kaggle_setup_commands(self) -> list[str]:\n"
+        "        if not self.kaggle_enable_vllm:\n"
+        "            return []\n"
+        "        return [duck_kaggle_setup_command(self._kaggle_vllm_config())]\n"
+    )
+    new_property = (
+        "    @property\n"
+        "    def kaggle_setup_commands(self) -> list[str]:\n"
+        "        mode = str(self.graphene_dmw_mode or 'off').strip().lower()\n"
+        "        if mode not in {'off', 'evidence', 'dialectic'}:\n"
+        "            raise ValueError(f'Unsupported GRAPHENE_DMW_MODE: {mode}')\n"
+        "        commands = []\n"
+        "        if self.kaggle_enable_vllm:\n"
+        "            commands.append(duck_kaggle_setup_command(self._kaggle_vllm_config()))\n"
+        "        payload = json.dumps({'GRAPHENE_DMW_MODE': mode})\n"
+        "        persist = (\n"
+        "            '\"$PYTHON\" -c \'import json,os; '"
+        "            'p=os.environ[\"TAAF_KAGGLE_SETUP_ENV\"]; '"
+        "            'd=json.load(open(p)); '"
+        "            'd.update(json.loads(' + repr(payload) + ')); '"
+        "            'open(p,\"w\").write(json.dumps(d,sort_keys=True))\''\n"
+        "        )\n"
+        "        commands.append(persist)\n"
+        "        return commands\n"
+    )
+    return _original_replace_once(text, old_property, new_property, "solver-kaggle-mode-persistence")
+
+
 base.replace_once = replace_once
+base._patch_solver = patch_solver
 
 if __name__ == "__main__":
     base.main()
