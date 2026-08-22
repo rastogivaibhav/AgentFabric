@@ -34,6 +34,7 @@ jobs:
           python3 -m py_compile \
             arc_competition/graphene_dmw_duck_bridge.py \
             arc_competition/apply_duck_graphene_patch.py \
+            arc_competition/apply_duck_graphene_patch_v2.py \
             arc_competition/test_graphene_dmw_duck_bridge.py
           bash -n arc_competition/build_duck_kaggle_variant.sh
           python3 -m unittest -v arc_competition/test_graphene_dmw_duck_bridge.py
@@ -73,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 arc_competition/apply_duck_graphene_patch.py /tmp/duck-harness \
+          python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness \
             --manifest-out /tmp/duck_patch_manifest.json
           python3 -m py_compile \
             /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py \
