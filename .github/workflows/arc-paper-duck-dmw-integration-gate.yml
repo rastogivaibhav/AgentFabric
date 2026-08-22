@@ -93,11 +93,14 @@ jobs:
           set -euo pipefail
           GRAPHENE_DMW_MODE=off python3 - <<'PY'
           import importlib.util
+          import sys
           from pathlib import Path
           path=Path('/tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py')
-          spec=importlib.util.spec_from_file_location('graphene_dmw_bridge_smoke', path)
-          mod=importlib.util.module_from_spec(spec)
+          name='graphene_dmw_bridge_smoke'
+          spec=importlib.util.spec_from_file_location(name, path)
           assert spec and spec.loader
+          mod=importlib.util.module_from_spec(spec)
+          sys.modules[name]=mod
           spec.loader.exec_module(mod)
           b=mod.GrapheneDMWDuckBridge(Path('/tmp/off.json'),mode='off')
           assert b.prompt_context()==''
