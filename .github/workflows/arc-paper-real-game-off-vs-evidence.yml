@@ -1,14 +1,18 @@
-name: ARC Paper Real Game Off vs Evidence
+name: ARC Paper Real Game Off vs Evidence vs Dialectic
 
 on:
   pull_request:
     branches: [pi45-a15-dialectical-model-world-20260821]
     paths:
       - '.github/workflows/arc-paper-real-game-off-vs-evidence.yml'
+      - 'arc_competition/graphene_dmw_native_gate.py'
+      - 'arc_competition/build_duck_dialectic_native_helper.sh'
   push:
     branches: [arc-paper-dmw-duck-20260821]
     paths:
       - '.github/workflows/arc-paper-real-game-off-vs-evidence.yml'
+      - 'arc_competition/graphene_dmw_native_gate.py'
+      - 'arc_competition/build_duck_dialectic_native_helper.sh'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +21,7 @@ permissions:
 jobs:
   real-arc-ablation:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 55
     env:
       OPENAI_API_KEY: ${{ secrets.pulapi }}
       OPENAI_BASE_URL: https://api.openai.com/v1
@@ -49,6 +53,16 @@ jobs:
           assert x.get('id')=='gpt-5.6-sol'
           print('openai_diagnostic_model_access=PASS model=gpt-5.6-sol')
           PY
+
+      - name: Build unchanged native runtime for dialectic arm
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_duck_dialectic_native_helper.sh /tmp/duck_dialectic_native_helper
+          test -x /tmp/a15_graphene_bootstrap
+          test -x /tmp/duck_dialectic_native_helper
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
 
       - name: Fetch pinned Duck and public ARC environment assets
         shell: bash
@@ -121,11 +135,9 @@ jobs:
           cd /tmp/duck-harness/ARC3-Inference
           rm -rf /tmp/arc-real-off
           GRAPHENE_DMW_MODE=off \
-          CONFIG_PATH=/tmp/arc-openai.json \
-          EXPERIMENT_DIR=/tmp/arc-real-off \
+          CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-real-off \
           GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
-          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 \
-          SIMULATE_COMPETITION_ARCADE=true \
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
           make interactive
           CONFIG_PATH=/tmp/arc-openai.json make score_run \
             SCORE_RUN_DIR=/tmp/arc-real-off SCORE_OUTPUT_PATH=/tmp/arc-real-off/evaluation.json
@@ -137,57 +149,79 @@ jobs:
           cd /tmp/duck-harness/ARC3-Inference
           rm -rf /tmp/arc-real-evidence
           GRAPHENE_DMW_MODE=evidence \
-          CONFIG_PATH=/tmp/arc-openai.json \
-          EXPERIMENT_DIR=/tmp/arc-real-evidence \
+          CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-real-evidence \
           GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
-          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 \
-          SIMULATE_COMPETITION_ARCADE=true \
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
           make interactive
           CONFIG_PATH=/tmp/arc-openai.json make score_run \
             SCORE_RUN_DIR=/tmp/arc-real-evidence SCORE_OUTPUT_PATH=/tmp/arc-real-evidence/evaluation.json
+
+      - name: Run real ARC Graphene dialectic
+        shell: bash
+        env:
+          GRAPHENE_DMW_MODE: dialectic
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+          GRAPHENE_DMW_WORLD_SCOPE: ft09-diagnostic-dialectic
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/arc-real-dialectic
+          CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-real-dialectic \
+          GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
+          make interactive
+          CONFIG_PATH=/tmp/arc-openai.json make score_run \
+            SCORE_RUN_DIR=/tmp/arc-real-dialectic SCORE_OUTPUT_PATH=/tmp/arc-real-dialectic/evaluation.json
 
       - name: Compare real ARC results
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p results/arc-paper/real-arc-off-vs-evidence
-          cp /tmp/arc-real-off/evaluation.json results/arc-paper/real-arc-off-vs-evidence/off-evaluation.json
-          cp /tmp/arc-real-evidence/evaluation.json results/arc-paper/real-arc-off-vs-evidence/evidence-evaluation.json
-          cp /tmp/duck_patch_manifest.json results/arc-paper/real-arc-off-vs-evidence/
-          cp /tmp/ft09-env-files.txt results/arc-paper/real-arc-off-vs-evidence/
+          OUT=results/arc-paper/real-arc-three-arm
+          mkdir -p "$OUT"
+          cp /tmp/arc-real-off/evaluation.json "$OUT/off-evaluation.json"
+          cp /tmp/arc-real-evidence/evaluation.json "$OUT/evidence-evaluation.json"
+          cp /tmp/arc-real-dialectic/evaluation.json "$OUT/dialectic-evaluation.json"
+          cp /tmp/duck_patch_manifest.json "$OUT/"
+          cp /tmp/ft09-env-files.txt "$OUT/"
           python3 - <<'PY'
           import json
           from pathlib import Path
-          out=Path('results/arc-paper/real-arc-off-vs-evidence')
-          a=json.load(open(out/'off-evaluation.json'))
-          b=json.load(open(out/'evidence-evaluation.json'))
+          out=Path('results/arc-paper/real-arc-three-arm')
+          game='ft09-0d8bbf25'
+          def load(name): return json.load(open(out/f'{name}-evaluation.json'))
           def g(x):
-              row=x['games'][0]
+              row=x['games'][game]
               return {
-                  'score':x.get('score'),
-                  'game_score':row.get('score'),
-                  'levels_completed':row.get('levels_completed'),
-                  'completion_rate':row.get('completion_rate'),
-                  'trial_count':row.get('trial_count'),
+                  'overall_score':float(x.get('score') or 0),
+                  'game_score':float(row.get('score') or 0),
+                  'seed_count':int(row.get('seed_count') or 0),
+                  'trial_count':int(row.get('trial_count') or 0),
+                  'trial_scores':row.get('trial_scores') or {},
               }
           summary={
-              'experiment':'real ARC-AGI-3 integration diagnostic: Duck off vs Graphene evidence',
-              'game':'ft09-0d8bbf25',
+              'experiment':'real ARC-AGI-3 ft09 three-arm diagnostic',
+              'game':game,
               'model':'gpt-5.6-sol',
               'competition_valid_model':False,
               'environment_asset_source':'zarczynski/arc-agi-3-public',
-              'purpose':'integration diagnostic only; final Kaggle path remains Qwen3.6-27B-FP8 offline',
+              'purpose':'causal integration diagnostic; final Kaggle path remains Qwen3.6-27B-FP8 offline',
               'action_cap':12,
-              'off':g(a),
-              'evidence':g(b),
+              'off':g(load('off')),
+              'evidence':g(load('evidence')),
+              'dialectic':g(load('dialectic')),
           }
-          summary['score_delta']=(summary['evidence']['game_score'] or 0)-(summary['off']['game_score'] or 0)
-          summary['levels_delta']=(summary['evidence']['levels_completed'] or 0)-(summary['off']['levels_completed'] or 0)
+          summary['evidence_score_delta_vs_off']=summary['evidence']['game_score']-summary['off']['game_score']
+          summary['dialectic_score_delta_vs_off']=summary['dialectic']['game_score']-summary['off']['game_score']
+          summary['dialectic_score_delta_vs_evidence']=summary['dialectic']['game_score']-summary['evidence']['game_score']
           (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
           print(json.dumps(summary,indent=2,sort_keys=True))
           PY
-          find /tmp/arc-real-off -type f -name 'graphene_dmw_state.json' -exec cp {} results/arc-paper/real-arc-off-vs-evidence/off-graphene-state.json \; || true
-          find /tmp/arc-real-evidence -type f -name 'graphene_dmw_state.json' -exec cp {} results/arc-paper/real-arc-off-vs-evidence/evidence-graphene-state.json \; || true
+          for mode in off evidence dialectic; do
+            find "/tmp/arc-real-$mode" -type f -name 'graphene_dmw_state.json' -exec cp {} "$OUT/$mode-graphene-state.json" \; || true
+            find "/tmp/arc-real-$mode" -type f \( -name 'runtime_state.json' -o -name 'final_score.json' \) -print | sort > "$OUT/$mode-runtime-files.txt" || true
+          done
           printf '%s\n' \
             "agentfabric_commit=${GITHUB_SHA}" \
             'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
@@ -195,16 +229,17 @@ jobs:
             'model=gpt-5.6-sol' \
             'competition_valid_model=false' \
             'diagnostic_external_api=true' \
-            'environment_asset_source=zarczynski/arc-agi-3-public' \
+            'three_arms=off,evidence,dialectic' \
+            'native_hypokosh_action_seam=true' \
             'final_submission_external_api=false' \
-            > results/arc-paper/real-arc-off-vs-evidence/identity.txt
-          find results/arc-paper/real-arc-off-vs-evidence -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > results/arc-paper/real-arc-off-vs-evidence/SHA256SUMS.txt
+            > "$OUT/identity.txt"
+          find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
 
       - name: Upload real ARC evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: arc-paper-real-game-off-vs-evidence
-          path: results/arc-paper/real-arc-off-vs-evidence
+          name: arc-paper-real-game-three-arm
+          path: results/arc-paper/real-arc-three-arm
           if-no-files-found: warn
           retention-days: 30
