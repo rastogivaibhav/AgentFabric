@@ -6,6 +6,7 @@ on:
     paths:
       - 'arc_competition/chess_rules.json'
       - 'arc_competition/graphene_chess_basic.py'
+      - 'arc_competition/graphene_modelworld_dump.cpp'
       - 'pi45_a1/a15_native_runtime_helper.cpp'
       - 'pi45_a1/a15_native_runtime/**'
       - 'pi45_a1/a15_native_model_world/**'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'arc_competition/chess_rules.json'
       - 'arc_competition/graphene_chess_basic.py'
+      - 'arc_competition/graphene_modelworld_dump.cpp'
       - '.github/workflows/graphene-chess-basic.yml'
   workflow_dispatch:
 
@@ -35,23 +37,44 @@ jobs:
       - name: Build and prove native GrapheneDB HypoKosh runtime
         run: bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
 
+      - name: Build ModelWorld epistemic dump helper
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 \
+            -Ipi45_a1/a15_native_runtime/include \
+            -Ipi45_a1/a15_native_model_world/include \
+            -Ipi45_a1/graphenedb_snapshot/include \
+            arc_competition/graphene_modelworld_dump.cpp \
+            pi45_a1/a15_native_model_world/src/model_world.cpp \
+            pi45_a1/graphenedb_snapshot/src/platform_posix.cpp \
+            -pthread -o /tmp/graphene_modelworld_dump
+
       - name: Run 4 White + 4 Black native-reasoned moves
         env:
           PYTHONPATH: pi45_a1
         run: |
-          set -euo pipefail
+          set -uo pipefail
           rm -rf /tmp/graphene_chess_basic.graphenedb /tmp/graphene_chess_basic.graphenedb.modelworld /tmp/graphene-chess-basic
-          # Bootstrap a clean GrapheneDB store using the same pinned native bootstrap
-          # built by the runtime proof.
+          mkdir -p /tmp/graphene-chess-basic
           /tmp/a15_graphene_bootstrap /tmp/graphene_chess_basic.graphenedb
+          set +e
           python3 arc_competition/graphene_chess_basic.py \
             --native-helper /tmp/a15_native_runtime_helper \
             --db /tmp/graphene_chess_basic.graphenedb \
             --rules arc_competition/chess_rules.json \
             --plies 8 \
-            --out /tmp/graphene-chess-basic | tee /tmp/graphene-chess-basic/run.log
+            --out /tmp/graphene-chess-basic 2>&1 | tee /tmp/graphene-chess-basic/run.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ -f /tmp/graphene_chess_basic.graphenedb.modelworld ]; then
+            /tmp/graphene_modelworld_dump /tmp/graphene_chess_basic.graphenedb.modelworld \
+              > /tmp/graphene-chess-basic/modelworld_epistemic_snapshot.json
+          fi
+          printf '%s\n' "$rc" > /tmp/graphene-chess-basic/chess_process_exit_code.txt
+          exit "$rc"
 
       - name: Assert basic result integrity
+        if: success()
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -64,6 +87,7 @@ jobs:
           assert s['llm_move_selector'] is False, s
           assert s['opening_book'] is False, s
           assert s['stockfish'] is False, s
+          assert s['engine_guidance_during_reasoning'] is False, s
           plies=[json.loads((p/f'ply_{i:02d}.json').read_text()) for i in range(1,9)]
           for row in plies:
               r=row['reasoning_receipt']
@@ -80,7 +104,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/graphene-chess-basic
           printf '%s\n' "${GITHUB_SHA}" > /tmp/graphene-chess-basic/agentfabric_commit.txt
-          printf '%s\n' 'python-chess=1.999 legality-only; no Stockfish; no opening book; no LLM move selector' > /tmp/graphene-chess-basic/experiment_identity.txt
+          printf '%s\n' 'python-chess=1.999 legality/variation environment; no Stockfish; no opening book; no LLM move selector; no engine guidance during reasoning' > /tmp/graphene-chess-basic/experiment_identity.txt
           find /tmp/graphene-chess-basic -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-chess-basic/SHA256SUMS.txt
 
       - name: Upload chess reasoning evidence
