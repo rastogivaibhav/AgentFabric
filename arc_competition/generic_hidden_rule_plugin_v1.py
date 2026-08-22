@@ -44,6 +44,7 @@ class GenericHiddenRulePluginV1:
             out[action] = {
                 "observations": count,
                 "mean_delta": {f: sums[action][f] / count for f in FIELDS},
+                "provenance": "inferred_from_observed_transitions",
             }
         return out
 
@@ -71,9 +72,6 @@ class GenericHiddenRulePluginV1:
             row: dict[str, Any] = {"hypothesis_id":hid,"action":action,"observations":0 if model is None else model["observations"],"consequences":[]}
 
             if model is None:
-                # Pure epistemic exploration signal: no outcome is predicted for an
-                # untried action.  The high confidence represents expected information
-                # gain, not utility or a hidden preference for the action identity.
                 info_conf = 0.90
                 cid = f"hidden-{turn}-{action}-untried"
                 nodes.append(node(cid,"Outcome","Proposed",f"Opaque action {action} is untried; executing it would resolve uncertainty about its transition rule.","Hypothetical",turn,{"kind":"hidden_rule_uncertainty","action":action,"signal":"information_gain_from_untried_action"}))
@@ -96,13 +94,16 @@ class GenericHiddenRulePluginV1:
                     (positive if positive_polarity else negative).append(c)
                     signal = f"learned_{field}_{'benefit' if positive_polarity else 'cost'}"
                     cid = f"hidden-{turn}-{action}-{field}"
-                    nodes.append(node(cid,"Outcome","Proposed",f"From {model['observations']} observed transition(s), learned action {action} mean {field} delta={delta:g}; predicted next {field}={predicted_after[field]:g}.","Inferred",turn,{"kind":"learned_counterfactual_consequence","action":action,"field":field,"delta":delta,"signal":signal,"observations":model["observations"]}))
-                    relations.append(relation(hid,cid,"Predictive",c,"Inferred"))
+                    # The learned rule is inferred from observations, but this node is
+                    # a prediction about a future state and therefore remains explicitly
+                    # hypothetical for Theoretical-mode FiberBundle traversal.
+                    nodes.append(node(cid,"Outcome","Proposed",f"From {model['observations']} observed transition(s), learned action {action} mean {field} delta={delta:g}; predicted next {field}={predicted_after[field]:g}.","Hypothetical",turn,{"kind":"learned_counterfactual_consequence","action":action,"field":field,"delta":delta,"signal":signal,"observations":model["observations"],"derivation_provenance":"inferred_from_observed_transitions"}))
+                    relations.append(relation(hid,cid,"Predictive",c,"Hypothetical"))
                     if not positive_polarity:
-                        relations.append(relation(hid,anchor_id,"Contradicts",c,"Inferred"))
+                        relations.append(relation(hid,anchor_id,"Contradicts",c,"Hypothetical"))
                     row["consequences"].append({"field":field,"delta":delta,"polarity":"support" if positive_polarity else "contradiction","confidence":c})
                 aggregate = self.synthesize(positive, negative)
-                relations.append(relation(hid,anchor_id,"Supports",aggregate,"Inferred"))
+                relations.append(relation(hid,anchor_id,"Supports",aggregate,"Hypothetical"))
                 row["aggregate_support_confidence"] = aggregate
                 row["model_status"] = "learned"
                 row["predicted_after"] = predicted_after
@@ -114,5 +115,7 @@ class GenericHiddenRulePluginV1:
         request["plugin_metadata"]["required_query_mode"] = "Theoretical"
         request["plugin_metadata"]["plugin_selects_action"] = False
         request["plugin_metadata"]["oracle_next_states_supplied"] = False
+        request["plugin_metadata"]["learned_rule_provenance"] = "observed_transition_history"
+        request["plugin_metadata"]["prediction_origin"] = "Hypothetical"
         request["plugin_metadata"]["aggregation"] = "mean_positive_minus_0.25_mean_contradiction"
         return diagnostics
