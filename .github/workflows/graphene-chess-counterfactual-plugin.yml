@@ -1,0 +1,139 @@
+name: Graphene Chess Counterfactual Plugin
+
+on:
+  push:
+    branches: [arc-paper-dmw-duck-20260821]
+    paths:
+      - 'arc_competition/chess_counterfactual_plugin.py'
+      - 'arc_competition/test_chess_counterfactual_plugin.py'
+      - 'arc_competition/graphene_chess_basic.py'
+      - 'arc_competition/chess_rules.json'
+      - 'arc_competition/graphene_modelworld_dump.cpp'
+      - '.github/workflows/graphene-chess-counterfactual-plugin.yml'
+  pull_request:
+    branches: [pi45-a15-dialectical-model-world-20260821]
+    paths:
+      - 'arc_competition/chess_counterfactual_plugin.py'
+      - 'arc_competition/test_chess_counterfactual_plugin.py'
+      - 'arc_competition/graphene_chess_basic.py'
+      - 'arc_competition/chess_rules.json'
+      - '.github/workflows/graphene-chess-counterfactual-plugin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install chess transition library
+        run: python3 -m pip install --disable-pip-version-check 'python-chess==1.999'
+      - name: Prove plugin is external and non-selecting
+        env:
+          PYTHONPATH: arc_competition
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            arc_competition/chess_counterfactual_plugin.py \
+            arc_competition/test_chess_counterfactual_plugin.py \
+            arc_competition/graphene_chess_basic.py
+          python3 -m unittest -v arc_competition/test_chess_counterfactual_plugin.py
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot
+          printf '%s\n' 'core_graphenedb_modified=false' 'core_hypokosh_modified=false'
+
+  native-integration:
+    needs: plugin-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install chess transition library
+        run: python3 -m pip install --disable-pip-version-check 'python-chess==1.999'
+      - name: Build unchanged native GrapheneDB HypoKosh runtime
+        run: bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+      - name: Build ModelWorld dump helper
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 \
+            -Ipi45_a1/a15_native_runtime/include \
+            -Ipi45_a1/a15_native_model_world/include \
+            -Ipi45_a1/graphenedb_snapshot/include \
+            arc_competition/graphene_modelworld_dump.cpp \
+            pi45_a1/a15_native_model_world/src/model_world.cpp \
+            pi45_a1/graphenedb_snapshot/src/platform_posix.cpp \
+            -pthread -o /tmp/graphene_modelworld_dump
+      - name: Run plugin-enriched 4 White + 4 Black moves
+        env:
+          PYTHONPATH: pi45_a1:arc_competition
+        run: |
+          set -uo pipefail
+          rm -rf /tmp/graphene_chess_plugin.graphenedb /tmp/graphene_chess_plugin.graphenedb.modelworld /tmp/graphene-chess-plugin
+          mkdir -p /tmp/graphene-chess-plugin
+          /tmp/a15_graphene_bootstrap /tmp/graphene_chess_plugin.graphenedb
+          set +e
+          python3 arc_competition/graphene_chess_basic.py \
+            --native-helper /tmp/a15_native_runtime_helper \
+            --db /tmp/graphene_chess_plugin.graphenedb \
+            --rules arc_competition/chess_rules.json \
+            --plies 8 \
+            --counterfactual-plugin \
+            --out /tmp/graphene-chess-plugin 2>&1 | tee /tmp/graphene-chess-plugin/run.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ -f /tmp/graphene_chess_plugin.graphenedb.modelworld ]; then
+            /tmp/graphene_modelworld_dump /tmp/graphene_chess_plugin.graphenedb.modelworld \
+              > /tmp/graphene-chess-plugin/modelworld_epistemic_snapshot.json
+          fi
+          printf '%s\n' "$rc" > /tmp/graphene-chess-plugin/chess_process_exit_code.txt
+          exit "$rc"
+      - name: Assert native integration success
+        if: success()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/graphene-chess-plugin')
+          s=json.loads((p/'summary.json').read_text())
+          assert s['counterfactual_plugin'] is True, s
+          assert s['core_graphenedb_modified'] is False, s
+          assert s['core_hypokosh_modified'] is False, s
+          assert s['completed_plies']==8, s
+          assert s['all_moves_legal'] is True, s
+          for i in range(1,9):
+              row=json.loads((p/f'ply_{i:02d}.json').read_text())
+              assert row['selected_hypothesis_id']==row['primary_hypothesis_id'], row
+              plugin=json.loads((p/f'ply_{i:02d}_plugin.json').read_text())
+              assert plugin['selected_move'] is None, plugin
+              assert len(plugin['candidates']) > 1, plugin
+          first=json.loads((p/'ply_01_plugin.json').read_text())
+          fingerprints={(r['support_count'], r['contradiction_count'], tuple(sorted(c['signal'] for c in r['consequences']))) for r in first['candidates']}
+          assert len(fingerprints) > 1, 'plugin failed to differentiate opening candidates'
+          print('graphene_chess_counterfactual_plugin=PASS')
+          PY
+      - name: Record evidence identity and digests
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/graphene-chess-plugin
+          printf '%s\n' \
+            "agentfabric_commit=${GITHUB_SHA}" \
+            'plugin=chess-counterfactual-consequence-v1' \
+            'core_graphenedb_modified=false' \
+            'core_hypokosh_modified=false' \
+            'stockfish=false' \
+            'opening_book=false' \
+            'llm_move_selector=false' \
+            > /tmp/graphene-chess-plugin/experiment_identity.txt
+          find /tmp/graphene-chess-plugin -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-chess-plugin/SHA256SUMS.txt
+      - name: Upload plugin experiment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphene-chess-counterfactual-plugin-evidence
+          path: /tmp/graphene-chess-plugin
+          if-no-files-found: error
+          retention-days: 30
