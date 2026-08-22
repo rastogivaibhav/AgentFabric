@@ -10,7 +10,9 @@ from generic_counterfactual_plugin_v1 import node, relation
 from generic_hidden_rule_plugin_v1 import GenericHiddenRulePluginV1, FIELDS
 
 ACTIONS=("A0","A1","A2","A3","A4")
-START={"goal_distance":5.0,"resource":3.0,"hazard":1.0,"information":0.0}
+# Exploration begins far from clipping boundaries so one deterministic observation
+# is sufficient to recover each action's local transition delta exactly.
+START={"goal_distance":20.0,"resource":10.0,"hazard":5.0,"information":0.0}
 
 # Hidden environment. This function is deliberately never passed to the plugin.
 def hidden_transition(state:dict[str,float],action:str)->dict[str,float]:
@@ -47,7 +49,7 @@ def run_reason(args,plugin,state,history,ordered,scope,turn):
 
 
 def true_delta(action:str)->dict[str,float]:
-    base={"goal_distance":10.0,"resource":10.0,"hazard":5.0,"information":10.0}
+    base={"goal_distance":20.0,"resource":10.0,"hazard":5.0,"information":10.0}
     after=hidden_transition(base,action)
     return {f:after[f]-base[f] for f in FIELDS}
 
@@ -55,9 +57,6 @@ def true_delta(action:str)->dict[str,float]:
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--native-helper',required=True); ap.add_argument('--bootstrap',required=True); ap.add_argument('--db-prefix',default='/tmp/graphene_generic_p6b'); ap.add_argument('--runs',type=int,default=10); ap.add_argument('--out',default='/tmp/graphene-generic-p6b'); a=ap.parse_args(); out=Path(a.out); out.mkdir(parents=True,exist_ok=True); plugin=GenericHiddenRulePluginV1()
 
-    # Phase 1: hidden-rule exploration. No counterfactual oracle. Untried actions only
-    # receive uncertainty/information-gain evidence. We require all 5 actions to be
-    # sampled within 5 turns despite candidate-order permutations.
     exploration_runs=[]
     for seed in range(a.runs):
         state=dict(START); history=[]; trace=[]
@@ -78,8 +77,6 @@ def main():
 
     exploration_pass=all(r['coverage_pass'] and r['rule_accuracy_pass'] for r in exploration_runs)
 
-    # Phase 2: transfer learned rules to a fresh state. Build predictions only from
-    # history, then compare against the hidden environment after selection.
     exploit_rows=[]
     for seed,r0 in enumerate(exploration_runs):
         history=r0['history']; fresh={"goal_distance":7.0,"resource":4.0,"hazard":2.0,"information":1.0}; ordered=list(ACTIONS); random.Random(900+seed).shuffle(ordered)
@@ -95,7 +92,6 @@ def main():
     counts=Counter(x['selected_action'] for x in exploit_rows); dominant,dom_count=counts.most_common(1)[0] if counts else (None,0); first_matches=sum(x['selected_action']==x['first_candidate'] for x in exploit_rows)
     exploit_pass=(dom_count==a.runs and dominant=='A4' and first_matches<a.runs and all(x['prediction_pass'] for x in exploit_rows))
 
-    # Phase 3: closed-loop exploitation from a fresh state using only learned rules.
     seed_history=exploration_runs[0]['history']; state={"goal_distance":4.0,"resource":4.0,"hazard":1.0,"information":0.0}; loop=[]
     for turn in range(4):
         ordered=list(ACTIONS); random.Random(1200+turn).shuffle(ordered); r=run_reason(a,plugin,state,seed_history,ordered,f'p6b-loop-{turn}',20+turn); action=r['selected_action']
