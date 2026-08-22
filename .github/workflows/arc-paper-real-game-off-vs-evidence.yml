@@ -1,0 +1,198 @@
+name: ARC Paper Real Game Off vs Evidence
+
+on:
+  push:
+    branches: [arc-paper-dmw-duck-20260821]
+    paths:
+      - '.github/workflows/arc-paper-real-game-off-vs-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-arc-ablation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      OPENAI_API_KEY: ${{ secrets.pulapi }}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OPENAI_PROVIDER: openai
+      LOCAL_ANALYZER_API_KEY: ${{ secrets.pulapi }}
+      LOCAL_ANALYZER_BASE_URL: https://api.openai.com/v1
+      LOCAL_ANALYZER_PROVIDER: openai
+      LOCAL_ANALYZER_MODEL_ID: gpt-5.6-sol
+      LOCAL_ANALYZER_CONTEXT_WINDOW: '32768'
+      LOCAL_ANALYZER_TOOL_STEPS: '6'
+      LOCAL_ANALYZER_TOOL_TIMEOUT: '30'
+      LOCAL_ANALYZER_TIMEOUT: '120'
+      LOCAL_ANALYZER_ENABLE_THINKING: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify diagnostic model access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}"
+          code=$(curl -sS -o /tmp/model.json -w '%{http_code}' \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            https://api.openai.com/v1/models/gpt-5.6-sol)
+          test "$code" = 200
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/model.json'))
+          assert x.get('id')=='gpt-5.6-sol'
+          print('openai_diagnostic_model_access=PASS model=gpt-5.6-sol')
+          PY
+
+      - name: Fetch and patch pinned Duck
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-harness
+          git clone --filter=blob:none https://github.com/Tufalabs/duck-harness.git /tmp/duck-harness
+          git -C /tmp/duck-harness checkout 7652836056c59e044f093e3c13ed7438c814169e
+          test "$(git -C /tmp/duck-harness rev-parse HEAD)" = '7652836056c59e044f093e3c13ed7438c814169e'
+          python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness \
+            --manifest-out /tmp/duck_patch_manifest.json
+
+      - name: Configure external diagnostic model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/duck-harness/ARC3-Inference/configs/inference.json')
+          c=json.loads(p.read_text())
+          c['shared'].update({
+              'model_name':'gpt-5.6-sol',
+              'base_url':'https://api.openai.com/v1',
+              'provider':'openai',
+              'context_window':32768,
+          })
+          c['environment'].update({
+              'games':['ft09-0d8bbf25'],
+              'include_tags':[],
+              'n_passes':1,
+              'concurrent_jobs':1,
+              'max_steps':12,
+              'max_runtime_minutes':8,
+          })
+          c['deployment']['target']='inline'
+          c['analyzer'].update({
+              'model_id':'gpt-5.6-sol',
+              'base_url':'https://api.openai.com/v1',
+              'provider':'openai',
+              'context_window':32768,
+              'tool_steps':6,
+              'timeout':120,
+              'save_request_logs':True,
+          })
+          # Keep text/segmentation perception deterministic for this first integration diagnostic.
+          c['multimodal']['context']=''
+          q=Path('/tmp/arc-openai.json')
+          q.write_text(json.dumps(c,indent=2,sort_keys=True))
+          print(q)
+          PY
+
+      - name: Install CPU inference dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet uv
+          cd /tmp/duck-harness/ARC3-Inference
+          uv venv --python 3.12.12 .venv
+          uv sync --locked --python .venv/bin/python
+          uv pip install --python .venv/bin/python --no-deps -e ../tufa-arc-agi-framework
+
+      - name: Run real ARC baseline off
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/arc-real-off
+          GRAPHENE_DMW_MODE=off \
+          CONFIG_PATH=/tmp/arc-openai.json \
+          EXPERIMENT_DIR=/tmp/arc-real-off \
+          GAME=ft09-0d8bbf25 GAME_TAGS='[]' N_PASSES=1 CONCURRENT_JOBS=1 \
+          MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
+          make interactive
+          CONFIG_PATH=/tmp/arc-openai.json make score_run \
+            SCORE_RUN_DIR=/tmp/arc-real-off SCORE_OUTPUT_PATH=/tmp/arc-real-off/evaluation.json
+
+      - name: Run real ARC Graphene evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/arc-real-evidence
+          GRAPHENE_DMW_MODE=evidence \
+          CONFIG_PATH=/tmp/arc-openai.json \
+          EXPERIMENT_DIR=/tmp/arc-real-evidence \
+          GAME=ft09-0d8bbf25 GAME_TAGS='[]' N_PASSES=1 CONCURRENT_JOBS=1 \
+          MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
+          make interactive
+          CONFIG_PATH=/tmp/arc-openai.json make score_run \
+            SCORE_RUN_DIR=/tmp/arc-real-evidence SCORE_OUTPUT_PATH=/tmp/arc-real-evidence/evaluation.json
+
+      - name: Compare real ARC results
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results/arc-paper/real-arc-off-vs-evidence
+          cp /tmp/arc-real-off/evaluation.json results/arc-paper/real-arc-off-vs-evidence/off-evaluation.json
+          cp /tmp/arc-real-evidence/evaluation.json results/arc-paper/real-arc-off-vs-evidence/evidence-evaluation.json
+          cp /tmp/duck_patch_manifest.json results/arc-paper/real-arc-off-vs-evidence/
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('results/arc-paper/real-arc-off-vs-evidence')
+          a=json.load(open(out/'off-evaluation.json'))
+          b=json.load(open(out/'evidence-evaluation.json'))
+          def g(x):
+              row=x['games'][0]
+              return {
+                  'score':x.get('score'),
+                  'game_score':row.get('score'),
+                  'levels_completed':row.get('levels_completed'),
+                  'completion_rate':row.get('completion_rate'),
+                  'trial_count':row.get('trial_count'),
+              }
+          summary={
+              'experiment':'real ARC-AGI-3 integration diagnostic: Duck off vs Graphene evidence',
+              'game':'ft09-0d8bbf25',
+              'model':'gpt-5.6-sol',
+              'competition_valid_model':False,
+              'purpose':'integration diagnostic only; final Kaggle path remains Qwen3.6-27B-FP8 offline',
+              'action_cap':12,
+              'off':g(a),
+              'evidence':g(b),
+          }
+          summary['score_delta']=(summary['evidence']['game_score'] or 0)-(summary['off']['game_score'] or 0)
+          summary['levels_delta']=(summary['evidence']['levels_completed'] or 0)-(summary['off']['levels_completed'] or 0)
+          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+          find /tmp/arc-real-off -maxdepth 3 -type f -name 'graphene_dmw_state.json' -exec cp {} results/arc-paper/real-arc-off-vs-evidence/off-graphene-state.json \; || true
+          find /tmp/arc-real-evidence -maxdepth 3 -type f -name 'graphene_dmw_state.json' -exec cp {} results/arc-paper/real-arc-off-vs-evidence/evidence-graphene-state.json \; || true
+          printf '%s\n' \
+            "agentfabric_commit=${GITHUB_SHA}" \
+            'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
+            'game=ft09-0d8bbf25' \
+            'model=gpt-5.6-sol' \
+            'competition_valid_model=false' \
+            'diagnostic_external_api=true' \
+            'final_submission_external_api=false' \
+            > results/arc-paper/real-arc-off-vs-evidence/identity.txt
+          find results/arc-paper/real-arc-off-vs-evidence -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > results/arc-paper/real-arc-off-vs-evidence/SHA256SUMS.txt
+
+      - name: Upload real ARC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-real-game-off-vs-evidence
+          path: results/arc-paper/real-arc-off-vs-evidence
+          if-no-files-found: warn
+          retention-days: 30
