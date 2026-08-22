@@ -91,10 +91,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          GRAPHENE_DMW_MODE=off PYTHONPATH=/tmp/duck-harness/ARC3-Inference python3 - <<'PY'
-          from inference.agent.graphene_dmw_bridge import GrapheneDMWDuckBridge
+          GRAPHENE_DMW_MODE=off python3 - <<'PY'
+          import importlib.util
           from pathlib import Path
-          b=GrapheneDMWDuckBridge(Path('/tmp/off.json'),mode='off')
+          path=Path('/tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py')
+          spec=importlib.util.spec_from_file_location('graphene_dmw_bridge_smoke', path)
+          mod=importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(mod)
+          b=mod.GrapheneDMWDuckBridge(Path('/tmp/off.json'),mode='off')
           assert b.prompt_context()==''
           assert b.stagnation_reasons()==[]
           assert b.dead_action_reason([[0]], b.canonical_action([{'action':'ACTION1'}])) is None
