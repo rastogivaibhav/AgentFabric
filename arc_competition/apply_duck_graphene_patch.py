@@ -26,7 +26,9 @@ def _patch_tool_agent(original: str) -> str:
     )
     text = replace_once(
         text,
+        "        self._last_action_result: dict[str, Any] | None = None\n"
         "        self._summarized_knowledge = _empty_world_model()\n",
+        "        self._last_action_result: dict[str, Any] | None = None\n"
         "        self._summarized_knowledge = _empty_world_model()\n"
         "        self._graphene_dmw: GrapheneDMWDuckBridge | None = None\n",
         "constructor-state",
