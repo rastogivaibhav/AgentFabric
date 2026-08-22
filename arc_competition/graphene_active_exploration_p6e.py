@@ -17,8 +17,9 @@ from typing import Any
 
 from a15_arc_dialectic_adapter import invoke_native,stable_digest
 from generic_counterfactual_plugin_v1 import node,relation
-from generic_goal_discovery_plugin_v1 import GenericGoalDiscoveryPluginV1,FIELDS
-from graphene_generic_goal_discovery_p6d import ACTIONS,WORLDS,hidden_transition,hidden_success,bootstrap,discover_goal,choose_action,GOAL_SPECS
+from generic_goal_discovery_plugin_v1 import FIELDS
+from generic_goal_discovery_plugin_v2 import GenericGoalDiscoveryPluginV2
+from graphene_generic_goal_discovery_p6d import ACTIONS,WORLDS,hidden_transition,hidden_success,db,discover,choose,GOAL_SPECS
 
 
 def build_probe_request(args,history:list[dict[str,Any]],ordered:list[str],scope:str,turn:int):
@@ -27,13 +28,12 @@ def build_probe_request(args,history:list[dict[str,Any]],ordered:list[str],scope
     for i,a in enumerate(ordered,1):
         hid=f"p6e-probe-{turn}-{i:02d}-{a}"; amap[hid]=a
         nodes.append(node(hid,'Hypothesis','Proposed',f'Probe opaque action {a} to reduce uncertainty about its state-transition effect.','Hypothetical',turn,{"kind":"candidate_experiment","action":a,"prior_observations":seen[a]}))
-        # Unobserved interventions discriminate five possible field/effect models; repeated probes are redundant in this deterministic world.
         if seen[a]==0:
             rels.append(relation(hid,anchor,'Supports',0.90,'Hypothetical'))
         else:
             rels.append(relation(hid,anchor,'Supports',0.35,'Hypothetical')); rels.append(relation(hid,anchor,'Contradicts',0.90,'Hypothetical'))
     req={"protocol":"agentfabric-p6e-active-exploration","operation":"ingest_and_reason","world_scope":scope,"turn":turn,"nodes":nodes,"relations":rels,"plugin_metadata":{"phase":"active_exploration","comparison_anchor_id":anchor,"required_query_mode":"Theoretical","plugin_selects_experiment":False,"oracle_goal_supplied":False}}
-    resp=invoke_native(args.native_helper,req,bootstrap(args,scope)); pid=str(resp.get('primary_hypothesis_id') or '')
+    resp=invoke_native(args.native_helper,req,db(args,scope)); pid=str(resp.get('primary_hypothesis_id') or '')
     return amap.get(pid),resp,stable_digest(req)
 
 
@@ -48,11 +48,9 @@ def run_world(args,name:str,plugin)->dict[str,Any]:
         history.append({"episode":t,"action":action,"before":before,"after":after,"success":success})
         outcomes.append({"episode":t,"final_state":after,"success":success})
         probes.append({"turn":t,"action":action,"first_candidate":ordered[0],"confidence":resp.get('confidence'),"request_digest":digest})
-        # Reset between interventions: controlled experiments, not goal execution.
         state={f:0.0 for f in FIELDS}
 
     unique=len({p['action'] for p in probes}); first_matches=sum(p['action']==p['first_candidate'] for p in probes)
-    # Goal discovery needs success/failure contrasts. Convert the learned transition interventions into terminal trials at controlled near-boundary states, without revealing the goal to the plugin.
     trial_id=len(outcomes)
     for e in list(history):
         for baseline in (3.0,5.0):
@@ -62,13 +60,13 @@ def run_world(args,name:str,plugin)->dict[str,Any]:
             outcomes.append({"episode":trial_id,"final_state":after,"success":success}); trial_id+=1
 
     goals=list(GOAL_SPECS); random.Random(9900+(0 if name=='W-X2' else 100)).shuffle(goals)
-    g=discover_goal(args,plugin,outcomes,goals,f'p6e-{name}-goal',100)
+    g=discover(args,plugin,outcomes,goals,f'p6e-{name}-goal',100)
     selected=None if g['selected_goal'] is None else (g['selected_goal']['field'],g['selected_goal']['direction'])
     execution=[]; state={f:0.0 for f in FIELDS}
     for t in range(3):
         if not g['selected_goal']: break
         ordered=list(ACTIONS); random.Random(9950+t+(0 if name=='W-X2' else 100)).shuffle(ordered)
-        a=choose_action(args,plugin,state,history,g['selected_goal'],ordered,f'p6e-{name}-act-{t}',200+t)
+        a=choose(args,plugin,state,history,g['selected_goal'],ordered,f'p6e-{name}-act-{t}',200+t)
         if not a['selected_action']: break
         before=dict(state); state=hidden_transition(state,a['selected_action']); success=hidden_success(state,world)
         execution.append({"turn":t,"action":a['selected_action'],"before":before,"after":dict(state),"success":success})
@@ -79,7 +77,7 @@ def run_world(args,name:str,plugin)->dict[str,Any]:
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--native-helper',required=True); ap.add_argument('--bootstrap',required=True); ap.add_argument('--db-prefix',default='/tmp/graphene_p6e'); ap.add_argument('--probe-budget',type=int,default=5); ap.add_argument('--out',default='/tmp/graphene-p6e'); args=ap.parse_args()
-    out=Path(args.out); out.mkdir(parents=True,exist_ok=True); plugin=GenericGoalDiscoveryPluginV1()
+    out=Path(args.out); out.mkdir(parents=True,exist_ok=True); plugin=GenericGoalDiscoveryPluginV2()
     worlds=[run_world(args,n,plugin) for n in WORLDS]
     passed=all(w['active_exploration_pass'] and w['goal_discovery_pass'] and w['execution_pass'] and w['interaction_count_before_goal_discovery']<w['passive_p6d_reference_interactions'] for w in worlds)
     summary={"experiment":"P6E active exploration and information gain","pass":passed,"worlds":worlds,"plugin_selected_experiment":False,"plugin_selected_goal":False,"plugin_selected_action":False,"oracle_goal_supplied":False,"llm_selector":False,"core_graphenedb_modified":False,"core_hypokosh_modified":False}
