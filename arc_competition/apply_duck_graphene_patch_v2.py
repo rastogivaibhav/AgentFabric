@@ -3,9 +3,9 @@ from __future__ import annotations
 
 """Pinned-commit patch wrapper for Duck + GrapheneDMW integration.
 
-Adds native HypoKosh dialectic action gating, runtime dialectical goal discovery,
-and the curious visual world-crawler at Duck's real action seam while preserving
-off/evidence/dialectic ablations.
+Adds native HypoKosh dialectic action gating, optional runtime dialectical goal
+discovery, and the curious visual world-crawler at Duck's real action seam while
+preserving clean off/evidence/dialectic ablations.
 """
 
 import hashlib
@@ -38,6 +38,7 @@ def patch_tool_agent(original: str) -> str:
                 self._graphene_dmw is not None
                 and dmw_before_frame is not None
                 and self._graphene_dmw.mode == 'dialectic'
+                and os.environ.get('GRAPHENE_DMW_GOAL_DISCOVERY', 'off').strip().lower() in {'1', 'true', 'yes', 'on'}
             ):
                 dmw_goal_obs = [
                     x for x in self._graphene_dmw.state.crawler_records
