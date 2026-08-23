@@ -3,8 +3,9 @@ from __future__ import annotations
 
 """Pinned-commit patch wrapper for Duck + GrapheneDMW integration.
 
-Adds the native HypoKosh dialectic gate and curious visual world-crawler at
-Duck's real action seam while preserving off/evidence/dialectic ablations.
+Adds native HypoKosh dialectic action gating, runtime dialectical goal discovery,
+and the curious visual world-crawler at Duck's real action seam while preserving
+off/evidence/dialectic ablations.
 """
 
 import hashlib
@@ -29,11 +30,50 @@ def patch_tool_agent(original: str) -> str:
         text,
         "from inference.agent.graphene_dmw_bridge import GrapheneDMWDuckBridge\n",
         "from inference.agent.graphene_dmw_bridge import GrapheneDMWDuckBridge\n"
-        "from inference.agent.graphene_dmw_native_gate import review_dialectic_action\n",
+        "from inference.agent.graphene_dmw_native_gate import review_dialectic_action, review_goal_discovery\n",
         "native-gate-import",
     )
     anchor = "            raw_payload = self._step_env_callback({\"actions\": normalized_actions})\n"
     gate = '''            if (
+                self._graphene_dmw is not None
+                and dmw_before_frame is not None
+                and self._graphene_dmw.mode == 'dialectic'
+            ):
+                dmw_goal_obs = [
+                    x for x in self._graphene_dmw.state.crawler_records
+                    if x.get('kind') == 'CrawlerObservation'
+                ][-8:]
+                if len(dmw_goal_obs) >= 2:
+                    dmw_changed = sum(1 for x in dmw_goal_obs if int(x.get('changed_count') or 0) > 0)
+                    dmw_level = sum(1 for x in dmw_goal_obs if bool(x.get('level_transition')))
+                    dmw_silent = sum(1 for x in dmw_goal_obs if int(x.get('changed_count') or 0) == 0)
+                    dmw_delayed = 0
+                    for i, item in enumerate(dmw_goal_obs):
+                        if int(item.get('changed_count') or 0) <= 0:
+                            continue
+                        if any(int(prev.get('changed_count') or 0) == 0 for prev in dmw_goal_obs[max(0, i-3):i]):
+                            dmw_delayed += 1
+                    dmw_goal_review = review_goal_discovery(
+                        state_dir=self._graphene_dmw.state_path.parent,
+                        turn=int(dmw_before_frame.step),
+                        action=dmw_action_label,
+                        evidence={
+                            'observations': len(dmw_goal_obs),
+                            'changed': dmw_changed,
+                            'level_transitions': dmw_level,
+                            'silent': dmw_silent,
+                            'delayed_effects': dmw_delayed,
+                        },
+                    )
+                    dmw_goal_selected = str(dmw_goal_review.get('goal_discovery_selected') or '')
+                    if dmw_goal_selected:
+                        self._graphene_dmw.state.scientist_note['goal_model'] = (
+                            'Native HypoKosh provisional goal hypothesis: ' + dmw_goal_selected +
+                            '. Treat it as evidence-bound; choose the cheapest next intervention that can falsify it against live alternatives.'
+                        )
+                        self._graphene_dmw.record_dialectic_receipt(dmw_goal_review)
+                        self._graphene_dmw._save()
+            if (
                 self._graphene_dmw is not None
                 and dmw_before_frame is not None
                 and self._graphene_dmw.should_escalate_dialectic()
