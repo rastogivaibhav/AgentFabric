@@ -1,0 +1,170 @@
+name: ARC Paper A1.4R Dialectical Goal Discovery
+
+on:
+  push:
+    branches: [arc-paper-dmw-duck-20260821]
+    paths:
+      - '.github/workflows/arc-paper-a14r-goal-discovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  a14r:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      OPENAI_API_KEY: ${{ secrets.pulapi }}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OPENAI_PROVIDER: openai
+      LOCAL_ANALYZER_API_KEY: ${{ secrets.pulapi }}
+      LOCAL_ANALYZER_BASE_URL: https://api.openai.com/v1
+      LOCAL_ANALYZER_PROVIDER: openai
+      LOCAL_ANALYZER_MODEL_ID: gpt-5.6-sol
+      LOCAL_ANALYZER_CONTEXT_WINDOW: '32768'
+      LOCAL_ANALYZER_TOOL_STEPS: '6'
+      LOCAL_ANALYZER_TOOL_TIMEOUT: '30'
+      LOCAL_ANALYZER_TIMEOUT: '120'
+      LOCAL_ANALYZER_ENABLE_THINKING: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build unchanged Graphene HypoKosh runtime
+        run: |
+          set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}"
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_duck_dialectic_native_helper.sh /tmp/duck_dialectic_native_helper
+          test -x /tmp/a15_graphene_bootstrap
+          test -x /tmp/duck_dialectic_native_helper
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
+
+      - name: Fetch pinned Duck and public ft09
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-harness /tmp/arc-public-envs
+          git clone --filter=blob:none https://github.com/Tufalabs/duck-harness.git /tmp/duck-harness
+          git -C /tmp/duck-harness checkout 7652836056c59e044f093e3c13ed7438c814169e
+          python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness --manifest-out /tmp/duck_patch_manifest.json
+          git clone --depth=1 https://huggingface.co/datasets/zarczynski/arc-agi-3-public /tmp/arc-public-envs
+          test -d /tmp/arc-public-envs/environment_files/ft09/0d8bbf25
+
+      - name: Configure identical diagnostic model and budget
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/duck-harness/ARC3-Inference/configs/inference.json')
+          c=json.loads(p.read_text())
+          c['shared'].update({'model_name':'gpt-5.6-sol','base_url':'https://api.openai.com/v1','provider':'openai','context_window':32768})
+          c['environment'].update({'games':['ft09-0d8bbf25'],'include_tags':[],'environments_dir':'/tmp/arc-public-envs/environment_files','n_passes':1,'concurrent_jobs':1,'max_steps':12,'max_runtime_minutes':8})
+          c['deployment']['target']='inline'
+          c['analyzer'].update({'model_id':'gpt-5.6-sol','base_url':'https://api.openai.com/v1','provider':'openai','context_window':32768,'tool_steps':6,'timeout':120,'save_request_logs':True})
+          c['multimodal']['context']=''
+          Path('/tmp/a14r.json').write_text(json.dumps(c,indent=2,sort_keys=True))
+          PY
+          python3 -m pip install --quiet uv
+          cd /tmp/duck-harness/ARC3-Inference
+          uv venv --python 3.12.12 .venv
+          uv sync --locked --python .venv/bin/python
+          uv pip install --python .venv/bin/python --no-deps -e ../tufa-arc-agi-framework
+
+      - name: Run A1.4 dialectic baseline
+        env:
+          GRAPHENE_DMW_MODE: dialectic
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+          GRAPHENE_DMW_WORLD_SCOPE: ft09-a14-baseline
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/a14-baseline
+          CONFIG_PATH=/tmp/a14r.json EXPERIMENT_DIR=/tmp/a14-baseline GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true make interactive
+          CONFIG_PATH=/tmp/a14r.json make score_run SCORE_RUN_DIR=/tmp/a14-baseline SCORE_OUTPUT_PATH=/tmp/a14-baseline/evaluation.json
+
+      - name: Install A1.4R dialectical goal-discovery policy
+        run: |
+          set -euo pipefail
+          BRIDGE=/tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py
+          cp "$BRIDGE" /tmp/bridge-a14.py
+          python3 - "$BRIDGE" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1]); s=p.read_text()
+          anchor='        return "\\n".join(lines)\n\n    def build_native_proposal'
+          insertion='''        if self.mode == "dialectic":
+            obs=[x for x in self.state.crawler_records if x.get("kind")=="CrawlerObservation"][-8:]
+            changed=[x for x in obs if int(x.get("changed_count") or 0)>0]
+            level=[x for x in obs if bool(x.get("level_transition"))]
+            silent=[x for x in obs if int(x.get("changed_count") or 0)==0]
+            lines.append("- DIALECTICAL GOAL DISCOVERY (A1.4R): do not assume the objective; maintain competing goals until evidence discriminates them.")
+            lines.append(f"  G1 progression hypothesis: actions causing level/state transitions are goal-relevant. support={len(level)}/{max(1,len(obs))}.")
+            lines.append(f"  G2 causal-novelty hypothesis: actions producing novel persistent visual change are goal-relevant. support={len(changed)}/{max(1,len(obs))}.")
+            lines.append(f"  G3 latent-sequence hypothesis: apparently silent actions may be preconditions in delayed multi-step goals. unresolved={len(silent)}/{max(1,len(obs))}.")
+            lines.append("  Before acting: state which goal hypothesis the action tests, predict the observation that would support it, and name what result would falsify it.")
+            lines.append("  Prefer the cheapest action/continuation whose predicted outcomes differ between at least two live goal hypotheses. Do not merely maximize pixel change.")
+            lines.append("  If evidence contradicts the leading goal, reopen alternatives immediately; goal commitment is provisional, not sticky.")
+        return "\\n".join(lines)
+
+    def build_native_proposal'''
+          if anchor not in s:
+              raise SystemExit('A1.4R prompt-context anchor missing')
+          s=s.replace(anchor,insertion,1)
+          p.write_text(s)
+          PY
+          python3 -m py_compile "$BRIDGE"
+          grep -q 'DIALECTICAL GOAL DISCOVERY (A1.4R)' "$BRIDGE"
+          grep -q 'G1 progression hypothesis' "$BRIDGE"
+          grep -q 'G2 causal-novelty hypothesis' "$BRIDGE"
+          grep -q 'G3 latent-sequence hypothesis' "$BRIDGE"
+
+      - name: Run A1.4R dialectical goal discovery
+        env:
+          GRAPHENE_DMW_MODE: dialectic
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+          GRAPHENE_DMW_WORLD_SCOPE: ft09-a14r-goal-discovery
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/a14r-goal
+          CONFIG_PATH=/tmp/a14r.json EXPERIMENT_DIR=/tmp/a14r-goal GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true make interactive
+          CONFIG_PATH=/tmp/a14r.json make score_run SCORE_RUN_DIR=/tmp/a14r-goal SCORE_OUTPUT_PATH=/tmp/a14r-goal/evaluation.json
+
+      - name: Compare A1.4R against A1.4
+        run: |
+          set -euo pipefail
+          OUT=results/arc-paper/a14r-goal-discovery
+          mkdir -p "$OUT"
+          cp /tmp/a14-baseline/evaluation.json "$OUT/a14-evaluation.json"
+          cp /tmp/a14r-goal/evaluation.json "$OUT/a14r-evaluation.json"
+          cp /tmp/duck_patch_manifest.json "$OUT/"
+          find /tmp/a14-baseline -type f -name graphene_dmw_state.json -exec cp {} "$OUT/a14-state.json" \; || true
+          find /tmp/a14r-goal -type f -name graphene_dmw_state.json -exec cp {} "$OUT/a14r-state.json" \; || true
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('results/arc-paper/a14r-goal-discovery'); game='ft09-0d8bbf25'
+          def metric(name):
+              x=json.loads((out/name).read_text()); row=x['games'][game]
+              return {'overall_score':float(x.get('score') or 0),'game_score':float(row.get('score') or 0),'trial_count':int(row.get('trial_count') or 0),'trial_scores':row.get('trial_scores') or {}}
+          b=metric('a14-evaluation.json'); r=metric('a14r-evaluation.json')
+          state={}
+          p=out/'a14r-state.json'
+          if p.exists(): state=json.loads(p.read_text())
+          obs=[x for x in state.get('crawler_records',[]) if x.get('kind')=='CrawlerObservation']
+          summary={'experiment':'A1.4R dialectical goal discovery real-game ablation','game':game,'model':'gpt-5.6-sol','competition_valid_model':False,'action_cap':12,'a14_baseline':b,'a14r_goal_discovery':r,'score_delta':r['game_score']-b['game_score'],'goal_policy':'G1 progression vs G2 causal novelty vs G3 latent sequence; cheapest discriminating test','crawler_observations':len(obs),'pass_score_improvement':r['game_score']>b['game_score']}
+          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)); print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+          find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+
+      - name: Upload A1.4R evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-a14r-goal-discovery
+          path: results/arc-paper/a14r-goal-discovery
+          if-no-files-found: warn
+          retention-days: 30
