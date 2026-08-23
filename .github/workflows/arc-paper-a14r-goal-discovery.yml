@@ -6,6 +6,7 @@ on:
     branches: [arc-paper-dmw-duck-20260821]
     paths:
       - '.github/workflows/arc-paper-a14r-goal-discovery.yml'
+  pull_request:
   workflow_dispatch:
 
 permissions:
