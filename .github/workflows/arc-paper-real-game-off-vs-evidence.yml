@@ -6,12 +6,14 @@ on:
     paths:
       - '.github/workflows/arc-paper-real-game-off-vs-evidence.yml'
       - 'arc_competition/graphene_dmw_native_gate.py'
+      - 'arc_competition/apply_duck_graphene_patch_v2.py'
       - 'arc_competition/build_duck_dialectic_native_helper.sh'
   push:
     branches: [arc-paper-dmw-duck-20260821]
     paths:
       - '.github/workflows/arc-paper-real-game-off-vs-evidence.yml'
       - 'arc_competition/graphene_dmw_native_gate.py'
+      - 'arc_competition/apply_duck_graphene_patch_v2.py'
       - 'arc_competition/build_duck_dialectic_native_helper.sh'
   workflow_dispatch:
 
@@ -124,6 +126,7 @@ jobs:
         shell: bash
         env:
           GRAPHENE_DMW_MODE: dialectic
+          GRAPHENE_DMW_GOAL_DISCOVERY: 'off'
           GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
           GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
           GRAPHENE_DMW_WORLD_SCOPE: ft09-a14
@@ -136,7 +139,7 @@ jobs:
           N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true make interactive
           CONFIG_PATH=/tmp/arc-openai.json make score_run SCORE_RUN_DIR=/tmp/arc-a14 SCORE_OUTPUT_PATH=/tmp/arc-a14/evaluation.json
 
-      - name: Install A1.4R dialectical goal-discovery policy
+      - name: Install A1.4R explicit dialectical goal context
         shell: bash
         run: |
           set -euo pipefail
@@ -155,9 +158,7 @@ jobs:
             lines.append(f"  G1 PROGRESSION: level/state-transition-producing actions are goal-relevant. support={len(level)}/{max(1,len(obs))}.")
             lines.append(f"  G2 CAUSAL NOVELTY: actions producing novel persistent visual change are goal-relevant. support={len(changed)}/{max(1,len(obs))}.")
             lines.append(f"  G3 LATENT SEQUENCE: apparently silent actions may be preconditions for delayed multi-step progress. unresolved={len(silent)}/{max(1,len(obs))}.")
-            lines.append("  For the next action, identify the live goal hypothesis it tests, predict the observation expected under that hypothesis, and name the result that would falsify it.")
-            lines.append("  Prefer the cheapest intervention whose predicted outcomes DIFFER between two or more live goal hypotheses; information gain outranks repetition.")
-            lines.append("  A contradiction must reopen alternatives immediately. Goal commitment is provisional and evidence-bound.")
+            lines.append("  The native HypoKosh goal selection is provisional. Choose an intervention that can falsify the selected goal against at least one live alternative.")
         return "\\n".join(lines)
 
     def build_native_proposal'''
@@ -168,10 +169,11 @@ jobs:
           python3 -m py_compile "$BRIDGE"
           grep -q 'DIALECTICAL GOAL DISCOVERY (A1.4R)' "$BRIDGE"
 
-      - name: Run A1.4R dialectical goal discovery
+      - name: Run A1.4R native dialectical goal discovery
         shell: bash
         env:
           GRAPHENE_DMW_MODE: dialectic
+          GRAPHENE_DMW_GOAL_DISCOVERY: 'true'
           GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
           GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
           GRAPHENE_DMW_WORLD_SCOPE: ft09-a14r
@@ -208,14 +210,17 @@ jobs:
           p=out/'a14r-state.json'
           if p.exists(): state=json.loads(p.read_text())
           obs=[x for x in state.get('crawler_records',[]) if x.get('kind')=='CrawlerObservation']
+          events=state.get('dialectic_events') or []
           summary={
-            'experiment':'A1.4R real-game dialectical goal-discovery four-arm ablation',
+            'experiment':'A1.4R real-game native dialectical goal-discovery four-arm ablation',
             'game':game,'model':'gpt-5.6-sol','competition_valid_model':False,'action_cap':12,
             **scores,
             'a14r_delta_vs_a14':scores['a14r']['game_score']-scores['a14']['game_score'],
             'a14r_delta_vs_off':scores['a14r']['game_score']-scores['off']['game_score'],
             'crawler_observations':len(obs),
-            'goal_policy':'G1 progression vs G2 causal novelty vs G3 latent sequence; choose cheapest discriminating intervention',
+            'native_dialectic_events':len(events),
+            'goal_discovery_enabled_only_in_a14r':True,
+            'goal_policy':'G1 progression vs G2 causal novelty vs G3 latent sequence; native HypoKosh selection + falsifying intervention',
             'pass_gameplay_improvement':scores['a14r']['game_score']>scores['a14']['game_score'],
           }
           (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)); print(json.dumps(summary,indent=2,sort_keys=True))
