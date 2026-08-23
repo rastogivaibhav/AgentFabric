@@ -38,7 +38,9 @@ def _patch_tool_agent(original: str) -> str:
         "            self._summarized_knowledge = _empty_world_model()\n",
         "            self._summarized_knowledge = _empty_world_model()\n"
         "            dmw_mode = os.environ.get('GRAPHENE_DMW_MODE', 'off').strip().lower() or 'off'\n"
-        "            self._graphene_dmw = GrapheneDMWDuckBridge(runtime_dir / 'graphene_dmw_state.json', mode=dmw_mode)\n",
+        "            dmw_state_override = os.environ.get('GRAPHENE_DMW_STATE_PATH', '').strip()\n"
+        "            dmw_state_path = Path(dmw_state_override) if dmw_state_override else (runtime_dir / 'graphene_dmw_state.json')\n"
+        "            self._graphene_dmw = GrapheneDMWDuckBridge(dmw_state_path, mode=dmw_mode)\n",
         "session-init",
     )
     text = replace_once(
