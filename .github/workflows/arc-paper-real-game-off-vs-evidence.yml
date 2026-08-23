@@ -1,4 +1,4 @@
-# execution-refresh: observable native A1.4R four-arm ablation run-20260823-1351
+# execution-refresh: observable native A1.4R four-arm ablation run-20260823-1351b
 name: ARC Paper Real Game Four-Arm Goal Discovery
 
 on:
@@ -20,6 +20,8 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   real-arc-ablation:
@@ -227,6 +229,34 @@ jobs:
           (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)); print(json.dumps(summary,indent=2,sort_keys=True))
           PY
           find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+
+      - name: Publish A1.4R verdict to PR 19
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -f results/arc-paper/a14r-four-arm/summary.json ]; then
+            {
+              echo '### A1.4R terminal experiment result'
+              echo
+              echo '```json'
+              cat results/arc-paper/a14r-four-arm/summary.json
+              echo '```'
+              echo
+              echo "run_sha=${GITHUB_SHA}"
+            } > /tmp/a14r-pr-comment.md
+          else
+            {
+              echo '### A1.4R terminal experiment result'
+              echo
+              echo 'RESULT_NOT_PRODUCED: workflow failed before summary generation.'
+              echo
+              echo "run_sha=${GITHUB_SHA}"
+            } > /tmp/a14r-pr-comment.md
+          fi
+          gh pr comment 19 --repo rastogivaibhav/AgentFabric --body-file /tmp/a14r-pr-comment.md
 
       - name: Upload A1.4R four-arm evidence
         if: always()
