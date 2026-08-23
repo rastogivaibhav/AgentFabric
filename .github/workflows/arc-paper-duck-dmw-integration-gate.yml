@@ -82,6 +82,42 @@ jobs:
           print('duck_native_dialectic_gate=PASS', r['primary_hypothesis_id'], r['confidence'])
           PY
 
+      - name: Prove native dialectical goal discovery
+        shell: bash
+        env:
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+          GRAPHENE_DMW_WORLD_SCOPE: integration-goal-discovery
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-native-goal-test
+          python3 - <<'PY'
+          import json, pathlib
+          from arc_competition.graphene_dmw_native_gate import review_goal_discovery
+          r=review_goal_discovery(
+              state_dir='/tmp/duck-native-goal-test',
+              turn=7,
+              action='[{"action":"ACTION2"}]',
+              evidence={
+                  'observations': 6,
+                  'changed': 4,
+                  'level_transitions': 0,
+                  'silent': 2,
+                  'delayed_effects': 1,
+              },
+          )
+          assert r['goal_discovery_selected'] in {'progression','causal_novelty','latent_sequence'}, r
+          assert r['goal_discovery_hypothesis_id']==r['primary_hypothesis_id'], r
+          receipt=r['reasoning_receipt']
+          for k in ['graphene_executed','fiber_bundle_built','stability_critic_executed','epistemic_admissibility_executed','lyapunov_trajectory_executed','convergence_executed','opposition_executed','no_silent_promotion']:
+              assert receipt.get(k) is True, (k, receipt)
+          req=r['goal_discovery_request']
+          goal_nodes=[n for n in req['nodes'] if (n.get('metadata') or {}).get('kind')=='goal_hypothesis']
+          assert len(goal_nodes)==3, goal_nodes
+          pathlib.Path('/tmp/native_goal_response.json').write_text(json.dumps(r,indent=2,sort_keys=True))
+          print('duck_native_goal_discovery=PASS', r['goal_discovery_selected'], r.get('confidence'))
+          PY
+
       - name: Fetch exact Milestone-1 Duck source
         shell: bash
         run: |
@@ -119,6 +155,8 @@ jobs:
             /tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_native_gate.py \
             /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
           grep -q 'review_dialectic_action' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'review_goal_discovery' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'goal_discovery_selected' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'graphene_dialectic_reopen' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'graphene_negative_evidence' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
           grep -q 'record_transition' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
@@ -149,12 +187,15 @@ jobs:
           mkdir -p results/arc-paper/duck-dmw-integration
           cp /tmp/duck_patch_manifest.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
           cp /tmp/native_gate_response.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
+          cp /tmp/native_goal_response.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
           cp arc_competition/UPSTREAM_MANIFEST.json results/arc-paper/duck-dmw-integration/
           printf '%s\n' \
             "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
             'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
             'qwen_model=vrfai/Qwen3.6-27B-FP8' \
             'native_dialectic_action_seam=true' \
+            'native_dialectical_goal_discovery=true' \
+            'goal_hypotheses=progression,causal_novelty,latent_sequence' \
             'native_query_mode=Theoretical' \
             'off_mode_preserved=true' \
             'evidence_mode_preserved=true' \
