@@ -1,11 +1,8 @@
 name: Dialectical World Crawler
 
+# Synthetic crawler proof is already green. Keep it manually runnable while the
+# ARC research branch prioritizes observable real-game ablations.
 on:
-  pull_request:
-    paths:
-      - 'arc_competition/dialectical_world_crawler.py'
-      - 'arc_competition/test_dialectical_world_crawler.py'
-      - '.github/workflows/dialectical-world-crawler.yml'
   workflow_dispatch:
 
 jobs:
