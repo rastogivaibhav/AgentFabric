@@ -3,8 +3,8 @@ from __future__ import annotations
 
 """Pinned-commit patch wrapper for Duck + GrapheneDMW integration.
 
-Adds the native HypoKosh dialectic gate at Duck's real action seam while preserving
-base patcher's strict pinned-source anchors and off/evidence ablations.
+Adds the native HypoKosh dialectic gate and curious visual world-crawler at
+Duck's real action seam while preserving off/evidence/dialectic ablations.
 """
 
 import hashlib
@@ -119,8 +119,12 @@ def patch_duck(duck_root: Path, bridge_source: Path) -> dict[str, str]:
     manifest = _original_patch_duck(duck_root, bridge_source)
     gate_source = Path(__file__).resolve().with_name('graphene_dmw_native_gate.py')
     gate_target = duck_root / 'ARC3-Inference/inference/agent/graphene_dmw_native_gate.py'
+    crawler_source = Path(__file__).resolve().with_name('dialectical_world_crawler.py')
+    crawler_target = duck_root / 'ARC3-Inference/inference/agent/dialectical_world_crawler.py'
     shutil.copy2(gate_source, gate_target)
+    shutil.copy2(crawler_source, crawler_target)
     manifest['native_gate_sha256'] = hashlib.sha256(gate_source.read_bytes()).hexdigest()
+    manifest['world_crawler_sha256'] = hashlib.sha256(crawler_source.read_bytes()).hexdigest()
     return manifest
 
 
