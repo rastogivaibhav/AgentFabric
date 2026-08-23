@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   a14r:
@@ -153,11 +153,14 @@ jobs:
               x=json.loads((out/name).read_text()); row=x['games'][game]
               return {'overall_score':float(x.get('score') or 0),'game_score':float(row.get('score') or 0),'trial_count':int(row.get('trial_count') or 0),'trial_scores':row.get('trial_scores') or {}}
           b=metric('a14-evaluation.json'); r=metric('a14r-evaluation.json')
-          state={}
-          p=out/'a14r-state.json'
-          if p.exists(): state=json.loads(p.read_text())
-          obs=[x for x in state.get('crawler_records',[]) if x.get('kind')=='CrawlerObservation']
-          summary={'experiment':'A1.4R dialectical goal discovery real-game ablation','game':game,'model':'gpt-5.6-sol','competition_valid_model':False,'action_cap':12,'a14_baseline':b,'a14r_goal_discovery':r,'score_delta':r['game_score']-b['game_score'],'goal_policy':'G1 progression vs G2 causal novelty vs G3 latent sequence; cheapest discriminating test','crawler_observations':len(obs),'pass_score_improvement':r['game_score']>b['game_score']}
+          def load_state(name):
+              p=out/name
+              return json.loads(p.read_text()) if p.exists() else {}
+          bs=load_state('a14-state.json'); rs=load_state('a14r-state.json')
+          obs=[x for x in rs.get('crawler_records',[]) if x.get('kind')=='CrawlerObservation']
+          b_actions=[x.get('action') for x in bs.get('transitions',[]) if x.get('action')]
+          r_actions=[x.get('action') for x in rs.get('transitions',[]) if x.get('action')]
+          summary={'experiment':'A1.4R dialectical goal discovery real-game ablation','game':game,'model':'gpt-5.6-sol','competition_valid_model':False,'action_cap':12,'a14_baseline':b,'a14r_goal_discovery':r,'score_delta':r['game_score']-b['game_score'],'goal_policy':'G1 progression vs G2 causal novelty vs G3 latent sequence; cheapest discriminating test','crawler_observations':len(obs),'a14_actions':b_actions,'a14r_actions':r_actions,'behavior_changed':b_actions!=r_actions,'pass_score_improvement':r['game_score']>b['game_score']}
           (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)); print(json.dumps(summary,indent=2,sort_keys=True))
           PY
           find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
@@ -170,3 +173,13 @@ jobs:
           path: results/arc-paper/a14r-goal-discovery
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Persist terminal A1.4R evidence to branch
+        if: success() && github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add results/arc-paper/a14r-goal-discovery
+          git commit -m 'arc: persist A1.4R terminal evidence' || exit 0
+          git push origin HEAD:arc-paper-dmw-duck-20260821
