@@ -1,4 +1,4 @@
-name: ARC Paper Real Game Off vs Evidence vs Dialectic
+name: ARC Paper Real Game Four-Arm Goal Discovery
 
 on:
   pull_request:
@@ -54,7 +54,7 @@ jobs:
           print('openai_diagnostic_model_access=PASS model=gpt-5.6-sol')
           PY
 
-      - name: Build unchanged native runtime for dialectic arm
+      - name: Build unchanged native runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -72,13 +72,11 @@ jobs:
           git clone --filter=blob:none https://github.com/Tufalabs/duck-harness.git /tmp/duck-harness
           git -C /tmp/duck-harness checkout 7652836056c59e044f093e3c13ed7438c814169e
           test "$(git -C /tmp/duck-harness rev-parse HEAD)" = '7652836056c59e044f093e3c13ed7438c814169e'
-          python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness \
-            --manifest-out /tmp/duck_patch_manifest.json
+          python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness --manifest-out /tmp/duck_patch_manifest.json
           git clone --depth=1 https://huggingface.co/datasets/zarczynski/arc-agi-3-public /tmp/arc-public-envs
           test -d /tmp/arc-public-envs/environment_files/ft09/0d8bbf25
-          find /tmp/arc-public-envs/environment_files/ft09/0d8bbf25 -maxdepth 2 -type f -print | sort | tee /tmp/ft09-env-files.txt
 
-      - name: Configure external diagnostic model
+      - name: Configure identical diagnostic model and action budget
         shell: bash
         run: |
           set -euo pipefail
@@ -87,159 +85,148 @@ jobs:
           from pathlib import Path
           p=Path('/tmp/duck-harness/ARC3-Inference/configs/inference.json')
           c=json.loads(p.read_text())
-          c['shared'].update({
-              'model_name':'gpt-5.6-sol',
-              'base_url':'https://api.openai.com/v1',
-              'provider':'openai',
-              'context_window':32768,
-          })
-          c['environment'].update({
-              'games':['ft09-0d8bbf25'],
-              'include_tags':[],
-              'environments_dir':'/tmp/arc-public-envs/environment_files',
-              'n_passes':1,
-              'concurrent_jobs':1,
-              'max_steps':12,
-              'max_runtime_minutes':8,
-          })
+          c['shared'].update({'model_name':'gpt-5.6-sol','base_url':'https://api.openai.com/v1','provider':'openai','context_window':32768})
+          c['environment'].update({'games':['ft09-0d8bbf25'],'include_tags':[],'environments_dir':'/tmp/arc-public-envs/environment_files','n_passes':1,'concurrent_jobs':1,'max_steps':12,'max_runtime_minutes':8})
           c['deployment']['target']='inline'
-          c['analyzer'].update({
-              'model_id':'gpt-5.6-sol',
-              'base_url':'https://api.openai.com/v1',
-              'provider':'openai',
-              'context_window':32768,
-              'tool_steps':6,
-              'timeout':120,
-              'save_request_logs':True,
-          })
+          c['analyzer'].update({'model_id':'gpt-5.6-sol','base_url':'https://api.openai.com/v1','provider':'openai','context_window':32768,'tool_steps':6,'timeout':120,'save_request_logs':True})
           c['multimodal']['context']=''
-          q=Path('/tmp/arc-openai.json')
-          q.write_text(json.dumps(c,indent=2,sort_keys=True))
-          print(q)
+          Path('/tmp/arc-openai.json').write_text(json.dumps(c,indent=2,sort_keys=True))
           PY
-
-      - name: Install CPU inference dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
           python3 -m pip install --quiet uv
           cd /tmp/duck-harness/ARC3-Inference
           uv venv --python 3.12.12 .venv
           uv sync --locked --python .venv/bin/python
           uv pip install --python .venv/bin/python --no-deps -e ../tufa-arc-agi-framework
 
-      - name: Run real ARC baseline off
+      - name: Run OFF control
         shell: bash
         run: |
           set -euo pipefail
           cd /tmp/duck-harness/ARC3-Inference
-          rm -rf /tmp/arc-real-off
-          GRAPHENE_DMW_MODE=off \
-          CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-real-off \
+          rm -rf /tmp/arc-off
+          GRAPHENE_DMW_MODE=off CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-off \
           GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
-          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
-          make interactive
-          CONFIG_PATH=/tmp/arc-openai.json make score_run \
-            SCORE_RUN_DIR=/tmp/arc-real-off SCORE_OUTPUT_PATH=/tmp/arc-real-off/evaluation.json
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true make interactive
+          CONFIG_PATH=/tmp/arc-openai.json make score_run SCORE_RUN_DIR=/tmp/arc-off SCORE_OUTPUT_PATH=/tmp/arc-off/evaluation.json
 
-      - name: Run real ARC Graphene evidence
+      - name: Run EVIDENCE control
         shell: bash
         run: |
           set -euo pipefail
           cd /tmp/duck-harness/ARC3-Inference
-          rm -rf /tmp/arc-real-evidence
-          GRAPHENE_DMW_MODE=evidence \
-          CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-real-evidence \
+          rm -rf /tmp/arc-evidence
+          GRAPHENE_DMW_MODE=evidence CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-evidence \
           GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
-          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
-          make interactive
-          CONFIG_PATH=/tmp/arc-openai.json make score_run \
-            SCORE_RUN_DIR=/tmp/arc-real-evidence SCORE_OUTPUT_PATH=/tmp/arc-real-evidence/evaluation.json
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true make interactive
+          CONFIG_PATH=/tmp/arc-openai.json make score_run SCORE_RUN_DIR=/tmp/arc-evidence SCORE_OUTPUT_PATH=/tmp/arc-evidence/evaluation.json
 
-      - name: Run real ARC Graphene dialectic
+      - name: Run A1.4 dialectic baseline
         shell: bash
         env:
           GRAPHENE_DMW_MODE: dialectic
           GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
           GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
-          GRAPHENE_DMW_WORLD_SCOPE: ft09-diagnostic-dialectic
+          GRAPHENE_DMW_WORLD_SCOPE: ft09-a14
         run: |
           set -euo pipefail
           cd /tmp/duck-harness/ARC3-Inference
-          rm -rf /tmp/arc-real-dialectic
-          CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-real-dialectic \
+          rm -rf /tmp/arc-a14
+          CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-a14 \
           GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
-          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
-          make interactive
-          CONFIG_PATH=/tmp/arc-openai.json make score_run \
-            SCORE_RUN_DIR=/tmp/arc-real-dialectic SCORE_OUTPUT_PATH=/tmp/arc-real-dialectic/evaluation.json
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true make interactive
+          CONFIG_PATH=/tmp/arc-openai.json make score_run SCORE_RUN_DIR=/tmp/arc-a14 SCORE_OUTPUT_PATH=/tmp/arc-a14/evaluation.json
 
-      - name: Compare real ARC results
+      - name: Install A1.4R dialectical goal-discovery policy
         shell: bash
         run: |
           set -euo pipefail
-          OUT=results/arc-paper/real-arc-three-arm
+          BRIDGE=/tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py
+          python3 - "$BRIDGE" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1]); s=p.read_text()
+          anchor='        return "\\n".join(lines)\n\n    def build_native_proposal'
+          insertion='''        if self.mode == "dialectic":
+            obs=[x for x in self.state.crawler_records if x.get("kind")=="CrawlerObservation"][-8:]
+            changed=[x for x in obs if int(x.get("changed_count") or 0)>0]
+            level=[x for x in obs if bool(x.get("level_transition"))]
+            silent=[x for x in obs if int(x.get("changed_count") or 0)==0]
+            lines.append("- DIALECTICAL GOAL DISCOVERY (A1.4R): the objective is unknown. Maintain competing goal hypotheses until an intervention discriminates them.")
+            lines.append(f"  G1 PROGRESSION: level/state-transition-producing actions are goal-relevant. support={len(level)}/{max(1,len(obs))}.")
+            lines.append(f"  G2 CAUSAL NOVELTY: actions producing novel persistent visual change are goal-relevant. support={len(changed)}/{max(1,len(obs))}.")
+            lines.append(f"  G3 LATENT SEQUENCE: apparently silent actions may be preconditions for delayed multi-step progress. unresolved={len(silent)}/{max(1,len(obs))}.")
+            lines.append("  For the next action, identify the live goal hypothesis it tests, predict the observation expected under that hypothesis, and name the result that would falsify it.")
+            lines.append("  Prefer the cheapest intervention whose predicted outcomes DIFFER between two or more live goal hypotheses; information gain outranks repetition.")
+            lines.append("  A contradiction must reopen alternatives immediately. Goal commitment is provisional and evidence-bound.")
+        return "\\n".join(lines)
+
+    def build_native_proposal'''
+          if anchor not in s:
+              raise SystemExit('A1.4R prompt-context anchor missing')
+          p.write_text(s.replace(anchor,insertion,1))
+          PY
+          python3 -m py_compile "$BRIDGE"
+          grep -q 'DIALECTICAL GOAL DISCOVERY (A1.4R)' "$BRIDGE"
+
+      - name: Run A1.4R dialectical goal discovery
+        shell: bash
+        env:
+          GRAPHENE_DMW_MODE: dialectic
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+          GRAPHENE_DMW_WORLD_SCOPE: ft09-a14r
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/arc-a14r
+          CONFIG_PATH=/tmp/arc-openai.json EXPERIMENT_DIR=/tmp/arc-a14r \
+          GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true make interactive
+          CONFIG_PATH=/tmp/arc-openai.json make score_run SCORE_RUN_DIR=/tmp/arc-a14r SCORE_OUTPUT_PATH=/tmp/arc-a14r/evaluation.json
+
+      - name: Compare four-arm results
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=results/arc-paper/a14r-four-arm
           mkdir -p "$OUT"
-          cp /tmp/arc-real-off/evaluation.json "$OUT/off-evaluation.json"
-          cp /tmp/arc-real-evidence/evaluation.json "$OUT/evidence-evaluation.json"
-          cp /tmp/arc-real-dialectic/evaluation.json "$OUT/dialectic-evaluation.json"
+          for pair in off:/tmp/arc-off evidence:/tmp/arc-evidence a14:/tmp/arc-a14 a14r:/tmp/arc-a14r; do
+            name=${pair%%:*}; dir=${pair#*:}
+            cp "$dir/evaluation.json" "$OUT/$name-evaluation.json"
+            find "$dir" -type f -name graphene_dmw_state.json -exec cp {} "$OUT/$name-state.json" \; || true
+          done
           cp /tmp/duck_patch_manifest.json "$OUT/"
-          cp /tmp/ft09-env-files.txt "$OUT/"
           python3 - <<'PY'
           import json
           from pathlib import Path
-          out=Path('results/arc-paper/real-arc-three-arm')
-          game='ft09-0d8bbf25'
-          def load(name): return json.load(open(out/f'{name}-evaluation.json'))
-          def g(x):
-              row=x['games'][game]
-              return {
-                  'overall_score':float(x.get('score') or 0),
-                  'game_score':float(row.get('score') or 0),
-                  'seed_count':int(row.get('seed_count') or 0),
-                  'trial_count':int(row.get('trial_count') or 0),
-                  'trial_scores':row.get('trial_scores') or {},
-              }
+          out=Path('results/arc-paper/a14r-four-arm'); game='ft09-0d8bbf25'
+          def metric(name):
+              x=json.loads((out/f'{name}-evaluation.json').read_text()); row=x['games'][game]
+              return {'overall_score':float(x.get('score') or 0),'game_score':float(row.get('score') or 0),'trial_count':int(row.get('trial_count') or 0),'trial_scores':row.get('trial_scores') or {}}
+          scores={k:metric(k) for k in ('off','evidence','a14','a14r')}
+          state={}
+          p=out/'a14r-state.json'
+          if p.exists(): state=json.loads(p.read_text())
+          obs=[x for x in state.get('crawler_records',[]) if x.get('kind')=='CrawlerObservation']
           summary={
-              'experiment':'real ARC-AGI-3 ft09 three-arm diagnostic',
-              'game':game,
-              'model':'gpt-5.6-sol',
-              'competition_valid_model':False,
-              'environment_asset_source':'zarczynski/arc-agi-3-public',
-              'purpose':'causal integration diagnostic; final Kaggle path remains Qwen3.6-27B-FP8 offline',
-              'action_cap':12,
-              'off':g(load('off')),
-              'evidence':g(load('evidence')),
-              'dialectic':g(load('dialectic')),
+            'experiment':'A1.4R real-game dialectical goal-discovery four-arm ablation',
+            'game':game,'model':'gpt-5.6-sol','competition_valid_model':False,'action_cap':12,
+            **scores,
+            'a14r_delta_vs_a14':scores['a14r']['game_score']-scores['a14']['game_score'],
+            'a14r_delta_vs_off':scores['a14r']['game_score']-scores['off']['game_score'],
+            'crawler_observations':len(obs),
+            'goal_policy':'G1 progression vs G2 causal novelty vs G3 latent sequence; choose cheapest discriminating intervention',
+            'pass_gameplay_improvement':scores['a14r']['game_score']>scores['a14']['game_score'],
           }
-          summary['evidence_score_delta_vs_off']=summary['evidence']['game_score']-summary['off']['game_score']
-          summary['dialectic_score_delta_vs_off']=summary['dialectic']['game_score']-summary['off']['game_score']
-          summary['dialectic_score_delta_vs_evidence']=summary['dialectic']['game_score']-summary['evidence']['game_score']
-          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
-          print(json.dumps(summary,indent=2,sort_keys=True))
+          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)); print(json.dumps(summary,indent=2,sort_keys=True))
           PY
-          for mode in off evidence dialectic; do
-            find "/tmp/arc-real-$mode" -type f -name 'graphene_dmw_state.json' -exec cp {} "$OUT/$mode-graphene-state.json" \; || true
-            find "/tmp/arc-real-$mode" -type f \( -name 'runtime_state.json' -o -name 'final_score.json' \) -print | sort > "$OUT/$mode-runtime-files.txt" || true
-          done
-          printf '%s\n' \
-            "agentfabric_commit=${GITHUB_SHA}" \
-            'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
-            'game=ft09-0d8bbf25' \
-            'model=gpt-5.6-sol' \
-            'competition_valid_model=false' \
-            'diagnostic_external_api=true' \
-            'three_arms=off,evidence,dialectic' \
-            'native_hypokosh_action_seam=true' \
-            'final_submission_external_api=false' \
-            > "$OUT/identity.txt"
           find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
 
-      - name: Upload real ARC evidence
+      - name: Upload A1.4R four-arm evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: arc-paper-real-game-three-arm
-          path: results/arc-paper/real-arc-three-arm
+          name: arc-paper-a14r-four-arm
+          path: results/arc-paper/a14r-four-arm
           if-no-files-found: warn
           retention-days: 30
