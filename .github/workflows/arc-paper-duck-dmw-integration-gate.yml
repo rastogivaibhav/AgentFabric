@@ -1,0 +1,249 @@
+name: ARC Paper Duck GrapheneDMW Integration Gate
+
+on:
+  pull_request:
+    branches: [pi45-a15-dialectical-model-world-20260821]
+    paths:
+      - 'arc_competition/**'
+      - 'pi45_a1/**'
+      - '.github/workflows/arc-paper-duck-dmw-integration-gate.yml'
+  push:
+    branches: [arc-paper-dmw-duck-20260821]
+    paths:
+      - 'arc_competition/**'
+      - 'pi45_a1/**'
+      - '.github/workflows/arc-paper-duck-dmw-integration-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit-test GrapheneDMW competition bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            arc_competition/graphene_dmw_duck_bridge.py \
+            arc_competition/graphene_dmw_native_gate.py \
+            arc_competition/apply_duck_graphene_patch.py \
+            arc_competition/apply_duck_graphene_patch_v2.py \
+            arc_competition/test_graphene_dmw_duck_bridge.py
+          bash -n arc_competition/build_duck_kaggle_variant.sh
+          bash -n arc_competition/build_duck_dialectic_native_helper.sh
+          bash -n arc_competition/run_a14r_native_real_ablation.sh
+          python3 -m unittest -v arc_competition/test_graphene_dmw_duck_bridge.py
+
+      - name: Build unchanged native runtime and Duck dialectic helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_duck_dialectic_native_helper.sh /tmp/duck_dialectic_native_helper
+          test -x /tmp/a15_graphene_bootstrap
+          test -x /tmp/duck_dialectic_native_helper
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
+
+      - name: Prove native stagnation review
+        shell: bash
+        env:
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-native-gate-test
+          python3 - <<'PY'
+          from arc_competition.graphene_dmw_native_gate import review_dialectic_action
+          r=review_dialectic_action(
+              state_dir='/tmp/duck-native-gate-test',
+              turn=12,
+              action='[{"action":"ACTION1"}]',
+              reasons=['two-consecutive-no-op-transitions','recent-forward-prediction-miss'],
+              scientist_note={
+                  'world_model':'Current interpretation predicts ACTION1 should change the board.',
+                  'current_plan':'Repeat the current interaction.',
+                  'open_questions':'Could a different object or interaction invalidate this interpretation?',
+              },
+          )
+          assert r['duck_gate_decision']=='reopen-world-model', r
+          assert r['duck_gate_action_authorized'] is False, r
+          assert r['primary_hypothesis_id'].endswith('-reopen-model'), r
+          assert r['confidence'] > 0, r
+          receipt=r['reasoning_receipt']
+          for k in ['graphene_executed','fiber_bundle_built','stability_critic_executed','epistemic_admissibility_executed','lyapunov_trajectory_executed','convergence_executed','opposition_executed','no_silent_promotion']:
+              assert receipt.get(k) is True, (k, receipt)
+          import json, pathlib
+          pathlib.Path('/tmp/native_gate_response.json').write_text(json.dumps(r,indent=2,sort_keys=True))
+          print('duck_native_dialectic_gate=PASS', r['primary_hypothesis_id'], r['confidence'])
+          PY
+
+      - name: Prove native dialectical goal discovery
+        shell: bash
+        env:
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+          GRAPHENE_DMW_WORLD_SCOPE: integration-goal-discovery
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-native-goal-test
+          python3 - <<'PY'
+          import json, pathlib
+          from arc_competition.graphene_dmw_native_gate import review_goal_discovery
+          r=review_goal_discovery(
+              state_dir='/tmp/duck-native-goal-test',
+              turn=7,
+              action='[{"action":"ACTION2"}]',
+              evidence={
+                  'observations': 6,
+                  'changed': 4,
+                  'level_transitions': 0,
+                  'silent': 2,
+                  'delayed_effects': 1,
+              },
+          )
+          assert r['goal_discovery_selected'] in {'progression','causal_novelty','latent_sequence'}, r
+          assert r['goal_discovery_hypothesis_id']==r['primary_hypothesis_id'], r
+          receipt=r['reasoning_receipt']
+          for k in ['graphene_executed','fiber_bundle_built','stability_critic_executed','epistemic_admissibility_executed','lyapunov_trajectory_executed','convergence_executed','opposition_executed','no_silent_promotion']:
+              assert receipt.get(k) is True, (k, receipt)
+          req=r['goal_discovery_request']
+          goal_nodes=[n for n in req['nodes'] if (n.get('metadata') or {}).get('kind')=='goal_hypothesis']
+          assert len(goal_nodes)==3, goal_nodes
+          pathlib.Path('/tmp/native_goal_response.json').write_text(json.dumps(r,indent=2,sort_keys=True))
+          print('duck_native_goal_discovery=PASS', r['goal_discovery_selected'], r.get('confidence'))
+          PY
+
+      - name: Fetch exact Milestone-1 Duck source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-harness
+          git clone --filter=blob:none https://github.com/Tufalabs/duck-harness.git /tmp/duck-harness
+          git -C /tmp/duck-harness checkout 7652836056c59e044f093e3c13ed7438c814169e
+          test "$(git -C /tmp/duck-harness rev-parse HEAD)" = '7652836056c59e044f093e3c13ed7438c814169e'
+
+      - name: Assert proven Qwen 27B config
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg=json.loads(Path('/tmp/duck-harness/ARC3-Inference/configs/inference.json').read_text())
+          assert cfg['shared']['model_name']=='vrfai/Qwen3.6-27B-FP8'
+          assert cfg['shared']['provider']=='vllm'
+          assert int(cfg['shared']['context_window'])==32768
+          assert cfg['server']['tool_call_parser']=='qwen3_coder'
+          assert cfg['server']['reasoning_parser']=='qwen3'
+          print('duck_qwen27_config=PASS')
+          PY
+
+      - name: Apply fail-closed GrapheneDMW patch with native action seam
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness \
+            --manifest-out /tmp/duck_patch_manifest.json
+          python3 -m py_compile \
+            /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py \
+            /tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py \
+            /tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_native_gate.py \
+            /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
+          grep -q 'review_dialectic_action' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'review_goal_discovery' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'GRAPHENE_DMW_GOAL_DISCOVERY' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'goal_discovery_selected' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'graphene_dialectic_reopen' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'graphene_negative_evidence' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'record_transition' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'prompt_context' /tmp/duck-harness/ARC3-Inference/inference/agent/tool_agent.py
+          grep -q 'graphene_dmw_mode' /tmp/duck-harness/ARC3-Inference/inference/framework/solver.py
+
+      - name: Prove baseline remains selectable
+        shell: bash
+        run: |
+          set -euo pipefail
+          GRAPHENE_DMW_MODE=off python3 - <<'PY'
+          import importlib.util,sys
+          from pathlib import Path
+          path=Path('/tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py')
+          name='graphene_dmw_bridge_smoke'; spec=importlib.util.spec_from_file_location(name,path); assert spec and spec.loader
+          mod=importlib.util.module_from_spec(spec); sys.modules[name]=mod; spec.loader.exec_module(mod)
+          b=mod.GrapheneDMWDuckBridge(Path('/tmp/off.json'),mode='off')
+          assert b.prompt_context()=='' and b.stagnation_reasons()==[]
+          assert b.dead_action_reason([[0]], b.canonical_action([{'action':'ACTION1'}])) is None
+          print('duck_baseline_mode=PASS')
+          PY
+
+      - name: Run real ft09 A1.4 vs A1.4R native goal discovery
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.pulapi }}
+          OPENAI_BASE_URL: https://api.openai.com/v1
+          OPENAI_PROVIDER: openai
+          LOCAL_ANALYZER_API_KEY: ${{ secrets.pulapi }}
+          LOCAL_ANALYZER_BASE_URL: https://api.openai.com/v1
+          LOCAL_ANALYZER_PROVIDER: openai
+          LOCAL_ANALYZER_MODEL_ID: gpt-5.6-sol
+          LOCAL_ANALYZER_CONTEXT_WINDOW: '32768'
+          LOCAL_ANALYZER_TOOL_STEPS: '6'
+          LOCAL_ANALYZER_TOOL_TIMEOUT: '30'
+          LOCAL_ANALYZER_TIMEOUT: '120'
+          LOCAL_ANALYZER_ENABLE_THINKING: 'true'
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+        run: |
+          set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}"
+          bash arc_competition/run_a14r_native_real_ablation.sh
+
+      - name: Upload A1.4R real-game evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-a14r-native-real
+          path: results/arc-paper/a14r-native-real
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Record integration evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results/arc-paper/duck-dmw-integration
+          cp /tmp/duck_patch_manifest.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
+          cp /tmp/native_gate_response.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
+          cp /tmp/native_goal_response.json results/arc-paper/duck-dmw-integration/ 2>/dev/null || true
+          cp arc_competition/UPSTREAM_MANIFEST.json results/arc-paper/duck-dmw-integration/
+          printf '%s\n' \
+            "head_sha=${{ github.event.pull_request.head.sha || github.sha }}" \
+            'duck_commit=7652836056c59e044f093e3c13ed7438c814169e' \
+            'qwen_model=vrfai/Qwen3.6-27B-FP8' \
+            'native_dialectic_action_seam=true' \
+            'native_dialectical_goal_discovery=true' \
+            'goal_hypotheses=progression,causal_novelty,latent_sequence' \
+            'goal_discovery_ablation_flag=GRAPHENE_DMW_GOAL_DISCOVERY' \
+            'native_query_mode=Theoretical' \
+            'off_mode_preserved=true' \
+            'evidence_mode_preserved=true' \
+            'core_graphenedb_modified=false' \
+            'core_hypokosh_modified=false' \
+            'arc_game_execution=true' \
+            > results/arc-paper/duck-dmw-integration/gate_identity.txt
+          find results/arc-paper/duck-dmw-integration -type f -print0 | sort -z | xargs -0 sha256sum > results/arc-paper/duck-dmw-integration/SHA256SUMS.txt
+
+      - name: Upload integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-duck-dmw-integration-evidence
+          path: results/arc-paper/duck-dmw-integration
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,23 @@
+{
+  "purpose": "ARC-AGI-3 Paper Prize competition integration provenance",
+  "created": "2026-08-21",
+  "primary_offline_harness": {
+    "repository": "Tufalabs/duck-harness",
+    "commit": "7652836056c59e044f093e3c13ed7438c814169e",
+    "role": "Milestone-1 winning Kaggle/offline execution harness and Qwen3.6-27B path"
+  },
+  "architecture_references": [
+    {
+      "repository": "ryanbbrown/Retrodict",
+      "commit": "71672e8e5adb008360f52a61ef9e2adf91a62d89",
+      "role": "retrodiction, forward expectation checking, durable playbook memory"
+    },
+    {
+      "repository": "NIMI-research/Tycho",
+      "commit": "f68912a764372ead0a610db2e1c011d41ce5197e",
+      "role": "falsifiable executable world-model ablations and actor-controlled modeling"
+    }
+  ],
+  "agentfabric_base": "bd9767f614f0dc84cb1f93a0487f79eb9bf71b62",
+  "integration_rule": "Do not modify the Duck baseline in-place. Add GrapheneDMW as an optional sidecar and keep baseline/evidence/dialectic variants separately measurable."
+}

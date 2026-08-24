@@ -1,0 +1,144 @@
+name: ARC Paper Real World Crawler
+
+on:
+  pull_request:
+    branches: [pi45-a15-dialectical-model-world-20260821]
+    paths:
+      - '.github/workflows/arc-paper-real-world-crawler.yml'
+      - 'arc_competition/dialectical_world_crawler.py'
+      - 'arc_competition/graphene_dmw_duck_bridge.py'
+      - 'arc_competition/apply_duck_graphene_patch_v2.py'
+      - 'arc_competition/graphene_dmw_native_gate.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-world-crawler:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      OPENAI_API_KEY: ${{ secrets.pulapi }}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OPENAI_PROVIDER: openai
+      LOCAL_ANALYZER_API_KEY: ${{ secrets.pulapi }}
+      LOCAL_ANALYZER_BASE_URL: https://api.openai.com/v1
+      LOCAL_ANALYZER_PROVIDER: openai
+      LOCAL_ANALYZER_MODEL_ID: gpt-5.6-sol
+      LOCAL_ANALYZER_CONTEXT_WINDOW: '32768'
+      LOCAL_ANALYZER_TOOL_STEPS: '6'
+      LOCAL_ANALYZER_TOOL_TIMEOUT: '30'
+      LOCAL_ANALYZER_TIMEOUT: '120'
+      LOCAL_ANALYZER_ENABLE_THINKING: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build native dialectic runtime
+        run: |
+          set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}"
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_duck_dialectic_native_helper.sh /tmp/duck_dialectic_native_helper
+
+      - name: Fetch and patch pinned Duck plus public ft09
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-harness /tmp/arc-public-envs
+          git clone --filter=blob:none https://github.com/Tufalabs/duck-harness.git /tmp/duck-harness
+          git -C /tmp/duck-harness checkout 7652836056c59e044f093e3c13ed7438c814169e
+          python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness --manifest-out /tmp/duck_patch_manifest.json
+          test -f /tmp/duck-harness/ARC3-Inference/inference/agent/dialectical_world_crawler.py
+          python3 -m py_compile \
+            /tmp/duck-harness/ARC3-Inference/inference/agent/dialectical_world_crawler.py \
+            /tmp/duck-harness/ARC3-Inference/inference/agent/graphene_dmw_bridge.py
+          git clone --depth=1 https://huggingface.co/datasets/zarczynski/arc-agi-3-public /tmp/arc-public-envs
+          test -d /tmp/arc-public-envs/environment_files/ft09/0d8bbf25
+
+      - name: Configure diagnostic model
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/duck-harness/ARC3-Inference/configs/inference.json')
+          c=json.loads(p.read_text())
+          c['shared'].update({'model_name':'gpt-5.6-sol','base_url':'https://api.openai.com/v1','provider':'openai','context_window':32768})
+          c['environment'].update({'games':['ft09-0d8bbf25'],'include_tags':[],'environments_dir':'/tmp/arc-public-envs/environment_files','n_passes':1,'concurrent_jobs':1,'max_steps':12,'max_runtime_minutes':8})
+          c['deployment']['target']='inline'
+          c['analyzer'].update({'model_id':'gpt-5.6-sol','base_url':'https://api.openai.com/v1','provider':'openai','context_window':32768,'tool_steps':6,'timeout':120,'save_request_logs':True})
+          c['multimodal']['context']=''
+          Path('/tmp/arc-crawler-openai.json').write_text(json.dumps(c,indent=2,sort_keys=True))
+          PY
+
+      - name: Install Duck dependencies
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet uv
+          cd /tmp/duck-harness/ARC3-Inference
+          uv venv --python 3.12.12 .venv
+          uv sync --locked --python .venv/bin/python
+          uv pip install --python .venv/bin/python --no-deps -e ../tufa-arc-agi-framework
+
+      - name: Run real ft09 with curious crawler
+        env:
+          GRAPHENE_DMW_MODE: dialectic
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+          GRAPHENE_DMW_WORLD_SCOPE: ft09-real-crawler
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/arc-real-crawler
+          CONFIG_PATH=/tmp/arc-crawler-openai.json EXPERIMENT_DIR=/tmp/arc-real-crawler \
+          GAME=ft09-0d8bbf25 GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files \
+          N_PASSES=1 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=8 SIMULATE_COMPETITION_ARCADE=true \
+          make interactive
+
+      - name: Prove real-frame crawler activation
+        run: |
+          set -euo pipefail
+          OUT=results/arc-paper/real-world-crawler
+          mkdir -p "$OUT"
+          state=$(find /tmp/arc-real-crawler -type f -name graphene_dmw_state.json | head -1)
+          test -n "$state"
+          cp "$state" "$OUT/graphene_dmw_state.json"
+          cp /tmp/duck_patch_manifest.json "$OUT/"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('results/arc-paper/real-world-crawler/graphene_dmw_state.json')
+          x=json.loads(p.read_text())
+          obs=[r for r in x.get('crawler_records',[]) if r.get('kind')=='CrawlerObservation']
+          hyps=[r for r in x.get('crawler_records',[]) if r.get('kind')=='Hypothesis']
+          stats=x.get('crawler_sequence_stats') or {}
+          assert obs, 'real ARC run produced no crawler observations'
+          assert hyps, 'real ARC run produced no crawler hypotheses'
+          assert stats, 'real ARC run produced no sequence statistics'
+          assert any(int(r.get('changed_count') or 0)>0 for r in obs), 'crawler never detected a real pixel change'
+          max_depth=max(int(v.get('depth') or 0) for v in stats.values())
+          assert max_depth>=2, f'crawler never accumulated a multi-step sequence: depth={max_depth}'
+          summary={
+            'experiment':'real ft09 curious world crawler activation',
+            'pass':True,
+            'crawler_observations':len(obs),
+            'crawler_hypotheses':len(hyps),
+            'sequence_rules':len(stats),
+            'max_sequence_depth':max_depth,
+            'pixel_changing_observations':sum(int(r.get('changed_count') or 0)>0 for r in obs),
+            'silent_observations':sum(int(r.get('changed_count') or 0)==0 for r in obs),
+            'level_transitions':sum(bool(r.get('level_transition')) for r in obs),
+          }
+          Path('results/arc-paper/real-world-crawler/summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+          find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+
+      - name: Upload real crawler evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-real-world-crawler
+          path: results/arc-paper/real-world-crawler
+          if-no-files-found: warn
+          retention-days: 30

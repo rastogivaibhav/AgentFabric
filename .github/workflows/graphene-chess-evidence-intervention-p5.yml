@@ -1,0 +1,67 @@
+name: Graphene Chess Evidence Intervention P5
+on:
+  pull_request:
+    paths:
+      - 'arc_competition/graphene_chess_evidence_intervention_p5.py'
+      - 'arc_competition/chess_counterfactual_plugin_v5.py'
+      - 'arc_competition/build_chess_counterfactual_native_helper_p42.sh'
+      - 'arc_competition/chess_rules.json'
+      - '.github/workflows/graphene-chess-evidence-intervention-p5.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p5-evidence-intervention:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --disable-pip-version-check 'python-chess==1.999'
+      - name: Build unchanged native runtime and helper
+        run: |
+          set -euo pipefail
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_chess_counterfactual_native_helper_p42.sh /tmp/chess_counterfactual_native_helper_p5
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
+      - name: Run five causal evidence conditions
+        env:
+          PYTHONPATH: pi45_a1:arc_competition
+        run: |
+          set -uo pipefail
+          rm -rf /tmp/graphene-chess-p5 /tmp/graphene_chess_p5.*.graphenedb*
+          mkdir -p /tmp/graphene-chess-p5
+          set +e
+          python3 arc_competition/graphene_chess_evidence_intervention_p5.py \
+            --native-helper /tmp/chess_counterfactual_native_helper_p5 \
+            --bootstrap /tmp/a15_graphene_bootstrap \
+            --db-prefix /tmp/graphene_chess_p5 \
+            --rules arc_competition/chess_rules.json \
+            --runs 10 \
+            --out /tmp/graphene-chess-p5 | tee /tmp/graphene-chess-p5/run.log
+          rc=${PIPESTATUS[0]}
+          echo "$rc" > /tmp/graphene-chess-p5/process_exit_code.txt
+          exit "$rc"
+      - name: Record evidence identity
+        if: always()
+        run: |
+          mkdir -p /tmp/graphene-chess-p5
+          printf '%s\n' \
+            "agentfabric_commit=${GITHUB_SHA}" \
+            'experiment=GCDT-P5-causal-evidence-intervention' \
+            'conditions=baseline,ablate_e4_positive,contradict_e4,boost_d4_positive,restore' \
+            'runs_per_condition=10' \
+            'core_graphenedb_modified=false' \
+            'core_hypokosh_modified=false' \
+            'stockfish=false' \
+            'opening_book=false' \
+            'llm_move_selector=false' \
+            > /tmp/graphene-chess-p5/experiment_identity.txt
+          find /tmp/graphene-chess-p5 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-chess-p5/SHA256SUMS.txt
+      - name: Upload P5 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphene-chess-evidence-intervention-p5-evidence
+          path: /tmp/graphene-chess-p5
+          if-no-files-found: error
+          retention-days: 30
