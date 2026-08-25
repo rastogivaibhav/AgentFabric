@@ -1,12 +1,14 @@
+import importlib.util
 import json
-import math
 import os
 import pathlib
 import statistics
+import sys
 import traceback
 from importlib.metadata import version as package_version
 
-OUT = pathlib.Path("farmmind_render/out")
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+OUT = ROOT / "farmmind_render" / "out"
 OUT.mkdir(parents=True, exist_ok=True)
 
 
@@ -21,14 +23,20 @@ def write_report(report):
     print(payload, flush=True)
 
 
+def load_submission():
+    path = ROOT / "submission.py"
+    spec = importlib.util.spec_from_file_location("farmmind_submission", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load submission from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def bank(env, seat):
-    final = env.steps[-1][seat]
-    try:
-        value = float(final.reward)
-        if math.isfinite(value):
-            return value
-    except Exception:
-        pass
+    # Prefer the actual terminal farm bank. Kaggriculture ranking rewards can differ
+    # from raw bank depending on execution context, while final farm.money is the
+    # competition's economic outcome we are targeting.
     for states in reversed(env.steps):
         try:
             player_id = int(states[seat].observation.player)
@@ -40,10 +48,11 @@ def bank(env, seat):
 
 report = {"status": "starting"}
 write_report(report)
+exit_code = 0
 
 try:
     from kaggle_environments import make
-    import submission
+    submission = load_submission()
 
     candidate = submission.agent
     parent = submission._FM21_PARENT_AGENT
@@ -112,6 +121,7 @@ try:
         "rows": rows,
     }
 except Exception as exc:
+    exit_code = 1
     report = {
         "status": "error",
         "error": repr(exc),
@@ -119,3 +129,4 @@ except Exception as exc:
     }
 
 write_report(report)
+sys.exit(exit_code)
