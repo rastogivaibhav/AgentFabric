@@ -68,8 +68,8 @@ jobs:
 
       - name: Run paired-seat V2.1 vs V2.0/V16 parent
         env:
-          FARMMIND_SEEDS: '3'
-          FARMMIND_SEED_BASE: '916001'
+          FARMMIND_SEEDS: '10'
+          FARMMIND_SEED_BASE: '917001'
         run: python farmmind_render/run_official.py
 
       - name: Show qualification result
