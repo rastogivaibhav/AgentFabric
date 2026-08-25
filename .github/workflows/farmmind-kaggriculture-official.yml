@@ -1,0 +1,60 @@
+name: FarmMind Kaggriculture Official Qualification
+
+on:
+  push:
+    branches:
+      - farmmind-kaggriculture-render-test
+    paths:
+      - 'farmmind_render/**'
+      - '.github/workflows/farmmind-kaggriculture-official.yml'
+  workflow_dispatch:
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout isolated FarmMind branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Decode FarmMind V2.1 submission
+        run: |
+          python - <<'PY'
+          import base64, gzip, pathlib
+          src = pathlib.Path('farmmind_render/submission.py.gz.b64')
+          raw = base64.b64decode(src.read_text().strip())
+          pathlib.Path('submission.py').write_bytes(gzip.decompress(raw))
+          print('submission bytes:', pathlib.Path('submission.py').stat().st_size)
+          PY
+
+      - name: Install official Kaggriculture environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir 'kaggle-environments==1.32.6'
+          python - <<'PY'
+          from importlib.metadata import version
+          print('kaggle-environments', version('kaggle-environments'))
+          PY
+
+      - name: Run paired-seat V2.1 vs V2.0/V16 parent
+        env:
+          FARMMIND_SEEDS: '3'
+          FARMMIND_SEED_BASE: '916001'
+        run: python farmmind_render/run_official.py
+
+      - name: Show qualification result
+        if: always()
+        run: cat farmmind_render/out/result.json || true
+
+      - name: Upload qualification result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: farmmind-kaggriculture-official-result
+          path: farmmind_render/out/
+          if-no-files-found: warn
