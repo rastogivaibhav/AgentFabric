@@ -25,11 +25,16 @@ jobs:
       - name: Decode FarmMind V2.1 submission
         run: |
           python - <<'PY'
-          import base64, gzip, pathlib
-          src = pathlib.Path('farmmind_render/submission.py.gz.b64')
-          raw = base64.b64decode(src.read_text().strip())
-          pathlib.Path('submission.py').write_bytes(gzip.decompress(raw))
-          print('submission bytes:', pathlib.Path('submission.py').stat().st_size)
+          import base64, gzip, hashlib, pathlib
+          parts = sorted(pathlib.Path('farmmind_render/parts').glob('*.b64'))
+          assert len(parts) == 13, f'expected 13 payload parts, got {len(parts)}'
+          encoded = ''.join(p.read_text().strip() for p in parts)
+          raw = gzip.decompress(base64.b64decode(encoded))
+          expected = 'c092f78bbea51393dfa2105124a48f573f4fbc0658042606acf0a29b417d0e5c'
+          actual = hashlib.sha256(raw).hexdigest()
+          assert actual == expected, f'submission sha mismatch {actual}'
+          pathlib.Path('submission.py').write_bytes(raw)
+          print('submission bytes:', len(raw), 'sha256:', actual)
           PY
 
       - name: Install official Kaggriculture environment
