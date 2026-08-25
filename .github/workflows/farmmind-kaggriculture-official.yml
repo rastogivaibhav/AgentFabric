@@ -9,6 +9,7 @@ on:
       - '.github/workflows/farmmind-kaggriculture-official.yml'
   workflow_dispatch:
 
+# Isolated Kaggriculture qualification runner. Does not deploy AgentFabric.
 jobs:
   qualify:
     runs-on: ubuntu-latest
