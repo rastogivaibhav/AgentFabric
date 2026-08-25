@@ -26,8 +26,27 @@ jobs:
         run: |
           python - <<'PY'
           import base64, gzip, hashlib, pathlib
+          expected_parts = {
+            '00.b64':'03fdb77d36d7370dd2fb43b6cf517d407418b3883b5d57a8289b45809e2b85df',
+            '01.b64':'b3761a8fe3fc19506e7437e6be3bb28f3f1f6050cd154cddd8749c078f1fe08f',
+            '02.b64':'d652897749c6fc017b8c66e699e5a0312bab50e6ece4b655a7416fd426f7a751',
+            '03.b64':'2c5cfee448a59a73341f3778a3041424c5184e7bfef792f0d36b5efb0373e18c',
+            '04.b64':'3a3a1961a5092523162153e390e8cddefeca3164ea91237a898519d2c3aff389',
+            '05.b64':'46cc7ec4c7c14479c062c847ad330f235dd9d5d5231fb92d3cde118227c89f2a',
+            '06.b64':'1117b78a75572e6a8131ba622bc40ea2ceb90ca5dd00c97efd921a33f13e6caa',
+            '07.b64':'437df0108783423bb7ae872a8646743ffa34422eef27c77d517cd1480543d940',
+            '08.b64':'d9b16b60a3b169372754806b11db4abff8aacf4ed98811b60f667fec89ba2dd9',
+            '09.b64':'1b9472bb1f3bd40b3cb543b5c0d84d700060bfa632e99c0f3c90622c6e9e1810',
+            '10.b64':'5b59c05b374e7172bda4d425d9071fe1bf3cedeebb4062713f7571872c8c7bbe',
+            '11.b64':'cd84b568b311087411cdd37d3230db4a4182a4b01c4d1a1c99862cf0375d219c',
+            '12.b64':'7660c9f9b374c2e310ea63ecd4f08c10553fc69cbc423f2368318e0bf35f2806',
+          }
           parts = sorted(pathlib.Path('farmmind_render/parts').glob('*.b64'))
           assert len(parts) == 13, f'expected 13 payload parts, got {len(parts)}'
+          for p in parts:
+              got = hashlib.sha256(p.read_bytes()).hexdigest()
+              print('PART', p.name, len(p.read_text()), got, 'OK' if got == expected_parts[p.name] else 'MISMATCH')
+              assert got == expected_parts[p.name], f'payload part mismatch: {p.name}'
           encoded = ''.join(p.read_text().strip() for p in parts)
           raw = gzip.decompress(base64.b64decode(encoded))
           expected = 'c092f78bbea51393dfa2105124a48f573f4fbc0658042606acf0a29b417d0e5c'
