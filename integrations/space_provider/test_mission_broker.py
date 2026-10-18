@@ -11,7 +11,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 
-from mission_broker import MissionBroker, MissionJournal, MissionStateError, Permit
+from mission_broker import MissionBroker, MissionJournal, MissionStateError, Permit, _space_key
 from space_client import SpaceComputerProvider, SpaceError
 from test_space_client import _Fixture
 
@@ -70,6 +70,24 @@ class MissionBrokerTests(unittest.TestCase):
         self.assertNotIn(b"Read the support ticket", raw)
         self.assertNotIn(b"fixture-output", raw)
 
+
+    def test_idempotency_key_namespaces_tenant_run_and_mutation(self):
+        key = _space_key("tenant_a", "run_001", "create", "same-key")
+        self.assertTrue(key.startswith("ak-"))
+        self.assertEqual(key, _space_key("tenant_a", "run_001", "create", "same-key"))
+        self.assertNotEqual(key, _space_key("tenant_b", "run_001", "create", "same-key"))
+        self.assertNotEqual(key, _space_key("tenant_a", "run_002", "create", "same-key"))
+        self.assertNotEqual(key, _space_key("tenant_a", "run_001", "command", "same-key"))
+        self.assertNotEqual(key, _space_key("tenant_a", "run_001", "create", "other-key"))
+        self.assertNotIn("tenant_a", key)
+
+    def test_vm_requests_use_stable_namespaced_idempotency_key(self):
+        self._launch()
+        create_calls = [r for r in self.server.calls if r["path"] == "/v1/sandboxes"]
+        self.assertEqual(len(create_calls), 1)
+        self.assertEqual(create_calls[0]["key"], _space_key(
+            "tenant_a", "run_001", "create", "create-001"))
+        self.assertTrue(self.journal.verify_chain("tenant_a", "run_001"))
 
     def test_no_launch_authorizer_fails_closed_before_space_api(self):
         self.broker.authorize_launch = None
