@@ -28,7 +28,8 @@ class MissionBrokerTests(unittest.TestCase):
         origin = f"http://127.0.0.1:{self.server.server_port}"
         self.provider = SpaceComputerProvider(origin, origin, "test-management-token")
         self.journal = MissionJournal(self.path)
-        self.broker = MissionBroker(self.journal, self.provider)
+        self.broker = MissionBroker(self.journal, self.provider,
+                                    authorize_launch=lambda *_: Permit(True, "ags_fixture_launch"))
         self.journal.begin("tenant_a", "run_001", "Read the support ticket and prepare a draft")
 
     def tearDown(self):
@@ -61,10 +62,66 @@ class MissionBrokerTests(unittest.TestCase):
             "mission.created", "create.reserved", "create.completed", "sandbox.ready",
             "command.reserved", "command.completed", "delete.reserved", "delete.completed"])
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(all("at_utc" in x["metadata"] for x in self.journal.events("tenant_a", "run_001")))
+        self.assertEqual(self.journal.events("tenant_a", "run_001")[2]["metadata"]["decision_ref"],
+                         "ags_fixture_launch")
         raw = self.path.read_bytes()
         self.assertNotIn(b"test-management-token", raw)
         self.assertNotIn(b"Read the support ticket", raw)
         self.assertNotIn(b"fixture-output", raw)
+
+
+    def test_no_launch_authorizer_fails_closed_before_space_api(self):
+        self.broker.authorize_launch = None
+        with self.assertRaisesRegex(MissionStateError, "No trusted launch authorization"):
+            self._launch()
+        self.assertEqual(self.server.calls, [])
+        self.assertEqual(self.journal.get("tenant_a", "run_001").state, "new")
+        self.assertEqual(self.journal.events("tenant_a", "run_001")[-1]["event"], "create.denied")
+
+    def test_explicit_vm_launch_denial_is_recorded_without_network_call(self):
+        self.broker.authorize_launch = lambda *_: Permit(False, "ags_no_vm_permission")
+        with self.assertRaisesRegex(MissionStateError, "Launch explicitly denied"):
+            self._launch()
+        self.assertEqual(self.server.calls, [])
+        self.assertTrue(self.journal.verify_chain("tenant_a", "run_001"))
+
+    def test_launch_authorizer_outage_fails_closed(self):
+        def unavailable(*_):
+            raise OSError("simulated authorization outage")
+        self.broker.authorize_launch = unavailable
+        with self.assertRaisesRegex(MissionStateError, "Launch authorization unavailable"):
+            self._launch()
+        self.assertEqual(self.server.calls, [])
+        self.assertEqual(self.journal.events("tenant_a", "run_001")[-1]["event"], "create.denied")
+
+    def test_vm_launch_policy_digest_changes_with_requested_egress(self):
+        digests = []
+        def capture(tenant, run, fingerprint):
+            digests.append(fingerprint)
+            return Permit(False, "ags_denied")
+        self.broker.authorize_launch = capture
+        with self.assertRaises(MissionStateError):
+            self._launch()
+        with self.assertRaises(MissionStateError):
+            self.broker.launch(
+                "tenant_a", "run_001", template="seed:latest", request_key="create-002",
+                network_policy={"version": "v1", "egress": {
+                    "default_action": "allow", "allow": [], "deny": []}})
+        self.assertEqual(len(digests), 2)
+        self.assertNotEqual(digests[0], digests[1])
+        self.assertEqual(self.server.calls, [])
+
+    def test_command_authorizer_outage_does_not_reach_vm(self):
+        self._launch()
+        def unavailable(*_):
+            raise TimeoutError("test only")
+        self.broker.authorize_command = unavailable
+        before = len(self.server.calls)
+        with self.assertRaisesRegex(MissionStateError, "Authorization unavailable"):
+            self.broker.execute("tenant_a", "run_001", argv=["true"], request_key="auth-down")
+        self.assertEqual(len(self.server.calls), before)
+        self.assertEqual(self.journal.events("tenant_a", "run_001")[-1]["event"], "command.denied")
 
     def test_no_approval_adapter_denies_command_without_calling_vm(self):
         self._launch()
@@ -109,8 +166,9 @@ class MissionBrokerTests(unittest.TestCase):
         self.server.mode = "normal"
         self.journal.close()
         self.journal = MissionJournal(self.path)
-        self.broker = MissionBroker(self.journal, self.provider)
-        with self.assertRaisesRegex(MissionStateError, "needs_reconciliation"):
+        self.broker = MissionBroker(self.journal, self.provider,
+                                    authorize_launch=lambda *_: Permit(True, "ags_fixture_launch"))
+        with self.assertRaisesRegex(MissionStateError, "not new"):
             self._launch()
         self.assertEqual(len(self.server.calls), 1)
         self.assertEqual(self.journal.events("tenant_a", "run_001")[-1]["event"], "create.uncertain")
