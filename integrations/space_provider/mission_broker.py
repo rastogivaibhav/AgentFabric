@@ -36,6 +36,19 @@ def _digest(value: object) -> str:
     return sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
+def _space_key(tenant: str, run: str, kind: str, request_key: str) -> str:
+    """Separate tenants and mission phases sharing one SPACE organization.
+
+    This value is stable across restarts and must be used unchanged for retries.
+    """
+    if kind not in ("create", "command", "delete"):
+        raise ValueError("unsupported SPACE mutation")
+    _identity(tenant, "tenant_id")
+    _identity(run, "run_id")
+    _identity(request_key, "request_key")
+    return "ak-" + _digest({"tenant": tenant, "run": run, "kind": kind, "key": request_key})
+
+
 class MissionStateError(RuntimeError):
     """A run is ambiguous, unauthorised, or in the wrong lifecycle state."""
 
@@ -252,10 +265,11 @@ class MissionBroker:
             raise MissionStateError("Launch explicitly denied by authorization boundary")
         decision_ref = _identity(permit.decision_ref, "decision_ref")
         # Persist the original request key and fingerprint before network I/O.
-        self.journal.reserve(tenant, run, expected="new", kind="create", key=request_key,
+        remote_key = _space_key(tenant, run, "create", request_key)
+        self.journal.reserve(tenant, run, expected="new", kind="create", key=remote_key,
                              payload={**payload, "decision_ref": decision_ref})
         try:
-            ref = self.provider.create(template=template, request_key=request_key,
+            ref = self.provider.create(template=template, request_key=remote_key,
                                        network_policy=payload["network_policy"])
         except Exception:
             self.journal.uncertain(tenant, run, kind="create")
@@ -303,10 +317,11 @@ class MissionBroker:
         decision_ref = _identity(permit.decision_ref, "decision_ref")
         # The permit is scoped to this exact argv hash. No arbitrary command
         # substitutions after authorization.
+        remote_key = _space_key(tenant, run, "command", request_key)
         self.journal.reserve(tenant, run, expected="ready", kind="command",
-                             key=request_key, payload={"argv_sha256": fingerprint, "decision_ref": decision_ref})
+                             key=remote_key, payload={"argv_sha256": fingerprint, "decision_ref": decision_ref})
         try:
-            result = self.provider.command(mission.sandbox_id, argv=argv, request_key=request_key)
+            result = self.provider.command(mission.sandbox_id, argv=argv, request_key=remote_key)
         except Exception:
             self.journal.uncertain(tenant, run, kind="command")
             raise
@@ -319,10 +334,11 @@ class MissionBroker:
         mission = self.journal.get(tenant, run)
         if mission.state not in ("ready", "created") or not mission.sandbox_id:
             raise MissionStateError("Mission requires inspection before another delete attempt")
-        self.journal.reserve(tenant, run, expected=mission.state, kind="delete", key=request_key,
+        remote_key = _space_key(tenant, run, "delete", request_key)
+        self.journal.reserve(tenant, run, expected=mission.state, kind="delete", key=remote_key,
                              payload={"sandbox_id": mission.sandbox_id})
         try:
-            self.provider.delete(mission.sandbox_id, request_key=request_key)
+            self.provider.delete(mission.sandbox_id, request_key=remote_key)
         except Exception:
             self.journal.uncertain(tenant, run, kind="delete")
             raise
