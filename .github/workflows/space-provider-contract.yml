@@ -57,6 +57,13 @@ jobs:
           fi
           sha256sum integrations/space_provider/*.py > space-evidence/source-sha256.txt
           sha256sum integrations/space_provider/README.md >> space-evidence/source-sha256.txt
+      - name: Preserve source snapshot for offline reproducibility
+        if: always()
+        run: |
+          mkdir -p space-evidence/source-snapshot/integrations/space_provider
+          mkdir -p space-evidence/source-snapshot/.github/workflows
+          cp integrations/space_provider/*.py integrations/space_provider/README.md space-evidence/source-snapshot/integrations/space_provider/
+          cp .github/workflows/space-provider-contract.yml space-evidence/source-snapshot/.github/workflows/
       - name: Upload evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
