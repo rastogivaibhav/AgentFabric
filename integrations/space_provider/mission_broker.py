@@ -8,6 +8,7 @@ trusted control-plane boundary. See README for explicit GA limitations.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import os
@@ -106,6 +107,7 @@ class MissionJournal:
                    "sandbox_id", "operation_id", "process_id", "exit_code", "reason"}
         if set(metadata) - allowed:
             raise ValueError("evidence contains disallowed fields")
+        metadata = {**metadata, "at_utc": datetime.now(timezone.utc).isoformat()}
         row = self._db.execute(
             "SELECT seq,event_hash FROM evidence WHERE tenant_id=? AND run_id=? ORDER BY seq DESC LIMIT 1",
             (tenant, run),
@@ -181,10 +183,12 @@ class MissionJournal:
             )
             self._event(tenant, run, kind + ".uncertain", {"kind": kind})
 
-    def reject(self, tenant: str, run: str, *, decision_ref: str):
+    def reject(self, tenant: str, run: str, *, kind: str, decision_ref: str):
+        if kind not in ("command", "create"):
+            raise ValueError("Only create and command denials are journalled")
         decision_ref = _identity(decision_ref, "decision_ref")
         with self._db:
-            self._event(tenant, run, "command.denied", {"decision_ref": decision_ref})
+            self._event(tenant, run, kind + ".denied", {"decision_ref": decision_ref})
 
     def events(self, tenant_id: str, run_id: str) -> list[dict]:
         tenant, run = _identity(tenant_id, "tenant_id"), _identity(run_id, "run_id")
@@ -214,18 +218,42 @@ class MissionBroker:
     """Trusted external control-plane; NEVER execute inside the agent's VM."""
 
     def __init__(self, journal: MissionJournal, provider: SpaceComputerProvider,
-                 authorize_command: Callable[[str, str, str], Permit] | None = None):
+                 authorize_command: Callable[[str, str, str], Permit] | None = None,
+                 authorize_launch: Callable[[str, str, str], Permit] | None = None):
         self.journal = journal
         self.provider = provider
         self.authorize_command = authorize_command
+        self.authorize_launch = authorize_launch
 
     def launch(self, tenant: str, run: str, *, template: str, request_key: str,
                network_policy: dict | None = None) -> Mission:
-        # Store intent-to-VM mutation evidence BEFORE the remote API request.
+        # Check tenant scope before asking an authorizer to approve a VM.
+        if self.journal.get(tenant, run).state != "new":
+            raise MissionStateError("Mission is not new; inspect before launching another VM")
         payload = {"template": template, "runtime": "fc",
                    "network_policy": network_policy or
                    {"version": "v1", "egress": {"default_action": "deny", "allow": [], "deny": []}}}
-        self.journal.reserve(tenant, run, expected="new", kind="create", key=request_key, payload=payload)
+        # VM allocation consumes resources; an explicit trusted launch decision is
+        # mandatory even for a sandbox with default-deny external networking.
+        if self.authorize_launch is None:
+            self.journal.reject(tenant, run, kind="create", decision_ref="NO_LAUNCH_AUTHORISER")
+            raise MissionStateError("No trusted launch authorization adapter; VM creation denied")
+        spec_digest = _digest(payload)
+        try:
+            permit = self.authorize_launch(tenant, run, spec_digest)
+        except Exception as exc:
+            self.journal.reject(tenant, run, kind="create", decision_ref="AUTHORIZATION_ERROR")
+            raise MissionStateError("Launch authorization unavailable; VM creation denied") from exc
+        if not isinstance(permit, Permit) or type(permit.allow) is not bool:
+            self.journal.reject(tenant, run, kind="create", decision_ref="INVALID_DECISION")
+            raise MissionStateError("Invalid launch decision; VM creation denied")
+        if not permit.allow or not permit.decision_ref:
+            self.journal.reject(tenant, run, kind="create", decision_ref="DENIED")
+            raise MissionStateError("Launch explicitly denied by authorization boundary")
+        decision_ref = _identity(permit.decision_ref, "decision_ref")
+        # Persist the original request key and fingerprint before network I/O.
+        self.journal.reserve(tenant, run, expected="new", kind="create", key=request_key,
+                             payload={**payload, "decision_ref": decision_ref})
         try:
             ref = self.provider.create(template=template, request_key=request_key,
                                        network_policy=payload["network_policy"])
@@ -234,7 +262,8 @@ class MissionBroker:
             raise
         self.journal.finish(tenant, run, kind="create", new_state="created",
                             sandbox_id=ref.sandbox_id, operation_id=ref.create_operation_id,
-                            metadata={"sandbox_id": ref.sandbox_id, "operation_id": ref.create_operation_id})
+                            metadata={"sandbox_id": ref.sandbox_id, "operation_id": ref.create_operation_id,
+                                      "decision_ref": decision_ref})
         try:
             self.provider.wait_ready(ref)
         except Exception:
@@ -255,15 +284,21 @@ class MissionBroker:
             raise MissionStateError("Sandbox is not ready; reconcile the mission before execution")
         # No authorization adapter is more secure than a fake "approved" response.
         if not self.authorize_command:
+            self.journal.reject(tenant, run, kind="command", decision_ref="NO_COMMAND_AUTHORISER")
             raise MissionStateError("No trusted authorization adapter; command denied")
         if not isinstance(argv, list) or not argv or not all(isinstance(x, str) and x for x in argv):
             raise ValueError("Command argv must be a non-empty list")
         fingerprint = _digest(argv)
-        permit = self.authorize_command(tenant, run, fingerprint)
-        if not isinstance(permit, Permit) or not isinstance(permit.allow, bool):
+        try:
+            permit = self.authorize_command(tenant, run, fingerprint)
+        except Exception as exc:
+            self.journal.reject(tenant, run, kind="command", decision_ref="AUTHORIZATION_ERROR")
+            raise MissionStateError("Authorization unavailable; command denied") from exc
+        if not isinstance(permit, Permit) or type(permit.allow) is not bool:
+            self.journal.reject(tenant, run, kind="command", decision_ref="INVALID_DECISION")
             raise MissionStateError("Authorization failed closed")
         if not permit.allow or not permit.decision_ref:
-            self.journal.reject(tenant, run, decision_ref=permit.decision_ref or "DENIED")
+            self.journal.reject(tenant, run, kind="command", decision_ref="DENIED")
             raise MissionStateError("Execution explicitly denied by authorization boundary")
         decision_ref = _identity(permit.decision_ref, "decision_ref")
         # The permit is scoped to this exact argv hash. No arbitrary command
