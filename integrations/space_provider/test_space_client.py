@@ -39,6 +39,9 @@ class _Fixture(BaseHTTPRequestHandler):
         if mode == "redirect":
             self._send(302, {}, location="https://example.invalid/steal")
             return
+        if mode == "bad_create_response" and self.command == "POST" and self.path == "/v1/sandboxes":
+            self._send(202, {"sandbox_id": "sbx_fixture"})
+            return
         if self.command == "POST" and self.path == "/v1/sandboxes":
             self._send(202, {"sandbox_id": "sbx_fixture", "operation_id": "op_create"})
         elif self.command == "GET" and self.path.startswith("/v1/operations/"):
@@ -192,9 +195,11 @@ class SpaceContractTests(unittest.TestCase):
         self.client.create(template="seed:latest", request_key="policy", network_policy=policy)
         self.assertEqual(self.server.calls[0]["body"]["network_policy"], policy)
 
-    def test_true_microvm_proof_not_claimed(self):
-        """Our local fixture tests only API contract: no KVM, real VM, or GA proof."""
-        self.assertTrue(self.origin.startswith("http://127.0.0.1:"))
+    def test_create_missing_operation_id_fails_closed(self):
+        self.server.mode = "bad_create_response"
+        with self.assertRaisesRegex(SpaceError, "invalid op_ identifier"):
+            self.client.create(template="seed:latest", request_key="missing-operation")
+        self.assertEqual(self.events, [])
 
 
 if __name__ == "__main__":
