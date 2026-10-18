@@ -49,7 +49,12 @@ jobs:
         run: |
           mkdir -p space-evidence
           printf 'repository=%s\nsha=%s\nrun=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_RUN_ID" > space-evidence/source.txt
-          printf 'SPACE_HTTP_CONTRACT=RUN_WITH_LOCAL_FIXTURE\nREAL_FIRECRACKER_MICROVM=BLOCKED_NO_KVM_OR_ATTESTED_SPACE_CLUSTER\nREAL_LLM=BLOCKED_NOT_EXERCISED\nENTERPRISE_GA=BLOCKED\n' > space-evidence/gates.txt
+          printf 'SPACE_HTTP_CONTRACT=RUN_WITH_LOCAL_FIXTURE\nREAL_FIRECRACKER_MICROVM=BLOCKED_NOT_EXECUTED\nREAL_LLM=BLOCKED_NOT_EXERCISED\nENTERPRISE_GA=BLOCKED\n' > space-evidence/gates.txt
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo 'RUNNER_KVM=AVAILABLE_NOT_USED' >> space-evidence/gates.txt
+          else
+            echo 'RUNNER_KVM=UNAVAILABLE_OR_NO_ACCESS' >> space-evidence/gates.txt
+          fi
           sha256sum integrations/space_provider/space_client.py integrations/space_provider/test_space_client.py > space-evidence/source-sha256.txt
       - name: Upload evidence even on failure
         if: always()
