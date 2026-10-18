@@ -1,4 +1,4 @@
-name: AgentKraft SPACE computer-provider contract (no VM)
+name: AgentKraft SPACE computer-provider and mission broker contracts (no VM)
 on:
   push:
     branches:
@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   space-contract:
-    name: SPACE API contract (fixture, NOT microVM proof)
+    name: SPACE + Mission Broker (fixture, NOT microVM proof)
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
@@ -37,7 +37,7 @@ jobs:
           python-version: "3.11"
       - name: Ensure Python compiles
         run: python -m compileall -q integrations/space_provider
-      - name: Verify SPACE provider contracts with local HTTP fixture
+      - name: Verify SPACE and mission broker contracts with local HTTP fixture
         env:
           PYTHONPATH: integrations/space_provider
         run: |
@@ -49,13 +49,14 @@ jobs:
         run: |
           mkdir -p space-evidence
           printf 'repository=%s\nsha=%s\nrun=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_RUN_ID" > space-evidence/source.txt
-          printf 'SPACE_HTTP_CONTRACT=RUN_WITH_LOCAL_FIXTURE\nREAL_FIRECRACKER_MICROVM=BLOCKED_NOT_EXECUTED\nREAL_LLM=BLOCKED_NOT_EXERCISED\nENTERPRISE_GA=BLOCKED\n' > space-evidence/gates.txt
+          printf 'SPACE_HTTP_CONTRACT=LOCAL_HTTP_FIXTURE\nMISSION_JOURNAL=LOCAL_SQLITE_TESTS_ONLY\nAGS_PUL_AUTHORIZATION=FIXTURE_ONLY_NOT_CONNECTED\nGOVAGN_EXTERNAL_EVIDENCE=BLOCKED_NOT_CONNECTED\nREAL_FIRECRACKER_MICROVM=BLOCKED_NOT_EXECUTED\nREAL_LLM=BLOCKED_NOT_EXERCISED\nENTERPRISE_GA=BLOCKED\n' > space-evidence/gates.txt
           if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
             echo 'RUNNER_KVM=AVAILABLE_NOT_USED' >> space-evidence/gates.txt
           else
             echo 'RUNNER_KVM=UNAVAILABLE_OR_NO_ACCESS' >> space-evidence/gates.txt
           fi
-          sha256sum integrations/space_provider/space_client.py integrations/space_provider/test_space_client.py > space-evidence/source-sha256.txt
+          sha256sum integrations/space_provider/*.py > space-evidence/source-sha256.txt
+          sha256sum integrations/space_provider/README.md >> space-evidence/source-sha256.txt
       - name: Upload evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
