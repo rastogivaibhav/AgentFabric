@@ -180,7 +180,7 @@ class MissionBrokerTests(unittest.TestCase):
         mission = self.journal.get("tenant_a", "run_001")
         self.assertEqual(mission.state, "created")
         self.assertEqual(mission.sandbox_id, "sbx_fixture")
-        with self.assertRaisesRegex(MissionStateError, "disallows create"):
+        with self.assertRaisesRegex(MissionStateError, "not new"):
             self._launch()
         self.assertEqual(len([c for c in self.server.calls if c["path"] == "/v1/sandboxes"]), 1)
 
