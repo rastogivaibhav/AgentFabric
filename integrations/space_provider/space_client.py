@@ -129,7 +129,9 @@ class SpaceComputerProvider:
             with self._open.open(req, timeout=self._timeout) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
-            raise SpaceError(f"SPACE {method} {path} returned HTTP {exc.code}") from None
+            status = exc.code
+            exc.close()  # HTTPError retains a response/socket; close before raising.
+            raise SpaceError(f"SPACE {method} {path} returned HTTP {status}") from None
         except (URLError, TimeoutError, OSError) as exc:
             raise SpaceError(f"SPACE {method} {path} transport failed ({type(exc).__name__}); inspect before retry") from None
         if len(raw) > MAX_RESPONSE_BYTES:
@@ -259,7 +261,9 @@ class SpaceComputerProvider:
                 if pending and exit_code is None:
                     raise SpaceError("SPACE event stream ended in an incomplete frame")
         except HTTPError as exc:
-            raise SpaceError(f"SPACE attachment failed with HTTP {exc.code}") from None
+            status = exc.code
+            exc.close()
+            raise SpaceError(f"SPACE attachment failed with HTTP {status}") from None
         except (URLError, OSError, TimeoutError) as exc:
             raise SpaceError(f"SPACE attachment transport failed ({type(exc).__name__})") from None
         if exit_code is None:
