@@ -25,6 +25,8 @@ __pycache__/
 .venv/
 agent-sdk/dist/
 agent-sdk/*.egg-info/
+.local/
+enterprise-agent/state/
 
 # Environment & secrets
 .env

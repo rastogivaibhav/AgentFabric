@@ -17,6 +17,13 @@
 
 AgentFabric is an **AI agent observability and cost governance platform** — purpose-built for enterprise teams running autonomous agents in production.
 
+The repository now also includes the **Enterprise Agent Runtime**: persistent,
+tool-using agents with their own governed SPACE computer, dedicated browser,
+AGS execution identity, PUL connector identity, durable conversation state,
+evidence capture, and GovAgn traces. This closes the gap between merely
+observing third-party agents and creating enterprise-operated agents comparable
+to consumer computer-using bots.
+
 Think Datadog + OpenCost, but designed from the ground up for agentic AI workloads:
 
 - **Observe** every LLM call, tool use, and handoff across all your agent frameworks
@@ -376,6 +383,11 @@ deploy/
 docs/              Architecture docs, runbooks
 portal/            React 18 + TypeScript dashboard (Vite)
 integrationTests/  End-to-end tests for all 5 frameworks
+enterprise-agent/  Persistent computer-using agent runtime and local UI
+integrations/
+  space_provider/  Governed SPACE, AGS, and PUL adapters
+deploy/
+  local-enterprise/ One-repository Windows/WSL launch and status scripts
 monitoring/        Prometheus config
 docker-compose.yml Full dev stack (9 services)
 ```
