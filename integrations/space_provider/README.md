@@ -1,7 +1,8 @@
 # AgentKraft × Perplexity SPACE — Computer broker G1
 
-**Current status: local API-contract CI only. No real Firecracker VM, real LLM,
-real application permission, AGS/PUL integration or independent GA acceptance.**
+**Current status: contract CI plus a recorded local AGS → SPACE → two-app PUL
+→ GovAgn proof. Connector effects remained dry-run. No live PUL connector,
+real LLM, externally immutable evidence or independent GA acceptance.**
 
 This adapter lives in AgentFabric because AgentFabric is the designated
 GitHub Actions and evidence repository. AgentKraft remains responsible for
@@ -17,6 +18,15 @@ https://github.com/perplexityai/SPACE/blob/09e922efd23b3c0d109ab64de7e567a901bcc
 - space_client.py: native SPACE API for VM create, wait, command, SSE output,
   and delete. Network egress defaults to deny. HTTPS required off-loopback;
   no automatic redirects, inherited proxies or unsafe attachment URLs.
+- ags_authorizer.py: fail-closed AGS Sovereign `/evaluate` adapter for launch
+  and command authorization. It sends tenant/run identifiers and the exact
+  action SHA-256, never raw intent, command arguments or infrastructure
+  credentials. DENY, ESCALATE, approval-required, malformed and unavailable
+  outcomes do not permit execution.
+- pul_client.py: constrained PUL `/v1/execute` client for application
+  operations. It preserves deny and approval-required outcomes with receipt
+  identifiers, binds app identity and idempotency keys, and refuses redirects,
+  inherited proxies, remote plaintext HTTP and malformed results.
 - mission_broker.py: a trusted **outside-the-VM** broker with explicit
   authorisation callbacks for both VM allocation and every command.
   Missing/malformed/refused decisions and authoriser outages fail closed.
@@ -36,12 +46,15 @@ https://github.com/perplexityai/SPACE/blob/09e922efd23b3c0d109ab64de7e567a901bcc
 
 ## Safety limitations
 
-The launch and command authorisation callbacks are *interfaces*, not actual
-AGS/PUL service calls. The unit tests pass explicit fixture permits; they
-are not valid business approvals. Do not configure a production allow-all
-callback. Real authorisation must be independently verifiable against
-tenant, run, exact action/policy fingerprint, expiry and a real AGS/PUL
-decision/permit. Enforce business writes outside the agent's control.
+The broker still accepts authorization callback interfaces, but the provided
+`AGSPermitSource` is now the concrete AGS implementation. Unit tests use an
+HTTP fixture and are not valid business approvals. Production must configure
+a real tenant-scoped AGS operator identity and policies; never configure an
+allow-all callback. PUL remains the separate application execution,
+least-privilege, approval and receipt layer for GitHub, Gmail, Jira and other
+connectors. The provided client submits operations but intentionally has no
+administrative approval method. An AGS permit to run a sandbox command is not
+a PUL permit to perform a business write.
 
 A VM is not a permission boundary inside Salesforce, Gmail, Shopify etc.
 A browser carrying write-capable credentials can bypass an API-only gateway;
@@ -64,26 +77,62 @@ The dedicated Actions workflow tests against a local HTTP fixture, records
 source SHA-256s (including the journal and its tests), checks whether the
 GitHub runner can access /dev/kvm, and stores logs with explicit gates.
 Passing these tests **does not** imply any real Firecracker execution,
-real LLM, browser autonomy, PUL permission or GovAgn delivery.
+real AGS service decision, LLM/browser autonomy, PUL permission or GovAgn
+delivery.
 
-## Live proof needed to unlock the next gate
+## Local live proof completed
 
-Requires a separately authorised, already-available Linux x86_64/KVM host
-or SPACE cluster with known revision, trusted TLS, approval for infrastructure
-costs, safe test software and non-customer credentials. The current connected
-DigitalOcean account had no droplets; the inspected GitHub runner lacked usable
-KVM. **No VM was launched in this iteration.**
+On 2026-10-18 the adapter and broker were exercised against the local AGS
+Sovereign 1.1.0 control plane and a local Linux/x86_64/KVM SPACE cluster at
+revision `09e922efd23b3c0d109ab64de7e567a901bcc61e`. AGS issued distinct
+ledger-backed PERMIT decisions for the launch and exact command fingerprint.
+AgentFabric created a SPACE sandbox, ran a verified command in Firecracker
+1.15.1, and deleted it. Both the AGS ledger and broker journal verified, and
+API, pod and process-level cleanup found no orphan.
 
-On a genuinely available host, route a reviewed AgentKraft mission through
-this broker, with a real AGS/PUL permit source that validates the exact
-fingerprint and a durable external evidence sink. Verify:
-1. Real SPACE operation IDs and Firecracker VM identity, not fixture IDs.
-2. Real process output plus exit code, using session-scoped attachment.
-3. A denied network destination and a refused write, verified outside the VM.
-4. Two scoped test applications and an actual LLM/browser execution.
-5. Forced error, restart/reconciliation, tenant separation and VM cleanup.
-6. GovAgn receipts correlated to tenant/run/sandbox and independently
-   checked against the underlying actions.
+This is local development evidence, not production or GA acceptance. The WSL
+worker image also omits two `socket transparent` nftables rules because the
+stock WSL kernel lacks `CONFIG_NFT_SOCKET`; do not claim the complete network
+enforcement path from this run.
+
+The next proof must verify a denied network destination and refused PUL write.
+It must also cover forced error, restart/reconciliation, tenant separation and
+orphan cleanup.
+
+## Local PUL policy proof completed
+
+On 2026-10-18 a local PUL `v1-dev` runtime was started with isolated file
+state, an explicit local admin boundary and no provider credentials. A
+registered AgentFabric proof app explicitly denied
+`repo.github.search_code`; PUL blocked it and issued a denial receipt. The app
+then requested `repo.github.create_issue`; PUL queued an approval, executed
+only after the separate operator approval call, and updated the receipt to
+`approved`/`completed`. The GitHub connector reported `dry_run`, so no external
+repository was changed.
+
+This validates the local policy/approval/receipt contract. It is not a live
+connector proof, a two-application workflow, or evidence that an admin token
+is production-managed.
+
+## Recorded two-application proof completed
+
+On 2026-10-19 one local AgentFabric mission used real AGS permits and a real
+SPACE Firecracker sandbox to produce a plan, then used two separately
+registered PUL identities. The planner completed
+`repo.github.search_code`; the executor's `repo.github.create_issue` remained
+pending until a distinct operator approval. Both connector results were
+deliberately `dry_run`, so no external repository changed.
+
+The local GovAgn collector and PostgreSQL-backed gateway stored a seven-span
+trace containing the AgentFabric run ID, both AGS decision IDs, sandbox ID,
+both PUL receipt IDs, the PUL approval ID and cleanup status. The mission
+journal and AGS ledger verified, and post-run API, pod and process checks found
+no surviving sandbox. The recording includes the first attempt, which failed
+closed during evidence validation and completed emergency cleanup, and the
+successful retry.
+
+This proves local cross-component correlation, not externally immutable
+evidence, a live third-party connector, production secret management or GA.
 
 ## Gates
 
@@ -91,14 +140,20 @@ fingerprint and a durable external evidence sink. Verify:
 |---|---|
 | SPACE native HTTP request and failure contract | CI (fixture) |
 | Same-host durable run journal and tenant separation | CI (local SQLite + fixture) |
-| VM allocation and command gate required | CI (fixture permit only) |
-| Real Firecracker VM and isolated browser | BLOCKED (no approved KVM host) |
-| Real AGS/PUL permit and safe two-application access | BLOCKED |
-| GovAgn external durable evidence | BLOCKED |
+| VM allocation and command gate required | CI (AGS HTTP fixture) |
+| Real Firecracker VM | LOCAL DEV PASS (WSL2/KVM; not GA) |
+| Real AGS permit for launch and command | LOCAL DEV PASS (not GA) |
+| PUL HTTP client contract | CI (fixture) |
+| PUL deny + approval + receipt | LOCAL DEV PASS (dry-run; not GA) |
+| PUL two-application approval flow | LOCAL DEV PASS (dry-run; not GA) |
+| PUL live connector | BLOCKED |
+| GovAgn correlated trace delivery | LOCAL DEV PASS (local stack; not GA) |
+| GovAgn externally immutable evidence | BLOCKED |
 | Real LLM decisions and independent customer demonstration | BLOCKED |
 | Security/resilience/operational acceptance | BLOCKED |
 | AgentKraft Enterprise GA | NOT APPROVED |
 
-**Next bounded integration:** implement/test actual AGS/PUL decision exchange
-and GovAgn external evidence sink, then run on an approved real SPACE host.
-The broker itself must not run inside the microVM.
+**Next bounded integration:** verify denied network egress on native Linux,
+then exercise forced failures and restart/reconciliation while retaining the
+AGS, PUL, SPACE and GovAgn correlation chain. The broker itself must not run
+inside the microVM.

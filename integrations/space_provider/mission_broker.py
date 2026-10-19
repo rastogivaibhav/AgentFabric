@@ -260,10 +260,13 @@ class MissionBroker:
         if not isinstance(permit, Permit) or type(permit.allow) is not bool:
             self.journal.reject(tenant, run, kind="create", decision_ref="INVALID_DECISION")
             raise MissionStateError("Invalid launch decision; VM creation denied")
-        if not permit.allow or not permit.decision_ref:
+        if not permit.decision_ref:
             self.journal.reject(tenant, run, kind="create", decision_ref="DENIED")
             raise MissionStateError("Launch explicitly denied by authorization boundary")
         decision_ref = _identity(permit.decision_ref, "decision_ref")
+        if not permit.allow:
+            self.journal.reject(tenant, run, kind="create", decision_ref=decision_ref)
+            raise MissionStateError("Launch explicitly denied by authorization boundary")
         # Persist the original request key and fingerprint before network I/O.
         remote_key = _space_key(tenant, run, "create", request_key)
         self.journal.reserve(tenant, run, expected="new", kind="create", key=remote_key,
@@ -311,10 +314,13 @@ class MissionBroker:
         if not isinstance(permit, Permit) or type(permit.allow) is not bool:
             self.journal.reject(tenant, run, kind="command", decision_ref="INVALID_DECISION")
             raise MissionStateError("Authorization failed closed")
-        if not permit.allow or not permit.decision_ref:
+        if not permit.decision_ref:
             self.journal.reject(tenant, run, kind="command", decision_ref="DENIED")
             raise MissionStateError("Execution explicitly denied by authorization boundary")
         decision_ref = _identity(permit.decision_ref, "decision_ref")
+        if not permit.allow:
+            self.journal.reject(tenant, run, kind="command", decision_ref=decision_ref)
+            raise MissionStateError("Execution explicitly denied by authorization boundary")
         # The permit is scoped to this exact argv hash. No arbitrary command
         # substitutions after authorization.
         remote_key = _space_key(tenant, run, "command", request_key)

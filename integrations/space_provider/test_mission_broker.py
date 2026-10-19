@@ -102,6 +102,10 @@ class MissionBrokerTests(unittest.TestCase):
         with self.assertRaisesRegex(MissionStateError, "Launch explicitly denied"):
             self._launch()
         self.assertEqual(self.server.calls, [])
+        self.assertEqual(
+            self.journal.events("tenant_a", "run_001")[-1]["metadata"]["decision_ref"],
+            "ags_no_vm_permission",
+        )
         self.assertTrue(self.journal.verify_chain("tenant_a", "run_001"))
 
     def test_launch_authorizer_outage_fails_closed(self):
@@ -158,6 +162,10 @@ class MissionBrokerTests(unittest.TestCase):
                                 request_key="denied-001")
         self.assertEqual(len(self.server.calls), before)
         self.assertEqual(self.journal.events("tenant_a", "run_001")[-1]["event"], "command.denied")
+        self.assertEqual(
+            self.journal.events("tenant_a", "run_001")[-1]["metadata"]["decision_ref"],
+            "ags_deny_13",
+        )
         self.assertTrue(self.journal.verify_chain("tenant_a", "run_001"))
 
     def test_unknown_decision_fails_closed(self):
