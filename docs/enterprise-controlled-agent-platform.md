@@ -1,5 +1,11 @@
 # Enterprise-Controlled Agent Platform
 
+> This document defines the product direction. The buildable, testable
+> Enterprise GA requirements are in the
+> [Enterprise GA Specification Set](ga/README.md), and the evidence-backed
+> current-state assessment is in the
+> [Architecture Review and Target Design](architecture-review-and-target-design-2026-10-24.md).
+
 ## Product intent
 
 AgentFabric should become an enterprise-operated system for persistent AI
