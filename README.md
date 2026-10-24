@@ -267,6 +267,10 @@ docs/                         Architecture, operations, and proof boundaries
 
 ## Production roadmap
 
+The detailed target architecture, CIO/CISO operating model, canonical governed
+action flow, air-gapped deployment profile, and release gates are defined in
+[Enterprise-Controlled Agent Platform](docs/enterprise-controlled-agent-platform.md).
+
 ### Phase 1 — Secure control plane
 
 - OIDC/SSO, tenant ownership, RBAC, and protected artifacts
