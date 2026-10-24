@@ -24,6 +24,13 @@ being built from the opposite direction: every useful agent should have a
 governed identity, a constrained computer, a record of what it did, and an
 operator who can understand cost and risk.
 
+The opportunity is not to copy another Grok Bot alternative. It is to combine
+the product lessons those projects have validated—simple bot creation,
+persistent jobs, schedules, skills, channels, and model choice—with the deeper
+governance, isolation, evidence, observability, and FinOps capabilities already
+present in this codebase. That combination is particularly suited to large
+organisations and disconnected or air-gapped environments.
+
 The intended enterprise contract is:
 
 - **Own the deployment** — run models, data, policy, and execution planes in
@@ -115,9 +122,9 @@ roadmap item as a shipped feature.
 
 ### Where AgentFabric is differentiated
 
-AgentFabric should not try to win by copying every consumer interface first.
-Its strongest potential position is an enterprise control plane for AI
-teammates:
+The comparison is not simply a list of missing features. AgentFabric already
+contains control-plane capabilities that many agent products would need to add
+later for regulated enterprise use:
 
 1. **Governance before execution.** AGS decisions are tied to SPACE missions,
    and denied or ambiguous operations fail closed.
@@ -130,13 +137,60 @@ teammates:
 5. **Private deployment.** The architecture is aimed at local, on-premise, and
    air-gapped environments.
 
-### Where the alternatives are ahead
+### Lessons to adopt from the alternatives
 
-Rakazo and OpenMausBot currently provide a much more complete AI teammate
-experience: polished rosters, broad model choice, schedules, connected apps,
-multiple clients, and practical onboarding. Hermes has a large tool, skill,
-memory, channel, and sandbox surface. OpenBot has a clearer single gateway for
-all browser, file, computer, and MCP actions.
+The alternatives provide strong product and execution patterns that can sit on
+top of AgentFabric's control plane:
+
+| Project lesson | What to adopt | What AgentFabric should retain |
+|---|---|---|
+| Rakazo makes persistent teammates easy to understand | Bot roster, templates, routines, model and computer selection, web/desktop/mobile continuity | AGS policy, PUL identities, SPACE isolation, enterprise audit evidence |
+| OpenMausBot packages existing agent engines into an approachable workspace | Fast onboarding, engine adapters, per-bot folders, visible progress, interruption, connected apps | Central administration, tenant controls, budgets, and governed execution |
+| OpenBot sends effects through one gateway | One typed action envelope for browser, computer, file, MCP, and connector operations | Existing AGS decisions, PUL receipts, and mission journal as the enforcement and evidence services |
+| Hermes grows through tools, skills, memory, channels, and backend plugins | Versioned skills, a provider registry, schedules, durable memory, delegation, and messaging adapters | Approved capability catalogues, constrained credentials, isolated execution, and fleet observability |
+
+The goal is therefore **product simplicity above enterprise controls**, not a
+choice between them.
+
+### Enterprise air-gapped product thesis
+
+A large organisation should be able to deploy an internal roster of AI
+teammates without sending prompts, credentials, files, traces, or policy data
+outside its trust boundary:
+
+```text
+Employee experience
+bot roster · chat · tasks · schedules · approvals · operator takeover
+                              |
+                              v
+Durable agent service
+jobs · checkpoints · memory · skills · channels · model routing
+                              |
+                              v
+Unified governed action gateway
+browser · files · shell · MCP · enterprise applications
+             |                 |                    |
+             v                 v                    v
+        AGS decisions      PUL identities      GovAgn evidence
+             \                 |                    /
+              +----------------+-------------------+
+                               |
+                               v
+                     SPACE isolated computers
+                Firecracker · workspace · browser
+                               |
+                               v
+                 AgentFabric operations and FinOps
+          tenants · budgets · traces · audit · policy reports
+```
+
+For a genuinely air-gapped release, every required layer must operate without a
+public control plane: local model serving, offline image and package mirrors,
+internal identity providers, local secrets and certificate management,
+offline updates, signed artefacts, backup/restore, and exportable audit reports.
+No optional cloud connector should be required for core operation.
+
+### Remaining productisation work
 
 AgentFabric must close these gaps before claiming feature parity:
 
