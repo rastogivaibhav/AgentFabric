@@ -1,6 +1,13 @@
 # AgentFabric — Architecture Immutability Map
 **What can change, what can't, and what requires a major version bump**
 
+> **Historical document — not the current source of architectural truth.**
+> Several claims below no longer match the active implementation, particularly
+> the af-core audit path, service packaging, and deployment topology. Use
+> [`docs/architecture-review-and-target-design-2026-10-24.md`](docs/architecture-review-and-target-design-2026-10-24.md)
+> for the evidence-backed baseline and convert accepted decisions into ADRs
+> before treating them as immutable.
+
 ---
 
 ## **SACRED ARCHITECTURE (Cannot Change)**

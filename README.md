@@ -270,6 +270,9 @@ docs/                         Architecture, operations, and proof boundaries
 The detailed target architecture, CIO/CISO operating model, canonical governed
 action flow, air-gapped deployment profile, and release gates are defined in
 [Enterprise-Controlled Agent Platform](docs/enterprise-controlled-agent-platform.md).
+The evidence-backed current-state assessment, competitor lessons, prioritized
+findings, target reference design, packaging model, ADR register, and migration
+gates are in [Enterprise Agent Platform Architecture Review and Target Design](docs/architecture-review-and-target-design-2026-10-24.md).
 
 ### Phase 1 — Secure control plane
 
