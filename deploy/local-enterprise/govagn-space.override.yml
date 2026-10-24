@@ -1,0 +1,42 @@
+services:
+  api-gateway:
+    environment:
+      GV_AUTH_DISABLED: "true"
+      GV_BUDGET_ENABLED: "false"
+      GV_RATE_LIMIT_RPM: "100000"
+    ports: !override
+      - "127.0.0.1:28081:8080"
+      - "127.0.0.1:28443:8443"
+
+  portal:
+    build:
+      args:
+        VITE_API_URL: "http://localhost:28081"
+        VITE_WS_URL: "ws://localhost:28081"
+        VITE_AUTH_DISABLED: "true"
+    ports: !override
+      - "127.0.0.1:13000:80"
+
+  postgres:
+    ports: !override
+      - "127.0.0.1:15432:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:16379:6379"
+  collector:
+    ports: !override
+      - "127.0.0.1:14317:4317"
+      - "127.0.0.1:14318:4318"
+  prometheus:
+    ports: !override
+      - "127.0.0.1:19090:9090"
+  alertmanager:
+    ports: !override
+      - "127.0.0.1:19093:9093"
+  grafana:
+    ports: !override
+      - "127.0.0.1:19091:3000"
+  jaeger:
+    ports: !override
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:14250:14250"

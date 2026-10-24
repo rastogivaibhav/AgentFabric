@@ -1,0 +1,74 @@
+name: AgentKraft SPACE computer-provider and mission broker contracts (no VM)
+on:
+  push:
+    branches:
+      - review/space-computer-provider-g0-20261018
+    paths:
+      - "integrations/space_provider/**"
+      - ".github/workflows/space-provider-contract.yml"
+  pull_request:
+    branches:
+      - agentfabric-dev
+    paths:
+      - "integrations/space_provider/**"
+      - ".github/workflows/space-provider-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: space-contract-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  space-contract:
+    name: SPACE + AGS + PUL + Mission Broker (fixtures, NOT microVM proof)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout source (no persistent credentials)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Ensure Python compiles
+        run: python -m compileall -q integrations/space_provider
+      - name: Verify SPACE and mission broker contracts with local HTTP fixture
+        env:
+          PYTHONPATH: integrations/space_provider
+        run: |
+          set -o pipefail
+          mkdir -p space-evidence
+          python -m unittest discover -s integrations/space_provider -p 'test_*.py' -v 2>&1 | tee space-evidence/unit.log
+      - name: Record source and verification boundary
+        if: always()
+        run: |
+          mkdir -p space-evidence
+          printf 'repository=%s\nsha=%s\nrun=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_RUN_ID" > space-evidence/source.txt
+          printf 'SPACE_HTTP_CONTRACT=LOCAL_HTTP_FIXTURE\nAGS_HTTP_CONTRACT=LOCAL_HTTP_FIXTURE\nPUL_HTTP_CONTRACT=LOCAL_HTTP_FIXTURE\nMISSION_JOURNAL=LOCAL_SQLITE_TESTS_ONLY\nPUL_LIVE_CONNECTOR=BLOCKED_NOT_EXERCISED\nGOVAGN_EXTERNAL_EVIDENCE=BLOCKED_NOT_CONNECTED\nREAL_FIRECRACKER_MICROVM=BLOCKED_NOT_EXECUTED_IN_CI\nREAL_LLM=BLOCKED_NOT_EXERCISED\nENTERPRISE_GA=BLOCKED\n' > space-evidence/gates.txt
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo 'RUNNER_KVM=AVAILABLE_NOT_USED' >> space-evidence/gates.txt
+          else
+            echo 'RUNNER_KVM=UNAVAILABLE_OR_NO_ACCESS' >> space-evidence/gates.txt
+          fi
+          sha256sum integrations/space_provider/*.py > space-evidence/source-sha256.txt
+          sha256sum integrations/space_provider/README.md >> space-evidence/source-sha256.txt
+      - name: Preserve source snapshot for offline reproducibility
+        if: always()
+        run: |
+          mkdir -p space-evidence/source-snapshot/integrations/space_provider
+          mkdir -p space-evidence/source-snapshot/.github/workflows
+          cp integrations/space_provider/*.py integrations/space_provider/README.md space-evidence/source-snapshot/integrations/space_provider/
+          mkdir -p space-evidence/source-snapshot/ci
+          cp .github/workflows/space-provider-contract.yml space-evidence/source-snapshot/ci/space-provider-contract.yml
+      - name: Upload evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: space-provider-contract-${{ github.run_id }}
+          path: space-evidence/
+          retention-days: 30
