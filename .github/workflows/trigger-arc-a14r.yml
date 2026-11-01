@@ -1,0 +1,27 @@
+name: Trigger ARC A1.4R Goal Discovery
+
+on:
+  push:
+    branches: [arc-paper-dmw-duck-20260821]
+    paths:
+      - '.github/workflows/trigger-arc-a14r.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-a14r:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch A1.4R real-game experiment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --method POST \
+            repos/${{ github.repository }}/actions/workflows/arc-paper-a14r-goal-discovery.yml/dispatches \
+            -f ref=arc-paper-dmw-duck-20260821
+          echo 'a14r_dispatch=PASS'

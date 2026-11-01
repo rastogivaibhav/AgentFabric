@@ -1,0 +1,61 @@
+name: Graphene Active Exploration P6E
+
+on:
+  pull_request:
+    paths:
+      - 'arc_competition/graphene_active_exploration_p6e.py'
+      - 'arc_competition/generic_goal_discovery_plugin_v2.py'
+      - 'arc_competition/build_generic_goal_discovery_native_helper_p6d.sh'
+      - '.github/workflows/graphene-active-exploration-p6e.yml'
+  workflow_dispatch:
+
+jobs:
+  p6e-active-exploration:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build unchanged native runtime and retrieval helper
+        run: |
+          set -euo pipefail
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_generic_goal_discovery_native_helper_p6d.sh /tmp/generic_goal_discovery_native_helper_p6d
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
+      - name: Run P6E active exploration
+        env:
+          PYTHONPATH: pi45_a1:arc_competition
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/graphene-p6e /tmp/graphene_p6e.*.graphenedb*
+          mkdir -p /tmp/graphene-p6e
+          python3 arc_competition/graphene_active_exploration_p6e.py \
+            --native-helper /tmp/generic_goal_discovery_native_helper_p6d \
+            --bootstrap /tmp/a15_graphene_bootstrap \
+            --db-prefix /tmp/graphene_p6e \
+            --probe-budget 5 \
+            --out /tmp/graphene-p6e | tee /tmp/graphene-p6e/run.log
+      - name: Record evidence identity
+        if: always()
+        run: |
+          mkdir -p /tmp/graphene-p6e
+          printf '%s\n' \
+            "agentfabric_commit=${GITHUB_SHA}" \
+            'experiment=P6E-active-exploration-information-gain' \
+            'probe_budget=5' \
+            'passive_reference_interactions=80' \
+            'oracle_goal_supplied=false' \
+            'plugin_selects_experiment=false' \
+            'plugin_selects_goal=false' \
+            'plugin_selects_action=false' \
+            'llm_selector=false' \
+            'core_graphenedb_modified=false' \
+            'core_hypokosh_modified=false' \
+            > /tmp/graphene-p6e/experiment_identity.txt
+          find /tmp/graphene-p6e -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-p6e/SHA256SUMS.txt
+      - name: Upload P6E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphene-active-exploration-p6e-evidence
+          path: /tmp/graphene-p6e
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,62 @@
+name: Graphene Generic Hidden Rule P6B.1
+on:
+  pull_request:
+    branches: [pi45-a1]
+    paths:
+      - 'arc_competition/generic_hidden_rule_plugin_v2.py'
+      - 'arc_competition/graphene_generic_hidden_rule_p6b1.py'
+      - '.github/workflows/graphene-generic-hidden-rule-p6b1.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p6b1-hidden-rule:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build unchanged native runtime and frozen helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_chess_counterfactual_native_helper_p42.sh /tmp/generic_hidden_rule_native_helper_p6b1
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
+      - name: Run validated hidden-rule discovery and exploitation
+        shell: bash
+        env:
+          PYTHONPATH: pi45_a1:arc_competition
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/graphene-generic-p6b1 /tmp/graphene_generic_p6b1.*.graphenedb*
+          mkdir -p /tmp/graphene-generic-p6b1
+          python3 arc_competition/graphene_generic_hidden_rule_p6b1.py \
+            --native-helper /tmp/generic_hidden_rule_native_helper_p6b1 \
+            --bootstrap /tmp/a15_graphene_bootstrap \
+            --db-prefix /tmp/graphene_generic_p6b1 \
+            --runs 10 \
+            --out /tmp/graphene-generic-p6b1 | tee /tmp/graphene-generic-p6b1/run.log
+      - name: Record evidence identity
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p /tmp/graphene-generic-p6b1
+          printf '%s\n' \
+            "agentfabric_commit=${GITHUB_SHA}" \
+            'experiment=P6B.1-validated-hidden-rule-discovery' \
+            'oracle_next_states_supplied_to_plugin=false' \
+            'training_samples_per_action=2' \
+            'heldout_validation_samples_per_action=1' \
+            'core_graphenedb_modified=false' \
+            'core_hypokosh_modified=false' \
+            'llm_selector=false' \
+            'engine=false' \
+            > /tmp/graphene-generic-p6b1/experiment_identity.txt
+          find /tmp/graphene-generic-p6b1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-generic-p6b1/SHA256SUMS.txt
+      - name: Upload P6B.1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphene-generic-hidden-rule-p6b1-evidence
+          path: /tmp/graphene-generic-p6b1
+          if-no-files-found: error
+          retention-days: 30

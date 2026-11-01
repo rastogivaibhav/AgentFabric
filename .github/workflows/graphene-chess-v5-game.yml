@@ -1,0 +1,42 @@
+name: Graphene Chess v5 8-ply Game
+on:
+  pull_request:
+    paths:
+      - 'arc_competition/chess_counterfactual_plugin_v5.py'
+      - 'arc_competition/graphene_chess_counterfactual_v5_game.py'
+      - 'arc_competition/chess_rules.json'
+      - 'arc_competition/build_chess_counterfactual_native_helper_p42.sh'
+      - '.github/workflows/graphene-chess-v5-game.yml'
+  workflow_dispatch:
+jobs:
+  v5-game:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --disable-pip-version-check 'python-chess==1.999'
+      - name: Build unchanged native runtime and helper
+        run: |
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_chess_counterfactual_native_helper_p42.sh /tmp/chess_counterfactual_native_helper_v5
+          git diff --exit-code -- pi45_a1/a15_native_runtime pi45_a1/graphenedb_snapshot pi45_a1/a15_native_runtime_helper.cpp
+      - name: Run 8-ply game
+        env:
+          PYTHONPATH: pi45_a1:arc_competition
+        run: |
+          rm -rf /tmp/graphene-chess-v5-game /tmp/graphene_chess_v5_game.ply-*.graphenedb*
+          mkdir -p /tmp/graphene-chess-v5-game
+          python3 arc_competition/graphene_chess_counterfactual_v5_game.py --native-helper /tmp/chess_counterfactual_native_helper_v5 --bootstrap /tmp/a15_graphene_bootstrap --db-prefix /tmp/graphene_chess_v5_game --rules arc_competition/chess_rules.json --plies 8 --out /tmp/graphene-chess-v5-game | tee /tmp/graphene-chess-v5-game/run.log
+      - name: Evidence identity
+        if: always()
+        run: |
+          mkdir -p /tmp/graphene-chess-v5-game
+          printf '%s\n' "agentfabric_commit=${GITHUB_SHA}" 'experiment=Graphene-Chess-v5-8-ply' 'core_graphenedb_modified=false' 'core_hypokosh_modified=false' 'stockfish=false' 'opening_book=false' 'llm_move_selector=false' > /tmp/graphene-chess-v5-game/experiment_identity.txt
+          find /tmp/graphene-chess-v5-game -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > /tmp/graphene-chess-v5-game/SHA256SUMS.txt
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphene-chess-v5-game-evidence
+          path: /tmp/graphene-chess-v5-game
+          if-no-files-found: error
+          retention-days: 30

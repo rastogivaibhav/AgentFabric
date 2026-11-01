@@ -1,0 +1,192 @@
+name: ARC Paper Decisive DMW Falsification v2
+
+on:
+  push:
+    branches: [arc-paper-dmw-duck-20260821]
+    paths:
+      - '.github/workflows/arc-paper-dmw-decisive-falsification-v2.yml'
+  pull_request:
+    branches: [pi45-a15-dialectical-model-world-20260821]
+    paths:
+      - '.github/workflows/arc-paper-dmw-decisive-falsification-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  decisive-ablation-v2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    env:
+      OPENAI_API_KEY: ${{ secrets.pulapi }}
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      OPENAI_PROVIDER: openai
+      LOCAL_ANALYZER_API_KEY: ${{ secrets.pulapi }}
+      LOCAL_ANALYZER_BASE_URL: https://api.openai.com/v1
+      LOCAL_ANALYZER_PROVIDER: openai
+      LOCAL_ANALYZER_MODEL_ID: gpt-5.6-sol
+      LOCAL_ANALYZER_CONTEXT_WINDOW: '32768'
+      LOCAL_ANALYZER_TOOL_STEPS: '6'
+      LOCAL_ANALYZER_TOOL_TIMEOUT: '30'
+      LOCAL_ANALYZER_TIMEOUT: '120'
+      LOCAL_ANALYZER_ENABLE_THINKING: 'true'
+      ARC_DECISIVE_GAMES: 'ft09-0d8bbf25 ar25-e3c63847 cn04-65d47d14'
+      ARC_DECISIVE_PASSES: '2'
+      ARC_DECISIVE_MAX_ACTIONS: '12'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Freeze unchanged falsification contract
+        run: |
+          set -euo pipefail
+          mkdir -p results/arc-paper/dmw-decisive-v2
+          cat > results/arc-paper/dmw-decisive-v2/preregistered-contract.json <<'JSON'
+          {
+            "experiment": "Decisive system-level Dialectical Model World falsification",
+            "primary_question": "Does persistent Graphene world modelling plus HypoKosh goal competition, contradiction search, and curiosity-driven action control causally improve real ARC-AGI-3 gameplay over the evidence-memory control?",
+            "control": "GRAPHENE_DMW_MODE=evidence; pixel-grounded memory and exact negative-evidence blocking enabled; native dialectical goal competition disabled",
+            "treatment": "GRAPHENE_DMW_MODE=dialectic + GRAPHENE_DMW_GOAL_DISCOVERY=true; persistent world model, G1/G2/G3 goal competition, native HypoKosh selection, contradiction reopening, curiosity frontier, stagnation action gate",
+            "games": ["ft09-0d8bbf25", "ar25-e3c63847", "cn04-65d47d14"],
+            "passes_per_game": 2,
+            "action_cap": 12,
+            "same_model": "gpt-5.6-sol",
+            "decision_precedence": [
+              "SUPPORTED: treatment aggregate score > control AND treatment wins on >=2 games",
+              "PERCEPTION_ACTION_WORLD_INTERFACE_BOTTLENECK: neither arm achieves positive aggregate score",
+              "CAUSALLY_ACTIVE_BUT_INEFFECTIVE: treatment action trajectories differ but aggregate score does not improve",
+              "INTEGRATION_INACTIVE: treatment does not materially change action trajectories",
+              "INCONCLUSIVE: any remaining outcome"
+            ],
+            "goalposts_frozen_before_run": true,
+            "runner_fix_only": "games executed one-by-one via supported GAME interface"
+          }
+          JSON
+
+      - name: Verify model and build native runtime
+        run: |
+          set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}"
+          code=$(curl -sS -o /tmp/model.json -w '%{http_code}' -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1/models/gpt-5.6-sol)
+          test "$code" = 200
+          bash pi45_a1/a15_native_runtime_proof.sh /tmp/a15-native-runtime-proof
+          bash arc_competition/build_duck_dialectic_native_helper.sh /tmp/duck_dialectic_native_helper
+          test -x /tmp/a15_graphene_bootstrap
+          test -x /tmp/duck_dialectic_native_helper
+
+      - name: Fetch pinned Duck and public ARC environments
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/duck-harness /tmp/arc-public-envs
+          git clone --filter=blob:none https://github.com/Tufalabs/duck-harness.git /tmp/duck-harness
+          git -C /tmp/duck-harness checkout 7652836056c59e044f093e3c13ed7438c814169e
+          python3 arc_competition/apply_duck_graphene_patch_v2.py /tmp/duck-harness --manifest-out /tmp/duck_patch_manifest.json
+          git clone --depth=1 https://huggingface.co/datasets/zarczynski/arc-agi-3-public /tmp/arc-public-envs
+          for g in $ARC_DECISIVE_GAMES; do
+            family=${g%%-*}; instance=${g#*-}; test -d "/tmp/arc-public-envs/environment_files/$family/$instance"
+          done
+
+      - name: Configure identical model and budget
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/duck-harness/ARC3-Inference/configs/inference.json')
+          c=json.loads(p.read_text())
+          c['shared'].update({'model_name':'gpt-5.6-sol','base_url':'https://api.openai.com/v1','provider':'openai','context_window':32768})
+          c['environment'].update({'include_tags':[],'environments_dir':'/tmp/arc-public-envs/environment_files','n_passes':2,'concurrent_jobs':1,'max_steps':12,'max_runtime_minutes':7})
+          c['deployment']['target']='inline'
+          c['analyzer'].update({'model_id':'gpt-5.6-sol','base_url':'https://api.openai.com/v1','provider':'openai','context_window':32768,'tool_steps':6,'timeout':120,'save_request_logs':True})
+          c['multimodal']['context']=''
+          Path('/tmp/dmw-decisive.json').write_text(json.dumps(c,indent=2,sort_keys=True))
+          PY
+          python3 -m pip install --quiet uv
+          cd /tmp/duck-harness/ARC3-Inference
+          uv venv --python 3.12.12 .venv
+          uv sync --locked --python .venv/bin/python
+          uv pip install --python .venv/bin/python --no-deps -e ../tufa-arc-agi-framework
+
+      - name: Run CONTROL per game
+        env:
+          GRAPHENE_DMW_MODE: evidence
+          GRAPHENE_DMW_GOAL_DISCOVERY: 'off'
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/dmw-control && mkdir -p /tmp/dmw-control
+          for game in $ARC_DECISIVE_GAMES; do
+            dir="/tmp/dmw-control/$game"
+            CONFIG_PATH=/tmp/dmw-decisive.json EXPERIMENT_DIR="$dir" GAME="$game" GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files N_PASSES=2 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=7 SIMULATE_COMPETITION_ARCADE=true make interactive
+            CONFIG_PATH=/tmp/dmw-decisive.json make score_run SCORE_RUN_DIR="$dir" SCORE_OUTPUT_PATH="$dir/evaluation.json"
+          done
+
+      - name: Run TREATMENT per game
+        env:
+          GRAPHENE_DMW_MODE: dialectic
+          GRAPHENE_DMW_GOAL_DISCOVERY: 'true'
+          GRAPHENE_DMW_NATIVE_HELPER: /tmp/duck_dialectic_native_helper
+          GRAPHENE_DMW_BOOTSTRAP: /tmp/a15_graphene_bootstrap
+          GRAPHENE_DMW_WORLD_SCOPE: arc-decisive-system-dmw
+        run: |
+          set -euo pipefail
+          cd /tmp/duck-harness/ARC3-Inference
+          rm -rf /tmp/dmw-treatment && mkdir -p /tmp/dmw-treatment
+          for game in $ARC_DECISIVE_GAMES; do
+            dir="/tmp/dmw-treatment/$game"
+            CONFIG_PATH=/tmp/dmw-decisive.json EXPERIMENT_DIR="$dir" GAME="$game" GAME_TAGS='[]' ENVIRONMENTS_DIR=/tmp/arc-public-envs/environment_files N_PASSES=2 CONCURRENT_JOBS=1 MAX_ACTIONS=12 MAX_RUNTIME_MINUTES=7 SIMULATE_COMPETITION_ARCADE=true make interactive
+            CONFIG_PATH=/tmp/dmw-decisive.json make score_run SCORE_RUN_DIR="$dir" SCORE_OUTPUT_PATH="$dir/evaluation.json"
+          done
+
+      - name: Compute preregistered verdict
+        run: |
+          set -euo pipefail
+          OUT=results/arc-paper/dmw-decisive-v2
+          cp /tmp/duck_patch_manifest.json "$OUT/duck-patch-manifest.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('results/arc-paper/dmw-decisive-v2')
+          games=['ft09-0d8bbf25','ar25-e3c63847','cn04-65d47d14']
+          def load_eval(root,g):
+              return json.loads((Path(root)/g/'evaluation.json').read_text())
+          def score(doc,g):
+              row=(doc.get('games',{}).get(g,{}) or {})
+              return float(row.get('score') or doc.get('score') or 0)
+          c={g:score(load_eval('/tmp/dmw-control',g),g) for g in games}
+          t={g:score(load_eval('/tmp/dmw-treatment',g),g) for g in games}
+          c_total=sum(c.values()); t_total=sum(t.values()); wins=sum(t[g]>c[g] for g in games)
+          def harvest(root):
+              trajectories=[]; events=0; obs=0; hypotheses=0
+              for p in Path(root).rglob('graphene_dmw_state.json'):
+                  try: s=json.loads(p.read_text())
+                  except Exception: continue
+                  actions=[x.get('action') for x in s.get('transitions',[]) if x.get('action')]
+                  trajectories.append({'path':str(p),'actions':actions})
+                  events += len(s.get('dialectic_events') or [])
+                  records=s.get('crawler_records') or []
+                  obs += sum(1 for x in records if x.get('kind')=='CrawlerObservation')
+                  hypotheses += sum(1 for x in records if x.get('kind')=='Hypothesis')
+              return {'trajectories':trajectories,'dialectic_events':events,'crawler_observations':obs,'crawler_hypotheses':hypotheses}
+          ce=harvest('/tmp/dmw-control'); te=harvest('/tmp/dmw-treatment')
+          behavior_changed=[x['actions'] for x in ce['trajectories']] != [x['actions'] for x in te['trajectories']]
+          if t_total>c_total and wins>=2: verdict='SUPPORTED'
+          elif c_total<=0 and t_total<=0: verdict='PERCEPTION_ACTION_WORLD_INTERFACE_BOTTLENECK'
+          elif behavior_changed and t_total<=c_total: verdict='CAUSALLY_ACTIVE_BUT_INEFFECTIVE'
+          elif not behavior_changed: verdict='INTEGRATION_INACTIVE'
+          else: verdict='INCONCLUSIVE'
+          summary={'experiment':'Decisive system-level DMW falsification','model':'gpt-5.6-sol','games':games,'passes_per_game':2,'action_cap':12,'control_game_scores':c,'treatment_game_scores':t,'control_total_score':c_total,'treatment_total_score':t_total,'score_delta':t_total-c_total,'treatment_game_wins':wins,'behavior_changed':behavior_changed,'control_evidence':ce,'treatment_evidence':te,'integration_active':bool(te['dialectic_events'] or te['crawler_observations']),'verdict':verdict,'goalposts_frozen_before_run':True}
+          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+          find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+
+      - name: Upload decisive evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-paper-dmw-decisive-falsification-v2
+          path: results/arc-paper/dmw-decisive-v2
+          if-no-files-found: warn
+          retention-days: 30

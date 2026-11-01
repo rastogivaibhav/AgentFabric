@@ -1,0 +1,16 @@
+name: Dialectical World Crawler
+
+# Synthetic crawler proof is already green. Keep it manually runnable while the
+# ARC research branch prioritizes observable real-game ablations.
+on:
+  workflow_dispatch:
+
+jobs:
+  crawler:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run world crawler sequence-discovery gate
+        env:
+          PYTHONPATH: arc_competition
+        run: python3 arc_competition/test_dialectical_world_crawler.py
