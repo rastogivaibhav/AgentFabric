@@ -1,0 +1,56 @@
+name: ARC Kaggle 2026 Final Offline Packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arc-paper-dmw-duck-20260821]
+    paths:
+      - '.github/workflows/arc-kaggle-final-2026.yml'
+      - 'arc_competition/build_duck_kaggle_variant.sh'
+      - 'arc_competition/arc_release_selector.py'
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run-packaging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run release-selector unit tests
+        run: |
+          set -euo pipefail
+          (cd arc_competition && python3 -m unittest -v test_arc_release_selector.py)
+      - name: Verify shell script syntax
+        run: bash -n arc_competition/build_duck_kaggle_variant.sh
+      - name: Package unchanged Duck baseline (OFF)
+        run: bash arc_competition/build_duck_kaggle_variant.sh off /tmp/arc-final-duck
+      - name: Package evidence variant separately (EVIDENCE)
+        run: bash arc_competition/build_duck_kaggle_variant.sh evidence /tmp/arc-final-duck
+      - name: Create fail-closed release decision
+        run: |
+          set -euo pipefail
+          python3 arc_competition/arc_release_selector.py \
+            --off-package-identity results/arc-paper/package-off/package_identity.txt \
+            --evidence-package-identity results/arc-paper/package-evidence/package_identity.txt \
+            --output results/arc-paper/final-release-decision.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('results/arc-paper/final-release-decision.json').read_text())
+          assert report['decision']=='BASELINE_ONLY', report
+          assert not report['kaggle_submission_verified'], report
+          print('FINAL_RELEASE_GATE=PASS; baseline remains selected until real paired competition-model proof exists')
+          PY
+      - name: Upload dry-run packages and decision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-kaggle-final-packaging-2026
+          path: |
+            results/arc-paper/package-off/
+            results/arc-paper/package-evidence/
+            results/arc-paper/final-release-decision.json
+          if-no-files-found: warn
+          retention-days: 14
