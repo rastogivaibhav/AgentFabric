@@ -39,6 +39,7 @@ jobs:
           bash -n arc_competition/build_duck_dialectic_native_helper.sh
           bash -n arc_competition/run_a14r_native_real_ablation.sh
           python3 -m unittest -v arc_competition/test_graphene_dmw_duck_bridge.py
+          (cd arc_competition && python3 -m unittest -v test_arc_release_selector.py)
 
       - name: Build unchanged native runtime and Duck dialectic helper
         shell: bash
